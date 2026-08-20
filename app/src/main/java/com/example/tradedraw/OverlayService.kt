@@ -1,0 +1,300 @@
+package com.example.tradedraw
+
+import android.annotation.SuppressLint
+import android.app.*
+import android.content.Context
+import android.content.Intent
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.os.Build
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.util.DisplayMetrics
+import android.view.*
+import android.widget.*
+import androidx.core.app.NotificationCompat
+
+/**
+ * Servicio maestro con submenús inteligentes que detectan los límites de la pantalla.
+ * Implementa el borrado prioritario de elementos seleccionados.
+ */
+class OverlayService : Service() {
+
+    private lateinit var windowManager: WindowManager
+    private lateinit var canvasView: View
+    private lateinit var drawingView: CustomDrawingView
+    private lateinit var canvasParams: WindowManager.LayoutParams
+    
+    private lateinit var menuView: View
+    private lateinit var categoryContainer: View
+    private lateinit var submenuScroll: View
+    private lateinit var submenuContainer: LinearLayout
+    private lateinit var menuParams: WindowManager.LayoutParams
+    
+    private lateinit var templateManager: TemplateManager
+
+    private var isMenuExpanded = false
+    private var isDrawingMode = true 
+    private var currentActiveCategory: Int = -1
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onCreate() {
+        super.onCreate()
+        windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        templateManager = TemplateManager(this)
+        startTradeDrawForeground()
+        setupCanvasWindow()
+        setupMenuWindow()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        Handler(Looper.getMainLooper()).postDelayed({
+            val metrics = resources.displayMetrics
+            if (menuParams.x > metrics.widthPixels) menuParams.x = metrics.widthPixels - 200
+            if (menuParams.y > metrics.heightPixels) menuParams.y = metrics.heightPixels - 200
+            if (::menuView.isInitialized) windowManager.updateViewLayout(menuView, menuParams)
+        }, 500)
+    }
+
+    private fun setupCanvasWindow() {
+        canvasView = LayoutInflater.from(this).inflate(R.layout.overlay_canvas, null)
+        drawingView = canvasView.findViewById(R.id.custom_drawing_view)
+        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
+        canvasParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+            layoutType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT
+        )
+        windowManager.addView(canvasView, canvasParams)
+    }
+
+    private fun setupMenuWindow() {
+        menuView = LayoutInflater.from(this).inflate(R.layout.overlay_menu, null)
+        categoryContainer = menuView.findViewById(R.id.category_scroll)
+        submenuScroll = menuView.findViewById(R.id.submenu_scroll)
+        submenuContainer = menuView.findViewById(R.id.submenu_container)
+        val btnMainBubble = menuView.findViewById<ImageView>(R.id.btn_main_bubble)
+
+        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
+        menuParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            layoutType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT
+        )
+        menuParams.gravity = Gravity.TOP or Gravity.START
+        menuParams.x = 600; menuParams.y = 300
+
+        // Listeners de Categorías
+        menuView.findViewById<View>(R.id.btn_cat_view).setOnClickListener { handleCategoryClick(0) { showViewSubmenu() } }
+        menuView.findViewById<View>(R.id.btn_cat_edit).setOnClickListener { handleCategoryClick(1) { showEditSubmenu() } }
+        menuView.findViewById<View>(R.id.btn_cat_lines).setOnClickListener { handleCategoryClick(2) { showLinesSubmenu() } }
+        menuView.findViewById<View>(R.id.btn_cat_shapes).setOnClickListener { handleCategoryClick(3) { showShapesSubmenu() } }
+        menuView.findViewById<View>(R.id.btn_cat_files).setOnClickListener { handleCategoryClick(4) { showFilesSubmenu() } }
+
+        // ACCIONES DIRECTAS
+        menuView.findViewById<View>(R.id.btn_undo_direct).setOnClickListener { drawingView.undo() }
+        menuView.findViewById<View>(R.id.btn_redo_direct).setOnClickListener { drawingView.redo() }
+        menuView.findViewById<View>(R.id.btn_color_direct).setOnClickListener { showColorPicker() }
+        menuView.findViewById<View>(R.id.btn_clear_direct).setOnClickListener { 
+            // NUEVO: Borrar seleccionado prioritario
+            drawingView.deleteSelectedOrLast()
+        }
+        menuView.findViewById<View>(R.id.btn_cerrar_global).setOnClickListener { stopSelf() }
+
+        btnMainBubble.setOnClickListener { toggleMenu() }
+        setupMenuMovement(btnMainBubble)
+        windowManager.addView(menuView, menuParams)
+    }
+
+    /**
+     * Calcula la posición y ajusta la orientación del submenú para que no se salga de la pantalla.
+     */
+    private fun adjustSubmenuPosition() {
+        val root = menuView as LinearLayout
+        val metrics = DisplayMetrics()
+        windowManager.defaultDisplay.getMetrics(metrics)
+        val screenWidth = metrics.widthPixels
+        
+        root.removeView(submenuScroll)
+        val params = submenuScroll.layoutParams as LinearLayout.LayoutParams
+        
+        if (menuParams.x > screenWidth / 2) {
+            // Pegado a la derecha -> Submenú a la izquierda
+            root.addView(submenuScroll, 0)
+            params.setMargins(0, 0, 15, 0)
+        } else {
+            // Pegado a la izquierda -> Submenú a la derecha
+            root.addView(submenuScroll)
+            params.setMargins(15, 0, 0, 0)
+        }
+        submenuScroll.layoutParams = params
+    }
+
+    private fun handleCategoryClick(catId: Int, showSubmenuAction: () -> Unit) {
+        if (currentActiveCategory == catId) {
+            submenuScroll.visibility = View.GONE; currentActiveCategory = -1
+        } else {
+            adjustSubmenuPosition()
+            showSubmenuAction()
+            currentActiveCategory = catId
+        }
+    }
+
+    private fun showViewSubmenu() {
+        prepareSubmenu()
+        addItemToSubmenu(if (drawingView.isCanvasVisible()) R.drawable.ic_visibility else R.drawable.ic_visibility_off, "VISTA") {
+            drawingView.toggleCanvasVisibility(); showViewSubmenu()
+        }
+        addItemToSubmenu(if (isDrawingMode) R.drawable.ic_lock_closed else R.drawable.ic_lock_open, "LOCK") {
+            toggleLock(); showViewSubmenu()
+        }
+    }
+
+    private fun showEditSubmenu() {
+        prepareSubmenu()
+        addItemToSubmenu(android.R.drawable.ic_menu_edit, "LAPIZ") { selectTool(TradingTool.FREE_BRUSH) }
+        addItemToSubmenu(android.R.drawable.ic_menu_directions, "ELEGIR") { selectTool(TradingTool.SELECT_TOUCH) }
+        addItemToSubmenu(android.R.drawable.ic_menu_close_clear_cancel, "BORRAR") { selectTool(TradingTool.ERASER_TOUCH) }
+        addItemToSubmenu(android.R.drawable.ic_menu_delete, "LIMPIAR", Color.RED) {
+            confirmClearAll()
+        }
+    }
+
+    private fun confirmClearAll() {
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("¿Limpiar Lienzo?")
+            .setMessage("Borrar todos los trazos permanentemente.")
+            .setPositiveButton("Sí") { _, _ -> drawingView.clearCanvas() }
+            .setNegativeButton("No", null)
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun showLinesSubmenu() {
+        prepareSubmenu()
+        addItemToSubmenu(R.drawable.ic_trend_line, "LÍNEA") { selectTool(TradingTool.TREND_LINE) }
+        addItemToSubmenu(android.R.drawable.ic_menu_more, "SOPORT", Color.RED) { selectTool(TradingTool.SUPPORT_LINE) }
+        addItemToSubmenu(android.R.drawable.ic_menu_more, "RESIST", Color.GREEN) { selectTool(TradingTool.RESISTANCE_LINE) }
+        addItemToSubmenu(android.R.drawable.ic_menu_sort_by_size, "FIBO") { selectTool(TradingTool.FIB_RETRACEMENT) }
+    }
+
+    private fun showShapesSubmenu() {
+        prepareSubmenu()
+        addItemToSubmenu(android.R.drawable.ic_menu_crop, "ZONA") { selectTool(TradingTool.RECTANGLE) }
+        addItemToSubmenu(android.R.drawable.ic_input_add, "LONG", Color.GREEN) { selectTool(TradingTool.LONG_POSITION) }
+        addItemToSubmenu(android.R.drawable.ic_delete, "SHORT", Color.RED) { selectTool(TradingTool.SHORT_POSITION) }
+    }
+
+    private fun showFilesSubmenu() {
+        prepareSubmenu()
+        addItemToSubmenu(android.R.drawable.ic_menu_save, "SAVE") { saveTemplate() }
+        addItemToSubmenu(android.R.drawable.ic_menu_recent_history, "LOAD") { loadTemplate() }
+        addItemToSubmenu(android.R.drawable.ic_menu_share, "EXPORT") { shareTemplate() }
+    }
+
+    private fun prepareSubmenu() {
+        submenuContainer.removeAllViews()
+        submenuScroll.visibility = View.VISIBLE
+    }
+
+    private fun addItemToSubmenu(iconRes: Int, text: String, tint: Int? = null, onClick: () -> Unit) {
+        val item = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(20, 10, 20, 10)
+            isClickable = true; isFocusable = true; setBackgroundResource(android.R.drawable.list_selector_background)
+            setOnClickListener { onClick() }
+        }
+        val img = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(60, 60); setImageResource(iconRes); tint?.let { setColorFilter(it) } ?: setColorFilter(Color.WHITE)
+        }
+        val txt = TextView(this).apply { this.text = text; setTextColor(Color.WHITE); textSize = 9f }
+        item.addView(img); item.addView(txt); submenuContainer.addView(item)
+    }
+
+    private fun selectTool(tool: TradingTool) {
+        drawingView.setTool(tool)
+        if (!isDrawingMode) toggleLock()
+    }
+
+    private fun toggleLock() {
+        isDrawingMode = !isDrawingMode
+        if (isDrawingMode) canvasParams.flags = canvasParams.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        else canvasParams.flags = canvasParams.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        windowManager.updateViewLayout(canvasView, canvasParams)
+    }
+
+    private fun showColorPicker() {
+        val colors = intArrayOf(Color.parseColor("#00FF00"), Color.RED, Color.CYAN, Color.YELLOW, Color.WHITE, Color.MAGENTA)
+        val names = arrayOf("Verde", "Rojo", "Cian", "Amarillo", "Blanco", "Magenta")
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Paleta").setItems(names) { _, which -> drawingView.setColor(colors[which]) }
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun saveTemplate() {
+        templateManager.saveLocal("ULTIMA_PLANTILLA", drawingView.getShapes())
+        Toast.makeText(this, "Guardado", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun loadTemplate() {
+        val shapes = templateManager.loadLocal("ULTIMA_PLANTILLA")
+        if (shapes.isNotEmpty()) { drawingView.setShapes(shapes); Toast.makeText(this, "Cargado", Toast.LENGTH_SHORT).show() }
+    }
+
+    private fun shareTemplate() {
+        val json = templateManager.serialize(drawingView.getShapes())
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"; putExtra(Intent.EXTRA_TEXT, json); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(Intent.createChooser(intent, "Exportar").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    private fun toggleMenu() {
+        isMenuExpanded = !isMenuExpanded
+        categoryContainer.visibility = if (isMenuExpanded) View.VISIBLE else View.GONE
+        if (!isMenuExpanded) { submenuScroll.visibility = View.GONE; currentActiveCategory = -1 }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupMenuMovement(bubble: View) {
+        var initialX = 0; var initialY = 0; var initialTouchX = 0f; var initialTouchY = 0f; var isMove = false
+        bubble.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> { initialX = menuParams.x; initialY = menuParams.y; initialTouchX = event.rawX; initialTouchY = event.rawY; isMove = false; true }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (event.rawX - initialTouchX).toInt(); val dy = (event.rawY - initialTouchY).toInt()
+                    if (Math.abs(dx) > 15 || Math.abs(dy) > 15) isMove = true
+                    menuParams.x = initialX + dx; menuParams.y = initialY + dy
+                    windowManager.updateViewLayout(menuView, menuParams); true
+                }
+                MotionEvent.ACTION_UP -> { if (!isMove) bubble.performClick(); true }
+                else -> false
+            }
+        }
+    }
+
+    private fun startTradeDrawForeground() {
+        val channelId = "trade_draw_main"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "TradeDraw Pro", NotificationManager.IMPORTANCE_LOW)
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(channel)
+        }
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("TradeDraw Pro").setContentText("Interfaz profesional activa.").setSmallIcon(R.mipmap.ic_launcher)
+            .setOngoing(true).build()
+        startForeground(1001, notification)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try { if (::canvasView.isInitialized) windowManager.removeView(canvasView); if (::menuView.isInitialized) windowManager.removeView(menuView) } catch (e: Exception) {}
+    }
+}

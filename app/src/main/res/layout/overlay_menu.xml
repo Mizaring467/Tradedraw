@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/menu_root_layout"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical">
+
+    <!-- Contenedor del Menú Principal (Barra Vertical) -->
+    <LinearLayout
+        android:id="@+id/main_menu_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal">
+
+        <ImageView
+            android:id="@+id/btn_main_bubble"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:src="@drawable/app_logo"
+            android:background="@drawable/ic_launcher_background"
+            android:padding="8dp"
+            android:elevation="12dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Menu" />
+
+        <ScrollView
+            android:id="@+id/category_scroll"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:visibility="gone"
+            android:scrollbars="none"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:id="@+id/category_bar"
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:background="#EE0a0a0f"
+                android:orientation="vertical"
+                android:padding="4dp"
+                android:elevation="10dp"
+                android:gravity="center_horizontal">
+
+                <ImageButton
+                    android:id="@+id/btn_cat_view"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@drawable/ic_visibility"
+                    app:tint="#FFFFFF"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:contentDescription="Vista" />
+
+                <ImageButton
+                    android:id="@+id/btn_cat_edit"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@android:drawable/ic_menu_edit"
+                    app:tint="#FFFFFF"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:contentDescription="Edición" />
+
+                <ImageButton
+                    android:id="@+id/btn_cat_lines"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@drawable/ic_trend_line"
+                    app:tint="#FFFFFF"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:contentDescription="Líneas" />
+
+                <ImageButton
+                    android:id="@+id/btn_cat_shapes"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@android:drawable/ic_menu_crop"
+                    app:tint="#FFFFFF"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:contentDescription="Posiciones" />
+
+                <ImageButton
+                    android:id="@+id/btn_cat_files"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@android:drawable/ic_menu_save"
+                    app:tint="#FFFFFF"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:contentDescription="Plantillas" />
+
+                <View
+                    android:layout_width="40dp"
+                    android:layout_height="1dp"
+                    android:background="#44ffffff"
+                    android:layout_marginVertical="8dp" />
+
+                <ImageButton
+                    android:id="@+id/btn_undo_direct"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@drawable/ic_undo"
+                    app:tint="#FFFFFF"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:contentDescription="Undo" />
+
+                <ImageButton
+                    android:id="@+id/btn_redo_direct"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@drawable/ic_redo"
+                    app:tint="#FFFFFF"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:contentDescription="Redo" />
+
+                <ImageButton
+                    android:id="@+id/btn_color_direct"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@android:drawable/ic_menu_gallery"
+                    app:tint="#00FF00"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:contentDescription="Color" />
+
+                <ImageButton
+                    android:id="@+id/btn_clear_direct"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@android:drawable/ic_menu_delete"
+                    app:tint="#ef4444"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:contentDescription="Borrar" />
+
+                <View
+                    android:layout_width="40dp"
+                    android:layout_height="1dp"
+                    android:background="#44ffffff"
+                    android:layout_marginVertical="8dp" />
+
+                <ImageButton
+                    android:id="@+id/btn_cerrar_global"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@android:drawable/ic_menu_close_clear_cancel"
+                    app:tint="#ef4444"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:contentDescription="Cerrar" />
+
+            </LinearLayout>
+        </ScrollView>
+    </LinearLayout>
+
+    <!-- Panel de Submenú (Contenedor que cambiará de lado) -->
+    <HorizontalScrollView
+        android:id="@+id/submenu_scroll"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="#EE0a0a0f"
+        android:padding="4dp"
+        android:visibility="gone"
+        android:elevation="15dp"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/submenu_container"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical" />
+    </HorizontalScrollView>
+
+</LinearLayout>
