@@ -17,6 +17,12 @@ data class DrawShape(
     var color: Int,
     var strokeWidth: Float,
     var isSelected: Boolean = false,
+    var thirdX: Float = 0f,
+    var thirdY: Float = 0f,
+    var text: String = "",
+    var lineStyle: Int = 0,
+    var labelVisible: Boolean = true,
+    var labelText: String = "",
     val pathPoints: MutableList<PointF> = mutableListOf()
 ) {
     fun toJson(): JSONObject {
@@ -28,6 +34,12 @@ data class DrawShape(
         json.put("endY", endY.toDouble())
         json.put("color", color)
         json.put("strokeWidth", strokeWidth.toDouble())
+        json.put("thirdX", thirdX.toDouble())
+        json.put("thirdY", thirdY.toDouble())
+        json.put("text", text)
+        json.put("lineStyle", lineStyle)
+        json.put("labelVisible", labelVisible)
+        json.put("labelText", labelText)
         if (pathPoints.isNotEmpty()) {
             val pointsArray = JSONArray()
             for (point in pathPoints) {
@@ -51,7 +63,13 @@ data class DrawShape(
                 endX = json.getDouble("endX").toFloat(),
                 endY = json.getDouble("endY").toFloat(),
                 color = json.getInt("color"),
-                strokeWidth = json.getDouble("strokeWidth").toFloat()
+                strokeWidth = json.getDouble("strokeWidth").toFloat(),
+                thirdX = json.optDouble("thirdX", 0.0).toFloat(),
+                thirdY = json.optDouble("thirdY", 0.0).toFloat(),
+                text = json.optString("text", ""),
+                lineStyle = json.optInt("lineStyle", 0),
+                labelVisible = json.optBoolean("labelVisible", true),
+                labelText = json.optString("labelText", "")
             )
             if (json.has("pathPoints")) {
                 val pointsArray = json.getJSONArray("pathPoints")

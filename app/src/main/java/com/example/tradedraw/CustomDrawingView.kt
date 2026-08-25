@@ -23,16 +23,22 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
 
     private var currentShape: DrawShape? = null
     private var selectedShape: DrawShape? = null
+
+    var onShapesChange: (() -> Unit)? = null
+
+    private fun notifyShapesChange() { onShapesChange?.invoke() }
     
     private enum class DragMode { NONE, START, END, BODY }
     private var dragMode = DragMode.NONE
     private var lastX = 0f
     private var lastY = 0f
+    private var isEraserDragging = false
 
     private val textPaint = Paint().apply { color = Color.WHITE; textSize = 30f; isAntiAlias = true; typeface = Typeface.DEFAULT_BOLD }
     private val dashPaint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 2f; pathEffect = DashPathEffect(floatArrayOf(10f, 10f), 0f) }
     private val handlePaint = Paint().apply { color = Color.WHITE; style = Paint.Style.FILL; isAntiAlias = true }
     private val handleStrokePaint = Paint().apply { color = Color.CYAN; style = Paint.Style.STROKE; strokeWidth = 4f; isAntiAlias = true }
+    private val shapePaint = Paint().apply { isAntiAlias = true; strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND }
 
     fun setTool(tool: TradingTool) {
         this.currentTool = tool
@@ -63,19 +69,19 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
 
     private fun deselectAll() { shapes.forEach { it.isSelected = false }; selectedShape = null }
 
-    fun undo() { if (shapes.isNotEmpty()) { undoneShapes.add(shapes.removeAt(shapes.size - 1)); deselectAll(); invalidate() } }
-    fun redo() { if (undoneShapes.isNotEmpty()) { shapes.add(undoneShapes.removeAt(undoneShapes.size - 1)); deselectAll(); invalidate() } }
+    fun undo() { if (shapes.isNotEmpty()) { undoneShapes.add(shapes.removeAt(shapes.size - 1)); deselectAll(); invalidate(); notifyShapesChange() } }
+    fun redo() { if (undoneShapes.isNotEmpty()) { shapes.add(undoneShapes.removeAt(undoneShapes.size - 1)); deselectAll(); invalidate(); notifyShapesChange() } }
     
     fun deleteSelectedOrLast() {
         if (selectedShape != null) {
             val s = selectedShape!!
-            shapes.remove(s); undoneShapes.add(s); selectedShape = null; invalidate()
+            shapes.remove(s); undoneShapes.add(s); selectedShape = null; invalidate(); notifyShapesChange()
         } else if (shapes.isNotEmpty()) {
             undo()
         }
     }
 
-    fun clearCanvas() { shapes.clear(); undoneShapes.clear(); currentShape = null; selectedShape = null; invalidate() }
+    fun clearCanvas() { shapes.clear(); undoneShapes.clear(); currentShape = null; selectedShape = null; invalidate(); notifyShapesChange() }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -104,11 +110,10 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     }
 
     private fun drawGenericShape(canvas: Canvas, shape: DrawShape) {
-        val paint = Paint().apply {
-            color = shape.color; strokeWidth = shape.strokeWidth; isAntiAlias = true
-            strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND
-            style = if (shape.tool == TradingTool.LONG_POSITION || shape.tool == TradingTool.SHORT_POSITION) Paint.Style.FILL else Paint.Style.STROKE
-        }
+        val paint = shapePaint
+        paint.color = shape.color
+        paint.strokeWidth = shape.strokeWidth
+        paint.style = if (shape.tool == TradingTool.LONG_POSITION || shape.tool == TradingTool.SHORT_POSITION) Paint.Style.FILL else Paint.Style.STROKE
         when (shape.tool) {
             TradingTool.FREE_BRUSH -> canvas.drawPath(shape.createPath(), paint)
             TradingTool.TREND_LINE -> canvas.drawLine(shape.startX, shape.startY, shape.endX, shape.endY, paint)
@@ -164,6 +169,7 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
                 if (handleAutoSelection(x, y)) {
                     // Seleccionado o manipulando nodo
                 } else if (currentTool == TradingTool.ERASER_TOUCH) {
+                    isEraserDragging = true
                     handleEraserDown(x, y)
                 } else if (selectedShape == null) {
                     // Solo dibujar si NO hay nada seleccionado para evitar trazos accidentales
@@ -178,7 +184,9 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
                 }
             }
             MotionEvent.ACTION_MOVE -> {
-                if (selectedShape != null && dragMode != DragMode.NONE) {
+                if (currentTool == TradingTool.ERASER_TOUCH && isEraserDragging) {
+                    handleEraserMove(x, y)
+                } else if (selectedShape != null && dragMode != DragMode.NONE) {
                     handleSelectionMove(x, y)
                 } else {
                     currentShape?.let { 
@@ -188,8 +196,9 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
                 }
             }
             MotionEvent.ACTION_UP -> {
+                isEraserDragging = false
                 if (selectedShape == null) {
-                    currentShape?.let { shapes.add(it) }
+                    currentShape?.let { shapes.add(it); notifyShapesChange() }
                     currentShape = null
                 }
                 dragMode = DragMode.NONE
@@ -242,7 +251,15 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     }
 
     private fun handleEraserDown(x: Float, y: Float) {
-        for (i in shapes.size - 1 downTo 0) { if (isHit(x, y, shapes[i])) { shapes.removeAt(i); break } }
+        for (i in shapes.size - 1 downTo 0) { if (isHit(x, y, shapes[i])) { shapes.removeAt(i); notifyShapesChange(); break } }
+    }
+
+    private fun handleEraserMove(x: Float, y: Float) {
+        var changed = false
+        for (i in shapes.size - 1 downTo 0) {
+            if (isHit(x, y, shapes[i])) { shapes.removeAt(i); changed = true }
+        }
+        if (changed) notifyShapesChange()
     }
 
     private fun isNear(x1: Float, y1: Float, x2: Float, y2: Float) = Math.sqrt(Math.pow((x1 - x2).toDouble(), 2.0) + Math.pow((y1 - y2).toDouble(), 2.0)) < 85

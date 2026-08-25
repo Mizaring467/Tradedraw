@@ -38,6 +38,7 @@ class OverlayService : Service() {
     private var isMenuExpanded = false
     private var isDrawingMode = true 
     private var currentActiveCategory: Int = -1
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -53,7 +54,8 @@ class OverlayService : Service() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        Handler(Looper.getMainLooper()).postDelayed({
+        mainHandler.postDelayed({
+            if (!::menuParams.isInitialized) return@postDelayed
             val metrics = resources.displayMetrics
             if (menuParams.x > metrics.widthPixels) menuParams.x = metrics.widthPixels - 200
             if (menuParams.y > metrics.heightPixels) menuParams.y = metrics.heightPixels - 200
@@ -70,6 +72,10 @@ class OverlayService : Service() {
             layoutType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT
         )
         windowManager.addView(canvasView, canvasParams)
+
+        val saved = templateManager.loadLocal("AUTO")
+        if (saved.isNotEmpty()) drawingView.setShapes(saved)
+        drawingView.onShapesChange = { templateManager.saveLocal("AUTO", drawingView.getShapes()) }
     }
 
     private fun setupMenuWindow() {
@@ -295,6 +301,7 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        mainHandler.removeCallbacksAndMessages(null)
         try { if (::canvasView.isInitialized) windowManager.removeView(canvasView); if (::menuView.isInitialized) windowManager.removeView(menuView) } catch (e: Exception) {}
     }
 }
