@@ -2,6 +2,7 @@ package com.example.tradedraw
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
 
@@ -46,7 +47,7 @@ object CrashLogger {
             if (Looper.myLooper() == Looper.getMainLooper()) {
                 Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
             } else {
-                Looper.getMainLooper().post { Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
+                Handler(Looper.getMainLooper()).post { Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
             }
         } catch (e: Exception) {
             android.util.Log.e("TradeDraw", "No se pudo mostrar el crash", e)
