@@ -152,23 +152,4 @@
         </ScrollView>
     </LinearLayout>
 
-    <!-- Panel de Submenú (Contenedor que cambiará de lado) -->
-    <HorizontalScrollView
-        android:id="@+id/submenu_scroll"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:background="#EE0a0a0f"
-        android:padding="4dp"
-        android:visibility="gone"
-        android:elevation="15dp"
-        android:scrollbars="none">
-
-        <LinearLayout
-            android:id="@+id/submenu_container"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical" />
-    </HorizontalScrollView>
-
 </LinearLayout>

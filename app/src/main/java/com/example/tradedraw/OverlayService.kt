@@ -33,9 +33,11 @@ class OverlayService : Service() {
     
     private lateinit var menuView: View
     private lateinit var categoryContainer: View
-    private lateinit var submenuScroll: View
-    private lateinit var submenuContainer: LinearLayout
     private lateinit var menuParams: WindowManager.LayoutParams
+
+    private lateinit var submenuWindowView: View
+    private lateinit var submenuContainer: LinearLayout
+    private lateinit var submenuParams: WindowManager.LayoutParams
     
     private lateinit var templateManager: TemplateManager
 
@@ -99,8 +101,6 @@ class OverlayService : Service() {
     private fun setupMenuWindow() {
         menuView = LayoutInflater.from(this).inflate(R.layout.overlay_menu, null)
         categoryContainer = menuView.findViewById(R.id.category_scroll)
-        submenuScroll = menuView.findViewById(R.id.submenu_scroll)
-        submenuContainer = menuView.findViewById(R.id.submenu_container)
         val btnMainBubble = menuView.findViewById<ImageView>(R.id.btn_main_bubble)
 
         val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
@@ -110,6 +110,16 @@ class OverlayService : Service() {
         )
         menuParams.gravity = Gravity.TOP or Gravity.START
         menuParams.x = 600; menuParams.y = 300
+
+        // Ventana SEPARADA para el submenú: así el menú principal nunca se mueve.
+        submenuWindowView = LayoutInflater.from(this).inflate(R.layout.overlay_submenu, null)
+        submenuContainer = submenuWindowView.findViewById(R.id.submenu_container)
+        submenuParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            layoutType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT
+        )
+        submenuParams.gravity = Gravity.TOP or Gravity.START
+        submenuWindowView.visibility = View.GONE
 
         // Listeners de Categorías
         menuView.findViewById<View>(R.id.btn_cat_view).setOnClickListener { handleCategoryClick(0) { showViewSubmenu() } }
@@ -131,42 +141,60 @@ class OverlayService : Service() {
         btnMainBubble.setOnClickListener { toggleMenu() }
         setupMenuMovement(btnMainBubble)
         windowManager.addView(menuView, menuParams)
+        windowManager.addView(submenuWindowView, submenuParams)
     }
 
     /**
-     * Calcula la posición y ajusta la orientación del submenú para que no se salga de la pantalla.
+     * Posiciona la ventana del submenú al lado del menú principal.
      */
-    private fun adjustSubmenuPosition() {
-        val root = menuView as LinearLayout
-        val metrics = DisplayMetrics()
-        windowManager.defaultDisplay.getMetrics(metrics)
-        val screenWidth = metrics.widthPixels
-        
-        root.removeView(submenuScroll)
-        val params = submenuScroll.layoutParams as LinearLayout.LayoutParams
-        
-        if (menuParams.x > screenWidth / 2) {
-            // Pegado a la derecha -> Submenú a la izquierda
-            root.addView(submenuScroll, 0)
-            params.setMargins(0, 0, 15, 0)
-        } else {
-            // Pegado a la izquierda -> Submenú a la derecha
-            root.addView(submenuScroll)
-            params.setMargins(15, 0, 0, 0)
+    private fun positionSubmenuWindow() {
+        if (!::submenuWindowView.isInitialized || !::submenuParams.isInitialized) return
+        val screenW = resources.displayMetrics.widthPixels
+        val screenH = resources.displayMetrics.heightPixels
+        submenuWindowView.post {
+            try {
+                val w = submenuWindowView.width
+                val h = submenuWindowView.height
+                if (w > 0 && h > 0) {
+                    val bubbleWidth = menuView.width
+                    if (menuParams.x + bubbleWidth + w <= screenW) {
+                        // Hay espacio a la derecha -> submenú a la derecha
+                        submenuParams.x = menuParams.x + bubbleWidth
+                    } else {
+                        // Si no cabe a la derecha -> submenú a la izquierda
+                        submenuParams.x = (menuParams.x - w).coerceAtLeast(0)
+                    }
+                    submenuParams.y = menuParams.y.coerceIn(0, (screenH - h).coerceAtLeast(0))
+                    windowManager.updateViewLayout(submenuWindowView, submenuParams)
+                } else {
+                    mainHandler.postDelayed({ positionSubmenuWindow() }, 60)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("TradeDraw", "positionSubmenuWindow fallo", e)
+            }
         }
-        submenuScroll.layoutParams = params
     }
 
     private fun handleCategoryClick(catId: Int, showSubmenuAction: () -> Unit) {
         if (currentActiveCategory == catId) {
-            submenuScroll.visibility = View.GONE; currentActiveCategory = -1
+            hideSubmenu()
         } else {
-            adjustSubmenuPosition()
             showSubmenuAction()
             currentActiveCategory = catId
-            // Asegurar que la ventana expandida con el submenú quede dentro de la pantalla
-            keepMenuOnScreen()
+            showSubmenu()
         }
+    }
+
+    private fun showSubmenu() {
+        if (!::submenuWindowView.isInitialized) return
+        submenuWindowView.visibility = View.VISIBLE
+        positionSubmenuWindow()
+    }
+
+    private fun hideSubmenu() {
+        if (!::submenuWindowView.isInitialized) return
+        submenuWindowView.visibility = View.GONE
+        currentActiveCategory = -1
     }
 
     /**
@@ -253,7 +281,6 @@ class OverlayService : Service() {
 
     private fun prepareSubmenu() {
         submenuContainer.removeAllViews()
-        submenuScroll.visibility = View.VISIBLE
     }
 
     private fun addItemToSubmenu(iconRes: Int, text: String, tint: Int? = null, onClick: () -> Unit) {
@@ -296,6 +323,10 @@ class OverlayService : Service() {
             try {
                 windowManager.removeView(menuView)
                 windowManager.addView(menuView, menuParams)
+                if (::submenuWindowView.isInitialized && submenuWindowView.visibility == View.VISIBLE) {
+                    windowManager.removeView(submenuWindowView)
+                    windowManager.addView(submenuWindowView, submenuParams)
+                }
             } catch (e: Exception) {
                 android.util.Log.e("TradeDraw", "bringMenuToFront fallo", e)
             }
@@ -334,7 +365,7 @@ class OverlayService : Service() {
     private fun toggleMenu() {
         isMenuExpanded = !isMenuExpanded
         categoryContainer.visibility = if (isMenuExpanded) View.VISIBLE else View.GONE
-        if (!isMenuExpanded) { submenuScroll.visibility = View.GONE; currentActiveCategory = -1 }
+        if (!isMenuExpanded) hideSubmenu()
         if (isMenuExpanded) keepMenuOnScreen()
     }
 
@@ -352,7 +383,11 @@ class OverlayService : Service() {
                     if (Math.abs(dx) > 15 || Math.abs(dy) > 15) isMove = true
                     menuParams.x = (initialX + dx).coerceIn(0, screenW - 120)
                     menuParams.y = (initialY + dy).coerceIn(0, screenH - 120)
-                    windowManager.updateViewLayout(menuView, menuParams); true
+                    windowManager.updateViewLayout(menuView, menuParams)
+                    if (::submenuWindowView.isInitialized && submenuWindowView.visibility == View.VISIBLE) {
+                        positionSubmenuWindow()
+                    }
+                    true
                 }
                 MotionEvent.ACTION_UP -> { if (!isMove) bubble.performClick(); true }
                 else -> false
@@ -379,6 +414,10 @@ class OverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         mainHandler.removeCallbacksAndMessages(null)
-        try { if (::canvasView.isInitialized) windowManager.removeView(canvasView); if (::menuView.isInitialized) windowManager.removeView(menuView) } catch (e: Exception) {}
+        try {
+            if (::canvasView.isInitialized) windowManager.removeView(canvasView)
+            if (::menuView.isInitialized) windowManager.removeView(menuView)
+            if (::submenuWindowView.isInitialized) windowManager.removeView(submenuWindowView)
+        } catch (e: Exception) {}
     }
 }
