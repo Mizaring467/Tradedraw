@@ -15,7 +15,7 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     private var shapes = ArrayList<DrawShape>()
     private val undoneShapes = ArrayList<DrawShape>()
     
-    private var currentTool = TradingTool.FREE_BRUSH
+    private var currentTool = TradingTool.SELECT_TOUCH
     private var activeDrawingColor = Color.parseColor("#00FF00")
     private var currentStrokeWidth = 7f
 

@@ -22,6 +22,10 @@ import androidx.core.app.NotificationCompat
  */
 class OverlayService : Service() {
 
+    companion object {
+        private const val ACTION_STOP = "com.example.tradedraw.STOP"
+    }
+
     private lateinit var windowManager: WindowManager
     private lateinit var canvasView: View
     private lateinit var drawingView: CustomDrawingView
@@ -36,11 +40,19 @@ class OverlayService : Service() {
     private lateinit var templateManager: TemplateManager
 
     private var isMenuExpanded = false
-    private var isDrawingMode = true 
+    private var isDrawingMode = false
     private var currentActiveCategory: Int = -1
     private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        return START_STICKY
+    }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate() {
@@ -71,6 +83,8 @@ class OverlayService : Service() {
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
             layoutType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT
         )
+        // Iniciar en modo NAVEGACIÓN: el lienzo no captura toques, se usa la app subyacente.
+        if (!isDrawingMode) canvasParams.flags = canvasParams.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         windowManager.addView(canvasView, canvasParams)
 
         val saved = templateManager.loadLocal("AUTO")
@@ -271,13 +285,17 @@ class OverlayService : Service() {
     @SuppressLint("ClickableViewAccessibility")
     private fun setupMenuMovement(bubble: View) {
         var initialX = 0; var initialY = 0; var initialTouchX = 0f; var initialTouchY = 0f; var isMove = false
+        val metrics = DisplayMetrics()
+        windowManager.defaultDisplay.getMetrics(metrics)
+        val screenW = metrics.widthPixels; val screenH = metrics.heightPixels
         bubble.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> { initialX = menuParams.x; initialY = menuParams.y; initialTouchX = event.rawX; initialTouchY = event.rawY; isMove = false; true }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - initialTouchX).toInt(); val dy = (event.rawY - initialTouchY).toInt()
                     if (Math.abs(dx) > 15 || Math.abs(dy) > 15) isMove = true
-                    menuParams.x = initialX + dx; menuParams.y = initialY + dy
+                    menuParams.x = (initialX + dx).coerceIn(0, screenW - 120)
+                    menuParams.y = (initialY + dy).coerceIn(0, screenH - 120)
                     windowManager.updateViewLayout(menuView, menuParams); true
                 }
                 MotionEvent.ACTION_UP -> { if (!isMove) bubble.performClick(); true }
@@ -293,8 +311,11 @@ class OverlayService : Service() {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
         }
+        val closeIntent = Intent(this, OverlayService::class.java).setAction(ACTION_STOP)
+        val closePending = PendingIntent.getService(this, 0, closeIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("TradeDraw Pro").setContentText("Interfaz profesional activa.").setSmallIcon(R.mipmap.ic_launcher)
+            .addAction(0, "Cerrar", closePending)
             .setOngoing(true).build()
         startForeground(1001, notification)
     }
