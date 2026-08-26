@@ -164,6 +164,36 @@ class OverlayService : Service() {
             adjustSubmenuPosition()
             showSubmenuAction()
             currentActiveCategory = catId
+            // Asegurar que la ventana expandida con el submenú quede dentro de la pantalla
+            keepMenuOnScreen()
+        }
+    }
+
+    /**
+     * Re-posiciona la ventana del menú para que quede completamente dentro de la pantalla.
+     * Necesario porque al mostrar el submenú la ventana crece y, si la burbuja está
+     * cerca de un borde, puede desbordarse fuera de la pantalla y volverse inalcanzable.
+     */
+    private fun keepMenuOnScreen(attempt: Int = 0) {
+        if (!::menuView.isInitialized || !::menuParams.isInitialized) return
+        if (attempt > 5) return
+        val screenW = resources.displayMetrics.widthPixels
+        val screenH = resources.displayMetrics.heightPixels
+        menuView.post {
+            try {
+                val w = menuView.width
+                val h = menuView.height
+                if (w > 0 && h > 0) {
+                    menuParams.x = menuParams.x.coerceIn(0, (screenW - w).coerceAtLeast(0))
+                    menuParams.y = menuParams.y.coerceIn(0, (screenH - h).coerceAtLeast(0))
+                    windowManager.updateViewLayout(menuView, menuParams)
+                } else {
+                    // El layout aún no midió la ventana; reintentar en un momento.
+                    mainHandler.postDelayed({ keepMenuOnScreen(attempt + 1) }, 60)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("TradeDraw", "keepMenuOnScreen fallo", e)
+            }
         }
     }
 
@@ -305,6 +335,7 @@ class OverlayService : Service() {
         isMenuExpanded = !isMenuExpanded
         categoryContainer.visibility = if (isMenuExpanded) View.VISIBLE else View.GONE
         if (!isMenuExpanded) { submenuScroll.visibility = View.GONE; currentActiveCategory = -1 }
+        if (isMenuExpanded) keepMenuOnScreen()
     }
 
     @SuppressLint("ClickableViewAccessibility")
