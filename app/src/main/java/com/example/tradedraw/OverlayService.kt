@@ -57,11 +57,15 @@ class OverlayService : Service() {
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate() {
         super.onCreate()
+        CrashLogger.install(this)
+        CrashLogger.showPending(this)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         templateManager = TemplateManager(this)
         startTradeDrawForeground()
         setupCanvasWindow()
         setupMenuWindow()
+        // Asegurar que el menú quede encima del lienzo desde el inicio
+        bringMenuToFront()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -244,7 +248,28 @@ class OverlayService : Service() {
         isDrawingMode = !isDrawingMode
         if (isDrawingMode) canvasParams.flags = canvasParams.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         else canvasParams.flags = canvasParams.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        windowManager.updateViewLayout(canvasView, canvasParams)
+        try {
+            windowManager.updateViewLayout(canvasView, canvasParams)
+        } catch (e: Exception) {
+            android.util.Log.e("TradeDraw", "updateViewLayout(canvas) fallo", e)
+        }
+        // Asegurar que el menú quede SIEMPRE encima del lienzo.
+        // Algunos dispositivos re-ordenan las ventanas overlay al hacer
+        // updateViewLayout del lienzo, dejando el menú debajo (no responde).
+        bringMenuToFront()
+    }
+
+    private fun bringMenuToFront() {
+        if (!::menuView.isInitialized || !::menuParams.isInitialized) return
+        // Posteado para no re-entrar durante el dispatch del toque actual.
+        mainHandler.post {
+            try {
+                windowManager.removeView(menuView)
+                windowManager.addView(menuView, menuParams)
+            } catch (e: Exception) {
+                android.util.Log.e("TradeDraw", "bringMenuToFront fallo", e)
+            }
+        }
     }
 
     private fun showColorPicker() {
