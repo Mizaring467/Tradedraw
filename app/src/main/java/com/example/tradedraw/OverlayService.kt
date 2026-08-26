@@ -372,17 +372,16 @@ class OverlayService : Service() {
     @SuppressLint("ClickableViewAccessibility")
     private fun setupMenuMovement(bubble: View) {
         var initialX = 0; var initialY = 0; var initialTouchX = 0f; var initialTouchY = 0f; var isMove = false
-        val metrics = DisplayMetrics()
-        windowManager.defaultDisplay.getMetrics(metrics)
-        val screenW = metrics.widthPixels; val screenH = metrics.heightPixels
         bubble.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> { initialX = menuParams.x; initialY = menuParams.y; initialTouchX = event.rawX; initialTouchY = event.rawY; isMove = false; true }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - initialTouchX).toInt(); val dy = (event.rawY - initialTouchY).toInt()
                     if (Math.abs(dx) > 15 || Math.abs(dy) > 15) isMove = true
-                    menuParams.x = (initialX + dx).coerceIn(0, screenW - 120)
-                    menuParams.y = (initialY + dy).coerceIn(0, screenH - 120)
+                    // Métricas EN VIVO: se actualizan al rotar la pantalla (vertical/horizontal)
+                    val dm = resources.displayMetrics
+                    menuParams.x = (initialX + dx).coerceIn(0, dm.widthPixels - 120)
+                    menuParams.y = (initialY + dy).coerceIn(0, dm.heightPixels - 120)
                     windowManager.updateViewLayout(menuView, menuParams)
                     if (::submenuWindowView.isInitialized && submenuWindowView.visibility == View.VISIBLE) {
                         positionSubmenuWindow()
