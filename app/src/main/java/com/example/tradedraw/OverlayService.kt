@@ -368,14 +368,22 @@ class OverlayService : Service() {
     }
 
     private fun showColorPicker() {
-        val colors = intArrayOf(Color.parseColor("#00FF00"), Color.RED, Color.CYAN, Color.YELLOW, Color.WHITE, Color.MAGENTA)
-        val names = arrayOf("Verde", "Rojo", "Cian", "Amarillo", "Blanco", "Magenta")
-        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
-            .setTitle("Paleta").setItems(names) { _, which -> drawingView.setColor(colors[which]) }
+        val wheel = ColorWheelView(this)
+        val size = (240 * resources.displayMetrics.density).toInt()
+        val container = FrameLayout(this).apply {
+            setPadding(16, 16, 16, 8)
+            addView(wheel, FrameLayout.LayoutParams(size, size))
+        }
+        val dialog = AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Color del gráfico")
+            .setView(container)
+            .setPositiveButton("Aplicar", null)
+            .setNegativeButton("Cancelar", null)
             .create().apply {
                 window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
                 show()
             }
+        wheel.onColorChanged = { color -> drawingView.setColor(color) }
     }
 
     private fun saveTemplate() {

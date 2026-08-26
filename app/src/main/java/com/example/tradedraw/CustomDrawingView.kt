@@ -26,6 +26,7 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
 
     // Puntos pendientes para herramientas multi-punto (CHANNEL y TRIANGLE -> 3 toques)
     private val tapPoints = ArrayList<PointF>()
+    private var previewPoint: PointF? = null
     private var pendingLabelText = ""
 
     fun setLabelText(text: String) { this.pendingLabelText = text; invalidate() }
@@ -56,6 +57,7 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     fun setTool(tool: TradingTool) {
         this.currentTool = tool
         tapPoints.clear()
+        previewPoint = null
         currentShape = null
         if (tool != TradingTool.SELECT_TOUCH) deselectAll()
         invalidate()
@@ -120,6 +122,10 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
         for (i in tapPoints.indices) {
             val p = tapPoints[i]
             if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+            canvas.drawCircle(p.x, p.y, 8f, handlePaint)
+        }
+        previewPoint?.let { p ->
+            if (tapPoints.isNotEmpty()) path.lineTo(p.x, p.y)
             canvas.drawCircle(p.x, p.y, 8f, handlePaint)
         }
         canvas.drawPath(path, paint)
@@ -320,21 +326,19 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
         when (event.action) {
             MotionEvent.ACTION_MOVE -> {
                 // Preview: mostrar el punto en construcción siguiendo el dedo
-                if (tapPoints.isNotEmpty()) {
-                    tapPoints[tapPoints.size - 1] = PointF(x, y)
-                    invalidate()
-                }
+                if (tapPoints.isNotEmpty()) previewPoint = PointF(x, y)
+                invalidate()
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (tapPoints.isEmpty() || Math.abs(x - tapPoints.last().x) > 20 || Math.abs(y - tapPoints.last().y) > 20) {
-                    tapPoints.add(PointF(x, y))
-                }
+                tapPoints.add(PointF(x, y))
+                previewPoint = null
                 invalidate()
                 if (tapPoints.size >= requiredPoints(currentTool)) {
                     val shape = buildMultiPointShape()
                     if (shape != null) { shapes.add(shape); notifyShapesChange() }
                     tapPoints.clear()
+                    previewPoint = null
                     invalidate()
                 }
             }
