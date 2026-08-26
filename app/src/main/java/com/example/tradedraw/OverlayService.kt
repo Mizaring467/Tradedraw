@@ -240,7 +240,7 @@ class OverlayService : Service() {
         addItemToSubmenu(android.R.drawable.ic_menu_edit, "LAPIZ") { selectTool(TradingTool.FREE_BRUSH) }
         addItemToSubmenu(android.R.drawable.ic_menu_directions, "ELEGIR") { selectTool(TradingTool.SELECT_TOUCH) }
         addItemToSubmenu(R.drawable.ic_measure, "MEDIR") { selectTool(TradingTool.MEASURE) }
-        addItemToSubmenu(android.R.drawable.ic_menu_compose, "TEXTO") { selectTool(TradingTool.TEXT_LABEL) }
+        addItemToSubmenu(android.R.drawable.ic_menu_edit, "TEXTO") { selectTool(TradingTool.TEXT_LABEL) }
         addItemToSubmenu(android.R.drawable.ic_menu_close_clear_cancel, "BORRAR") { selectTool(TradingTool.ERASER_TOUCH) }
         addItemToSubmenu(android.R.drawable.ic_menu_delete, "LIMPIAR", Color.RED) {
             confirmClearAll()
