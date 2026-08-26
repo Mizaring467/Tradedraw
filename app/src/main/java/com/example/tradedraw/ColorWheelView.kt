@@ -37,7 +37,7 @@ class ColorWheelView(context: Context) : View(context) {
         radius = min(width, height) * 0.43f
         if (radius <= 0f) return
 
-        wheelPaint.shader = SweepGradient(centerX, centerY, floatArrayOf(
+        wheelPaint.shader = SweepGradient(centerX, centerY, intArrayOf(
             Color.RED, Color.YELLOW, Color.GREEN, Color.CYAN,
             Color.BLUE, Color.MAGENTA, Color.RED
         ), null)
