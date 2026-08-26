@@ -24,11 +24,24 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     private var currentShape: DrawShape? = null
     private var selectedShape: DrawShape? = null
 
+    // Puntos pendientes para herramientas multi-punto (CHANNEL y TRIANGLE -> 3 toques)
+    private val tapPoints = ArrayList<PointF>()
+    private var pendingLabelText = ""
+
+    fun setLabelText(text: String) { this.pendingLabelText = text; invalidate() }
+
     var onShapesChange: (() -> Unit)? = null
 
     private fun notifyShapesChange() { onShapesChange?.invoke() }
+
+    private fun requiredPoints(tool: TradingTool): Int = when (tool) {
+        TradingTool.TRIANGLE, TradingTool.CHANNEL -> 3
+        else -> 0
+    }
+
+    private fun isMultiPointTool(tool: TradingTool): Boolean = requiredPoints(tool) > 0
     
-    private enum class DragMode { NONE, START, END, BODY }
+    private enum class DragMode { NONE, START, END, THIRD, BODY }
     private var dragMode = DragMode.NONE
     private var lastX = 0f
     private var lastY = 0f
@@ -42,6 +55,8 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
 
     fun setTool(tool: TradingTool) {
         this.currentTool = tool
+        tapPoints.clear()
+        currentShape = null
         if (tool != TradingTool.SELECT_TOUCH) deselectAll()
         invalidate()
     }
@@ -91,6 +106,23 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
             if (shape.isSelected) drawHandles(canvas, shape)
         }
         currentShape?.let { drawGenericShape(canvas, it) }
+        drawPendingMultiPointPreview(canvas)
+    }
+
+    private fun drawPendingMultiPointPreview(canvas: Canvas) {
+        if (!isMultiPointTool(currentTool) || tapPoints.isEmpty()) return
+        val paint = Paint().apply {
+            color = activeDrawingColor; strokeWidth = currentStrokeWidth; isAntiAlias = true
+            style = Paint.Style.STROKE; strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND
+            pathEffect = DashPathEffect(floatArrayOf(12f, 12f), 0f)
+        }
+        val path = Path()
+        for (i in tapPoints.indices) {
+            val p = tapPoints[i]
+            if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+            canvas.drawCircle(p.x, p.y, 8f, handlePaint)
+        }
+        canvas.drawPath(path, paint)
     }
 
     private fun drawHandles(canvas: Canvas, shape: DrawShape) {
@@ -106,6 +138,10 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
             canvas.drawCircle(shape.startX, shape.startY, radius, handleStrokePaint)
             canvas.drawCircle(shape.endX, shape.endY, radius, handlePaint)
             canvas.drawCircle(shape.endX, shape.endY, radius, handleStrokePaint)
+            if (shape.tool == TradingTool.TRIANGLE || shape.tool == TradingTool.CHANNEL) {
+                canvas.drawCircle(shape.thirdX, shape.thirdY, radius, handlePaint)
+                canvas.drawCircle(shape.thirdX, shape.thirdY, radius, handleStrokePaint)
+            }
         }
     }
 
@@ -129,8 +165,70 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
             TradingTool.FIB_RETRACEMENT -> drawFibonacci(canvas, shape, paint)
             TradingTool.LONG_POSITION -> drawPosition(canvas, shape, isLong = true)
             TradingTool.SHORT_POSITION -> drawPosition(canvas, shape, isLong = false)
+            TradingTool.HORIZONTAL_LINE -> canvas.drawLine(0f, shape.startY, width.toFloat(), shape.startY, paint)
+            TradingTool.VERTICAL_LINE -> canvas.drawLine(shape.startX, 0f, shape.startX, height.toFloat(), paint)
+            TradingTool.RAY -> drawRay(canvas, shape, paint)
+            TradingTool.MEASURE -> drawMeasure(canvas, shape, paint)
+            TradingTool.TEXT_LABEL -> canvas.drawText(shape.text.ifEmpty { "TEXTO" }, shape.startX, shape.startY, textPaint)
+            TradingTool.CIRCLE -> drawCircleTool(canvas, shape, paint)
+            TradingTool.TRIANGLE -> drawTriangle(canvas, shape, paint)
+            TradingTool.ZONE -> drawZone(canvas, shape, paint)
+            TradingTool.CHANNEL -> drawChannel(canvas, shape, paint)
             else -> {}
         }
+    }
+
+    private fun drawRay(canvas: Canvas, shape: DrawShape, paint: Paint) {
+        val dx = shape.endX - shape.startX
+        val dy = shape.endY - shape.startY
+        if (dx == 0f && dy == 0f) return
+        // Extender la línea mucho más allá del punto final para ir 'hasta el borde'
+        val scale = Math.max(width, height) * 3f
+        val endX = shape.endX + dx * scale
+        val endY = shape.endY + dy * scale
+        canvas.drawLine(shape.startX, shape.startY, endX, endY, paint)
+    }
+
+    private fun drawMeasure(canvas: Canvas, shape: DrawShape, paint: Paint) {
+        canvas.drawLine(shape.startX, shape.startY, shape.endX, shape.endY, paint)
+        val dX = Math.abs(shape.endX - shape.startX).toInt()
+        val dY = Math.abs(shape.endY - shape.startY).toInt()
+        val pctH = if (height > 0) (Math.abs(shape.endY - shape.startY) / height.toFloat() * 100).toInt() else 0
+        canvas.drawText("ΔX ${dX}px · ΔY ${dY}px · ${pctH}%", (shape.startX + shape.endX) / 2, (shape.startY + shape.endY) / 2, textPaint)
+    }
+
+    private fun drawCircleTool(canvas: Canvas, shape: DrawShape, paint: Paint) {
+        val centerX = shape.startX; val centerY = shape.startY
+        val r = Math.sqrt((shape.endX - centerX) * (shape.endX - centerX) + (shape.endY - centerY) * (shape.endY - centerY).toDouble()).toFloat()
+        canvas.drawCircle(centerX, centerY, r, paint)
+    }
+
+    private fun drawTriangle(canvas: Canvas, shape: DrawShape, paint: Paint) {
+        val path = Path()
+        path.moveTo(shape.startX, shape.startY)
+        path.lineTo(shape.endX, shape.endY)
+        path.lineTo(shape.thirdX, shape.thirdY)
+        path.close()
+        canvas.drawPath(path, paint)
+    }
+
+    private fun drawZone(canvas: Canvas, shape: DrawShape, paint: Paint) {
+        val l = Math.min(shape.startX, shape.endX); val r = Math.max(shape.startX, shape.endX)
+        val t = Math.min(shape.startY, shape.endY); val b = Math.max(shape.startY, shape.endY)
+        val fill = Paint(paint).apply { style = Paint.Style.FILL; color = (paint.color and 0x00FFFFFF) or 0x40000000.toInt() }
+        canvas.drawRect(l, t, r, b, fill)
+        canvas.drawRect(l, t, r, b, paint)
+    }
+
+    private fun drawChannel(canvas: Canvas, shape: DrawShape, paint: Paint) {
+        // Línea base A(0)->B(1)
+        canvas.drawLine(shape.startX, shape.startY, shape.endX, shape.endY, paint)
+        // Línea paralela pasando por C(2): mover el vector (B-A) a C
+        val dx = shape.endX - shape.startX
+        val dy = shape.endY - shape.startY
+        val p2x = shape.thirdX - dx
+        val p2y = shape.thirdY - dy
+        canvas.drawLine(shape.thirdX, shape.thirdY, p2x, p2y, paint)
     }
 
     private fun drawFibonacci(canvas: Canvas, shape: DrawShape, paint: Paint) {
@@ -164,6 +262,11 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isCanvasVisible) return false
         val x = event.x; val y = event.y
+
+        if (isMultiPointTool(currentTool)) {
+            return handleMultiPointTouch(event, x, y)
+        }
+
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 if (handleAutoSelection(x, y)) {
@@ -181,6 +284,7 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
                     }
                     currentShape = DrawShape(currentTool, x, y, x, y, color = colorToUse, strokeWidth = currentStrokeWidth)
                     if (currentTool == TradingTool.FREE_BRUSH) currentShape?.pathPoints?.add(PointF(x, y))
+                    if (currentTool == TradingTool.TEXT_LABEL) currentShape?.text = pendingLabelText
                 }
             }
             MotionEvent.ACTION_MOVE -> {
@@ -208,12 +312,64 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
         invalidate(); return true
     }
 
+    /**
+     * Manejo de herramientas multi-punto (CHANNEL, TRIANGLE): toca por punto.
+     * Cada toque (ACTION_UP) añade un punto; con los puntos necesarios se crea la figura.
+     */
+    private fun handleMultiPointTouch(event: MotionEvent, x: Float, y: Float): Boolean {
+        when (event.action) {
+            MotionEvent.ACTION_MOVE -> {
+                // Preview: mostrar el punto en construcción siguiendo el dedo
+                if (tapPoints.isNotEmpty()) {
+                    tapPoints[tapPoints.size - 1] = PointF(x, y)
+                    invalidate()
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                if (tapPoints.isEmpty() || Math.abs(x - tapPoints.last().x) > 20 || Math.abs(y - tapPoints.last().y) > 20) {
+                    tapPoints.add(PointF(x, y))
+                }
+                invalidate()
+                if (tapPoints.size >= requiredPoints(currentTool)) {
+                    val shape = buildMultiPointShape()
+                    if (shape != null) { shapes.add(shape); notifyShapesChange() }
+                    tapPoints.clear()
+                    invalidate()
+                }
+            }
+        }
+        lastX = x; lastY = y
+        return true
+    }
+
+    private fun buildMultiPointShape(): DrawShape? {
+        if (tapPoints.isEmpty()) return null
+        val colorToUse = when (currentTool) {
+            TradingTool.SUPPORT_LINE -> Color.RED
+            TradingTool.RESISTANCE_LINE -> Color.GREEN
+            else -> activeDrawingColor
+        }
+        val p0 = tapPoints[0]
+        val p1 = if (tapPoints.size > 1) tapPoints[1] else p0
+        val p2 = if (tapPoints.size > 2) tapPoints[2] else p1
+        return DrawShape(
+            tool = currentTool,
+            startX = p0.x, startY = p0.y,
+            endX = p1.x, endY = p1.y,
+            thirdX = p2.x, thirdY = p2.y,
+            color = colorToUse,
+            strokeWidth = currentStrokeWidth
+        )
+    }
+
     private fun handleAutoSelection(x: Float, y: Float): Boolean {
         // 1. Probar nodos del objeto ya seleccionado para Redimensionar
         selectedShape?.let { s ->
             if (s.tool != TradingTool.FREE_BRUSH) {
                 if (isNear(x, y, s.startX, s.startY)) { dragMode = DragMode.START; return true }
                 if (isNear(x, y, s.endX, s.endY)) { dragMode = DragMode.END; return true }
+                if ((s.tool == TradingTool.TRIANGLE || s.tool == TradingTool.CHANNEL) && isNear(x, y, s.thirdX, s.thirdY)) { dragMode = DragMode.THIRD; return true }
             }
             // Probar cuerpo para Mover
             if (isHit(x, y, s)) { dragMode = DragMode.BODY; return true }
@@ -241,9 +397,14 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
             when (dragMode) {
                 DragMode.START -> { s.startX = x; s.startY = y }
                 DragMode.END -> { s.endX = x; s.endY = y }
+                DragMode.THIRD -> { s.thirdX = x; s.thirdY = y }
                 DragMode.BODY -> {
                     if (s.tool == TradingTool.FREE_BRUSH) s.pathPoints.forEach { it.x += dx; it.y += dy }
-                    else { s.startX += dx; s.startY += dy; s.endX += dx; s.endY += dy }
+                    else {
+                        s.startX += dx; s.startY += dy
+                        s.endX += dx; s.endY += dy
+                        if (s.tool == TradingTool.TRIANGLE || s.tool == TradingTool.CHANNEL) { s.thirdX += dx; s.thirdY += dy }
+                    }
                 }
                 DragMode.NONE -> {}
             }
@@ -268,14 +429,24 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
         val t = 60f
         return when (s.tool) {
             TradingTool.FREE_BRUSH -> { val b = RectF(); s.createPath().computeBounds(b, true); b.inset(-t, -t); b.contains(x, y) }
-            TradingTool.TREND_LINE -> distToSegment(x, y, s.startX, s.startY, s.endX, s.endY) < t
-            TradingTool.SUPPORT_LINE, TradingTool.RESISTANCE_LINE -> Math.abs(y - s.startY) < t
+            TradingTool.TREND_LINE, TradingTool.RAY -> distToSegment(x, y, s.startX, s.startY, s.endX, s.endY) < t
+            TradingTool.SUPPORT_LINE, TradingTool.RESISTANCE_LINE, TradingTool.HORIZONTAL_LINE -> Math.abs(y - s.startY) < t
+            TradingTool.VERTICAL_LINE -> Math.abs(x - s.startX) < t
             TradingTool.FIB_RETRACEMENT -> y in (Math.min(s.startY, s.endY) - t)..(Math.max(s.startY, s.endY) + t)
-            TradingTool.RECTANGLE, TradingTool.LONG_POSITION, TradingTool.SHORT_POSITION -> {
+            TradingTool.RECTANGLE, TradingTool.LONG_POSITION, TradingTool.SHORT_POSITION, TradingTool.ZONE -> {
                 val l = Math.min(s.startX, s.endX) - t; val r = Math.max(s.startX, s.endX) + t
                 val m = s.startY; val d = Math.abs(s.endY - s.startY)
                 x in l..r && y in (m - d - t)..(m + d + t)
             }
+            TradingTool.CIRCLE -> {
+                val r = Math.sqrt((s.endX - s.startX) * (s.endX - s.startX) + (s.endY - s.startY) * (s.endY - s.startY).toDouble()).toFloat()
+                Math.abs(Math.sqrt((x - s.startX) * (x - s.startX) + (y - s.startY) * (y - s.startY).toDouble()).toFloat() - r) < t
+            }
+            TradingTool.TRIANGLE, TradingTool.CHANNEL ->
+                distToSegment(x, y, s.startX, s.startY, s.endX, s.endY) < t ||
+                distToSegment(x, y, s.endX, s.endY, s.thirdX, s.thirdY) < t ||
+                distToSegment(x, y, s.thirdX, s.thirdY, s.startX, s.startY) < t
+            TradingTool.MEASURE -> distToSegment(x, y, s.startX, s.startY, s.endX, s.endY) < t
             else -> isNear(x, y, s.startX, s.startY) || isNear(x, y, s.endX, s.endY)
         }
     }

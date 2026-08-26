@@ -19,5 +19,9 @@ enum class TradingTool {
     VERTICAL_LINE,
     RAY,
     MEASURE,
-    TEXT_LABEL
+    TEXT_LABEL,
+    CIRCLE,
+    TRIANGLE,
+    ZONE,
+    CHANNEL
 }

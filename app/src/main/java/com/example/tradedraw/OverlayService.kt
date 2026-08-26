@@ -239,6 +239,8 @@ class OverlayService : Service() {
         prepareSubmenu()
         addItemToSubmenu(android.R.drawable.ic_menu_edit, "LAPIZ") { selectTool(TradingTool.FREE_BRUSH) }
         addItemToSubmenu(android.R.drawable.ic_menu_directions, "ELEGIR") { selectTool(TradingTool.SELECT_TOUCH) }
+        addItemToSubmenu(R.drawable.ic_measure, "MEDIR") { selectTool(TradingTool.MEASURE) }
+        addItemToSubmenu(android.R.drawable.ic_menu_compose, "TEXTO") { selectTool(TradingTool.TEXT_LABEL) }
         addItemToSubmenu(android.R.drawable.ic_menu_close_clear_cancel, "BORRAR") { selectTool(TradingTool.ERASER_TOUCH) }
         addItemToSubmenu(android.R.drawable.ic_menu_delete, "LIMPIAR", Color.RED) {
             confirmClearAll()
@@ -260,6 +262,10 @@ class OverlayService : Service() {
     private fun showLinesSubmenu() {
         prepareSubmenu()
         addItemToSubmenu(R.drawable.ic_trend_line, "LÍNEA") { selectTool(TradingTool.TREND_LINE) }
+        addItemToSubmenu(R.drawable.ic_ray, "RAYO") { selectTool(TradingTool.RAY) }
+        addItemToSubmenu(R.drawable.ic_horizontal_line, "HORIZ") { selectTool(TradingTool.HORIZONTAL_LINE) }
+        addItemToSubmenu(R.drawable.ic_vertical_line, "VERT") { selectTool(TradingTool.VERTICAL_LINE) }
+        addItemToSubmenu(R.drawable.ic_channel, "CANAL") { selectTool(TradingTool.CHANNEL) }
         addItemToSubmenu(android.R.drawable.ic_menu_more, "SOPORT", Color.RED) { selectTool(TradingTool.SUPPORT_LINE) }
         addItemToSubmenu(android.R.drawable.ic_menu_more, "RESIST", Color.GREEN) { selectTool(TradingTool.RESISTANCE_LINE) }
         addItemToSubmenu(android.R.drawable.ic_menu_sort_by_size, "FIBO") { selectTool(TradingTool.FIB_RETRACEMENT) }
@@ -268,6 +274,9 @@ class OverlayService : Service() {
     private fun showShapesSubmenu() {
         prepareSubmenu()
         addItemToSubmenu(android.R.drawable.ic_menu_crop, "ZONA") { selectTool(TradingTool.RECTANGLE) }
+        addItemToSubmenu(R.drawable.ic_zone, "Z-FILL") { selectTool(TradingTool.ZONE) }
+        addItemToSubmenu(R.drawable.ic_circle, "CIRCULO") { selectTool(TradingTool.CIRCLE) }
+        addItemToSubmenu(R.drawable.ic_triangle, "TRIANG") { selectTool(TradingTool.TRIANGLE) }
         addItemToSubmenu(android.R.drawable.ic_input_add, "LONG", Color.GREEN) { selectTool(TradingTool.LONG_POSITION) }
         addItemToSubmenu(android.R.drawable.ic_delete, "SHORT", Color.RED) { selectTool(TradingTool.SHORT_POSITION) }
     }
@@ -297,8 +306,33 @@ class OverlayService : Service() {
     }
 
     private fun selectTool(tool: TradingTool) {
+        if (tool == TradingTool.TEXT_LABEL) {
+            promptLabelText()
+            return
+        }
         drawingView.setTool(tool)
         if (!isDrawingMode) toggleLock()
+    }
+
+    private fun promptLabelText() {
+        val input = android.widget.EditText(this).apply {
+            hint = "Escribe la etiqueta..."
+            setTextColor(android.graphics.Color.WHITE)
+            setHintTextColor(android.graphics.Color.GRAY)
+        }
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Texto / Etiqueta")
+            .setView(input)
+            .setPositiveButton("OK") { _, _ ->
+                drawingView.setLabelText(input.text.toString())
+                drawingView.setTool(TradingTool.TEXT_LABEL)
+                if (!isDrawingMode) toggleLock()
+            }
+            .setNegativeButton("Cancelar", null)
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
     }
 
     private fun toggleLock() {
