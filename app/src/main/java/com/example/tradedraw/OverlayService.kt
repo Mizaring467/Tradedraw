@@ -41,6 +41,9 @@ class OverlayService : Service() {
     
     private lateinit var templateManager: TemplateManager
 
+    private var screenCaptureManager: ScreenCaptureManager? = null
+    private val aiController = AIController()
+
     private var isMenuExpanded = false
     private var isDrawingMode = false
     private var currentActiveCategory: Int = -1
@@ -52,6 +55,19 @@ class OverlayService : Service() {
         if (intent?.action == ACTION_STOP) {
             stopSelf()
             return START_NOT_STICKY
+        }
+
+        // Recuperar intent de screen capture aquí si está disponible y si no lo hemos hecho aún
+        if (screenCaptureManager == null) {
+            val dataIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent?.getParcelableExtra("EXTRA_MEDIA_PROJECTION_DATA", Intent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent?.getParcelableExtra("EXTRA_MEDIA_PROJECTION_DATA") as Intent?
+            }
+            if (dataIntent != null) {
+                screenCaptureManager = ScreenCaptureManager(this, dataIntent)
+            }
         }
         return START_STICKY
     }
@@ -127,6 +143,7 @@ class OverlayService : Service() {
         menuView.findViewById<View>(R.id.btn_cat_lines).setOnClickListener { handleCategoryClick(2) { showLinesSubmenu() } }
         menuView.findViewById<View>(R.id.btn_cat_shapes).setOnClickListener { handleCategoryClick(3) { showShapesSubmenu() } }
         menuView.findViewById<View>(R.id.btn_cat_files).setOnClickListener { handleCategoryClick(4) { showFilesSubmenu() } }
+        menuView.findViewById<View>(R.id.btn_cat_ai)?.setOnClickListener { handleCategoryClick(5) { showAISubmenu() } }
 
         // ACCIONES DIRECTAS
         menuView.findViewById<View>(R.id.btn_undo_direct).setOnClickListener { drawingView.undo() }
@@ -286,6 +303,37 @@ class OverlayService : Service() {
         addItemToSubmenu(android.R.drawable.ic_menu_save, "SAVE") { saveTemplate() }
         addItemToSubmenu(android.R.drawable.ic_menu_recent_history, "LOAD") { loadTemplate() }
         addItemToSubmenu(android.R.drawable.ic_menu_share, "EXPORT") { shareTemplate() }
+    }
+
+    private fun showAISubmenu() {
+        prepareSubmenu()
+        val isAiActive = aiController.isAutoTradingEnabled()
+
+        val icon = if (isAiActive) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        val text = if (isAiActive) "STOP IA" else "START IA"
+        val color = if (isAiActive) Color.RED else Color.GREEN
+
+        addItemToSubmenu(icon, text, color) {
+            if (isAiActive) {
+                aiController.toggleAutoTrade(false)
+                // En vez de destruir la captura por completo y perder el Token,
+                // paramos solo de procesar frames en la IA,
+                // la proyección se destruye al destruir el servicio
+                Toast.makeText(this, "IA Detenida", Toast.LENGTH_SHORT).show()
+            } else {
+                if (screenCaptureManager != null) {
+                    aiController.toggleAutoTrade(true)
+                    // Si ya está capturando ignora el inicio de captura
+                    screenCaptureManager?.startCapture { bitmap ->
+                        aiController.onNewFrame(bitmap)
+                    }
+                    Toast.makeText(this, "IA Iniciada", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Sin permisos de captura. Por favor, reinicia TradeDraw.", Toast.LENGTH_LONG).show()
+                }
+            }
+            showAISubmenu() // Refrescar menú
+        }
     }
 
     private fun prepareSubmenu() {
@@ -454,6 +502,8 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        screenCaptureManager?.stopCapture()
+        aiController.toggleAutoTrade(false)
         mainHandler.removeCallbacksAndMessages(null)
         try {
             if (::canvasView.isInitialized) windowManager.removeView(canvasView)

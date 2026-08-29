@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.media.projection.MediaProjectionManager
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -12,6 +13,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.example.tradedraw.R
 
 class MainActivity : AppCompatActivity() {
+    private val REQUEST_MEDIA_PROJECTION = 100
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -51,13 +53,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startFloatingService() {
-        val intent = Intent(this, OverlayService::class.java)
+        // Solicitamos permiso para grabar la pantalla antes de iniciar el servicio
+        val mediaProjectionManager = getSystemService(android.content.Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        startActivityForResult(mediaProjectionManager.createScreenCaptureIntent(), REQUEST_MEDIA_PROJECTION)
+    }
+
+    private fun launchService(data: Intent) {
+        val intent = Intent(this, OverlayService::class.java).apply {
+            putExtra("EXTRA_MEDIA_PROJECTION_DATA", data)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {
             startService(intent)
         }
-        Toast.makeText(this, "Overlay iniciado", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Overlay iniciado con ScreenCapture", Toast.LENGTH_SHORT).show()
     }
 
     @Deprecated("Deprecated in Java")
@@ -68,7 +78,15 @@ class MainActivity : AppCompatActivity() {
             if (checkOverlayPermission()) {
                 startFloatingService()
             } else {
-                Toast.makeText(this, "Permiso denegado", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Permiso overlay denegado", Toast.LENGTH_SHORT).show()
+            }
+        } else if (requestCode == REQUEST_MEDIA_PROJECTION) {
+            if (resultCode == RESULT_OK && data != null) {
+                launchService(data)
+            } else {
+                Toast.makeText(this, "Permiso de grabación de pantalla denegado", Toast.LENGTH_SHORT).show()
+                // Iniciamos igual el servicio sin captura? Para que la app original no se rompa
+                launchService(Intent())
             }
         }
     }
