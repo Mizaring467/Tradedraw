@@ -14,6 +14,7 @@ import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.*
 import android.widget.*
+import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
 
 /**
@@ -57,6 +58,9 @@ class OverlayService : Service() {
             return START_NOT_STICKY
         }
 
+        // Llamar a startForeground AQUI, antes de hacer nada con MediaProjection
+        startTradeDrawForeground()
+
         // Recuperar intent de screen capture aquí si está disponible y si no lo hemos hecho aún
         if (screenCaptureManager == null) {
             val dataIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -66,6 +70,8 @@ class OverlayService : Service() {
                 intent?.getParcelableExtra("EXTRA_MEDIA_PROJECTION_DATA") as Intent?
             }
             if (dataIntent != null) {
+                // IMPORTANTE: Android requiere que el servicio sea foreground de tipo mediaProjection
+                // ANTES de obtener el MediaProjection token. Ahora startTradeDrawForeground garantiza esto.
                 screenCaptureManager = ScreenCaptureManager(this, dataIntent)
             }
         }
@@ -79,7 +85,11 @@ class OverlayService : Service() {
         CrashLogger.showPending(this)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         templateManager = TemplateManager(this)
+
+        // En Android 8+ se requiere llamar a startForeground en menos de 5 segs de onCreate.
+        // Lo llamamos en onCreate como red de seguridad, y luego se re-ejecuta en onStartCommand.
         startTradeDrawForeground()
+
         setupCanvasWindow()
         setupMenuWindow()
         // Asegurar que el menú quede encima del lienzo desde el inicio
@@ -497,12 +507,19 @@ class OverlayService : Service() {
             .setContentTitle("TradeDraw Pro").setContentText("Interfaz profesional activa.").setSmallIcon(R.mipmap.ic_launcher)
             .addAction(0, "Cerrar", closePending)
             .setOngoing(true).build()
-        startForeground(1001, notification)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 14+ requiere especificar el flag de tipo de servicio para MediaProjection
+            val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            startForeground(1001, notification, type)
+        } else {
+            startForeground(1001, notification)
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        screenCaptureManager?.stopCapture()
+        screenCaptureManager?.destroy()
         aiController.toggleAutoTrade(false)
         mainHandler.removeCallbacksAndMessages(null)
         try {
