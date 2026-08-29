@@ -50,9 +50,9 @@ class AIController(private val context: Context) {
 
         framesAnalyzedCount++
 
-        if (framesAnalyzedCount % 5 == 0) {
-            // Feedback visual para que el usuario sepa que la app sí está haciendo algo
-            Toast.makeText(context, "IA: Analizando frame ($framesAnalyzedCount)...", Toast.LENGTH_SHORT).show()
+        if (framesAnalyzedCount == 1 || framesAnalyzedCount % 3 == 0) {
+            // Feedback visual más rápido para que el usuario sepa que la app sí está haciendo algo
+            Toast.makeText(context, "IA [OK]: Analizando frame ($framesAnalyzedCount)...", Toast.LENGTH_SHORT).show()
         }
 
         Log.d("AIController", "Analizando frame de ${bitmap.width}x${bitmap.height}...")
@@ -61,9 +61,9 @@ class AIController(private val context: Context) {
         // MOCK DE DECISIÓN DE LA IA:
         // ==============================================================
         val decision = Math.random()
-        if (decision > 0.95) { // 5% de probabilidad de comprar (Sube)
+        if (decision > 0.80) { // 20% de probabilidad de comprar (Sube)
              executeTrade(TradeAction.BUY)
-        } else if (decision < 0.05) { // 5% de probabilidad de vender (Baja)
+        } else if (decision < 0.20) { // 20% de probabilidad de vender (Baja)
              executeTrade(TradeAction.SELL)
         }
     }

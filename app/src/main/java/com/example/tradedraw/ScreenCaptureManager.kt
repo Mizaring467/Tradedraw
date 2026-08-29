@@ -16,6 +16,7 @@ import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
+import android.widget.Toast
 import java.nio.ByteBuffer
 
 class ScreenCaptureManager(private val context: Context, private val intent: Intent) {
@@ -42,9 +43,11 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
             if (mediaProjection != null) {
                 setupVirtualDisplay()
             } else {
+                Toast.makeText(context, "Error: MediaProjection NULA", Toast.LENGTH_LONG).show()
                 Log.e("ScreenCaptureManager", "MediaProjection es nula al inicializar.")
             }
         } catch (e: Exception) {
+            Toast.makeText(context, "Error en captura: ${e.message}", Toast.LENGTH_LONG).show()
             Log.e("ScreenCaptureManager", "Error al inicializar MediaProjection", e)
         }
     }
@@ -104,12 +107,16 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
                     val rowPadding = rowStride - pixelStride * width
 
                     val bitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888)
+                    buffer.rewind()
                     bitmap.copyPixelsFromBuffer(buffer)
 
                     val croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height)
                     onImageCapturedCallback?.invoke(croppedBitmap)
                 }
             } catch (e: Exception) {
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, "Fallo al procesar frame: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
                 Log.e("ScreenCaptureManager", "Error capturando pantalla", e)
             } finally {
                 image.close()
