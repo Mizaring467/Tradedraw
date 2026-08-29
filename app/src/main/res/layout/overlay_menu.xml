@@ -91,6 +91,15 @@
                     android:background="?android:attr/selectableItemBackground"
                     android:contentDescription="Plantillas" />
 
+                <ImageButton
+                    android:id="@+id/btn_cat_ai"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@android:drawable/ic_menu_camera"
+                    app:tint="#FFFF00"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:contentDescription="IA / AutoTrade" />
+
                 <View
                     android:layout_width="40dp"
                     android:layout_height="1dp"

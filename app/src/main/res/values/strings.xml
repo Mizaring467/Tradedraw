@@ -1,3 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TradeDraw</string>
+    <string name="accessibility_service_description">Servicio utilizado por TradeDraw para automatizar las operaciones de trading mediante IA.</string>
 </resources>
