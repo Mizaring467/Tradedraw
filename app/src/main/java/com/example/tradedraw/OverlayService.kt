@@ -14,6 +14,7 @@ import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.*
 import android.widget.*
+import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
 
 /**
@@ -497,7 +498,14 @@ class OverlayService : Service() {
             .setContentTitle("TradeDraw Pro").setContentText("Interfaz profesional activa.").setSmallIcon(R.mipmap.ic_launcher)
             .addAction(0, "Cerrar", closePending)
             .setOngoing(true).build()
-        startForeground(1001, notification)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 14+ requiere especificar el flag de tipo de servicio para MediaProjection
+            val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            startForeground(1001, notification, type)
+        } else {
+            startForeground(1001, notification)
+        }
     }
 
     override fun onDestroy() {
