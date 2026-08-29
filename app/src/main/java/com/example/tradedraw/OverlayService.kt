@@ -43,7 +43,7 @@ class OverlayService : Service() {
     private lateinit var templateManager: TemplateManager
 
     private var screenCaptureManager: ScreenCaptureManager? = null
-    private val aiController = AIController()
+    private lateinit var aiController: AIController
 
     private var isMenuExpanded = false
     private var isDrawingMode = false
@@ -85,6 +85,7 @@ class OverlayService : Service() {
         CrashLogger.showPending(this)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         templateManager = TemplateManager(this)
+        aiController = AIController(this)
 
         // En Android 8+ se requiere llamar a startForeground en menos de 5 segs de onCreate.
         // Lo llamamos en onCreate como red de seguridad, y luego se re-ejecuta en onStartCommand.
