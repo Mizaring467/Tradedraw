@@ -58,6 +58,9 @@ class OverlayService : Service() {
             return START_NOT_STICKY
         }
 
+        // Llamar a startForeground AQUI, antes de hacer nada con MediaProjection
+        startTradeDrawForeground()
+
         // Recuperar intent de screen capture aquí si está disponible y si no lo hemos hecho aún
         if (screenCaptureManager == null) {
             val dataIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -67,6 +70,8 @@ class OverlayService : Service() {
                 intent?.getParcelableExtra("EXTRA_MEDIA_PROJECTION_DATA") as Intent?
             }
             if (dataIntent != null) {
+                // IMPORTANTE: Android requiere que el servicio sea foreground de tipo mediaProjection
+                // ANTES de obtener el MediaProjection token. Ahora startTradeDrawForeground garantiza esto.
                 screenCaptureManager = ScreenCaptureManager(this, dataIntent)
             }
         }
@@ -80,7 +85,11 @@ class OverlayService : Service() {
         CrashLogger.showPending(this)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         templateManager = TemplateManager(this)
+
+        // En Android 8+ se requiere llamar a startForeground en menos de 5 segs de onCreate.
+        // Lo llamamos en onCreate como red de seguridad, y luego se re-ejecuta en onStartCommand.
         startTradeDrawForeground()
+
         setupCanvasWindow()
         setupMenuWindow()
         // Asegurar que el menú quede encima del lienzo desde el inicio
