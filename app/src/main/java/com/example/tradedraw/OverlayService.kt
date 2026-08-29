@@ -510,7 +510,7 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        screenCaptureManager?.stopCapture()
+        screenCaptureManager?.destroy()
         aiController.toggleAutoTrade(false)
         mainHandler.removeCallbacksAndMessages(null)
         try {
