@@ -10,6 +10,7 @@ import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.example.tradedraw.R
 
 class MainActivity : AppCompatActivity() {
@@ -62,11 +63,7 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, OverlayService::class.java).apply {
             putExtra("EXTRA_MEDIA_PROJECTION_DATA", data)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
+        ContextCompat.startForegroundService(this, intent)
         Toast.makeText(this, "Overlay iniciado con ScreenCapture", Toast.LENGTH_SHORT).show()
     }
 
