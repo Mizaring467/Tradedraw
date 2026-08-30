@@ -32,6 +32,8 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
     private val handler = Handler(Looper.getMainLooper())
     private var isCapturing = false
     private var onImageCapturedCallback: ((Bitmap) -> Unit)? = null
+    var latestFrame: Bitmap? = null
+        private set
 
     init {
         try {
@@ -107,6 +109,7 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
                     bitmap.copyPixelsFromBuffer(buffer)
 
                     val croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height)
+                    latestFrame = croppedBitmap
                     onImageCapturedCallback?.invoke(croppedBitmap)
                 }
             } catch (e: Exception) {

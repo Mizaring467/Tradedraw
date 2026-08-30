@@ -11,6 +11,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     companion object {
         var instance: AutoTradeAccessibilityService? = null
             private set
+        var onGestureClickListener: ((Float, Float) -> Unit)? = null
     }
 
     override fun onServiceConnected() {
@@ -49,6 +50,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 Log.d("TradeDraw", "Click at ($x, $y) completed")
+                onGestureClickListener?.invoke(x, y)
             }
 
             override fun onCancelled(gestureDescription: GestureDescription?) {

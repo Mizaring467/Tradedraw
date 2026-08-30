@@ -43,7 +43,16 @@ class OverlayService : Service() {
     private lateinit var templateManager: TemplateManager
 
     private var screenCaptureManager: ScreenCaptureManager? = null
-    private lateinit var aiController: AIController
+    lateinit var riskManager: RiskManager
+        private set
+    lateinit var calibrationManager: CalibrationManager
+        private set
+    lateinit var tradingEngine: TradingEngine
+        private set
+
+    private var hudView: View? = null
+    private var hudParams: WindowManager.LayoutParams? = null
+    private var isHudVisible = false
 
     private var isMenuExpanded = false
     private var isDrawingMode = false
@@ -85,15 +94,23 @@ class OverlayService : Service() {
         CrashLogger.showPending(this)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         templateManager = TemplateManager(this)
-        aiController = AIController(this)
 
-        // En Android 8+ se requiere llamar a startForeground en menos de 5 segs de onCreate.
-        // Lo llamamos en onCreate como red de seguridad, y luego se re-ejecuta en onStartCommand.
         startTradeDrawForeground()
-
         setupCanvasWindow()
+
+        riskManager = RiskManager(this)
+        calibrationManager = CalibrationManager(this)
+        tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager)
+
+        AutoTradeAccessibilityService.onGestureClickListener = { x, y ->
+            drawingView.triggerClickAnimation(x, y)
+        }
+
+        tradingEngine.onSignalListener = { _, _ -> updateHUDView() }
+        tradingEngine.onTradeExecutedListener = { _, _ -> updateHUDView() }
+
         setupMenuWindow()
-        // Asegurar que el menú quede encima del lienzo desde el inicio
+        setupHUDWindow()
         bringMenuToFront()
     }
 
@@ -318,32 +335,270 @@ class OverlayService : Service() {
 
     private fun showAISubmenu() {
         prepareSubmenu()
-        val isAiActive = aiController.isAutoTradingEnabled()
+        val currentMode = tradingEngine.mode
+        val (modeIcon, modeText, modeColor) = when (currentMode) {
+            AutoTradeMode.AUTONOMOUS -> Triple(android.R.drawable.ic_media_play, "AUTÓNOMO", Color.GREEN)
+            AutoTradeMode.SEMIAUTOMATIC -> Triple(android.R.drawable.ic_popup_sync, "SEMIAUTO", Color.YELLOW)
+            AutoTradeMode.DISABLED -> Triple(android.R.drawable.ic_media_pause, "MODO: OFF", Color.WHITE)
+        }
 
-        val icon = if (isAiActive) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
-        val text = if (isAiActive) "STOP IA" else "START IA"
-        val color = if (isAiActive) Color.RED else Color.GREEN
+        addItemToSubmenu(modeIcon, modeText, modeColor) {
+            showModeDialog()
+        }
 
-        addItemToSubmenu(icon, text, color) {
-            if (isAiActive) {
-                aiController.toggleAutoTrade(false)
-                // En vez de destruir la captura por completo y perder el Token,
-                // paramos solo de procesar frames en la IA,
-                // la proyección se destruye al destruir el servicio
-                Toast.makeText(this, "IA Detenida", Toast.LENGTH_SHORT).show()
+        addItemToSubmenu(android.R.drawable.ic_menu_sort_by_size, "ESTRAT", Color.CYAN) {
+            showStrategyDialog()
+        }
+
+        addItemToSubmenu(android.R.drawable.ic_menu_myplaces, "CALIBRAR", Color.MAGENTA) {
+            calibrationManager.startInteractiveCalibration {
+                Toast.makeText(this, "Calibración guardada", Toast.LENGTH_SHORT).show()
+                showAISubmenu()
+            }
+        }
+
+        addItemToSubmenu(android.R.drawable.ic_menu_preferences, "RIESGO", Color.parseColor("#fb923c")) {
+            showRiskConfigDialog()
+        }
+
+        val hudIcon = if (isHudVisible) R.drawable.ic_visibility else R.drawable.ic_visibility_off
+        addItemToSubmenu(hudIcon, if (isHudVisible) "HUD: ON" else "HUD: OFF") {
+            toggleHUDVisibility()
+            showAISubmenu()
+        }
+    }
+
+    private fun showModeDialog() {
+        val modes = arrayOf("🟢 Modo Autónomo (Bot opera solo)", "🟡 Modo Semiautomático (Bot te avisa y dibuja)", "⚪ Desactivado (Manual)")
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Modo de Trading")
+            .setItems(modes) { _, which ->
+                when (which) {
+                    0 -> setTradingMode(AutoTradeMode.AUTONOMOUS)
+                    1 -> setTradingMode(AutoTradeMode.SEMIAUTOMATIC)
+                    2 -> setTradingMode(AutoTradeMode.DISABLED)
+                }
+                showAISubmenu()
+            }
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun setTradingMode(newMode: AutoTradeMode) {
+        tradingEngine.mode = newMode
+        if (newMode != AutoTradeMode.DISABLED) {
+            if (screenCaptureManager != null) {
+                screenCaptureManager?.startCapture { bitmap ->
+                    tradingEngine.onNewFrame(bitmap)
+                }
+                Toast.makeText(this, "Modo: ${newMode.name}", Toast.LENGTH_SHORT).show()
             } else {
-                if (screenCaptureManager != null) {
-                    aiController.toggleAutoTrade(true)
-                    // Si ya está capturando ignora el inicio de captura
-                    screenCaptureManager?.startCapture { bitmap ->
-                        aiController.onNewFrame(bitmap)
+                Toast.makeText(this, "Sin permisos de captura. Reinicia TradeDraw.", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            tradingEngine.stop()
+            Toast.makeText(this, "Trading detenido", Toast.LENGTH_SHORT).show()
+        }
+        updateHUDView()
+    }
+
+    private fun showStrategyDialog() {
+        val strategies = arrayOf(
+            "1. Soportes y Resistencias (Rebotes)",
+            "2. Patrón de 3 Velas y Martillo",
+            "3. Seguidor de Tendencia",
+            "4. Combinada (Doble Confirmación)"
+        )
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Seleccionar Estrategia")
+            .setItems(strategies) { _, which ->
+                tradingEngine.strategy = when (which) {
+                    0 -> AutoTradeStrategy.SUPPORT_RESISTANCE
+                    1 -> AutoTradeStrategy.CANDLE_PATTERNS
+                    2 -> AutoTradeStrategy.TREND_FOLLOWING
+                    else -> AutoTradeStrategy.COMBINED
+                }
+                Toast.makeText(this, "Estrategia: ${tradingEngine.strategy.name}", Toast.LENGTH_SHORT).show()
+                updateHUDView()
+                showAISubmenu()
+            }
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun showRiskConfigDialog() {
+        val items = arrayOf(
+            "Stop Loss (Racha pérdidas): ${riskManager.stopLossStreak}",
+            "Take Profit (Ganancias objetivo): ${riskManager.takeProfitWins}",
+            "Cooldown entre trades: ${riskManager.cooldownSeconds}s",
+            "Martingala en Demo: ${if (riskManager.martingaleEnabled) "ACTIVA (${riskManager.martingaleMultiplier}x)" else "DESACTIVADA"}",
+            "Reiniciar Estadísticas de Sesión"
+        )
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Gestión de Riesgo")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> promptNumberAdjustment("Stop Loss (Derrotas consecutivas)", riskManager.stopLossStreak, 1, 10) {
+                        riskManager.stopLossStreak = it
+                        showRiskConfigDialog()
                     }
-                    Toast.makeText(this, "IA Iniciada", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this, "Sin permisos de captura. Por favor, reinicia TradeDraw.", Toast.LENGTH_LONG).show()
+                    1 -> promptNumberAdjustment("Take Profit (Victorias objetivo)", riskManager.takeProfitWins, 1, 20) {
+                        riskManager.takeProfitWins = it
+                        showRiskConfigDialog()
+                    }
+                    2 -> promptNumberAdjustment("Cooldown en segundos", riskManager.cooldownSeconds, 5, 300) {
+                        riskManager.cooldownSeconds = it
+                        showRiskConfigDialog()
+                    }
+                    3 -> {
+                        riskManager.martingaleEnabled = !riskManager.martingaleEnabled
+                        Toast.makeText(this, "Martingala: ${if (riskManager.martingaleEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                        showRiskConfigDialog()
+                    }
+                    4 -> {
+                        riskManager.resetSession()
+                        updateHUDView()
+                        Toast.makeText(this, "Sesión reiniciada", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
-            showAISubmenu() // Refrescar menú
+            .setNegativeButton("Cerrar", null)
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun promptNumberAdjustment(title: String, current: Int, min: Int, max: Int, onValueChosen: (Int) -> Unit) {
+        var value = current
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(32, 24, 32, 24)
+        }
+        val btnMinus = Button(this).apply { text = "-"; setOnClickListener { if (value > min) value--; layout.findViewById<TextView>(1001).text = "$value" } }
+        val txtVal = TextView(this).apply { id = 1001; text = "$value"; textSize = 22f; setTextColor(Color.WHITE); setPadding(32, 0, 32, 0) }
+        val btnPlus = Button(this).apply { text = "+"; setOnClickListener { if (value < max) value++; layout.findViewById<TextView>(1001).text = "$value" } }
+        layout.addView(btnMinus)
+        layout.addView(txtVal)
+        layout.addView(btnPlus)
+
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle(title)
+            .setView(layout)
+            .setPositiveButton("Guardar") { _, _ -> onValueChosen(value) }
+            .setNegativeButton("Cancelar", null)
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupHUDWindow() {
+        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
+        hudView = LayoutInflater.from(this).inflate(R.layout.layout_trading_hud, null)
+        hudParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            layoutType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = 50; y = 50
+        }
+
+        hudView?.findViewById<Button>(R.id.hud_btn_win)?.setOnClickListener {
+            riskManager.recordTradeWin()
+            updateHUDView()
+        }
+        hudView?.findViewById<Button>(R.id.hud_btn_loss)?.setOnClickListener {
+            riskManager.recordTradeLoss()
+            updateHUDView()
+        }
+
+        hudView?.let { v ->
+            var initX = 0; var initY = 0; var touchX = 0f; var touchY = 0f; var isMove = false
+            v.setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initX = hudParams?.x ?: 0
+                        initY = hudParams?.y ?: 0
+                        touchX = event.rawX
+                        touchY = event.rawY
+                        isMove = false
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = (event.rawX - touchX).toInt()
+                        val dy = (event.rawY - touchY).toInt()
+                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) isMove = true
+                        hudParams?.let { p ->
+                            p.x = initX + dx
+                            p.y = initY + dy
+                            windowManager.updateViewLayout(v, p)
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
+            windowManager.addView(v, hudParams)
+            v.visibility = View.GONE
+            isHudVisible = false
+        }
+    }
+
+    private fun toggleHUDVisibility() {
+        isHudVisible = !isHudVisible
+        hudView?.visibility = if (isHudVisible) View.VISIBLE else View.GONE
+        if (isHudVisible) updateHUDView()
+    }
+
+    private fun updateHUDView() {
+        mainHandler.post {
+            val v = hudView ?: return@post
+            val txtMode = v.findViewById<TextView>(R.id.hud_mode)
+            val txtStrat = v.findViewById<TextView>(R.id.hud_strategy)
+            val txtStats = v.findViewById<TextView>(R.id.hud_stats)
+            val txtWinrate = v.findViewById<TextView>(R.id.hud_winrate)
+            val txtStatus = v.findViewById<TextView>(R.id.hud_status)
+
+            when (tradingEngine.mode) {
+                AutoTradeMode.AUTONOMOUS -> {
+                    txtMode.text = "[AUTO]"
+                    txtMode.setTextColor(Color.GREEN)
+                }
+                AutoTradeMode.SEMIAUTOMATIC -> {
+                    txtMode.text = "[SEMI]"
+                    txtMode.setTextColor(Color.YELLOW)
+                }
+                AutoTradeMode.DISABLED -> {
+                    txtMode.text = "[OFF]"
+                    txtMode.setTextColor(Color.GRAY)
+                }
+            }
+
+            txtStrat.text = "Estrat: " + when (tradingEngine.strategy) {
+                AutoTradeStrategy.SUPPORT_RESISTANCE -> "S/R"
+                AutoTradeStrategy.CANDLE_PATTERNS -> "3 Velas"
+                AutoTradeStrategy.TREND_FOLLOWING -> "Tendencia"
+                AutoTradeStrategy.COMBINED -> "Combinada"
+            }
+
+            txtStats.text = "W: ${riskManager.totalWins} | L: ${riskManager.totalLosses}"
+            txtWinrate.text = " (%.1f%%)".format(Locale.US, riskManager.getWinRate())
+
+            val remaining = riskManager.getRemainingCooldown()
+            if (remaining > 0) {
+                txtStatus.text = "⏳ Cooldown: ${remaining}s"
+                txtStatus.setTextColor(Color.parseColor("#fb923c"))
+            } else {
+                txtStatus.text = if (tradingEngine.mode != AutoTradeMode.DISABLED) "🟢 Analizando..." else "⚪ En espera"
+                txtStatus.setTextColor(Color.parseColor("#cbd5e1"))
+            }
         }
     }
 
@@ -521,12 +776,18 @@ class OverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         screenCaptureManager?.destroy()
-        aiController.toggleAutoTrade(false)
+        if (::tradingEngine.isInitialized) {
+            tradingEngine.stop()
+        }
+        if (::calibrationManager.isInitialized) {
+            calibrationManager.dismissCalibration()
+        }
         mainHandler.removeCallbacksAndMessages(null)
         try {
             if (::canvasView.isInitialized) windowManager.removeView(canvasView)
             if (::menuView.isInitialized) windowManager.removeView(menuView)
             if (::submenuWindowView.isInitialized) windowManager.removeView(submenuWindowView)
+            hudView?.let { windowManager.removeView(it) }
         } catch (e: Exception) {}
     }
 }
