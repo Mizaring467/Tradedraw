@@ -365,6 +365,11 @@ class OverlayService : Service() {
             showRiskConfigDialog()
         }
 
+        val aiIcon = if (tradingEngine.aiClient.isEnabled) android.R.drawable.ic_menu_agenda else android.R.drawable.ic_menu_help
+        addItemToSubmenu(aiIcon, if (tradingEngine.aiClient.isEnabled) "IA: ON" else "IA: OFF", Color.parseColor("#a855f7")) {
+            showOmniRouteConfigDialog()
+        }
+
         val hudIcon = if (isHudVisible) R.drawable.ic_visibility else R.drawable.ic_visibility_off
         addItemToSubmenu(hudIcon, if (isHudVisible) "HUD: ON" else "HUD: OFF") {
             toggleHUDVisibility()
@@ -411,6 +416,107 @@ class OverlayService : Service() {
                 Toast.makeText(this, "Broker activo: ${calibrationManager.activeProfile.name}", Toast.LENGTH_SHORT).show()
                 showCalibrationDialog()
             }
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun showOmniRouteConfigDialog() {
+        val ai = tradingEngine.aiClient
+        val keyDisplay = if (ai.apiKey.isNotBlank()) "••••" + ai.apiKey.takeLast(4) else "Sin configurar"
+        val options = arrayOf(
+            "1. ⚡ IA Remota: ${if (ai.isEnabled) "ACTIVADA [ON]" else "DESACTIVADA [OFF]"}",
+            "2. 🌐 Endpoint Base: ${ai.baseUrl}",
+            "3. 🔑 API Key: $keyDisplay",
+            "4. 🧠 Modelo: ${ai.model}",
+            "5. 🎯 Umbral Confianza: ${(ai.confidenceThreshold * 100).toInt()}%",
+            "6. 🧪 Probar Conexión con OmniRoute"
+        )
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Configurar IA (OmniRoute / OpenAI)")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        ai.isEnabled = !ai.isEnabled
+                        Toast.makeText(this, "IA Remota: ${if (ai.isEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                        showOmniRouteConfigDialog()
+                        updateHUDView()
+                    }
+                    1 -> promptTextInput("Endpoint Base URL", ai.baseUrl) { newUrl ->
+                        ai.baseUrl = newUrl
+                        Toast.makeText(this, "URL guardada", Toast.LENGTH_SHORT).show()
+                        showOmniRouteConfigDialog()
+                    }
+                    2 -> promptTextInput("API Key de OmniRoute", ai.apiKey) { newKey ->
+                        ai.apiKey = newKey
+                        Toast.makeText(this, "API Key guardada", Toast.LENGTH_SHORT).show()
+                        showOmniRouteConfigDialog()
+                    }
+                    3 -> showModelPicker()
+                    4 -> promptNumberAdjustment("Umbral de Confianza (%)", (ai.confidenceThreshold * 100).toInt(), 30, 95) { pct ->
+                        ai.confidenceThreshold = pct / 100f
+                        showOmniRouteConfigDialog()
+                        updateHUDView()
+                    }
+                    5 -> {
+                        Toast.makeText(this, "Probando conexión con OmniRoute...", Toast.LENGTH_SHORT).show()
+                        ai.testConnection { success, msg ->
+                            Toast.makeText(this, if (success) "✓ $msg" else "❌ $msg", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("Cerrar", null)
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun showModelPicker() {
+        val ai = tradingEngine.aiClient
+        val presets = arrayOf(
+            "bai/deepseek-v4-flash-vision-exp",
+            "openrouter/google/gemini-3.7-flash",
+            "openrouter/openai/gpt-4o-mini",
+            "openrouter/openai/gpt-4o",
+            "antigravity/gemini-3.6-flash-high",
+            "Otro modelo personalizado..."
+        )
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Seleccionar Modelo de Visión")
+            .setItems(presets) { _, which ->
+                if (which == presets.size - 1) {
+                    promptTextInput("Nombre de modelo", ai.model) { customModel ->
+                        ai.model = customModel
+                        showOmniRouteConfigDialog()
+                    }
+                } else {
+                    ai.model = presets[which]
+                    Toast.makeText(this, "Modelo: ${ai.model}", Toast.LENGTH_SHORT).show()
+                    showOmniRouteConfigDialog()
+                }
+            }
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun promptTextInput(title: String, currentValue: String, onTextSaved: (String) -> Unit) {
+        val input = EditText(this).apply {
+            setText(currentValue)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+        }
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle(title)
+            .setView(input)
+            .setPositiveButton("Guardar") { _, _ ->
+                onTextSaved(input.text.toString().trim())
+            }
+            .setNegativeButton("Cancelar", null)
             .create().apply {
                 window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
                 show()
@@ -841,6 +947,7 @@ class OverlayService : Service() {
         screenCaptureManager?.destroy()
         if (::tradingEngine.isInitialized) {
             tradingEngine.stop()
+            tradingEngine.aiClient.destroy()
         }
         if (::calibrationManager.isInitialized) {
             calibrationManager.dismissCalibration()

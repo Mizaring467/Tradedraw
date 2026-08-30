@@ -30,7 +30,8 @@ class TradingEngine(
     private val context: Context,
     private val drawingView: CustomDrawingView,
     val riskManager: RiskManager,
-    var calibrationManager: CalibrationManager? = null
+    var calibrationManager: CalibrationManager? = null,
+    val aiClient: AIClient = AIClient(context)
 ) {
     var mode: AutoTradeMode = AutoTradeMode.DISABLED
     var strategy: AutoTradeStrategy = AutoTradeStrategy.SUPPORT_RESISTANCE
@@ -43,6 +44,8 @@ class TradingEngine(
     private val PROCESS_INTERVAL_MS = 1000L
 
     var latestAnalysisResult: VisionAnalysisResult? = null
+        private set
+    var latestAIResult: AIAnalysisResult? = null
         private set
     var framesAnalyzedCount: Long = 0L
         private set
@@ -94,9 +97,29 @@ class TradingEngine(
 
         // 5. Evaluar señal de trading solo si no hay trade abierto
         if (!riskManager.hasPendingTrade) {
-            val signal = evaluateStrategySignal(strategy, analysis, supports.isNotEmpty() || resistances.isNotEmpty())
-            if (signal != null) {
-                handleSignal(signal, analysis, bitmap)
+            if (aiClient.isEnabled && aiClient.apiKey.isNotBlank()) {
+                // Ruta Primaria: Visión por IA (OmniRoute / OpenAI)
+                aiClient.analyzeFrame(bitmap) { aiResult ->
+                    latestAIResult = aiResult
+                    onFrameProcessedListener?.invoke(analysis)
+
+                    if (aiResult.isSuccess && aiResult.action != null && aiResult.confidence >= aiClient.confidenceThreshold) {
+                        val pct = (aiResult.confidence * 100).toInt()
+                        handleSignal(aiResult.action, analysis, bitmap, "IA (${pct}%): ${aiResult.reason}")
+                    } else {
+                        // Fallback a reglas técnicas locales si la IA no dio señal concluyente
+                        val fallbackSignal = evaluateStrategySignal(strategy, analysis, supports.isNotEmpty() || resistances.isNotEmpty())
+                        if (fallbackSignal != null) {
+                            handleSignal(fallbackSignal, analysis, bitmap, "Reglas Técnicas (Fallback)")
+                        }
+                    }
+                }
+            } else {
+                // Ruta Local: Análisis de visión HSV por reglas
+                val signal = evaluateStrategySignal(strategy, analysis, supports.isNotEmpty() || resistances.isNotEmpty())
+                if (signal != null) {
+                    handleSignal(signal, analysis, bitmap, "Reglas Técnicas")
+                }
             }
         }
     }
@@ -152,6 +175,20 @@ class TradingEngine(
         val remaining = riskManager.getRemainingCooldown()
         if (remaining > 0) return "⏳ Cooldown: ${remaining}s"
 
+        if (aiClient.isEnabled) {
+            val ai = latestAIResult
+            val modelShort = aiClient.model.substringAfterLast('/')
+            return if (ai != null && ai.isSuccess) {
+                val pct = (ai.confidence * 100).toInt()
+                val act = ai.action?.name ?: "WAIT"
+                "🧠 IA [$modelShort]: $act ($pct%) · ${ai.reason.take(28)}"
+            } else if (ai != null && !ai.isSuccess) {
+                "⚠️ IA: ${ai.errorMessage ?: "Esperando conexión..."}"
+            } else {
+                "🧠 IA [$modelShort]: Analizando pantalla..."
+            }
+        }
+
         val (supports, resistances) = drawingView.getSupportResistanceYLevels()
         val analysis = latestAnalysisResult
 
@@ -179,19 +216,24 @@ class TradingEngine(
         }
     }
 
-    private fun handleSignal(action: TradeAction, analysis: VisionAnalysisResult, bitmap: Bitmap) {
+    private fun handleSignal(
+        action: TradeAction,
+        analysis: VisionAnalysisResult,
+        bitmap: Bitmap,
+        reasonDescription: String
+    ) {
         val (canTrade, reason) = riskManager.canExecuteTrade()
         val actionText = if (action == TradeAction.BUY) "COMPRA (Sube)" else "VENTA (Baja)"
 
         handler.post {
-            onSignalListener?.invoke(action, actionText)
+            onSignalListener?.invoke(action, "$actionText · $reasonDescription")
             emitHapticAndAudioFeedback()
         }
 
         if (mode == AutoTradeMode.SEMIAUTOMATIC) {
             handler.post {
                 autoDrawEngine.drawTradeEntry(action, analysis.currentPriceY, context.resources.displayMetrics.widthPixels.toFloat())
-                Toast.makeText(context, "🔔 SEÑAL [Semiauto]: $actionText", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "🔔 SEÑAL: $actionText\n$reasonDescription", Toast.LENGTH_SHORT).show()
             }
             return
         }
@@ -204,11 +246,16 @@ class TradingEngine(
                 return
             }
 
-            executeAutonomousTrade(action, analysis, bitmap)
+            executeAutonomousTrade(action, analysis, bitmap, reasonDescription)
         }
     }
 
-    private fun executeAutonomousTrade(action: TradeAction, analysis: VisionAnalysisResult, bitmap: Bitmap) {
+    private fun executeAutonomousTrade(
+        action: TradeAction,
+        analysis: VisionAnalysisResult,
+        bitmap: Bitmap,
+        reasonDescription: String
+    ) {
         val calibration = calibrationManager
         val metrics = context.resources.displayMetrics
         val screenW = metrics.widthPixels.toFloat()
@@ -217,8 +264,14 @@ class TradingEngine(
         val (x, y) = if (calibration != null && calibration.isCalibrated()) {
             if (action == TradeAction.BUY) calibration.getBuyCoordinates() else calibration.getSellCoordinates()
         } else {
-            if (action == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.85f)
-            else Pair(screenW * 0.75f, screenH * 0.85f)
+            val isLand = screenW > screenH
+            if (isLand) {
+                if (action == TradeAction.BUY) Pair(screenW * 0.88f, screenH * 0.72f)
+                else Pair(screenW * 0.88f, screenH * 0.86f)
+            } else {
+                if (action == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.88f)
+                else Pair(screenW * 0.75f, screenH * 0.88f)
+            }
         }
 
         val accessibility = AutoTradeAccessibilityService.instance
@@ -230,7 +283,7 @@ class TradingEngine(
                 autoDrawEngine.drawTradeEntry(action, analysis.currentPriceY, screenW)
                 saveAuditScreenshot(bitmap, action)
                 onTradeExecutedListener?.invoke(action, true)
-                Toast.makeText(context, "🤖 BOT OPERÓ: $action a $${riskManager.getCurrentInvestmentAmount()}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "🤖 BOT OPERÓ: $action ($$${riskManager.getCurrentInvestmentAmount()})\n$reasonDescription", Toast.LENGTH_LONG).show()
             }
         } else {
             handler.post {
