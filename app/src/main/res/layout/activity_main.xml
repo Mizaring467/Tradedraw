@@ -29,12 +29,23 @@
         android:id="@+id/boton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Iniciar Overlay"
+        android:text="Iniciar Overlay (con Visión IA)"
         android:backgroundTint="#7c3aed"
         android:textColor="#ffffff"
         android:paddingTop="12dp"
         android:paddingBottom="12dp"
-        android:layout_marginBottom="12dp"/>
+        android:layout_marginBottom="10dp"/>
+
+    <Button
+        android:id="@+id/btn_stop"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Detener Overlay"
+        android:backgroundTint="#ef4444"
+        android:textColor="#ffffff"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:layout_marginBottom="10dp"/>
 
     <Button
         android:id="@+id/btn_accessibility"
