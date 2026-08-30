@@ -42,8 +42,14 @@ class TradingEngine(
     private var lastProcessTime = 0L
     private val PROCESS_INTERVAL_MS = 1000L
 
+    var latestAnalysisResult: VisionAnalysisResult? = null
+        private set
+    var framesAnalyzedCount: Long = 0L
+        private set
+
     var onSignalListener: ((TradeAction, String) -> Unit)? = null
     var onTradeExecutedListener: ((TradeAction, Boolean) -> Unit)? = null
+    var onFrameProcessedListener: ((VisionAnalysisResult) -> Unit)? = null
 
     fun onNewFrame(bitmap: Bitmap) {
         if (mode == AutoTradeMode.DISABLED) return
@@ -51,20 +57,23 @@ class TradingEngine(
         val now = System.currentTimeMillis()
         if (now - lastProcessTime < PROCESS_INTERVAL_MS) return
         lastProcessTime = now
+        framesAnalyzedCount++
 
         // 1. Obtener niveles de soporte/resistencia dibujados en TradeDraw
         val (supports, resistances) = drawingView.getSupportResistanceYLevels()
 
-        // 2. Analizar frame visual
+        // 2. Analizar frame visual con visión HSV
         val analysis = visionAnalyzer.analyzeChart(bitmap, supports, resistances)
+        latestAnalysisResult = analysis
 
         // 3. Auto-dibujar escenario técnico en TradeDraw según la estrategia
         handler.post {
             autoDrawEngine.updateTechnicalDrawings(strategy, analysis)
+            onFrameProcessedListener?.invoke(analysis)
         }
 
         // 4. Evaluar señal de trading
-        val signal = evaluateStrategySignal(strategy, analysis)
+        val signal = evaluateStrategySignal(strategy, analysis, supports.isNotEmpty() || resistances.isNotEmpty())
 
         if (signal != null) {
             handleSignal(signal, analysis, bitmap)
@@ -73,23 +82,23 @@ class TradingEngine(
 
     private fun evaluateStrategySignal(
         strategy: AutoTradeStrategy,
-        analysis: VisionAnalysisResult
+        analysis: VisionAnalysisResult,
+        hasDrawnLines: Boolean
     ): TradeAction? {
         return when (strategy) {
             AutoTradeStrategy.SUPPORT_RESISTANCE -> {
                 if (analysis.touchesSupport) {
-                    TradeAction.BUY // Rebote en soporte -> Compra
+                    TradeAction.BUY
                 } else if (analysis.touchesResistance) {
-                    TradeAction.SELL // Rebote en resistencia -> Venta
+                    TradeAction.SELL
                 } else null
             }
             AutoTradeStrategy.CANDLE_PATTERNS -> {
-                // Estrategia de 3 velas consecutivas o martillo
                 if (analysis.consecutiveCount >= 3) {
                     if (analysis.lastCandles.firstOrNull() == CandleType.RED) {
-                        TradeAction.BUY // 3 velas rojas -> posible reversión alcista
+                        TradeAction.BUY
                     } else if (analysis.lastCandles.firstOrNull() == CandleType.GREEN) {
-                        TradeAction.SELL // 3 velas verdes -> posible reversión bajista
+                        TradeAction.SELL
                     } else null
                 } else if (analysis.isHammer) {
                     TradeAction.BUY
@@ -103,12 +112,42 @@ class TradingEngine(
                 } else null
             }
             AutoTradeStrategy.COMBINED -> {
-                // Confirmación doble: Soporte + Vela o Tendencia + Vela
                 if (analysis.touchesSupport && analysis.lastCandles.firstOrNull() != CandleType.RED) {
                     TradeAction.BUY
                 } else if (analysis.touchesResistance && analysis.lastCandles.firstOrNull() != CandleType.GREEN) {
                     TradeAction.SELL
                 } else null
+            }
+        }
+    }
+
+    fun getStrategyStatusHint(): String {
+        val remaining = riskManager.getRemainingCooldown()
+        if (remaining > 0) return "⏳ Cooldown: ${remaining}s"
+
+        val (supports, resistances) = drawingView.getSupportResistanceYLevels()
+        val analysis = latestAnalysisResult
+
+        return when (strategy) {
+            AutoTradeStrategy.SUPPORT_RESISTANCE -> {
+                if (supports.isEmpty() && resistances.isEmpty()) {
+                    "✏️ Dibuja un Soporte o Resistencia"
+                } else {
+                    "🔍 Vigilando rebote en S/R..."
+                }
+            }
+            AutoTradeStrategy.CANDLE_PATTERNS -> {
+                if (analysis != null && analysis.consecutiveCount > 0) {
+                    "📊 Racha: ${analysis.consecutiveCount} ${analysis.lastCandles.firstOrNull()?.name ?: ""} (Obj: 3)"
+                } else {
+                    "🔍 Contando velas en vivo..."
+                }
+            }
+            AutoTradeStrategy.TREND_FOLLOWING -> {
+                if (analysis != null) "📈 Tendencia: ${analysis.trend.name}" else "🔍 Detectando tendencia..."
+            }
+            AutoTradeStrategy.COMBINED -> {
+                "🔍 Esperando confirmación doble..."
             }
         }
     }
@@ -125,7 +164,7 @@ class TradingEngine(
         if (mode == AutoTradeMode.SEMIAUTOMATIC) {
             handler.post {
                 autoDrawEngine.drawTradeEntry(action, analysis.currentPriceY, context.resources.displayMetrics.widthPixels.toFloat())
-                Toast.makeText(context, "🔔 SEÑAL [Semiautomático]: $actionText\n(Estrategia: ${strategy.name})", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "🔔 SEÑAL [Semiauto]: $actionText", Toast.LENGTH_SHORT).show()
             }
             return
         }
@@ -138,7 +177,6 @@ class TradingEngine(
                 return
             }
 
-            // Ejecutar trade automático
             executeAutonomousTrade(action, analysis, bitmap)
         }
     }
@@ -152,7 +190,6 @@ class TradingEngine(
         val (x, y) = if (calibration != null && calibration.isCalibrated()) {
             if (action == TradeAction.BUY) calibration.getBuyCoordinates() else calibration.getSellCoordinates()
         } else {
-            // Coordenadas de respaldo (típicas en binarias móvil)
             if (action == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.85f)
             else Pair(screenW * 0.75f, screenH * 0.85f)
         }
@@ -173,6 +210,29 @@ class TradingEngine(
                 Toast.makeText(context, "Accesibilidad requerida para clic autónomo", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    /**
+     * Prueba los clics de SUBE y BAJA para verificar la conexión de Accesibilidad.
+     */
+    fun testAccessibilityClicks() {
+        val accessibility = AutoTradeAccessibilityService.instance
+        if (accessibility == null) {
+            Toast.makeText(context, "❌ Servicio de Accesibilidad NO conectado. Actívalo en Ajustes.", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val calibration = calibrationManager
+        val (buyX, buyY) = calibration?.getBuyCoordinates() ?: Pair(200f, 600f)
+        val (sellX, sellY) = calibration?.getSellCoordinates() ?: Pair(600f, 600f)
+
+        Toast.makeText(context, "👉 Probando clic en SUBE...", Toast.LENGTH_SHORT).show()
+        accessibility.performClickAt(buyX, buyY)
+
+        handler.postDelayed({
+            Toast.makeText(context, "👉 Probando clic en BAJA...", Toast.LENGTH_SHORT).show()
+            accessibility.performClickAt(sellX, sellY)
+        }, 1200)
     }
 
     private fun emitHapticAndAudioFeedback() {

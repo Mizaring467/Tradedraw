@@ -12,6 +12,7 @@ import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
@@ -29,17 +30,20 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
     private var height: Int = 0
     private var density: Int = 0
 
-    private val handler = Handler(Looper.getMainLooper())
-    private var isCapturing = false
+    private val backgroundThread = HandlerThread("ScreenCaptureThread").apply { start() }
+    private val backgroundHandler = Handler(backgroundThread.looper)
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    var isCapturing = false
+        private set
     private var onImageCapturedCallback: ((Bitmap) -> Unit)? = null
     var latestFrame: Bitmap? = null
+        private set
+    var totalFramesCaptured: Long = 0L
         private set
 
     init {
         try {
-            // Android 14 requiere adquirir la MediaProjection y arrancar el VirtualDisplay
-            // inmediatamente. Si postergamos esto hasta que el usuario decida encender la IA,
-            // el Intent Data token expira o el SecurityManager rechaza la re-utilización.
             mediaProjection = projectionManager.getMediaProjection(android.app.Activity.RESULT_OK, intent)
             if (mediaProjection != null) {
                 setupVirtualDisplay()
@@ -55,7 +59,6 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val metrics = DisplayMetrics()
 
-        // Uso de API modernas si están disponibles
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             val windowMetrics = windowManager.currentWindowMetrics
             val bounds = windowMetrics.bounds
@@ -71,28 +74,22 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
         }
 
         @SuppressLint("WrongConstant")
-        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
 
         virtualDisplay = mediaProjection?.createVirtualDisplay(
-            "ScreenCapture",
+            "TradeDraw_ScreenCapture",
             width, height, density,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface, null, null
+            imageReader?.surface, null, backgroundHandler
         )
 
         var lastCaptureTime = 0L
-        val CAPTURE_INTERVAL_MS = 1000L // 1 frame por segundo para evitar OOM
+        val CAPTURE_INTERVAL_MS = 1000L
 
         imageReader?.setOnImageAvailableListener({ reader ->
             val image: Image? = try { reader.acquireLatestImage() } catch (e: Exception) { null }
 
             if (image == null) return@setOnImageAvailableListener
-
-            // Si la IA está apagada, solo cerramos la imagen sin gastar CPU convirtiéndola
-            if (!isCapturing || onImageCapturedCallback == null) {
-                image.close()
-                return@setOnImageAvailableListener
-            }
 
             try {
                 val currentTime = System.currentTimeMillis()
@@ -110,14 +107,20 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
 
                     val croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height)
                     latestFrame = croppedBitmap
-                    onImageCapturedCallback?.invoke(croppedBitmap)
+                    totalFramesCaptured++
+
+                    if (isCapturing && onImageCapturedCallback != null) {
+                        mainHandler.post {
+                            onImageCapturedCallback?.invoke(croppedBitmap)
+                        }
+                    }
                 }
             } catch (e: Exception) {
-                Log.e("ScreenCaptureManager", "Error capturando pantalla", e)
+                Log.e("ScreenCaptureManager", "Error procesando frame", e)
             } finally {
                 image.close()
             }
-        }, handler)
+        }, backgroundHandler)
     }
 
     fun startCapture(onImageCaptured: (Bitmap) -> Unit) {
@@ -137,6 +140,7 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
             virtualDisplay?.release()
             imageReader?.close()
             mediaProjection?.stop()
+            backgroundThread.quitSafely()
         } catch (e: Exception) {
             Log.e("ScreenCaptureManager", "Error destruyendo recursos", e)
         }
