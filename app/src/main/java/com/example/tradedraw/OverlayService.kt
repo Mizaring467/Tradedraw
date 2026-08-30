@@ -109,6 +109,7 @@ class OverlayService : Service() {
 
         tradingEngine.onSignalListener = { _: TradeAction, _: String -> updateHUDView() }
         tradingEngine.onTradeExecutedListener = { _: TradeAction, _: Boolean -> updateHUDView() }
+        tradingEngine.onFrameProcessedListener = { _ -> updateHUDView() }
 
         setupMenuWindow()
         setupHUDWindow()
@@ -351,11 +352,12 @@ class OverlayService : Service() {
             showStrategyDialog()
         }
 
+        addItemToSubmenu(android.R.drawable.ic_menu_send, "TEST CLIC", Color.parseColor("#38bdf8")) {
+            tradingEngine.testAccessibilityClicks()
+        }
+
         addItemToSubmenu(android.R.drawable.ic_menu_myplaces, "CALIBRAR", Color.MAGENTA) {
-            calibrationManager.startInteractiveCalibration {
-                Toast.makeText(this, "Calibración guardada", Toast.LENGTH_SHORT).show()
-                showAISubmenu()
-            }
+            showCalibrationDialog()
         }
 
         addItemToSubmenu(android.R.drawable.ic_menu_preferences, "RIESGO", Color.parseColor("#fb923c")) {
@@ -367,6 +369,51 @@ class OverlayService : Service() {
             toggleHUDVisibility()
             showAISubmenu()
         }
+    }
+
+    private fun showCalibrationDialog() {
+        val options = arrayOf(
+            "1. 🎯 Arrastrar Pines sobre Botones (Interactivo)",
+            "2. 🏢 Cambiar Perfil de Broker [Actual: ${calibrationManager.activeProfile.name}]",
+            "3. 📍 Ver Coordenadas Guardadas"
+        )
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Calibración de Botones")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> calibrationManager.startInteractiveCalibration {
+                        Toast.makeText(this, "Calibración guardada", Toast.LENGTH_SHORT).show()
+                        showAISubmenu()
+                    }
+                    1 -> showBrokerProfilePicker()
+                    2 -> {
+                        val (bx, by) = calibrationManager.getBuyCoordinates()
+                        val (sx, sy) = calibrationManager.getSellCoordinates()
+                        Toast.makeText(this, "Sube: (${bx.toInt()}, ${by.toInt()})\nBaja: (${sx.toInt()}, ${sy.toInt()})", Toast.LENGTH_LONG).show()
+                        showCalibrationDialog()
+                    }
+                }
+            }
+            .setNegativeButton("Cerrar", null)
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun showBrokerProfilePicker() {
+        val profiles = BrokerProfile.values().map { it.name }.toTypedArray()
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Seleccionar Broker")
+            .setItems(profiles) { _, which ->
+                calibrationManager.activeProfile = BrokerProfile.values()[which]
+                Toast.makeText(this, "Broker activo: ${calibrationManager.activeProfile.name}", Toast.LENGTH_SHORT).show()
+                showCalibrationDialog()
+            }
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
     }
 
     private fun showModeDialog() {
@@ -566,6 +613,8 @@ class OverlayService : Service() {
             val txtStats = v.findViewById<TextView>(R.id.hud_stats)
             val txtWinrate = v.findViewById<TextView>(R.id.hud_winrate)
             val txtStatus = v.findViewById<TextView>(R.id.hud_status)
+            val txtDiag = v.findViewById<TextView>(R.id.hud_diag)
+            val txtHint = v.findViewById<TextView>(R.id.hud_hint)
 
             when (tradingEngine.mode) {
                 AutoTradeMode.AUTONOMOUS -> {
@@ -592,12 +641,18 @@ class OverlayService : Service() {
             txtStats.text = "W: ${riskManager.totalWins} | L: ${riskManager.totalLosses}"
             txtWinrate.text = " (%.1f%%)".format(Locale.US, riskManager.getWinRate())
 
+            val frames = screenCaptureManager?.totalFramesCaptured ?: 0L
+            val diagStr = tradingEngine.latestAnalysisResult?.diagnosticSummary ?: "Visión: Esperando frame..."
+            txtDiag.text = "📷 Frames: $frames | $diagStr"
+
+            txtHint.text = tradingEngine.getStrategyStatusHint()
+
             val remaining = riskManager.getRemainingCooldown()
             if (remaining > 0) {
                 txtStatus.text = "⏳ Cooldown: ${remaining}s"
                 txtStatus.setTextColor(Color.parseColor("#fb923c"))
             } else {
-                txtStatus.text = if (tradingEngine.mode != AutoTradeMode.DISABLED) "🟢 Analizando..." else "⚪ En espera"
+                txtStatus.text = if (tradingEngine.mode != AutoTradeMode.DISABLED) "🟢 Analizando en vivo" else "⚪ En espera"
                 txtStatus.setTextColor(Color.parseColor("#cbd5e1"))
             }
         }

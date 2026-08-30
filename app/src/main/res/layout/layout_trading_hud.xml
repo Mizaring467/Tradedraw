@@ -60,17 +60,27 @@
             android:textSize="10sp" />
     </LinearLayout>
 
-    <!-- Fila 3: Estado / Cooldown -->
+    <!-- Fila 3: Diagnóstico de Cámara / Visión -->
     <TextView
-        android:id="@+id/hud_status"
+        android:id="@+id/hud_diag"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="📷 Frames: 0 | Visión: OK"
+        android:textColor="#38bdf8"
+        android:textSize="9sp"
+        android:layout_marginTop="3dp" />
+
+    <!-- Fila 4: Pista / Estado de la Estrategia -->
+    <TextView
+        android:id="@+id/hud_hint"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="⚪ En espera"
         android:textColor="#cbd5e1"
         android:textSize="10sp"
-        android:layout_marginTop="3dp" />
+        android:layout_marginTop="2dp" />
 
-    <!-- Fila 4: Botones rápidos para registrar resultado en Demo -->
+    <!-- Fila 5: Botones rápidos para registrar resultado en Demo -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
