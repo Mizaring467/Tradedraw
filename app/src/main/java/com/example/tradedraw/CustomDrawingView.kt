@@ -206,11 +206,13 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
             TradingTool.TREND_LINE -> canvas.drawLine(shape.startX, shape.startY, shape.endX, shape.endY, paint)
             TradingTool.SUPPORT_LINE -> {
                 canvas.drawLine(0f, shape.startY, width.toFloat(), shape.startY, paint)
-                canvas.drawText("SUPPORT", 25f, shape.startY - 15f, textPaint)
+                val label = if (shape.isBotDrawn) "SOPORTE [IA]" else "SOPORTE"
+                canvas.drawText(label, 25f, shape.startY - 15f, textPaint)
             }
             TradingTool.RESISTANCE_LINE -> {
                 canvas.drawLine(0f, shape.startY, width.toFloat(), shape.startY, paint)
-                canvas.drawText("RESISTANCE", 25f, shape.startY - 15f, textPaint)
+                val label = if (shape.isBotDrawn) "RESISTENCIA [IA]" else "RESISTENCIA"
+                canvas.drawText(label, 25f, shape.startY - 15f, textPaint)
             }
             TradingTool.RECTANGLE -> canvas.drawRect(Math.min(shape.startX, shape.endX), Math.min(shape.startY, shape.endY), Math.max(shape.startX, shape.endX), Math.max(shape.startY, shape.endY), paint)
             TradingTool.FIB_RETRACEMENT -> drawFibonacci(canvas, shape, paint)

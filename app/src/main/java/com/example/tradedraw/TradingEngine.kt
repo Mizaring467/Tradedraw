@@ -59,24 +59,45 @@ class TradingEngine(
         lastProcessTime = now
         framesAnalyzedCount++
 
-        // 1. Obtener niveles de soporte/resistencia dibujados en TradeDraw
+        // 1. Si hay una operación abierta en curso, comprobar si apareció el resultado (Win / Loss)
+        if (riskManager.hasPendingTrade) {
+            val outcome = visionAnalyzer.detectTradeOutcome(bitmap)
+            if (outcome != null) {
+                handler.post {
+                    if (outcome == TradeOutcome.WIN) {
+                        riskManager.recordTradeWin()
+                        emitHapticAndAudioFeedback()
+                        Toast.makeText(context, "🎉 OPERACIÓN GANADA (+1 W)", Toast.LENGTH_LONG).show()
+                        onTradeExecutedListener?.invoke(TradeAction.BUY, true)
+                    } else {
+                        riskManager.recordTradeLoss()
+                        emitHapticAndAudioFeedback()
+                        Toast.makeText(context, "⚠️ OPERACIÓN PERDIDA (+1 L)", Toast.LENGTH_LONG).show()
+                        onTradeExecutedListener?.invoke(TradeAction.BUY, false)
+                    }
+                }
+            }
+        }
+
+        // 2. Obtener niveles de soporte/resistencia dibujados en TradeDraw
         val (supports, resistances) = drawingView.getSupportResistanceYLevels()
 
-        // 2. Analizar frame visual con visión HSV
+        // 3. Analizar frame visual con visión HSV
         val analysis = visionAnalyzer.analyzeChart(bitmap, supports, resistances)
         latestAnalysisResult = analysis
 
-        // 3. Auto-dibujar escenario técnico en TradeDraw según la estrategia
+        // 4. Auto-dibujar escenario técnico en TradeDraw según la estrategia
         handler.post {
             autoDrawEngine.updateTechnicalDrawings(strategy, analysis)
             onFrameProcessedListener?.invoke(analysis)
         }
 
-        // 4. Evaluar señal de trading
-        val signal = evaluateStrategySignal(strategy, analysis, supports.isNotEmpty() || resistances.isNotEmpty())
-
-        if (signal != null) {
-            handleSignal(signal, analysis, bitmap)
+        // 5. Evaluar señal de trading solo si no hay trade abierto
+        if (!riskManager.hasPendingTrade) {
+            val signal = evaluateStrategySignal(strategy, analysis, supports.isNotEmpty() || resistances.isNotEmpty())
+            if (signal != null) {
+                handleSignal(signal, analysis, bitmap)
+            }
         }
     }
 
@@ -122,6 +143,12 @@ class TradingEngine(
     }
 
     fun getStrategyStatusHint(): String {
+        if (riskManager.hasPendingTrade) {
+            val elapsed = (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000
+            val actionName = if (riskManager.pendingTradeAction == TradeAction.BUY) "COMPRA" else "VENTA"
+            return "⏳ Operación en curso ($actionName ${elapsed}s) · Esperando resultado..."
+        }
+
         val remaining = riskManager.getRemainingCooldown()
         if (remaining > 0) return "⏳ Cooldown: ${remaining}s"
 
@@ -196,7 +223,7 @@ class TradingEngine(
 
         val accessibility = AutoTradeAccessibilityService.instance
         if (accessibility != null) {
-            riskManager.recordTradeSent()
+            riskManager.recordTradeSent(action)
             accessibility.performClickAt(x, y)
 
             handler.post {

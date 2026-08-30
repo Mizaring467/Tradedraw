@@ -12,6 +12,10 @@ enum class TrendDirection {
     UPTREND, DOWNTREND, SIDEWAYS
 }
 
+enum class TradeOutcome {
+    WIN, LOSS
+}
+
 data class VisionAnalysisResult(
     val currentPriceY: Float,
     val highestPoint: PointF?,
@@ -33,8 +37,8 @@ class VisionAnalyzer {
     private val hsvBuffer = FloatArray(3)
 
     /**
-     * Analiza el frame capturado del broker (Binomo / Quotex / TradingView en Tema Oscuro)
-     * para extraer datos de acción del precio usando segmentación HSV robusta.
+     * Analiza el gráfico en Binomo / Brokers (Tema Oscuro en Horizontal o Vertical).
+     * Delimita la zona real de velas excluyendo barras de herramientas, botones y encabezados.
      */
     fun analyzeChart(
         bitmap: Bitmap,
@@ -44,14 +48,15 @@ class VisionAnalyzer {
         val w = bitmap.width
         val h = bitmap.height
 
-        // Zona del gráfico: ignorar barra de estado superior (12%) y botones inferiores (12%), y barra lateral derecha (8%)
-        val startX = (w * 0.10f).toInt().coerceAtLeast(0)
-        val endX = (w * 0.92f).toInt().coerceAtMost(w - 1)
-        val startY = (h * 0.12f).toInt().coerceAtLeast(0)
-        val endY = (h * 0.88f).toInt().coerceAtMost(h - 1)
+        // Delimitación precisa de la zona del gráfico de velas:
+        // Excluir encabezado superior (20%), botones inferiores (20%) y botones de Sube/Baja a la derecha (22%)
+        val startX = (w * 0.08f).toInt().coerceAtLeast(0)
+        val endX = (w * 0.78f).toInt().coerceAtMost(w - 1)
+        val startY = (h * 0.22f).toInt().coerceAtLeast(0)
+        val endY = (h * 0.78f).toInt().coerceAtMost(h - 1)
 
-        var minPriceY = Float.MAX_VALUE
-        var maxPriceY = Float.MIN_VALUE
+        var minPriceY = Float.MAX_VALUE // Menor Y = Mayor precio (Resistencia)
+        var maxPriceY = Float.MIN_VALUE // Mayor Y = Menor precio (Soporte)
         var highestX = 0f
         var lowestX = 0f
         var latestPriceY = (startY + endY) / 2f
@@ -59,11 +64,11 @@ class VisionAnalyzer {
         var totalGreenPixels = 0
         var totalRedPixels = 0
 
-        // Muestreo de columnas de derecha a izquierda
-        val stepX = ((endX - startX) / 32).coerceIn(6, 20)
+        val stepX = ((endX - startX) / 28).coerceIn(6, 18)
         val candleTypes = mutableListOf<CandleType>()
         var foundLatestPrice = false
 
+        // Analizar columnas de derecha (más reciente) a izquierda (antiguo)
         for (x in endX downTo startX step stepX) {
             var greenCount = 0
             var redCount = 0
@@ -77,19 +82,19 @@ class VisionAnalyzer {
                 val sat = hsvBuffer[1]
                 val value = hsvBuffer[2]
 
-                // Descartar fondo oscuro / grisáceo
-                if (value < 0.22f || (sat < 0.20f && value < 0.70f)) {
+                // Descartar fondo oscuro (#131722, #181c27, etc.)
+                if (value < 0.22f || (sat < 0.22f && value < 0.65f)) {
                     continue
                 }
 
-                // Detección de Verde en Binomo / Brokers (Hue 75° a 170°)
+                // Detección de Verde en velas Binomo (Hue 75° a 170°)
                 if (hue in 75f..170f && sat > 0.25f && value > 0.30f) {
                     greenCount++
                     totalGreenPixels++
                     if (firstCandleY == -1) firstCandleY = y
                     lastCandleY = y
                 }
-                // Detección de Rojo en Binomo / Brokers (Hue 340°-360° o 0°-28°)
+                // Detección de Rojo en velas Binomo (Hue 340°-360° o 0°-28°)
                 else if ((hue >= 340f || hue <= 28f) && sat > 0.25f && value > 0.30f) {
                     redCount++
                     totalRedPixels++
@@ -113,18 +118,19 @@ class VisionAnalyzer {
                     foundLatestPrice = true
                 }
 
-                if (firstCandleY != -1 && firstCandleY.toFloat() < minPriceY) {
+                // Calcular picos dentro de la zona válida
+                if (firstCandleY in startY..endY && firstCandleY.toFloat() < minPriceY) {
                     minPriceY = firstCandleY.toFloat()
                     highestX = x.toFloat()
                 }
-                if (lastCandleY != -1 && lastCandleY.toFloat() > maxPriceY) {
+                if (lastCandleY in startY..endY && lastCandleY.toFloat() > maxPriceY) {
                     maxPriceY = lastCandleY.toFloat()
                     lowestX = x.toFloat()
                 }
             }
         }
 
-        // Determinar rachas consecutivas de la última vela hacia atrás
+        // Racha consecutiva de la última vela hacia atrás
         val lastType = candleTypes.firstOrNull() ?: CandleType.DOJI
         var consecutive = 0
         for (c in candleTypes) {
@@ -135,24 +141,27 @@ class VisionAnalyzer {
             }
         }
 
-        // Detección de tendencia general
+        // Tendencia según la posición de máximos y mínimos
         val trend = if (minPriceY < Float.MAX_VALUE && maxPriceY > Float.MIN_VALUE) {
             if (highestX > lowestX) TrendDirection.UPTREND else TrendDirection.DOWNTREND
         } else {
             TrendDirection.SIDEWAYS
         }
 
-        // Colisión con soportes y resistencias trazados
-        val threshold = 40f
+        // Proximidad a soportes y resistencias
+        val threshold = 35f
         val touchesSupport = supportLinesY.any { Math.abs(latestPriceY - it) < threshold }
         val touchesResistance = resistanceLinesY.any { Math.abs(latestPriceY - it) < threshold }
 
-        // Patrón martillo básico o envolvente
         val isHammer = consecutive >= 2 && lastType == CandleType.RED
         val isEngulfing = candleTypes.size >= 2 && candleTypes[0] != candleTypes[1]
 
-        val highPoint = if (minPriceY < Float.MAX_VALUE) PointF(highestX, minPriceY) else null
-        val lowPoint = if (maxPriceY > Float.MIN_VALUE) PointF(lowestX, maxPriceY) else null
+        // Asegurar que siempre existan puntos coherentes de Soporte (abajo) y Resistencia (arriba)
+        val resistanceY = if (minPriceY < Float.MAX_VALUE) minPriceY else (startY + (endY - startY) * 0.25f)
+        val supportY = if (maxPriceY > Float.MIN_VALUE) maxPriceY else (startY + (endY - startY) * 0.75f)
+
+        val highPoint = PointF(if (highestX > 0) highestX else (startX + endX) * 0.5f, resistanceY)
+        val lowPoint = PointF(if (lowestX > 0) lowestX else (startX + endX) * 0.5f, supportY)
 
         val gCount = candleTypes.count { it == CandleType.GREEN }
         val rCount = candleTypes.count { it == CandleType.RED }
@@ -179,5 +188,51 @@ class VisionAnalyzer {
             redPixelsDetected = totalRedPixels,
             diagnosticSummary = diag
         )
+    }
+
+    /**
+     * Detecta si en la pantalla apareció el banner de resultado (Win / Loss) de Binomo / Broker.
+     * En Binomo, al expirar la operación se muestra un popup / banner con el resultado:
+     * - Ganancia: Banner / Texto verde brillante (+$$$)
+     * - Pérdida: Banner / Texto rojo ($0.00 / pérdida)
+     */
+    fun detectTradeOutcome(bitmap: Bitmap): TradeOutcome? {
+        val w = bitmap.width
+        val h = bitmap.height
+
+        // Zona central y lateral derecha donde aparecen los resultados de expiración
+        val startX = (w * 0.30f).toInt().coerceAtLeast(0)
+        val endX = (w * 0.95f).toInt().coerceAtMost(w - 1)
+        val startY = (h * 0.15f).toInt().coerceAtLeast(0)
+        val endY = (h * 0.85f).toInt().coerceAtMost(h - 1)
+
+        var greenBannerPixels = 0
+        var redBannerPixels = 0
+
+        for (x in startX..endX step 6) {
+            for (y in startY..endY step 6) {
+                val pixel = bitmap.getPixel(x, y)
+                Color.colorToHSV(pixel, hsvBuffer)
+                val hue = hsvBuffer[0]
+                val sat = hsvBuffer[1]
+                val value = hsvBuffer[2]
+
+                // Banner verde intenso de Ganancia (Binomo #00e676 o similar)
+                if (hue in 90f..160f && sat > 0.60f && value > 0.60f) {
+                    greenBannerPixels++
+                }
+                // Banner rojo intenso de Pérdida (Binomo #ff1744 o similar)
+                else if ((hue >= 345f || hue <= 15f) && sat > 0.60f && value > 0.60f) {
+                    redBannerPixels++
+                }
+            }
+        }
+
+        // Umbral para confirmar detección de banner de resultado
+        return when {
+            greenBannerPixels >= 25 -> TradeOutcome.WIN
+            redBannerPixels >= 25 -> TradeOutcome.LOSS
+            else -> null
+        }
     }
 }

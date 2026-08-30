@@ -37,6 +37,14 @@ class RiskManager(context: Context) {
     var lastTradeTime: Long = 0L
         private set
 
+    // Control de trade activo en curso
+    var hasPendingTrade: Boolean = false
+        private set
+    var pendingTradeAction: TradeAction? = null
+        private set
+    var pendingTradeStartTime: Long = 0L
+        private set
+
     fun getRemainingCooldown(): Int {
         if (lastTradeTime == 0L) return 0
         val elapsed = (System.currentTimeMillis() - lastTradeTime) / 1000
@@ -45,32 +53,52 @@ class RiskManager(context: Context) {
     }
 
     fun canExecuteTrade(): Pair<Boolean, String> {
+        if (hasPendingTrade) {
+            val elapsed = (System.currentTimeMillis() - pendingTradeStartTime) / 1000
+            // Timeout de seguridad: si pasaron más de 75s sin detectar resultado, desbloquear
+            if (elapsed > 75) {
+                clearPendingTrade()
+            } else {
+                return Pair(false, "Operación abierta en curso (${elapsed}s)")
+            }
+        }
         val remaining = getRemainingCooldown()
         if (remaining > 0) {
-            return Pair(false, "Pausa de Cooldown activa: ${remaining}s")
+            return Pair(false, "Pausa de Cooldown: ${remaining}s")
         }
         if (currentLossStreak >= stopLossStreak) {
-            return Pair(false, "Stop Loss alcanzado ($stopLossStreak pérdidas)")
+            return Pair(false, "Stop Loss alcanzado ($stopLossStreak derrotas)")
         }
         if (currentWins >= takeProfitWins) {
-            return Pair(false, "Take Profit alcanzado ($takeProfitWins ganancias)")
+            return Pair(false, "Take Profit alcanzado ($takeProfitWins victorias)")
         }
         return Pair(true, "Listo para operar")
     }
 
-    fun recordTradeSent() {
+    fun recordTradeSent(action: TradeAction) {
         lastTradeTime = System.currentTimeMillis()
+        hasPendingTrade = true
+        pendingTradeAction = action
+        pendingTradeStartTime = System.currentTimeMillis()
+    }
+
+    fun clearPendingTrade() {
+        hasPendingTrade = false
+        pendingTradeAction = null
+        pendingTradeStartTime = 0L
     }
 
     fun recordTradeWin() {
         currentWins++
         totalWins++
         currentLossStreak = 0
+        clearPendingTrade()
     }
 
     fun recordTradeLoss() {
         totalLosses++
         currentLossStreak++
+        clearPendingTrade()
     }
 
     fun getWinRate(): Float {
@@ -94,5 +122,6 @@ class RiskManager(context: Context) {
         totalWins = 0
         totalLosses = 0
         lastTradeTime = 0L
+        clearPendingTrade()
     }
 }
