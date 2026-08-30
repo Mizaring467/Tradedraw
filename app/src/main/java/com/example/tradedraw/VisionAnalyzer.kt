@@ -38,7 +38,7 @@ class VisionAnalyzer {
 
     /**
      * Analiza el gráfico en Binomo / Brokers (Tema Oscuro en Horizontal o Vertical).
-     * Delimita la zona real de velas excluyendo barras de herramientas, botones y encabezados.
+     * Delimita la zona real de velas adaptándose dinámicamente según la orientación (Landscape vs Portrait).
      */
     fun analyzeChart(
         bitmap: Bitmap,
@@ -47,13 +47,27 @@ class VisionAnalyzer {
     ): VisionAnalysisResult {
         val w = bitmap.width
         val h = bitmap.height
+        val isLandscape = w > h
 
-        // Delimitación precisa de la zona del gráfico de velas:
-        // Excluir encabezado superior (20%), botones inferiores (20%) y botones de Sube/Baja a la derecha (22%)
-        val startX = (w * 0.08f).toInt().coerceAtLeast(0)
-        val endX = (w * 0.78f).toInt().coerceAtMost(w - 1)
-        val startY = (h * 0.22f).toInt().coerceAtLeast(0)
-        val endY = (h * 0.78f).toInt().coerceAtMost(h - 1)
+        // Delimitación adaptativa según orientación:
+        val startX: Int
+        val endX: Int
+        val startY: Int
+        val endY: Int
+
+        if (isLandscape) {
+            // Horizontal: Gráfico a la izquierda/centro, botones Sube/Baja a la derecha (X > 78%), tabs arriba (Y < 18%), toolbar abajo (Y > 80%)
+            startX = (w * 0.08f).toInt().coerceAtLeast(0)
+            endX = (w * 0.76f).toInt().coerceAtMost(w - 1)
+            startY = (h * 0.18f).toInt().coerceAtLeast(0)
+            endY = (h * 0.78f).toInt().coerceAtMost(h - 1)
+        } else {
+            // Vertical (Portrait): Gráfico en el tercio superior/medio, botones e importe abajo (Y > 60%)
+            startX = (w * 0.05f).toInt().coerceAtLeast(0)
+            endX = (w * 0.95f).toInt().coerceAtMost(w - 1)
+            startY = (h * 0.14f).toInt().coerceAtLeast(0)
+            endY = (h * 0.58f).toInt().coerceAtMost(h - 1)
+        }
 
         var minPriceY = Float.MAX_VALUE // Menor Y = Mayor precio (Resistencia)
         var maxPriceY = Float.MIN_VALUE // Mayor Y = Menor precio (Soporte)
@@ -171,7 +185,8 @@ class VisionAnalyzer {
             TrendDirection.SIDEWAYS -> "Lateral →"
         }
 
-        val diag = "Velas: ${candleTypes.size} (V:$gCount R:$rCount) | $trendStr | Racha: $consecutive ${lastType.name}"
+        val orientStr = if (isLandscape) "Horiz" else "Vert"
+        val diag = "[$orientStr] Velas: ${candleTypes.size} (V:$gCount R:$rCount) | $trendStr | Racha: $consecutive ${lastType.name}"
 
         return VisionAnalysisResult(
             currentPriceY = latestPriceY,
@@ -192,19 +207,28 @@ class VisionAnalyzer {
 
     /**
      * Detecta si en la pantalla apareció el banner de resultado (Win / Loss) de Binomo / Broker.
-     * En Binomo, al expirar la operación se muestra un popup / banner con el resultado:
-     * - Ganancia: Banner / Texto verde brillante (+$$$)
-     * - Pérdida: Banner / Texto rojo ($0.00 / pérdida)
      */
     fun detectTradeOutcome(bitmap: Bitmap): TradeOutcome? {
         val w = bitmap.width
         val h = bitmap.height
+        val isLandscape = w > h
 
-        // Zona central y lateral derecha donde aparecen los resultados de expiración
-        val startX = (w * 0.30f).toInt().coerceAtLeast(0)
-        val endX = (w * 0.95f).toInt().coerceAtMost(w - 1)
-        val startY = (h * 0.15f).toInt().coerceAtLeast(0)
-        val endY = (h * 0.85f).toInt().coerceAtMost(h - 1)
+        val startX: Int
+        val endX: Int
+        val startY: Int
+        val endY: Int
+
+        if (isLandscape) {
+            startX = (w * 0.25f).toInt().coerceAtLeast(0)
+            endX = (w * 0.95f).toInt().coerceAtMost(w - 1)
+            startY = (h * 0.15f).toInt().coerceAtLeast(0)
+            endY = (h * 0.85f).toInt().coerceAtMost(h - 1)
+        } else {
+            startX = (w * 0.10f).toInt().coerceAtLeast(0)
+            endX = (w * 0.90f).toInt().coerceAtMost(w - 1)
+            startY = (h * 0.20f).toInt().coerceAtLeast(0)
+            endY = (h * 0.70f).toInt().coerceAtMost(h - 1)
+        }
 
         var greenBannerPixels = 0
         var redBannerPixels = 0
@@ -228,7 +252,6 @@ class VisionAnalyzer {
             }
         }
 
-        // Umbral para confirmar detección de banner de resultado
         return when {
             greenBannerPixels >= 25 -> TradeOutcome.WIN
             redBannerPixels >= 25 -> TradeOutcome.LOSS

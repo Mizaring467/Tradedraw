@@ -38,51 +38,90 @@ class CalibrationManager(private val context: Context) {
 
     private var calibrationContainerView: View? = null
 
+    private fun getOrientationKey(): String {
+        val dm = context.resources.displayMetrics
+        return if (dm.widthPixels > dm.heightPixels) "land" else "port"
+    }
+
     fun isCalibrated(): Boolean {
         return getBuyCoordinates().first > 0f && getSellCoordinates().first > 0f
     }
 
     fun getBuyCoordinates(): Pair<Float, Float> {
         val p = activeProfile.name
-        val x = prefs.getFloat("${p}_buy_x", -1f)
-        val y = prefs.getFloat("${p}_buy_y", -1f)
+        val o = getOrientationKey()
+        val x = prefs.getFloat("${p}_${o}_buy_x", -1f)
+        val y = prefs.getFloat("${p}_${o}_buy_y", -1f)
         if (x >= 0 && y >= 0) return Pair(x, y)
 
         val dm = context.resources.displayMetrics
-        return when (activeProfile) {
-            BrokerProfile.BINOMO -> Pair(dm.widthPixels * 0.25f, dm.heightPixels * 0.88f)
-            BrokerProfile.QUOTEX -> Pair(dm.widthPixels * 0.85f, dm.heightPixels * 0.55f)
-            BrokerProfile.POCKET_OPTION -> Pair(dm.widthPixels * 0.88f, dm.heightPixels * 0.52f)
-            BrokerProfile.CUSTOM -> Pair(dm.widthPixels * 0.25f, dm.heightPixels * 0.85f)
+        val w = dm.widthPixels.toFloat()
+        val h = dm.heightPixels.toFloat()
+        val isLandscape = w > h
+
+        return if (isLandscape) {
+            // Horizontal (Landscape): Botones a la derecha
+            when (activeProfile) {
+                BrokerProfile.BINOMO -> Pair(w * 0.88f, h * 0.72f) // Botón SUBE verde arriba de Baja
+                BrokerProfile.QUOTEX -> Pair(w * 0.88f, h * 0.55f)
+                BrokerProfile.POCKET_OPTION -> Pair(w * 0.88f, h * 0.52f)
+                BrokerProfile.CUSTOM -> Pair(w * 0.88f, h * 0.72f)
+            }
+        } else {
+            // Vertical (Portrait): Botones abajo
+            when (activeProfile) {
+                BrokerProfile.BINOMO -> Pair(w * 0.25f, h * 0.88f)
+                BrokerProfile.QUOTEX -> Pair(w * 0.25f, h * 0.85f)
+                BrokerProfile.POCKET_OPTION -> Pair(w * 0.25f, h * 0.85f)
+                BrokerProfile.CUSTOM -> Pair(w * 0.25f, h * 0.88f)
+            }
         }
     }
 
     fun getSellCoordinates(): Pair<Float, Float> {
         val p = activeProfile.name
-        val x = prefs.getFloat("${p}_sell_x", -1f)
-        val y = prefs.getFloat("${p}_sell_y", -1f)
+        val o = getOrientationKey()
+        val x = prefs.getFloat("${p}_${o}_sell_x", -1f)
+        val y = prefs.getFloat("${p}_${o}_sell_y", -1f)
         if (x >= 0 && y >= 0) return Pair(x, y)
 
         val dm = context.resources.displayMetrics
-        return when (activeProfile) {
-            BrokerProfile.BINOMO -> Pair(dm.widthPixels * 0.75f, dm.heightPixels * 0.88f)
-            BrokerProfile.QUOTEX -> Pair(dm.widthPixels * 0.85f, dm.heightPixels * 0.70f)
-            BrokerProfile.POCKET_OPTION -> Pair(dm.widthPixels * 0.88f, dm.heightPixels * 0.68f)
-            BrokerProfile.CUSTOM -> Pair(dm.widthPixels * 0.75f, dm.heightPixels * 0.85f)
+        val w = dm.widthPixels.toFloat()
+        val h = dm.heightPixels.toFloat()
+        val isLandscape = w > h
+
+        return if (isLandscape) {
+            // Horizontal (Landscape): Botón BAJA rojo abajo de Sube
+            when (activeProfile) {
+                BrokerProfile.BINOMO -> Pair(w * 0.88f, h * 0.86f) // Botón BAJA rojo
+                BrokerProfile.QUOTEX -> Pair(w * 0.88f, h * 0.70f)
+                BrokerProfile.POCKET_OPTION -> Pair(w * 0.88f, h * 0.68f)
+                BrokerProfile.CUSTOM -> Pair(w * 0.88f, h * 0.86f)
+            }
+        } else {
+            // Vertical (Portrait): Botón BAJA abajo a la derecha
+            when (activeProfile) {
+                BrokerProfile.BINOMO -> Pair(w * 0.75f, h * 0.88f)
+                BrokerProfile.QUOTEX -> Pair(w * 0.75f, h * 0.85f)
+                BrokerProfile.POCKET_OPTION -> Pair(w * 0.75f, h * 0.85f)
+                BrokerProfile.CUSTOM -> Pair(w * 0.75f, h * 0.88f)
+            }
         }
     }
 
     fun saveBuyCoordinates(x: Float, y: Float) {
+        val o = getOrientationKey()
         prefs.edit()
-            .putFloat("${activeProfile.name}_buy_x", x)
-            .putFloat("${activeProfile.name}_buy_y", y)
+            .putFloat("${activeProfile.name}_${o}_buy_x", x)
+            .putFloat("${activeProfile.name}_${o}_buy_y", y)
             .apply()
     }
 
     fun saveSellCoordinates(x: Float, y: Float) {
+        val o = getOrientationKey()
         prefs.edit()
-            .putFloat("${activeProfile.name}_sell_x", x)
-            .putFloat("${activeProfile.name}_sell_y", y)
+            .putFloat("${activeProfile.name}_${o}_sell_x", x)
+            .putFloat("${activeProfile.name}_${o}_sell_y", y)
             .apply()
     }
 
@@ -108,7 +147,7 @@ class CalibrationManager(private val context: Context) {
         val (sellX, sellY) = getSellCoordinates()
 
         val density = context.resources.displayMetrics.density
-        val pinSize = (38 * density).toInt() // Tamaño compacto de precisión
+        val pinSize = (38 * density).toInt()
 
         val buyPin = createPinView("▲\nSUBE", Color.parseColor("#22c55e"), pinSize)
         val sellPin = createPinView("▼\nBAJA", Color.parseColor("#ef4444"), pinSize)
@@ -132,7 +171,7 @@ class CalibrationManager(private val context: Context) {
         root.addView(buyPin, buyParams)
         root.addView(sellPin, sellParams)
 
-        // Banner superior compacto con instrucciones
+        val oStr = if (getOrientationKey() == "land") "Horizontal" else "Vertical"
         val banner = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -140,7 +179,7 @@ class CalibrationManager(private val context: Context) {
             setPadding(20, 12, 20, 12)
         }
         val txtInfo = TextView(context).apply {
-            text = "🎯 Coloca el centro de cada mira sobre el botón de tu broker:"
+            text = "🎯 Calibrar [$oStr]: Arrastra cada mira sobre el botón de tu broker:"
             setTextColor(Color.WHITE)
             textSize = 11f
         }
