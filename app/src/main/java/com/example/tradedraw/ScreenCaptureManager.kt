@@ -46,7 +46,6 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
         try {
             mediaProjection = projectionManager.getMediaProjection(android.app.Activity.RESULT_OK, intent)
             if (mediaProjection != null) {
-                // En Android 14 es OBLIGATORIO registrar el callback de MediaProjection antes de crear el VirtualDisplay
                 mediaProjection?.registerCallback(object : MediaProjection.Callback() {
                     override fun onStop() {
                         super.onStop()
@@ -61,6 +60,21 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
             }
         } catch (e: Exception) {
             Log.e("ScreenCaptureManager", "Error al inicializar MediaProjection", e)
+        }
+    }
+
+    fun refreshVirtualDisplay() {
+        backgroundHandler.post {
+            try {
+                virtualDisplay?.release()
+                imageReader?.close()
+                virtualDisplay = null
+                imageReader = null
+                setupVirtualDisplay()
+                Log.d("ScreenCaptureManager", "VirtualDisplay refrescado para nueva orientación ($width x $height)")
+            } catch (e: Exception) {
+                Log.e("ScreenCaptureManager", "Error refrescando VirtualDisplay", e)
+            }
         }
     }
 
@@ -149,7 +163,6 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
     fun startCapture(onImageCaptured: (Bitmap) -> Unit) {
         onImageCapturedCallback = onImageCaptured
         isCapturing = true
-        // Si ya tenemos un último frame listo, emitirlo de inmediato para que el HUD reaccione sin esperar
         latestFrame?.let { frame ->
             mainHandler.post { onImageCaptured(frame) }
         }

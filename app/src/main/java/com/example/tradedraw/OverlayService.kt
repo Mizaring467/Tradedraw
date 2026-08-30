@@ -118,6 +118,7 @@ class OverlayService : Service() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        screenCaptureManager?.refreshVirtualDisplay()
         mainHandler.postDelayed({
             if (!::menuParams.isInitialized) return@postDelayed
             val metrics = resources.displayMetrics
