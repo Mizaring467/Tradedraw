@@ -23,6 +23,7 @@ data class DrawShape(
     var lineStyle: Int = 0,
     var labelVisible: Boolean = true,
     var labelText: String = "",
+    var isBotDrawn: Boolean = false,
     val pathPoints: MutableList<PointF> = mutableListOf()
 ) {
     fun toJson(): JSONObject {
@@ -40,6 +41,7 @@ data class DrawShape(
         json.put("lineStyle", lineStyle)
         json.put("labelVisible", labelVisible)
         json.put("labelText", labelText)
+        json.put("isBotDrawn", isBotDrawn)
         if (pathPoints.isNotEmpty()) {
             val pointsArray = JSONArray()
             for (point in pathPoints) {
@@ -69,7 +71,8 @@ data class DrawShape(
                 text = json.optString("text", ""),
                 lineStyle = json.optInt("lineStyle", 0),
                 labelVisible = json.optBoolean("labelVisible", true),
-                labelText = json.optString("labelText", "")
+                labelText = json.optString("labelText", ""),
+                isBotDrawn = json.optBoolean("isBotDrawn", false)
             )
             if (json.has("pathPoints")) {
                 val pointsArray = json.getJSONArray("pathPoints")

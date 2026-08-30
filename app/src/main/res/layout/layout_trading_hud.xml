@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/hud_root"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#EE0a0a0f"
+    android:padding="8dp"
+    android:elevation="16dp">
+
+    <!-- Fila 1: Modo y Estrategia -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/hud_mode"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="[OFF]"
+            android:textColor="#94a3b8"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:paddingEnd="6dp" />
+
+        <TextView
+            android:id="@+id/hud_strategy"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Estrat: S/R"
+            android:textColor="#e2e8f0"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- Fila 2: W/L y Winrate -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="3dp">
+
+        <TextView
+            android:id="@+id/hud_stats"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="W: 0 | L: 0"
+            android:textColor="#22c55e"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/hud_winrate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=" (0%)"
+            android:textColor="#94a3b8"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <!-- Fila 3: Estado / Cooldown -->
+    <TextView
+        android:id="@+id/hud_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="⚪ En espera"
+        android:textColor="#cbd5e1"
+        android:textSize="10sp"
+        android:layout_marginTop="3dp" />
+
+    <!-- Fila 4: Botones rápidos para registrar resultado en Demo -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="5dp">
+
+        <Button
+            android:id="@+id/hud_btn_win"
+            android:layout_width="45dp"
+            android:layout_height="28dp"
+            android:text="+W"
+            android:textSize="9sp"
+            android:textColor="#ffffff"
+            android:backgroundTint="#15803d"
+            android:padding="0dp" />
+
+        <Button
+            android:id="@+id/hud_btn_loss"
+            android:layout_width="45dp"
+            android:layout_height="28dp"
+            android:text="+L"
+            android:textSize="9sp"
+            android:textColor="#ffffff"
+            android:backgroundTint="#b91c1c"
+            android:layout_marginStart="4dp"
+            android:padding="0dp" />
+    </LinearLayout>
+
+</LinearLayout>

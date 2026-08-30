@@ -29,6 +29,24 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     private var previewPoint: PointF? = null
     private var pendingLabelText = ""
 
+    // Animación de marcador de clic del bot
+    private var clickMarkerPoint: PointF? = null
+    private val clickMarkerPaint = Paint().apply {
+        color = Color.parseColor("#38bdf8")
+        style = Paint.Style.STROKE
+        strokeWidth = 6f
+        isAntiAlias = true
+    }
+
+    fun triggerClickAnimation(x: Float, y: Float) {
+        clickMarkerPoint = PointF(x, y)
+        invalidate()
+        postDelayed({
+            clickMarkerPoint = null
+            invalidate()
+        }, 800)
+    }
+
     fun setLabelText(text: String) { this.pendingLabelText = text; invalidate() }
 
     var onShapesChange: (() -> Unit)? = null
@@ -84,6 +102,29 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     fun getShapes(): List<DrawShape> = shapes
     fun setShapes(newShapes: List<DrawShape>) { this.shapes = ArrayList(newShapes); undoneShapes.clear(); invalidate() }
 
+    fun addOrUpdateBotShape(key: String, shape: DrawShape) {
+        shape.isBotDrawn = true
+        shape.labelText = key
+        val idx = shapes.indexOfFirst { it.isBotDrawn && it.labelText == key }
+        if (idx >= 0) {
+            shapes[idx] = shape
+        } else {
+            shapes.add(shape)
+        }
+        invalidate()
+    }
+
+    fun clearBotShapes() {
+        shapes.removeAll { it.isBotDrawn }
+        invalidate()
+    }
+
+    fun getSupportResistanceYLevels(): Pair<List<Float>, List<Float>> {
+        val supports = shapes.filter { it.tool == TradingTool.SUPPORT_LINE }.map { it.startY }
+        val resistances = shapes.filter { it.tool == TradingTool.RESISTANCE_LINE }.map { it.startY }
+        return Pair(supports, resistances)
+    }
+
     private fun deselectAll() { shapes.forEach { it.isSelected = false }; selectedShape = null }
 
     fun undo() { if (shapes.isNotEmpty()) { undoneShapes.add(shapes.removeAt(shapes.size - 1)); deselectAll(); invalidate(); notifyShapesChange() } }
@@ -109,6 +150,10 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
         }
         currentShape?.let { drawGenericShape(canvas, it) }
         drawPendingMultiPointPreview(canvas)
+        clickMarkerPoint?.let { pt ->
+            canvas.drawCircle(pt.x, pt.y, 45f, clickMarkerPaint)
+            canvas.drawCircle(pt.x, pt.y, 12f, handlePaint)
+        }
     }
 
     private fun drawPendingMultiPointPreview(canvas: Canvas) {

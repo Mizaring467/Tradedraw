@@ -15,6 +15,8 @@ import com.example.tradedraw.R
 
 class MainActivity : AppCompatActivity() {
     private val REQUEST_MEDIA_PROJECTION = 100
+    private lateinit var btnAccessibility: Button
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -25,12 +27,35 @@ class MainActivity : AppCompatActivity() {
         val boton = findViewById<Button>(R.id.boton)
         boton.text = "Iniciar Overlay"
         
+        btnAccessibility = findViewById(R.id.btn_accessibility)
+        btnAccessibility.setOnClickListener {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            startActivity(intent)
+            Toast.makeText(this, "Busca 'TradeDraw' y activa el servicio de accesibilidad", Toast.LENGTH_LONG).show()
+        }
+
         boton.setOnClickListener {
             if (checkOverlayPermission()) {
                 startFloatingService()
             } else {
                 requestOverlayPermission()
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updateAccessibilityButtonState()
+    }
+
+    private fun updateAccessibilityButtonState() {
+        val isConnected = AutoTradeAccessibilityService.instance != null
+        if (isConnected) {
+            btnAccessibility.text = "Accesibilidad: ACTIVA ✓"
+            btnAccessibility.setBackgroundColor(android.graphics.Color.parseColor("#15803d"))
+        } else {
+            btnAccessibility.text = "Activar Accesibilidad (Auto-Trading)"
+            btnAccessibility.setBackgroundColor(android.graphics.Color.parseColor("#334155"))
         }
     }
 
