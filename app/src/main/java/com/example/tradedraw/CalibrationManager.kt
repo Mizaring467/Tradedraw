@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.view.Gravity
 import android.view.MotionEvent
@@ -47,7 +48,6 @@ class CalibrationManager(private val context: Context) {
         val y = prefs.getFloat("${p}_buy_y", -1f)
         if (x >= 0 && y >= 0) return Pair(x, y)
 
-        // Valores por defecto según resolución
         val dm = context.resources.displayMetrics
         return when (activeProfile) {
             BrokerProfile.BINOMO -> Pair(dm.widthPixels * 0.25f, dm.heightPixels * 0.88f)
@@ -87,7 +87,7 @@ class CalibrationManager(private val context: Context) {
     }
 
     /**
-     * Muestra en pantalla los pines interactivos arrastrables para calibrar los botones.
+     * Muestra en pantalla los pines interactivos compactos arrastrables para calibrar los botones.
      */
     @SuppressLint("ClickableViewAccessibility")
     fun startInteractiveCalibration(onFinished: () -> Unit) {
@@ -107,10 +107,11 @@ class CalibrationManager(private val context: Context) {
         val (buyX, buyY) = getBuyCoordinates()
         val (sellX, sellY) = getSellCoordinates()
 
-        val buyPin = createPinView("SUBE", Color.parseColor("#22c55e"))
-        val sellPin = createPinView("BAJA", Color.parseColor("#ef4444"))
+        val density = context.resources.displayMetrics.density
+        val pinSize = (38 * density).toInt() // Tamaño compacto de precisión
 
-        val pinSize = (80 * context.resources.displayMetrics.density).toInt()
+        val buyPin = createPinView("▲\nSUBE", Color.parseColor("#22c55e"), pinSize)
+        val sellPin = createPinView("▼\nBAJA", Color.parseColor("#ef4444"), pinSize)
 
         val buyParams = FrameLayout.LayoutParams(pinSize, pinSize).apply {
             leftMargin = (buyX - pinSize / 2).toInt().coerceAtLeast(0)
@@ -131,20 +132,21 @@ class CalibrationManager(private val context: Context) {
         root.addView(buyPin, buyParams)
         root.addView(sellPin, sellParams)
 
-        // Panel superior con instrucciones y botón Guardar
+        // Banner superior compacto con instrucciones
         val banner = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#EE0a0a0f"))
-            setPadding(24, 16, 24, 16)
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(Color.parseColor("#F00a0a0f"))
+            setPadding(20, 12, 20, 12)
         }
         val txtInfo = TextView(context).apply {
-            text = "🎯 Arrastra los pines sobre los botones de tu broker:"
+            text = "🎯 Coloca el centro de cada mira sobre el botón de tu broker:"
             setTextColor(Color.WHITE)
-            textSize = 12f
+            textSize = 11f
         }
         val btnSave = Button(context).apply {
-            text = "✓ GUARDAR"
+            text = "✓ LISTO"
+            textSize = 11f
             setBackgroundColor(Color.parseColor("#7c3aed"))
             setTextColor(Color.WHITE)
             setOnClickListener {
@@ -160,7 +162,7 @@ class CalibrationManager(private val context: Context) {
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.TOP
-            topMargin = 50
+            topMargin = (30 * density).toInt()
         }
         root.addView(banner, bannerParams)
 
@@ -180,14 +182,19 @@ class CalibrationManager(private val context: Context) {
         }
     }
 
-    private fun createPinView(label: String, color: Int): View {
+    private fun createPinView(label: String, color: Int, size: Int): View {
+        val bg = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.argb(190, Color.red(color), Color.green(color), Color.blue(color)))
+            setStroke(3, Color.WHITE)
+        }
         return TextView(context).apply {
             text = label
             setTextColor(Color.WHITE)
-            textSize = 12f
+            textSize = 9f
             gravity = Gravity.CENTER
-            setBackgroundColor(color)
-            elevation = 20f
+            background = bg
+            elevation = 25f
         }
     }
 

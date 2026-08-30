@@ -46,6 +46,15 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
         try {
             mediaProjection = projectionManager.getMediaProjection(android.app.Activity.RESULT_OK, intent)
             if (mediaProjection != null) {
+                // En Android 14 es OBLIGATORIO registrar el callback de MediaProjection antes de crear el VirtualDisplay
+                mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                    override fun onStop() {
+                        super.onStop()
+                        Log.d("ScreenCaptureManager", "MediaProjection onStop recibido")
+                        destroy()
+                    }
+                }, backgroundHandler)
+
                 setupVirtualDisplay()
             } else {
                 Log.e("ScreenCaptureManager", "MediaProjection es nula al inicializar.")
@@ -73,18 +82,28 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
             density = metrics.densityDpi
         }
 
+        if (width <= 0 || height <= 0) {
+            width = 1080
+            height = 1920
+            density = 320
+        }
+
         @SuppressLint("WrongConstant")
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
+
+        val flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR or
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC or
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
 
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "TradeDraw_ScreenCapture",
             width, height, density,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            flags,
             imageReader?.surface, null, backgroundHandler
         )
 
         var lastCaptureTime = 0L
-        val CAPTURE_INTERVAL_MS = 1000L
+        val CAPTURE_INTERVAL_MS = 800L
 
         imageReader?.setOnImageAvailableListener({ reader ->
             val image: Image? = try { reader.acquireLatestImage() } catch (e: Exception) { null }
@@ -97,28 +116,32 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
                     lastCaptureTime = currentTime
 
                     val planes = image.planes
-                    val buffer: ByteBuffer = planes[0].buffer
-                    val pixelStride = planes[0].pixelStride
-                    val rowStride = planes[0].rowStride
-                    val rowPadding = rowStride - pixelStride * width
+                    if (planes.isNotEmpty()) {
+                        val buffer: ByteBuffer = planes[0].buffer
+                        val pixelStride = planes[0].pixelStride
+                        val rowStride = planes[0].rowStride
+                        val rowPadding = rowStride - pixelStride * width
 
-                    val bitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888)
-                    bitmap.copyPixelsFromBuffer(buffer)
+                        val bitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888)
+                        bitmap.copyPixelsFromBuffer(buffer)
 
-                    val croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height)
-                    latestFrame = croppedBitmap
-                    totalFramesCaptured++
+                        val croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height)
+                        latestFrame = croppedBitmap
+                        totalFramesCaptured++
 
-                    if (isCapturing && onImageCapturedCallback != null) {
-                        mainHandler.post {
-                            onImageCapturedCallback?.invoke(croppedBitmap)
+                        if (isCapturing && onImageCapturedCallback != null) {
+                            mainHandler.post {
+                                onImageCapturedCallback?.invoke(croppedBitmap)
+                            }
                         }
                     }
                 }
             } catch (e: Exception) {
                 Log.e("ScreenCaptureManager", "Error procesando frame", e)
             } finally {
-                image.close()
+                try {
+                    image.close()
+                } catch (e: Exception) {}
             }
         }, backgroundHandler)
     }
@@ -126,6 +149,10 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
     fun startCapture(onImageCaptured: (Bitmap) -> Unit) {
         onImageCapturedCallback = onImageCaptured
         isCapturing = true
+        // Si ya tenemos un último frame listo, emitirlo de inmediato para que el HUD reaccione sin esperar
+        latestFrame?.let { frame ->
+            mainHandler.post { onImageCaptured(frame) }
+        }
     }
 
     fun stopCapture() {

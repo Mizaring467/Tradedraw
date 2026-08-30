@@ -16,6 +16,7 @@ import com.example.tradedraw.R
 class MainActivity : AppCompatActivity() {
     private val REQUEST_MEDIA_PROJECTION = 100
     private lateinit var btnAccessibility: Button
+    private lateinit var btnStop: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,7 +26,16 @@ class MainActivity : AppCompatActivity() {
         titulo.text = "📊 TradeDraw"
 
         val boton = findViewById<Button>(R.id.boton)
-        boton.text = "Iniciar Overlay"
+        boton.text = "Iniciar Overlay (con Visión IA)"
+
+        btnStop = findViewById(R.id.btn_stop)
+        btnStop.setOnClickListener {
+            val stopIntent = Intent(this, OverlayService::class.java).apply {
+                action = "com.example.tradedraw.STOP"
+            }
+            startService(stopIntent)
+            Toast.makeText(this, "Overlay detenido", Toast.LENGTH_SHORT).show()
+        }
         
         btnAccessibility = findViewById(R.id.btn_accessibility)
         btnAccessibility.setOnClickListener {
@@ -79,7 +89,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startFloatingService() {
-        // Solicitamos permiso para grabar la pantalla antes de iniciar el servicio
+        // En Android 14, avisar al usuario para que elija 'Toda la pantalla'
+        Toast.makeText(this, "⚠️ Importante: Elige 'Toda la pantalla' al solicitar permiso", Toast.LENGTH_LONG).show()
         val mediaProjectionManager = getSystemService(android.content.Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         startActivityForResult(mediaProjectionManager.createScreenCaptureIntent(), REQUEST_MEDIA_PROJECTION)
     }
@@ -89,7 +100,7 @@ class MainActivity : AppCompatActivity() {
             putExtra("EXTRA_MEDIA_PROJECTION_DATA", data)
         }
         ContextCompat.startForegroundService(this, intent)
-        Toast.makeText(this, "Overlay iniciado con ScreenCapture", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Overlay iniciado con Visión IA activa", Toast.LENGTH_SHORT).show()
     }
 
     @Deprecated("Deprecated in Java")
@@ -106,9 +117,7 @@ class MainActivity : AppCompatActivity() {
             if (resultCode == RESULT_OK && data != null) {
                 launchService(data)
             } else {
-                Toast.makeText(this, "Permiso de grabación de pantalla denegado", Toast.LENGTH_SHORT).show()
-                // Iniciamos igual el servicio sin captura? Para que la app original no se rompa
-                launchService(Intent())
+                Toast.makeText(this, "Captura no concedida. Vuelve a tocar 'Iniciar Overlay' y elige 'Toda la pantalla'.", Toast.LENGTH_LONG).show()
             }
         }
     }
