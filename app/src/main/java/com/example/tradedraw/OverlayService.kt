@@ -16,6 +16,7 @@ import android.view.*
 import android.widget.*
 import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
+import java.util.Locale
 
 /**
  * Servicio maestro con submenús inteligentes que detectan los límites de la pantalla.
@@ -106,8 +107,8 @@ class OverlayService : Service() {
             drawingView.triggerClickAnimation(x, y)
         }
 
-        tradingEngine.onSignalListener = { _, _ -> updateHUDView() }
-        tradingEngine.onTradeExecutedListener = { _, _ -> updateHUDView() }
+        tradingEngine.onSignalListener = { _: TradeAction, _: String -> updateHUDView() }
+        tradingEngine.onTradeExecutedListener = { _: TradeAction, _: Boolean -> updateHUDView() }
 
         setupMenuWindow()
         setupHUDWindow()

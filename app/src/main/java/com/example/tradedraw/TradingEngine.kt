@@ -16,6 +16,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+enum class TradeAction {
+    BUY, SELL
+}
+
 enum class AutoTradeMode {
     AUTONOMOUS,      // Ejecuta clics automáticos
     SEMIAUTOMATIC,   // Alerta y prepara dibujos, usuario opera
