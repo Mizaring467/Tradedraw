@@ -647,13 +647,19 @@ class OverlayService : Service() {
 
             txtHint.text = tradingEngine.getStrategyStatusHint()
 
-            val remaining = riskManager.getRemainingCooldown()
-            if (remaining > 0) {
-                txtStatus.text = "⏳ Cooldown: ${remaining}s"
-                txtStatus.setTextColor(Color.parseColor("#fb923c"))
+            if (riskManager.hasPendingTrade) {
+                val elapsed = (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000
+                txtStatus.text = "🤖 Operación en curso (${elapsed}s) · Esperando resultado..."
+                txtStatus.setTextColor(Color.parseColor("#38bdf8"))
             } else {
-                txtStatus.text = if (tradingEngine.mode != AutoTradeMode.DISABLED) "🟢 Analizando en vivo" else "⚪ En espera"
-                txtStatus.setTextColor(Color.parseColor("#cbd5e1"))
+                val remaining = riskManager.getRemainingCooldown()
+                if (remaining > 0) {
+                    txtStatus.text = "⏳ Cooldown: ${remaining}s"
+                    txtStatus.setTextColor(Color.parseColor("#fb923c"))
+                } else {
+                    txtStatus.text = if (tradingEngine.mode != AutoTradeMode.DISABLED) "🟢 Analizando en vivo" else "⚪ En espera"
+                    txtStatus.setTextColor(Color.parseColor("#cbd5e1"))
+                }
             }
         }
     }
