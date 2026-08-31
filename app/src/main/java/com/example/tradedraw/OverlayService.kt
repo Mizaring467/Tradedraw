@@ -561,18 +561,26 @@ class OverlayService : Service() {
 
     private fun showStrategyDialog() {
         val strategies = arrayOf(
-            "1. Soportes y Resistencias (Rebotes)",
-            "2. Patrón de 3 Velas y Martillo",
-            "3. Seguidor de Tendencia",
-            "4. Combinada (Doble Confirmación)"
+            "🔥 1. MT: Combo Acción del Precio (Recomendado)",
+            "⚡ 2. MT: Mechas de Rechazo en S/R",
+            "🎯 3. MT: Choque de Máximos/Mínimos (Pullback)",
+            "📊 4. MT: Agotamiento de 3 Velas",
+            "5. Soportes y Resistencias (Clásico)",
+            "6. Patrón de Velas y Martillo",
+            "7. Seguidor de Tendencia",
+            "8. Combinada (Doble Confirmación)"
         )
         AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
-            .setTitle("Seleccionar Estrategia")
+            .setTitle("Seleccionar Estrategia (Acción del Precio)")
             .setItems(strategies) { _, which ->
                 tradingEngine.strategy = when (which) {
-                    0 -> AutoTradeStrategy.SUPPORT_RESISTANCE
-                    1 -> AutoTradeStrategy.CANDLE_PATTERNS
-                    2 -> AutoTradeStrategy.TREND_FOLLOWING
+                    0 -> AutoTradeStrategy.MT_MASTER_COMBO
+                    1 -> AutoTradeStrategy.MT_REJECTION
+                    2 -> AutoTradeStrategy.MT_CHOQUE_PULLBACK
+                    3 -> AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO
+                    4 -> AutoTradeStrategy.SUPPORT_RESISTANCE
+                    5 -> AutoTradeStrategy.CANDLE_PATTERNS
+                    6 -> AutoTradeStrategy.TREND_FOLLOWING
                     else -> AutoTradeStrategy.COMBINED
                 }
                 Toast.makeText(this, "Estrategia: ${tradingEngine.strategy.name}", Toast.LENGTH_SHORT).show()
@@ -739,8 +747,12 @@ class OverlayService : Service() {
             }
 
             txtStrat.text = "Estrat: " + when (tradingEngine.strategy) {
+                AutoTradeStrategy.MT_MASTER_COMBO -> "MT Combo"
+                AutoTradeStrategy.MT_REJECTION -> "MT Rechazo"
+                AutoTradeStrategy.MT_CHOQUE_PULLBACK -> "MT Choque"
+                AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO -> "MT 3 Velas"
                 AutoTradeStrategy.SUPPORT_RESISTANCE -> "S/R"
-                AutoTradeStrategy.CANDLE_PATTERNS -> "3 Velas"
+                AutoTradeStrategy.CANDLE_PATTERNS -> "Velas"
                 AutoTradeStrategy.TREND_FOLLOWING -> "Tendencia"
                 AutoTradeStrategy.COMBINED -> "Combinada"
             }

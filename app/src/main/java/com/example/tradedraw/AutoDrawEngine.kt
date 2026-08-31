@@ -7,18 +7,22 @@ enum class AutoTradeStrategy {
     SUPPORT_RESISTANCE,
     CANDLE_PATTERNS,
     TREND_FOLLOWING,
-    COMBINED
+    COMBINED,
+    MT_REJECTION,           // Master Traders: Mechas de Rechazo en S/R
+    MT_CHOQUE_PULLBACK,     // Master Traders: Choque de Máximos/Mínimos (Breakout-Retest)
+    MT_3_VELAS_AGOTAMIENTO, // Master Traders: Patrón 3 Velas y Agotamiento de Tendencia
+    MT_MASTER_COMBO         // Master Traders: Combo Acción del Precio (Mayor Probabilidad)
 }
 
 class AutoDrawEngine(private val drawingView: CustomDrawingView) {
 
     /**
      * Dibuja o actualiza automáticamente las herramientas técnicas de TradeDraw
-     * en base al análisis de visión actual.
+     * en base al análisis de visión actual y la estrategia seleccionada.
      */
     fun updateTechnicalDrawings(strategy: AutoTradeStrategy, result: VisionAnalysisResult) {
         when (strategy) {
-            AutoTradeStrategy.SUPPORT_RESISTANCE -> {
+            AutoTradeStrategy.SUPPORT_RESISTANCE, AutoTradeStrategy.MT_REJECTION -> {
                 result.lowestPoint?.let { low ->
                     drawingView.addOrUpdateBotShape(
                         "BOT_SUPPORT",
@@ -44,6 +48,57 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
                             endY = high.y,
                             color = Color.GREEN,
                             strokeWidth = 6f
+                        )
+                    )
+                }
+                if (strategy == AutoTradeStrategy.MT_REJECTION && (result.hasTopRejectionWick || result.hasBottomRejectionWick)) {
+                    val last = result.candleList.firstOrNull()
+                    if (last != null) {
+                        drawingView.addOrUpdateBotShape(
+                            "BOT_REJECTION_CIRCLE",
+                            DrawShape(
+                                tool = TradingTool.CIRCLE,
+                                startX = last.x,
+                                startY = if (result.hasTopRejectionWick) last.topY else last.bottomY,
+                                endX = last.x + 25f,
+                                endY = (if (result.hasTopRejectionWick) last.topY else last.bottomY) + 25f,
+                                color = if (result.hasBottomRejectionWick) Color.GREEN else Color.RED,
+                                strokeWidth = 4f
+                            )
+                        )
+                    }
+                }
+            }
+            AutoTradeStrategy.MT_CHOQUE_PULLBACK -> {
+                // Trazar nivel de choque / pullback con un rayo horizontal
+                if (result.candleList.size >= 2) {
+                    val brokenLevelY = result.candleList[1].bodyTopY
+                    drawingView.addOrUpdateBotShape(
+                        "BOT_CHOQUE_LEVEL",
+                        DrawShape(
+                            tool = TradingTool.HORIZONTAL_LINE,
+                            startX = 0f,
+                            startY = brokenLevelY,
+                            endX = 0f,
+                            endY = brokenLevelY,
+                            color = Color.parseColor("#38bdf8"),
+                            strokeWidth = 5f
+                        )
+                    )
+                }
+            }
+            AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO -> {
+                if (result.lowestPoint != null && result.highestPoint != null) {
+                    drawingView.addOrUpdateBotShape(
+                        "BOT_EXHAUSTION_ZONE",
+                        DrawShape(
+                            tool = TradingTool.ZONE,
+                            startX = result.highestPoint.x - 60f,
+                            startY = result.highestPoint.y,
+                            endX = result.highestPoint.x + 60f,
+                            endY = result.lowestPoint.y,
+                            color = Color.parseColor("#fb923c"),
+                            strokeWidth = 3f
                         )
                     )
                 }
@@ -83,8 +138,7 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
                     )
                 }
             }
-            AutoTradeStrategy.COMBINED -> {
-                // Soportes y resistencias + Rayo de tendencia
+            AutoTradeStrategy.COMBINED, AutoTradeStrategy.MT_MASTER_COMBO -> {
                 result.lowestPoint?.let { low ->
                     drawingView.addOrUpdateBotShape(
                         "BOT_SUPPORT",
@@ -121,9 +175,9 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
      * Traza una caja de posición LONG o SHORT en el punto de entrada exacto.
      */
     fun drawTradeEntry(action: TradeAction, currentPriceY: Float, screenWidth: Float) {
-        val entryX = screenWidth * 0.75f
-        val boxWidth = screenWidth * 0.18f
-        val boxHeight = 120f
+        val entryX = screenWidth * 0.70f
+        val boxWidth = screenWidth * 0.16f
+        val boxHeight = 110f
 
         val tool = if (action == TradeAction.BUY) TradingTool.LONG_POSITION else TradingTool.SHORT_POSITION
         drawingView.addOrUpdateBotShape(

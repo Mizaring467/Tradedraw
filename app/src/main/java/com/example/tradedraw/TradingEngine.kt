@@ -137,6 +137,46 @@ class TradingEngine(
                     TradeAction.SELL
                 } else null
             }
+            AutoTradeStrategy.MT_REJECTION -> {
+                // Estrategia Master Traders 1: Mechas de Rechazo en niveles clave
+                if (analysis.hasBottomRejectionWick || (analysis.touchesSupport && analysis.lastCandles.firstOrNull() == CandleType.RED)) {
+                    TradeAction.BUY // Rechazo por abajo (compradores absorben) -> COMPRA
+                } else if (analysis.hasTopRejectionWick || (analysis.touchesResistance && analysis.lastCandles.firstOrNull() == CandleType.GREEN)) {
+                    TradeAction.SELL // Rechazo por arriba (vendedores absorben) -> VENTA
+                } else null
+            }
+            AutoTradeStrategy.MT_CHOQUE_PULLBACK -> {
+                // Estrategia Master Traders 2: Choque de Máximos y Mínimos (Breakout + Retest)
+                if (analysis.isChoquePullbackCall) {
+                    TradeAction.BUY // Retest a resistencia rota convertida en soporte -> COMPRA
+                } else if (analysis.isChoquePullbackPut) {
+                    TradeAction.SELL // Retest a soporte roto convertido en resistencia -> VENTA
+                } else null
+            }
+            AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO -> {
+                // Estrategia Master Traders 3: Agotamiento de 3 Velas consecutivas
+                if (analysis.isExhaustion3CandlesCall) {
+                    TradeAction.BUY // 3 rojas con cuerpo decreciente -> Reversión COMPRA
+                } else if (analysis.isExhaustion3CandlesPut) {
+                    TradeAction.SELL // 3 verdes con cuerpo decreciente -> Reversión VENTA
+                } else null
+            }
+            AutoTradeStrategy.MT_MASTER_COMBO -> {
+                // Combo Master Traders: Prioriza Rechazo > Choque > Agotamiento
+                if (analysis.hasBottomRejectionWick || analysis.touchesSupport) {
+                    TradeAction.BUY
+                } else if (analysis.hasTopRejectionWick || analysis.touchesResistance) {
+                    TradeAction.SELL
+                } else if (analysis.isChoquePullbackCall) {
+                    TradeAction.BUY
+                } else if (analysis.isChoquePullbackPut) {
+                    TradeAction.SELL
+                } else if (analysis.isExhaustion3CandlesCall) {
+                    TradeAction.BUY
+                } else if (analysis.isExhaustion3CandlesPut) {
+                    TradeAction.SELL
+                } else null
+            }
             AutoTradeStrategy.CANDLE_PATTERNS -> {
                 if (analysis.consecutiveCount >= 3) {
                     if (analysis.lastCandles.firstOrNull() == CandleType.RED) {
@@ -199,6 +239,30 @@ class TradingEngine(
                 } else {
                     "🔍 Vigilando rebote en S/R..."
                 }
+            }
+            AutoTradeStrategy.MT_REJECTION -> {
+                if (analysis != null && (analysis.hasTopRejectionWick || analysis.hasBottomRejectionWick)) {
+                    "⚡ Mecha de rechazo detectada! Evaluando entrada..."
+                } else {
+                    "🔍 MT: Buscando mechas de rechazo en niveles..."
+                }
+            }
+            AutoTradeStrategy.MT_CHOQUE_PULLBACK -> {
+                if (analysis != null && (analysis.isChoquePullbackCall || analysis.isChoquePullbackPut)) {
+                    "⚡ Choque con nivel roto detectado! Preparando trade..."
+                } else {
+                    "🔍 MT: Buscando choque de máximos/mínimos..."
+                }
+            }
+            AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO -> {
+                if (analysis != null && analysis.consecutiveCount >= 2) {
+                    "📊 MT: Racha ${analysis.consecutiveCount} velas. Vigilando agotamiento..."
+                } else {
+                    "🔍 MT: Esperando patrón de 3 velas..."
+                }
+            }
+            AutoTradeStrategy.MT_MASTER_COMBO -> {
+                "🔥 MT Master Combo: Vigilando Rechazo, Choque y Agotamiento..."
             }
             AutoTradeStrategy.CANDLE_PATTERNS -> {
                 if (analysis != null && analysis.consecutiveCount > 0) {
