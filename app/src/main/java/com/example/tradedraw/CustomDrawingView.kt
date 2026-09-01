@@ -227,8 +227,43 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
             TradingTool.TRIANGLE -> drawTriangle(canvas, shape, paint)
             TradingTool.ZONE -> drawZone(canvas, shape, paint)
             TradingTool.CHANNEL -> drawChannel(canvas, shape, paint)
+            TradingTool.STRIKE_PRICE_LINE -> drawStrikePriceLine(canvas, shape)
             else -> {}
         }
+    }
+
+    private fun drawStrikePriceLine(canvas: Canvas, shape: DrawShape) {
+        val y = shape.startY
+        val isCall = shape.labelText.contains("CALL", ignoreCase = true) || shape.labelText.contains("COMPRA", ignoreCase = true)
+        val isITM = shape.color == Color.GREEN || shape.labelText.contains("ITM", ignoreCase = true)
+
+        val linePaint = Paint().apply {
+            color = if (isITM) Color.parseColor("#22c55e") else Color.parseColor("#ef4444")
+            strokeWidth = 3.5f
+            style = Paint.Style.STROKE
+            pathEffect = DashPathEffect(floatArrayOf(14f, 10f), 0f)
+            isAntiAlias = true
+        }
+        canvas.drawLine(0f, y, width.toFloat(), y, linePaint)
+
+        val badgeBg = Paint().apply {
+            color = if (isITM) Color.parseColor("#E615803d") else Color.parseColor("#E6b91c1c")
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+        val labelText = if (isCall) {
+            if (isITM) "▲ CALL [ITM +$$$]" else "▲ CALL [OTM $0]"
+        } else {
+            if (isITM) "▼ PUT [ITM +$$$]" else "▼ PUT [OTM $0]"
+        }
+
+        val badgeWidth = textPaint.measureText(labelText) + 24f
+        val badgeHeight = 36f
+        val badgeLeft = (width * 0.65f).coerceAtMost(width - badgeWidth - 20f)
+        val badgeTop = y - badgeHeight - 4f
+
+        canvas.drawRoundRect(badgeLeft, badgeTop, badgeLeft + badgeWidth, badgeTop + badgeHeight, 8f, 8f, badgeBg)
+        canvas.drawText(labelText, badgeLeft + 12f, badgeTop + 24f, textPaint)
     }
 
     private fun drawRay(canvas: Canvas, shape: DrawShape, paint: Paint) {
