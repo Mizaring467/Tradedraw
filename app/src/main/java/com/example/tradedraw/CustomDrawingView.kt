@@ -29,6 +29,24 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     private var previewPoint: PointF? = null
     private var pendingLabelText = ""
 
+    // Animación de marcador de clic del bot
+    private var clickMarkerPoint: PointF? = null
+    private val clickMarkerPaint = Paint().apply {
+        color = Color.parseColor("#38bdf8")
+        style = Paint.Style.STROKE
+        strokeWidth = 6f
+        isAntiAlias = true
+    }
+
+    fun triggerClickAnimation(x: Float, y: Float) {
+        clickMarkerPoint = PointF(x, y)
+        invalidate()
+        postDelayed({
+            clickMarkerPoint = null
+            invalidate()
+        }, 800)
+    }
+
     fun setLabelText(text: String) { this.pendingLabelText = text; invalidate() }
 
     var onShapesChange: (() -> Unit)? = null
@@ -84,6 +102,29 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     fun getShapes(): List<DrawShape> = shapes
     fun setShapes(newShapes: List<DrawShape>) { this.shapes = ArrayList(newShapes); undoneShapes.clear(); invalidate() }
 
+    fun addOrUpdateBotShape(key: String, shape: DrawShape) {
+        shape.isBotDrawn = true
+        shape.labelText = key
+        val idx = shapes.indexOfFirst { it.isBotDrawn && it.labelText == key }
+        if (idx >= 0) {
+            shapes[idx] = shape
+        } else {
+            shapes.add(shape)
+        }
+        invalidate()
+    }
+
+    fun clearBotShapes() {
+        shapes.removeAll { it.isBotDrawn }
+        invalidate()
+    }
+
+    fun getSupportResistanceYLevels(): Pair<List<Float>, List<Float>> {
+        val supports = shapes.filter { it.tool == TradingTool.SUPPORT_LINE }.map { it.startY }
+        val resistances = shapes.filter { it.tool == TradingTool.RESISTANCE_LINE }.map { it.startY }
+        return Pair(supports, resistances)
+    }
+
     private fun deselectAll() { shapes.forEach { it.isSelected = false }; selectedShape = null }
 
     fun undo() { if (shapes.isNotEmpty()) { undoneShapes.add(shapes.removeAt(shapes.size - 1)); deselectAll(); invalidate(); notifyShapesChange() } }
@@ -109,6 +150,10 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
         }
         currentShape?.let { drawGenericShape(canvas, it) }
         drawPendingMultiPointPreview(canvas)
+        clickMarkerPoint?.let { pt ->
+            canvas.drawCircle(pt.x, pt.y, 45f, clickMarkerPaint)
+            canvas.drawCircle(pt.x, pt.y, 12f, handlePaint)
+        }
     }
 
     private fun drawPendingMultiPointPreview(canvas: Canvas) {
@@ -161,11 +206,13 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
             TradingTool.TREND_LINE -> canvas.drawLine(shape.startX, shape.startY, shape.endX, shape.endY, paint)
             TradingTool.SUPPORT_LINE -> {
                 canvas.drawLine(0f, shape.startY, width.toFloat(), shape.startY, paint)
-                canvas.drawText("SUPPORT", 25f, shape.startY - 15f, textPaint)
+                val label = if (shape.isBotDrawn) "SOPORTE [IA]" else "SOPORTE"
+                canvas.drawText(label, 25f, shape.startY - 15f, textPaint)
             }
             TradingTool.RESISTANCE_LINE -> {
                 canvas.drawLine(0f, shape.startY, width.toFloat(), shape.startY, paint)
-                canvas.drawText("RESISTANCE", 25f, shape.startY - 15f, textPaint)
+                val label = if (shape.isBotDrawn) "RESISTENCIA [IA]" else "RESISTENCIA"
+                canvas.drawText(label, 25f, shape.startY - 15f, textPaint)
             }
             TradingTool.RECTANGLE -> canvas.drawRect(Math.min(shape.startX, shape.endX), Math.min(shape.startY, shape.endY), Math.max(shape.startX, shape.endX), Math.max(shape.startY, shape.endY), paint)
             TradingTool.FIB_RETRACEMENT -> drawFibonacci(canvas, shape, paint)
@@ -180,8 +227,43 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
             TradingTool.TRIANGLE -> drawTriangle(canvas, shape, paint)
             TradingTool.ZONE -> drawZone(canvas, shape, paint)
             TradingTool.CHANNEL -> drawChannel(canvas, shape, paint)
+            TradingTool.STRIKE_PRICE_LINE -> drawStrikePriceLine(canvas, shape)
             else -> {}
         }
+    }
+
+    private fun drawStrikePriceLine(canvas: Canvas, shape: DrawShape) {
+        val y = shape.startY
+        val isCall = shape.labelText.contains("CALL", ignoreCase = true) || shape.labelText.contains("COMPRA", ignoreCase = true)
+        val isITM = shape.color == Color.GREEN || shape.labelText.contains("ITM", ignoreCase = true)
+
+        val linePaint = Paint().apply {
+            color = if (isITM) Color.parseColor("#22c55e") else Color.parseColor("#ef4444")
+            strokeWidth = 3.5f
+            style = Paint.Style.STROKE
+            pathEffect = DashPathEffect(floatArrayOf(14f, 10f), 0f)
+            isAntiAlias = true
+        }
+        canvas.drawLine(0f, y, width.toFloat(), y, linePaint)
+
+        val badgeBg = Paint().apply {
+            color = if (isITM) Color.parseColor("#E615803d") else Color.parseColor("#E6b91c1c")
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+        val labelText = if (isCall) {
+            if (isITM) "▲ CALL [ITM +$$$]" else "▲ CALL [OTM $0]"
+        } else {
+            if (isITM) "▼ PUT [ITM +$$$]" else "▼ PUT [OTM $0]"
+        }
+
+        val badgeWidth = textPaint.measureText(labelText) + 24f
+        val badgeHeight = 36f
+        val badgeLeft = (width * 0.65f).coerceAtMost(width - badgeWidth - 20f)
+        val badgeTop = y - badgeHeight - 4f
+
+        canvas.drawRoundRect(badgeLeft, badgeTop, badgeLeft + badgeWidth, badgeTop + badgeHeight, 8f, 8f, badgeBg)
+        canvas.drawText(labelText, badgeLeft + 12f, badgeTop + 24f, textPaint)
     }
 
     private fun drawRay(canvas: Canvas, shape: DrawShape, paint: Paint) {
@@ -284,8 +366,8 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
                     // Solo dibujar si NO hay nada seleccionado para evitar trazos accidentales
                     undoneShapes.clear()
                     val colorToUse = when (currentTool) {
-                        TradingTool.SUPPORT_LINE -> Color.RED
-                        TradingTool.RESISTANCE_LINE -> Color.GREEN
+                        TradingTool.SUPPORT_LINE -> Color.GREEN
+                        TradingTool.RESISTANCE_LINE -> Color.RED
                         else -> activeDrawingColor
                     }
                     currentShape = DrawShape(currentTool, x, y, x, y, color = colorToUse, strokeWidth = currentStrokeWidth)
@@ -350,8 +432,8 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     private fun buildMultiPointShape(): DrawShape? {
         if (tapPoints.isEmpty()) return null
         val colorToUse = when (currentTool) {
-            TradingTool.SUPPORT_LINE -> Color.RED
-            TradingTool.RESISTANCE_LINE -> Color.GREEN
+            TradingTool.SUPPORT_LINE -> Color.GREEN
+            TradingTool.RESISTANCE_LINE -> Color.RED
             else -> activeDrawingColor
         }
         val p0 = tapPoints[0]

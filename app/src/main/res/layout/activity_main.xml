@@ -27,14 +27,34 @@
 
     <Button
         android:id="@+id/boton"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Iniciar Overlay"
+        android:text="Iniciar Overlay (con Visión IA)"
         android:backgroundTint="#7c3aed"
         android:textColor="#ffffff"
-        android:paddingLeft="32dp"
-        android:paddingRight="32dp"
         android:paddingTop="12dp"
-        android:paddingBottom="12dp"/>
+        android:paddingBottom="12dp"
+        android:layout_marginBottom="10dp"/>
+
+    <Button
+        android:id="@+id/btn_stop"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Detener Overlay"
+        android:backgroundTint="#ef4444"
+        android:textColor="#ffffff"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:layout_marginBottom="10dp"/>
+
+    <Button
+        android:id="@+id/btn_accessibility"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Activar Accesibilidad (Auto-Trading)"
+        android:backgroundTint="#334155"
+        android:textColor="#e2e8f0"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"/>
 
 </LinearLayout>

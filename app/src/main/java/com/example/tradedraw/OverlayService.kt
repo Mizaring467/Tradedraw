@@ -16,6 +16,7 @@ import android.view.*
 import android.widget.*
 import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
+import java.util.Locale
 
 /**
  * Servicio maestro con submenús inteligentes que detectan los límites de la pantalla.
@@ -43,7 +44,16 @@ class OverlayService : Service() {
     private lateinit var templateManager: TemplateManager
 
     private var screenCaptureManager: ScreenCaptureManager? = null
-    private lateinit var aiController: AIController
+    lateinit var riskManager: RiskManager
+        private set
+    lateinit var calibrationManager: CalibrationManager
+        private set
+    lateinit var tradingEngine: TradingEngine
+        private set
+
+    private var hudView: View? = null
+    private var hudParams: WindowManager.LayoutParams? = null
+    private var isHudVisible = false
 
     private var isMenuExpanded = false
     private var isDrawingMode = false
@@ -85,20 +95,30 @@ class OverlayService : Service() {
         CrashLogger.showPending(this)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         templateManager = TemplateManager(this)
-        aiController = AIController(this)
 
-        // En Android 8+ se requiere llamar a startForeground en menos de 5 segs de onCreate.
-        // Lo llamamos en onCreate como red de seguridad, y luego se re-ejecuta en onStartCommand.
         startTradeDrawForeground()
-
         setupCanvasWindow()
+
+        riskManager = RiskManager(this)
+        calibrationManager = CalibrationManager(this)
+        tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager)
+
+        AutoTradeAccessibilityService.onGestureClickListener = { x, y ->
+            drawingView.triggerClickAnimation(x, y)
+        }
+
+        tradingEngine.onSignalListener = { _: TradeAction, _: String -> updateHUDView() }
+        tradingEngine.onTradeExecutedListener = { _: TradeAction, _: Boolean -> updateHUDView() }
+        tradingEngine.onFrameProcessedListener = { _ -> updateHUDView() }
+
         setupMenuWindow()
-        // Asegurar que el menú quede encima del lienzo desde el inicio
+        setupHUDWindow()
         bringMenuToFront()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        screenCaptureManager?.refreshVirtualDisplay()
         mainHandler.postDelayed({
             if (!::menuParams.isInitialized) return@postDelayed
             val metrics = resources.displayMetrics
@@ -318,32 +338,491 @@ class OverlayService : Service() {
 
     private fun showAISubmenu() {
         prepareSubmenu()
-        val isAiActive = aiController.isAutoTradingEnabled()
+        val currentMode = tradingEngine.mode
+        val (modeIcon, modeText, modeColor) = when (currentMode) {
+            AutoTradeMode.AUTONOMOUS -> Triple(android.R.drawable.ic_media_play, "AUTÓNOMO", Color.GREEN)
+            AutoTradeMode.SEMIAUTOMATIC -> Triple(android.R.drawable.ic_popup_sync, "SEMIAUTO", Color.YELLOW)
+            AutoTradeMode.DISABLED -> Triple(android.R.drawable.ic_media_pause, "MODO: OFF", Color.WHITE)
+        }
 
-        val icon = if (isAiActive) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
-        val text = if (isAiActive) "STOP IA" else "START IA"
-        val color = if (isAiActive) Color.RED else Color.GREEN
+        addItemToSubmenu(modeIcon, modeText, modeColor) {
+            showModeDialog()
+        }
 
-        addItemToSubmenu(icon, text, color) {
-            if (isAiActive) {
-                aiController.toggleAutoTrade(false)
-                // En vez de destruir la captura por completo y perder el Token,
-                // paramos solo de procesar frames en la IA,
-                // la proyección se destruye al destruir el servicio
-                Toast.makeText(this, "IA Detenida", Toast.LENGTH_SHORT).show()
-            } else {
-                if (screenCaptureManager != null) {
-                    aiController.toggleAutoTrade(true)
-                    // Si ya está capturando ignora el inicio de captura
-                    screenCaptureManager?.startCapture { bitmap ->
-                        aiController.onNewFrame(bitmap)
+        addItemToSubmenu(android.R.drawable.ic_menu_sort_by_size, "ESTRAT", Color.CYAN) {
+            showStrategyDialog()
+        }
+
+        addItemToSubmenu(android.R.drawable.ic_menu_send, "TEST CLIC", Color.parseColor("#38bdf8")) {
+            tradingEngine.testAccessibilityClicks()
+        }
+
+        addItemToSubmenu(android.R.drawable.ic_menu_myplaces, "CALIBRAR", Color.MAGENTA) {
+            showCalibrationDialog()
+        }
+
+        addItemToSubmenu(android.R.drawable.ic_menu_preferences, "RIESGO", Color.parseColor("#fb923c")) {
+            showRiskConfigDialog()
+        }
+
+        val aiIcon = if (tradingEngine.aiClient.isEnabled) android.R.drawable.ic_menu_agenda else android.R.drawable.ic_menu_help
+        addItemToSubmenu(aiIcon, if (tradingEngine.aiClient.isEnabled) "IA: ON" else "IA: OFF", Color.parseColor("#a855f7")) {
+            showOmniRouteConfigDialog()
+        }
+
+        val hudIcon = if (isHudVisible) R.drawable.ic_visibility else R.drawable.ic_visibility_off
+        addItemToSubmenu(hudIcon, if (isHudVisible) "HUD: ON" else "HUD: OFF") {
+            toggleHUDVisibility()
+            showAISubmenu()
+        }
+    }
+
+    private fun showCalibrationDialog() {
+        val options = arrayOf(
+            "1. 🎯 Arrastrar Pines sobre Botones (Interactivo)",
+            "2. 🏢 Cambiar Perfil de Broker [Actual: ${calibrationManager.activeProfile.name}]",
+            "3. 📍 Ver Coordenadas Guardadas"
+        )
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Calibración de Botones")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> calibrationManager.startInteractiveCalibration {
+                        Toast.makeText(this, "Calibración guardada", Toast.LENGTH_SHORT).show()
+                        showAISubmenu()
                     }
-                    Toast.makeText(this, "IA Iniciada", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this, "Sin permisos de captura. Por favor, reinicia TradeDraw.", Toast.LENGTH_LONG).show()
+                    1 -> showBrokerProfilePicker()
+                    2 -> {
+                        val (bx, by) = calibrationManager.getBuyCoordinates()
+                        val (sx, sy) = calibrationManager.getSellCoordinates()
+                        Toast.makeText(this, "Sube: (${bx.toInt()}, ${by.toInt()})\nBaja: (${sx.toInt()}, ${sy.toInt()})", Toast.LENGTH_LONG).show()
+                        showCalibrationDialog()
+                    }
                 }
             }
-            showAISubmenu() // Refrescar menú
+            .setNegativeButton("Cerrar", null)
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun showBrokerProfilePicker() {
+        val profiles = BrokerProfile.values().map { it.name }.toTypedArray()
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Seleccionar Broker")
+            .setItems(profiles) { _, which ->
+                calibrationManager.activeProfile = BrokerProfile.values()[which]
+                Toast.makeText(this, "Broker activo: ${calibrationManager.activeProfile.name}", Toast.LENGTH_SHORT).show()
+                showCalibrationDialog()
+            }
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun showOmniRouteConfigDialog() {
+        val ai = tradingEngine.aiClient
+        val keyDisplay = if (ai.apiKey.isNotBlank()) "••••" + ai.apiKey.takeLast(4) else "Sin configurar"
+        val options = arrayOf(
+            "1. ⚡ IA Remota: ${if (ai.isEnabled) "ACTIVADA [ON]" else "DESACTIVADA [OFF]"}",
+            "2. 🌐 Endpoint Base: ${ai.baseUrl}",
+            "3. 🔑 API Key: $keyDisplay",
+            "4. 🧠 Modelo: ${ai.model}",
+            "5. 🎯 Umbral Confianza: ${(ai.confidenceThreshold * 100).toInt()}%",
+            "6. 🧪 Probar Conexión con OmniRoute"
+        )
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Configurar IA (OmniRoute / OpenAI)")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        ai.isEnabled = !ai.isEnabled
+                        Toast.makeText(this, "IA Remota: ${if (ai.isEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                        showOmniRouteConfigDialog()
+                        updateHUDView()
+                    }
+                    1 -> promptTextInput("Endpoint Base URL", ai.baseUrl) { newUrl ->
+                        ai.baseUrl = newUrl
+                        Toast.makeText(this, "URL guardada", Toast.LENGTH_SHORT).show()
+                        showOmniRouteConfigDialog()
+                    }
+                    2 -> promptTextInput("API Key de OmniRoute", ai.apiKey) { newKey ->
+                        ai.apiKey = newKey
+                        Toast.makeText(this, "API Key guardada", Toast.LENGTH_SHORT).show()
+                        showOmniRouteConfigDialog()
+                    }
+                    3 -> showModelPicker()
+                    4 -> promptNumberAdjustment("Umbral de Confianza (%)", (ai.confidenceThreshold * 100).toInt(), 30, 95) { pct ->
+                        ai.confidenceThreshold = pct / 100f
+                        showOmniRouteConfigDialog()
+                        updateHUDView()
+                    }
+                    5 -> {
+                        Toast.makeText(this, "Probando conexión con OmniRoute...", Toast.LENGTH_SHORT).show()
+                        ai.testConnection { success, msg ->
+                            Toast.makeText(this, if (success) "✓ $msg" else "❌ $msg", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("Cerrar", null)
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun showModelPicker() {
+        val ai = tradingEngine.aiClient
+        val presets = arrayOf(
+            "bai/deepseek-v4-flash-vision-exp",
+            "openrouter/google/gemini-3.7-flash",
+            "openrouter/openai/gpt-4o-mini",
+            "openrouter/openai/gpt-4o",
+            "antigravity/gemini-3.6-flash-high",
+            "Otro modelo personalizado..."
+        )
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Seleccionar Modelo de Visión")
+            .setItems(presets) { _, which ->
+                if (which == presets.size - 1) {
+                    promptTextInput("Nombre de modelo", ai.model) { customModel ->
+                        ai.model = customModel
+                        showOmniRouteConfigDialog()
+                    }
+                } else {
+                    ai.model = presets[which]
+                    Toast.makeText(this, "Modelo: ${ai.model}", Toast.LENGTH_SHORT).show()
+                    showOmniRouteConfigDialog()
+                }
+            }
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun promptTextInput(title: String, currentValue: String, onTextSaved: (String) -> Unit) {
+        val input = EditText(this).apply {
+            setText(currentValue)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+        }
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle(title)
+            .setView(input)
+            .setPositiveButton("Guardar") { _, _ ->
+                onTextSaved(input.text.toString().trim())
+            }
+            .setNegativeButton("Cancelar", null)
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun showModeDialog() {
+        val modes = arrayOf("🟢 Modo Autónomo (Bot opera solo)", "🟡 Modo Semiautomático (Bot te avisa y dibuja)", "⚪ Desactivado (Manual)")
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Modo de Trading")
+            .setItems(modes) { _, which ->
+                when (which) {
+                    0 -> setTradingMode(AutoTradeMode.AUTONOMOUS)
+                    1 -> setTradingMode(AutoTradeMode.SEMIAUTOMATIC)
+                    2 -> setTradingMode(AutoTradeMode.DISABLED)
+                }
+                showAISubmenu()
+            }
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun setTradingMode(newMode: AutoTradeMode) {
+        tradingEngine.mode = newMode
+        if (newMode != AutoTradeMode.DISABLED) {
+            if (screenCaptureManager != null) {
+                screenCaptureManager?.startCapture { bitmap ->
+                    tradingEngine.onNewFrame(bitmap)
+                }
+                Toast.makeText(this, "Modo: ${newMode.name}", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Sin permisos de captura. Reinicia TradeDraw.", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            tradingEngine.stop()
+            Toast.makeText(this, "Trading detenido", Toast.LENGTH_SHORT).show()
+        }
+        updateHUDView()
+    }
+
+    private fun showStrategyDialog() {
+        val strategies = arrayOf(
+            "🔥 1. MT: Combo Acción del Precio (Recomendado)",
+            "⚡ 2. MT: Mechas de Rechazo en S/R",
+            "🎯 3. MT: Choque de Máximos/Mínimos (Pullback)",
+            "📊 4. MT: Agotamiento de 3 Velas",
+            "5. Soportes y Resistencias (Clásico)",
+            "6. Patrón de Velas y Martillo",
+            "7. Seguidor de Tendencia",
+            "8. Combinada (Doble Confirmación)"
+        )
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Seleccionar Estrategia (Acción del Precio)")
+            .setItems(strategies) { _, which ->
+                tradingEngine.strategy = when (which) {
+                    0 -> AutoTradeStrategy.MT_MASTER_COMBO
+                    1 -> AutoTradeStrategy.MT_REJECTION
+                    2 -> AutoTradeStrategy.MT_CHOQUE_PULLBACK
+                    3 -> AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO
+                    4 -> AutoTradeStrategy.SUPPORT_RESISTANCE
+                    5 -> AutoTradeStrategy.CANDLE_PATTERNS
+                    6 -> AutoTradeStrategy.TREND_FOLLOWING
+                    else -> AutoTradeStrategy.COMBINED
+                }
+                Toast.makeText(this, "Estrategia: ${tradingEngine.strategy.name}", Toast.LENGTH_SHORT).show()
+                updateHUDView()
+                showAISubmenu()
+            }
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun showRiskConfigDialog() {
+        val items = arrayOf(
+            "Stop Loss (Racha pérdidas): ${riskManager.stopLossStreak}",
+            "Take Profit (Ganancias objetivo): ${riskManager.takeProfitWins}",
+            "Cooldown entre trades: ${riskManager.cooldownSeconds}s",
+            "Martingala en Demo: ${if (riskManager.martingaleEnabled) "ACTIVA (${riskManager.martingaleMultiplier}x)" else "DESACTIVADA"}",
+            "Reiniciar Estadísticas de Sesión"
+        )
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Gestión de Riesgo")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> promptNumberAdjustment("Stop Loss (Derrotas consecutivas)", riskManager.stopLossStreak, 1, 10) {
+                        riskManager.stopLossStreak = it
+                        showRiskConfigDialog()
+                    }
+                    1 -> promptNumberAdjustment("Take Profit (Victorias objetivo)", riskManager.takeProfitWins, 1, 20) {
+                        riskManager.takeProfitWins = it
+                        showRiskConfigDialog()
+                    }
+                    2 -> promptNumberAdjustment("Cooldown en segundos", riskManager.cooldownSeconds, 5, 300) {
+                        riskManager.cooldownSeconds = it
+                        showRiskConfigDialog()
+                    }
+                    3 -> {
+                        riskManager.martingaleEnabled = !riskManager.martingaleEnabled
+                        Toast.makeText(this, "Martingala: ${if (riskManager.martingaleEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                        showRiskConfigDialog()
+                    }
+                    4 -> {
+                        riskManager.resetSession()
+                        updateHUDView()
+                        Toast.makeText(this, "Sesión reiniciada", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cerrar", null)
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun promptNumberAdjustment(title: String, current: Int, min: Int, max: Int, onValueChosen: (Int) -> Unit) {
+        var value = current
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(32, 24, 32, 24)
+        }
+        val btnMinus = Button(this).apply { text = "-"; setOnClickListener { if (value > min) value--; layout.findViewById<TextView>(1001).text = "$value" } }
+        val txtVal = TextView(this).apply { id = 1001; text = "$value"; textSize = 22f; setTextColor(Color.WHITE); setPadding(32, 0, 32, 0) }
+        val btnPlus = Button(this).apply { text = "+"; setOnClickListener { if (value < max) value++; layout.findViewById<TextView>(1001).text = "$value" } }
+        layout.addView(btnMinus)
+        layout.addView(txtVal)
+        layout.addView(btnPlus)
+
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle(title)
+            .setView(layout)
+            .setPositiveButton("Guardar") { _, _ -> onValueChosen(value) }
+            .setNegativeButton("Cancelar", null)
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupHUDWindow() {
+        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
+        hudView = LayoutInflater.from(this).inflate(R.layout.layout_trading_hud, null)
+        hudParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            layoutType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = 50; y = 50
+        }
+
+        hudView?.findViewById<Button>(R.id.hud_btn_win)?.setOnClickListener {
+            riskManager.recordTradeWin()
+            updateHUDView()
+        }
+        hudView?.findViewById<Button>(R.id.hud_btn_loss)?.setOnClickListener {
+            riskManager.recordTradeLoss()
+            updateHUDView()
+        }
+
+        hudView?.let { v ->
+            var initX = 0; var initY = 0; var touchX = 0f; var touchY = 0f; var isMove = false
+            v.setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initX = hudParams?.x ?: 0
+                        initY = hudParams?.y ?: 0
+                        touchX = event.rawX
+                        touchY = event.rawY
+                        isMove = false
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = (event.rawX - touchX).toInt()
+                        val dy = (event.rawY - touchY).toInt()
+                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) isMove = true
+                        hudParams?.let { p ->
+                            p.x = initX + dx
+                            p.y = initY + dy
+                            windowManager.updateViewLayout(v, p)
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
+            windowManager.addView(v, hudParams)
+            v.visibility = View.GONE
+            isHudVisible = false
+            startHUDTimerLoop()
+        }
+    }
+
+    private val hudTimerRunnable = object : Runnable {
+        override fun run() {
+            if (isHudVisible) updateHUDView()
+            mainHandler.postDelayed(this, 1000)
+        }
+    }
+
+    private fun startHUDTimerLoop() {
+        mainHandler.removeCallbacks(hudTimerRunnable)
+        mainHandler.post(hudTimerRunnable)
+    }
+
+    private fun toggleHUDVisibility() {
+        isHudVisible = !isHudVisible
+        hudView?.visibility = if (isHudVisible) View.VISIBLE else View.GONE
+        if (isHudVisible) updateHUDView()
+    }
+
+    private fun updateHUDView() {
+        mainHandler.post {
+            val v = hudView ?: return@post
+            val txtMode = v.findViewById<TextView>(R.id.hud_mode)
+            val txtStrat = v.findViewById<TextView>(R.id.hud_strategy)
+            val txtStats = v.findViewById<TextView>(R.id.hud_stats)
+            val txtWinrate = v.findViewById<TextView>(R.id.hud_winrate)
+            val txtStatus = v.findViewById<TextView>(R.id.hud_status)
+            val txtDiag = v.findViewById<TextView>(R.id.hud_diag)
+            val txtHint = v.findViewById<TextView>(R.id.hud_hint)
+            val txtStreak = v.findViewById<TextView>(R.id.hud_streak_badge)
+            val txtMartingale = v.findViewById<TextView>(R.id.hud_martingale_badge)
+            val txtTimer = v.findViewById<TextView>(R.id.hud_timer)
+            val txtPower = v.findViewById<TextView>(R.id.hud_power_bar)
+
+            when (tradingEngine.mode) {
+                AutoTradeMode.AUTONOMOUS -> {
+                    txtMode.text = "[AUTO]"
+                    txtMode.setTextColor(Color.GREEN)
+                }
+                AutoTradeMode.SEMIAUTOMATIC -> {
+                    txtMode.text = "[SEMI]"
+                    txtMode.setTextColor(Color.YELLOW)
+                }
+                AutoTradeMode.DISABLED -> {
+                    txtMode.text = "[OFF]"
+                    txtMode.setTextColor(Color.GRAY)
+                }
+            }
+
+            txtStrat.text = "Estrat: " + when (tradingEngine.strategy) {
+                AutoTradeStrategy.MT_MASTER_COMBO -> "MT Combo"
+                AutoTradeStrategy.MT_REJECTION -> "MT Rechazo"
+                AutoTradeStrategy.MT_CHOQUE_PULLBACK -> "MT Choque"
+                AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO -> "MT 3 Velas"
+                AutoTradeStrategy.SUPPORT_RESISTANCE -> "S/R"
+                AutoTradeStrategy.CANDLE_PATTERNS -> "Velas"
+                AutoTradeStrategy.TREND_FOLLOWING -> "Tendencia"
+                AutoTradeStrategy.COMBINED -> "Combinada"
+            }
+
+            val analysis = tradingEngine.latestAnalysisResult
+
+            // Radar de Racha
+            txtStreak.text = "· " + (analysis?.streakBadge ?: "1D ⚪")
+
+            // Stats & Martingala
+            txtStats.text = "W: ${riskManager.totalWins} | L: ${riskManager.totalLosses}"
+            txtWinrate.text = " (%.1f%%)".format(Locale.US, riskManager.getWinRate())
+            txtMartingale.text = " " + riskManager.getMartingaleStatusBadge()
+
+            // Temporizador de Vela 60s
+            val sec = java.util.Calendar.getInstance().get(java.util.Calendar.SECOND)
+            val remainingSec = (60 - sec) % 60
+            txtTimer.text = " ⏱️ :%02ds".format(remainingSec)
+            txtTimer.setTextColor(if (remainingSec in 0..5 || remainingSec in 28..32) Color.parseColor("#4ade80") else Color.parseColor("#facc15"))
+
+            // Termómetro de Señal (% CALL vs % PUT)
+            if (analysis != null) {
+                val callPct = analysis.signalPowerCall
+                val putPct = analysis.signalPowerPut
+                val bars = (callPct / 10).coerceIn(1, 9)
+                val visualBar = "█".repeat(bars) + "░".repeat(10 - bars)
+                txtPower.text = "[ $callPct% CALL $visualBar $putPct% PUT ]"
+                txtPower.setTextColor(if (callPct >= 62) Color.parseColor("#22c55e") else if (putPct >= 62) Color.parseColor("#ef4444") else Color.parseColor("#38bdf8"))
+            } else {
+                txtPower.text = "[ 50% CALL █████░░░░░ 50% PUT ]"
+                txtPower.setTextColor(Color.parseColor("#94a3b8"))
+            }
+
+            val frames = screenCaptureManager?.totalFramesCaptured ?: 0L
+            val diagStr = analysis?.diagnosticSummary ?: "Visión: Esperando frame..."
+            txtDiag.text = "📷 Frames: $frames | $diagStr"
+
+            txtHint.text = tradingEngine.getStrategyStatusHint()
+
+            if (riskManager.hasPendingTrade) {
+                val elapsed = (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000
+                txtStatus.text = "🤖 Operación en curso (${elapsed}s) · Esperando resultado..."
+                txtStatus.setTextColor(Color.parseColor("#38bdf8"))
+            } else {
+                val remaining = riskManager.getRemainingCooldown()
+                if (remaining > 0) {
+                    txtStatus.text = "⏳ Cooldown: ${remaining}s"
+                    txtStatus.setTextColor(Color.parseColor("#fb923c"))
+                } else {
+                    txtStatus.text = if (tradingEngine.mode != AutoTradeMode.DISABLED) "🟢 Analizando en vivo" else "⚪ En espera"
+                    txtStatus.setTextColor(Color.parseColor("#cbd5e1"))
+                }
+            }
         }
     }
 
@@ -521,12 +1000,19 @@ class OverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         screenCaptureManager?.destroy()
-        aiController.toggleAutoTrade(false)
+        if (::tradingEngine.isInitialized) {
+            tradingEngine.stop()
+            tradingEngine.aiClient.destroy()
+        }
+        if (::calibrationManager.isInitialized) {
+            calibrationManager.dismissCalibration()
+        }
         mainHandler.removeCallbacksAndMessages(null)
         try {
             if (::canvasView.isInitialized) windowManager.removeView(canvasView)
             if (::menuView.isInitialized) windowManager.removeView(menuView)
             if (::submenuWindowView.isInitialized) windowManager.removeView(submenuWindowView)
+            hudView?.let { windowManager.removeView(it) }
         } catch (e: Exception) {}
     }
 }

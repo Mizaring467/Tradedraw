@@ -23,5 +23,6 @@ enum class TradingTool {
     CIRCLE,
     TRIANGLE,
     ZONE,
-    CHANNEL
+    CHANNEL,
+    STRIKE_PRICE_LINE // Línea dinámica de precio de entrada ITM / OTM para binarias
 }

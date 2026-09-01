@@ -11,6 +11,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     companion object {
         var instance: AutoTradeAccessibilityService? = null
             private set
+        var onGestureClickListener: ((Float, Float) -> Unit)? = null
     }
 
     override fun onServiceConnected() {
@@ -20,8 +21,14 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Here we could track what app is open (e.g., Binomo)
-        // For now, we rely on the external controller (AI) to trigger clicks
+        if (event == null) return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            val packageName = event.packageName?.toString()
+            if (packageName != null && packageName != "com.example.tradedraw" && packageName != "com.android.systemui") {
+                BrokerDetector.currentPackageName = packageName
+            }
+        }
     }
 
     override fun onInterrupt() {
@@ -49,6 +56,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 Log.d("TradeDraw", "Click at ($x, $y) completed")
+                onGestureClickListener?.invoke(x, y)
             }
 
             override fun onCancelled(gestureDescription: GestureDescription?) {
