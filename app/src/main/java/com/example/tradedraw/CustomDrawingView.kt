@@ -366,8 +366,8 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
                     // Solo dibujar si NO hay nada seleccionado para evitar trazos accidentales
                     undoneShapes.clear()
                     val colorToUse = when (currentTool) {
-                        TradingTool.SUPPORT_LINE -> Color.RED
-                        TradingTool.RESISTANCE_LINE -> Color.GREEN
+                        TradingTool.SUPPORT_LINE -> Color.GREEN
+                        TradingTool.RESISTANCE_LINE -> Color.RED
                         else -> activeDrawingColor
                     }
                     currentShape = DrawShape(currentTool, x, y, x, y, color = colorToUse, strokeWidth = currentStrokeWidth)

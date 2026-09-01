@@ -21,8 +21,14 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Here we could track what app is open (e.g., Binomo)
-        // For now, we rely on the external controller (AI) to trigger clicks
+        if (event == null) return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            val packageName = event.packageName?.toString()
+            if (packageName != null && packageName != "com.example.tradedraw" && packageName != "com.android.systemui") {
+                BrokerDetector.currentPackageName = packageName
+            }
+        }
     }
 
     override fun onInterrupt() {

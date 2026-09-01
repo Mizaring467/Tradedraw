@@ -314,8 +314,8 @@ class OverlayService : Service() {
         addItemToSubmenu(R.drawable.ic_horizontal_line, "HORIZ") { selectTool(TradingTool.HORIZONTAL_LINE) }
         addItemToSubmenu(R.drawable.ic_vertical_line, "VERT") { selectTool(TradingTool.VERTICAL_LINE) }
         addItemToSubmenu(R.drawable.ic_channel, "CANAL") { selectTool(TradingTool.CHANNEL) }
-        addItemToSubmenu(android.R.drawable.ic_menu_more, "SOPORT", Color.RED) { selectTool(TradingTool.SUPPORT_LINE) }
-        addItemToSubmenu(android.R.drawable.ic_menu_more, "RESIST", Color.GREEN) { selectTool(TradingTool.RESISTANCE_LINE) }
+        addItemToSubmenu(android.R.drawable.ic_menu_more, "SOPORT", Color.GREEN) { selectTool(TradingTool.SUPPORT_LINE) }
+        addItemToSubmenu(android.R.drawable.ic_menu_more, "RESIST", Color.RED) { selectTool(TradingTool.RESISTANCE_LINE) }
         addItemToSubmenu(android.R.drawable.ic_menu_sort_by_size, "FIBO") { selectTool(TradingTool.FIB_RETRACEMENT) }
     }
 
