@@ -4,11 +4,11 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="#EE0a0a0f"
+    android:background="#F00a0a0f"
     android:padding="8dp"
-    android:elevation="16dp">
+    android:elevation="18dp">
 
-    <!-- Fila 1: Modo y Estrategia -->
+    <!-- Fila 1: Modo, Estrategia y Radar de Racha de Velas -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -29,12 +29,21 @@
             android:id="@+id/hud_strategy"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Estrat: S/R"
+            android:text="Estrat: MT Combo"
             android:textColor="#e2e8f0"
             android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/hud_streak_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="· 1D ⚪"
+            android:textColor="#38bdf8"
+            android:textSize="10sp"
+            android:layout_marginStart="6dp" />
     </LinearLayout>
 
-    <!-- Fila 2: W/L y Winrate -->
+    <!-- Fila 2: W/L, Winrate, Martingala y Temporizador de Vela 60s -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -58,19 +67,49 @@
             android:text=" (0%)"
             android:textColor="#94a3b8"
             android:textSize="10sp" />
+
+        <TextView
+            android:id="@+id/hud_martingale_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=" [M0]"
+            android:textColor="#fb923c"
+            android:textSize="10sp"
+            android:layout_marginStart="4dp" />
+
+        <TextView
+            android:id="@+id/hud_timer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=" ⏱️ :00s"
+            android:textColor="#facc15"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:layout_marginStart="6dp" />
     </LinearLayout>
 
-    <!-- Fila 3: Diagnóstico de Cámara / Visión -->
+    <!-- Fila 3: Termómetro de Señal (% CALL vs % PUT) -->
+    <TextView
+        android:id="@+id/hud_power_bar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="[ 50% CALL █████░░░░░ 50% PUT ]"
+        android:textColor="#38bdf8"
+        android:textSize="9sp"
+        android:textStyle="bold"
+        android:layout_marginTop="3dp" />
+
+    <!-- Fila 4: Diagnóstico de Cámara / Visión -->
     <TextView
         android:id="@+id/hud_diag"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="📷 Frames: 0 | Visión: OK"
-        android:textColor="#38bdf8"
+        android:textColor="#94a3b8"
         android:textSize="9sp"
-        android:layout_marginTop="3dp" />
+        android:layout_marginTop="2dp" />
 
-    <!-- Fila 4: Pista / Estado de la Estrategia -->
+    <!-- Fila 5: Pista / Estado de la Estrategia -->
     <TextView
         android:id="@+id/hud_hint"
         android:layout_width="wrap_content"
@@ -80,7 +119,7 @@
         android:textSize="10sp"
         android:layout_marginTop="2dp" />
 
-    <!-- Fila 5: Estado / Cooldown -->
+    <!-- Fila 6: Estado / Cooldown / Strike Price ITM-OTM -->
     <TextView
         android:id="@+id/hud_status"
         android:layout_width="wrap_content"
@@ -90,7 +129,7 @@
         android:textSize="10sp"
         android:layout_marginTop="2dp" />
 
-    <!-- Fila 6: Botones rápidos para registrar resultado en Demo -->
+    <!-- Fila 7: Botones rápidos para registrar resultado en Demo -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

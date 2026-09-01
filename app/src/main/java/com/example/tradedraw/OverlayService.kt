@@ -711,7 +711,20 @@ class OverlayService : Service() {
             windowManager.addView(v, hudParams)
             v.visibility = View.GONE
             isHudVisible = false
+            startHUDTimerLoop()
         }
+    }
+
+    private val hudTimerRunnable = object : Runnable {
+        override fun run() {
+            if (isHudVisible) updateHUDView()
+            mainHandler.postDelayed(this, 1000)
+        }
+    }
+
+    private fun startHUDTimerLoop() {
+        mainHandler.removeCallbacks(hudTimerRunnable)
+        mainHandler.post(hudTimerRunnable)
     }
 
     private fun toggleHUDVisibility() {
@@ -730,6 +743,10 @@ class OverlayService : Service() {
             val txtStatus = v.findViewById<TextView>(R.id.hud_status)
             val txtDiag = v.findViewById<TextView>(R.id.hud_diag)
             val txtHint = v.findViewById<TextView>(R.id.hud_hint)
+            val txtStreak = v.findViewById<TextView>(R.id.hud_streak_badge)
+            val txtMartingale = v.findViewById<TextView>(R.id.hud_martingale_badge)
+            val txtTimer = v.findViewById<TextView>(R.id.hud_timer)
+            val txtPower = v.findViewById<TextView>(R.id.hud_power_bar)
 
             when (tradingEngine.mode) {
                 AutoTradeMode.AUTONOMOUS -> {
@@ -757,11 +774,37 @@ class OverlayService : Service() {
                 AutoTradeStrategy.COMBINED -> "Combinada"
             }
 
+            val analysis = tradingEngine.latestAnalysisResult
+
+            // Radar de Racha
+            txtStreak.text = "· " + (analysis?.streakBadge ?: "1D ⚪")
+
+            // Stats & Martingala
             txtStats.text = "W: ${riskManager.totalWins} | L: ${riskManager.totalLosses}"
             txtWinrate.text = " (%.1f%%)".format(Locale.US, riskManager.getWinRate())
+            txtMartingale.text = " " + riskManager.getMartingaleStatusBadge()
+
+            // Temporizador de Vela 60s
+            val sec = java.util.Calendar.getInstance().get(java.util.Calendar.SECOND)
+            val remainingSec = (60 - sec) % 60
+            txtTimer.text = " ⏱️ :%02ds".format(remainingSec)
+            txtTimer.setTextColor(if (remainingSec in 0..5 || remainingSec in 28..32) Color.parseColor("#4ade80") else Color.parseColor("#facc15"))
+
+            // Termómetro de Señal (% CALL vs % PUT)
+            if (analysis != null) {
+                val callPct = analysis.signalPowerCall
+                val putPct = analysis.signalPowerPut
+                val bars = (callPct / 10).coerceIn(1, 9)
+                val visualBar = "█".repeat(bars) + "░".repeat(10 - bars)
+                txtPower.text = "[ $callPct% CALL $visualBar $putPct% PUT ]"
+                txtPower.setTextColor(if (callPct >= 62) Color.parseColor("#22c55e") else if (putPct >= 62) Color.parseColor("#ef4444") else Color.parseColor("#38bdf8"))
+            } else {
+                txtPower.text = "[ 50% CALL █████░░░░░ 50% PUT ]"
+                txtPower.setTextColor(Color.parseColor("#94a3b8"))
+            }
 
             val frames = screenCaptureManager?.totalFramesCaptured ?: 0L
-            val diagStr = tradingEngine.latestAnalysisResult?.diagnosticSummary ?: "Visión: Esperando frame..."
+            val diagStr = analysis?.diagnosticSummary ?: "Visión: Esperando frame..."
             txtDiag.text = "📷 Frames: $frames | $diagStr"
 
             txtHint.text = tradingEngine.getStrategyStatusHint()

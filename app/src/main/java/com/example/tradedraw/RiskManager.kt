@@ -116,6 +116,12 @@ class RiskManager(context: Context) {
         return amount
     }
 
+    fun getMartingaleStatusBadge(): String {
+        val level = "M$currentLossStreak"
+        val amt = getCurrentInvestmentAmount()
+        return if (martingaleEnabled) "[$level | $$amt]" else "[$level]"
+    }
+
     fun resetSession() {
         currentLossStreak = 0
         currentWins = 0

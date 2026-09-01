@@ -37,10 +37,14 @@ data class VisionAnalysisResult(
     val lastCandles: List<CandleType>,
     val candleList: List<CandleData> = emptyList(),
     val consecutiveCount: Int,
-    val isHammer: Boolean,
-    val isEngulfing: Boolean,
-    val touchesSupport: Boolean,
-    val touchesResistance: Boolean,
+    val streakBadge: String = "",
+    val signalPowerCall: Int = 50,
+    val signalPowerPut: Int = 50,
+    val isMarketSideways: Boolean = false,
+    val isHammer: Boolean = false,
+    val isEngulfing: Boolean = false,
+    val touchesSupport: Boolean = false,
+    val touchesResistance: Boolean = false,
     val hasTopRejectionWick: Boolean = false,
     val hasBottomRejectionWick: Boolean = false,
     val isChoquePullbackCall: Boolean = false,
@@ -58,7 +62,7 @@ class VisionAnalyzer {
 
     /**
      * Analiza el gráfico en Binomo / Brokers (Tema Oscuro en Horizontal o Vertical).
-     * Extrae geometría de velas para las estrategias de Acción del Precio de Master Traders.
+     * Delimita con precisión la zona de velas reales excluyendo textos, pestañas y cuadrículas.
      */
     fun analyzeChart(
         bitmap: Bitmap,
@@ -69,24 +73,24 @@ class VisionAnalyzer {
         val h = bitmap.height
         val isLandscape = w > h
 
-        // Delimitación adaptativa de la zona del gráfico de velas
+        // Delimitación estricta de la zona de velas (excluye cabecera, textos "Tiempo para comprar", saldo y botones)
         val startX: Int
         val endX: Int
         val startY: Int
         val endY: Int
 
         if (isLandscape) {
-            // Horizontal: Gráfico a la izquierda/centro (X: 8% a 78%), excluyendo botones Sube/Baja (X > 78%), tabs y barra inferior
+            // Horizontal: Gráfico a la izquierda/centro (X: 8% a 76%), excluyendo botones Sube/Baja a la derecha (X > 78%), tabs y toolbar inferior
             startX = (w * 0.08f).toInt().coerceAtLeast(0)
-            endX = (w * 0.78f).toInt().coerceAtMost(w - 1)
-            startY = (h * 0.18f).toInt().coerceAtLeast(0)
-            endY = (h * 0.78f).toInt().coerceAtMost(h - 1)
+            endX = (w * 0.76f).toInt().coerceAtMost(w - 1)
+            startY = (h * 0.22f).toInt().coerceAtLeast(0)
+            endY = (h * 0.80f).toInt().coerceAtMost(h - 1)
         } else {
-            // Vertical: Gráfico en la zona superior/media (Y: 14% a 58%)
-            startX = (w * 0.05f).toInt().coerceAtLeast(0)
-            endX = (w * 0.95f).toInt().coerceAtMost(w - 1)
-            startY = (h * 0.14f).toInt().coerceAtLeast(0)
-            endY = (h * 0.58f).toInt().coerceAtMost(h - 1)
+            // Vertical: Gráfico en la zona media (Y: 28% a 65%), excluyendo saldo/tabs arriba (Y < 28%) e indicadores/botones abajo (Y > 66%)
+            startX = (w * 0.06f).toInt().coerceAtLeast(0)
+            endX = (w * 0.94f).toInt().coerceAtMost(w - 1)
+            startY = (h * 0.28f).toInt().coerceAtLeast(0)
+            endY = (h * 0.65f).toInt().coerceAtMost(h - 1)
         }
 
         var minPriceY = Float.MAX_VALUE // Menor Y = Mayor precio (Resistencia)
@@ -98,7 +102,7 @@ class VisionAnalyzer {
         var totalGreenPixels = 0
         var totalRedPixels = 0
 
-        val stepX = ((endX - startX) / 30).coerceIn(6, 20)
+        val stepX = ((endX - startX) / 32).coerceIn(6, 20)
         val candleList = mutableListOf<CandleData>()
         val candleTypes = mutableListOf<CandleType>()
         var foundLatestPrice = false
@@ -107,11 +111,10 @@ class VisionAnalyzer {
         for (x in endX downTo startX step stepX) {
             var greenCount = 0
             var redCount = 0
-            var firstCandleY = -1
-            var lastCandleY = -1
-            var wickTopY = -1
-            var wickBottomY = -1
+            var bodyFirstY = -1
+            var bodyLastY = -1
 
+            // 1. Paso: Encontrar cuerpo de la vela (Verde o Rojo sólido)
             for (y in startY..endY step 3) {
                 val pixel = bitmap.getPixel(x, y)
                 Color.colorToHSV(pixel, hsvBuffer)
@@ -119,38 +122,29 @@ class VisionAnalyzer {
                 val sat = hsvBuffer[1]
                 val value = hsvBuffer[2]
 
-                // Detección de mechas (líneas finas grises/blancas o colores atenuados)
-                if (value > 0.40f && sat < 0.25f) {
-                    if (wickTopY == -1) wickTopY = y
-                    wickBottomY = y
-                }
-
-                // Descartar fondo oscuro (#131722, #181c27, etc.)
-                if (value < 0.22f || (sat < 0.22f && value < 0.65f)) {
+                // Descartar fondo oscuro
+                if (value < 0.24f || (sat < 0.24f && value < 0.70f)) {
                     continue
                 }
 
                 // Detección de Verde en velas Binomo (Hue 75° a 170°)
-                if (hue in 75f..170f && sat > 0.25f && value > 0.30f) {
+                if (hue in 75f..170f && sat > 0.28f && value > 0.32f) {
                     greenCount++
                     totalGreenPixels++
-                    if (firstCandleY == -1) firstCandleY = y
-                    lastCandleY = y
-                    if (wickTopY == -1) wickTopY = y
-                    wickBottomY = y
+                    if (bodyFirstY == -1) bodyFirstY = y
+                    bodyLastY = y
                 }
                 // Detección de Rojo en velas Binomo (Hue 340°-360° o 0°-28°)
-                else if ((hue >= 340f || hue <= 28f) && sat > 0.25f && value > 0.30f) {
+                else if ((hue >= 340f || hue <= 28f) && sat > 0.28f && value > 0.32f) {
                     redCount++
                     totalRedPixels++
-                    if (firstCandleY == -1) firstCandleY = y
-                    lastCandleY = y
-                    if (wickTopY == -1) wickTopY = y
-                    wickBottomY = y
+                    if (bodyFirstY == -1) bodyFirstY = y
+                    bodyLastY = y
                 }
             }
 
-            if (greenCount >= 3 || redCount >= 3) {
+            // Solo si se detectó un cuerpo de vela válido (mínimo 4 muestras)
+            if (greenCount >= 4 || redCount >= 4) {
                 val type = if (greenCount > redCount * 1.15f) {
                     CandleType.GREEN
                 } else if (redCount > greenCount * 1.15f) {
@@ -160,21 +154,50 @@ class VisionAnalyzer {
                 }
                 candleTypes.add(type)
 
-                val bodyTop = firstCandleY.toFloat()
-                val bodyBottom = lastCandleY.toFloat()
-                val topY = if (wickTopY != -1 && wickTopY < firstCandleY) wickTopY.toFloat() else bodyTop
-                val bottomY = if (wickBottomY != -1 && wickBottomY > lastCandleY) wickBottomY.toFloat() else bodyBottom
+                val bodyTop = bodyFirstY.toFloat()
+                val bodyBottom = bodyLastY.toFloat()
 
-                val totalH = (bottomY - topY).coerceAtLeast(1f)
+                // 2. Paso: Buscar mechas ÚNICAMENTE en la vecindad del cuerpo de la vela (+/- 50px)
+                // Esto evita confundir textos de la cabecera o cuadrículas lejanas con mechas
+                var wickTopY = bodyTop
+                var wickBottomY = bodyBottom
+
+                val wickScanTop = (bodyFirstY - 50).coerceAtLeast(startY)
+                for (y in bodyFirstY downTo wickScanTop step 2) {
+                    val pixel = bitmap.getPixel(x, y)
+                    Color.colorToHSV(pixel, hsvBuffer)
+                    val sat = hsvBuffer[1]
+                    val value = hsvBuffer[2]
+                    if (value > 0.35f && (sat > 0.20f || sat < 0.15f)) {
+                        wickTopY = y.toFloat()
+                    } else if (value < 0.22f) {
+                        break
+                    }
+                }
+
+                val wickScanBottom = (bodyLastY + 50).coerceAtMost(endY)
+                for (y in bodyLastY..wickScanBottom step 2) {
+                    val pixel = bitmap.getPixel(x, y)
+                    Color.colorToHSV(pixel, hsvBuffer)
+                    val sat = hsvBuffer[1]
+                    val value = hsvBuffer[2]
+                    if (value > 0.35f && (sat > 0.20f || sat < 0.15f)) {
+                        wickBottomY = y.toFloat()
+                    } else if (value < 0.22f) {
+                        break
+                    }
+                }
+
+                val totalH = (wickBottomY - wickTopY).coerceAtLeast(1f)
                 val bodyH = (bodyBottom - bodyTop).coerceAtLeast(1f)
-                val topWick = (bodyTop - topY).coerceAtLeast(0f)
-                val bottomWick = (bottomY - bodyBottom).coerceAtLeast(0f)
+                val topWick = (bodyTop - wickTopY).coerceAtLeast(0f)
+                val bottomWick = (wickBottomY - bodyBottom).coerceAtLeast(0f)
 
                 val candleData = CandleData(
                     type = type,
                     x = x.toFloat(),
-                    topY = topY,
-                    bottomY = bottomY,
+                    topY = wickTopY,
+                    bottomY = wickBottomY,
                     bodyTopY = bodyTop,
                     bodyBottomY = bodyBottom,
                     totalHeight = totalH,
@@ -184,17 +207,18 @@ class VisionAnalyzer {
                 )
                 candleList.add(candleData)
 
-                if (!foundLatestPrice && lastCandleY != -1) {
-                    latestPriceY = ((firstCandleY + lastCandleY) / 2f)
+                if (!foundLatestPrice) {
+                    latestPriceY = (bodyTop + bodyBottom) / 2f
                     foundLatestPrice = true
                 }
 
-                if (firstCandleY in startY..endY && firstCandleY.toFloat() < minPriceY) {
-                    minPriceY = firstCandleY.toFloat()
+                // Extremos de precios reales basados exclusivamente en velas detectadas
+                if (wickTopY < minPriceY) {
+                    minPriceY = wickTopY
                     highestX = x.toFloat()
                 }
-                if (lastCandleY in startY..endY && lastCandleY.toFloat() > maxPriceY) {
-                    maxPriceY = lastCandleY.toFloat()
+                if (wickBottomY > maxPriceY) {
+                    maxPriceY = wickBottomY
                     lowestX = x.toFloat()
                 }
             }
@@ -211,6 +235,8 @@ class VisionAnalyzer {
             }
         }
 
+        val streakBadge = if (lastType == CandleType.GREEN) "${consecutive}V 🟢" else if (lastType == CandleType.RED) "${consecutive}R 🔴" else "1D ⚪"
+
         // Tendencia general
         val trend = if (minPriceY < Float.MAX_VALUE && maxPriceY > Float.MIN_VALUE) {
             if (highestX > lowestX) TrendDirection.UPTREND else TrendDirection.DOWNTREND
@@ -219,38 +245,29 @@ class VisionAnalyzer {
         }
 
         // Proximidad a soportes y resistencias
-        val threshold = 38f
+        val threshold = 35f
         val touchesSupport = supportLinesY.any { Math.abs(latestPriceY - it) < threshold }
         val touchesResistance = resistanceLinesY.any { Math.abs(latestPriceY - it) < threshold }
 
         // --- PATRONES MASTER TRADERS ---
         val lastCandle = candleList.firstOrNull()
-
-        // 1. Mecha de rechazo: Mecha >= 40% del rango total de la vela
         val hasTopRejection = lastCandle != null && lastCandle.topWickRatio >= 0.40f
         val hasBottomRejection = lastCandle != null && lastCandle.bottomWickRatio >= 0.40f
 
-        // 2. Choque y Pullback:
-        // Si el precio actual está testeando el nivel roto de las velas previas
         var isChoqueCall = false
         var isChoquePut = false
         if (candleList.size >= 3) {
-            val c0 = candleList[0] // vela actual
-            val c1 = candleList[1] // vela anterior
-            val c2 = candleList[2] // vela previa
-
-            // Breakout alcista con retest a soporte roto
+            val c0 = candleList[0]
+            val c1 = candleList[1]
+            val c2 = candleList[2]
             if (c2.bodyBottomY > c1.bodyTopY && Math.abs(c0.bottomY - c2.bodyTopY) < threshold) {
                 isChoqueCall = true
             }
-            // Breakout bajista con retest a resistencia rota
             if (c2.bodyTopY < c1.bodyBottomY && Math.abs(c0.topY - c2.bodyBottomY) < threshold) {
                 isChoquePut = true
             }
         }
 
-        // 3. Patrón 3 Velas y Agotamiento:
-        // 3 velas consecutivas del mismo color con cuerpos decrecientes (cuerpo[0] < cuerpo[1] < cuerpo[2])
         var isExhaustionCall = false
         var isExhaustionPut = false
         if (candleList.size >= 3) {
@@ -261,32 +278,43 @@ class VisionAnalyzer {
             val allGreen = c0.type == CandleType.GREEN && c1.type == CandleType.GREEN && c2.type == CandleType.GREEN
             val decayingBodies = c0.bodyHeight <= c1.bodyHeight * 0.90f && c1.bodyHeight <= c2.bodyHeight * 0.95f
 
-            if (allRed && decayingBodies) {
-                isExhaustionCall = true // 3 rojas agotadas -> COMPRA en 4ª vela
-            } else if (allGreen && decayingBodies) {
-                isExhaustionPut = true // 3 verdes agotadas -> VENTA en 4ª vela
-            }
+            if (allRed && decayingBodies) isExhaustionCall = true
+            else if (allGreen && decayingBodies) isExhaustionPut = true
         }
 
         val isHammer = lastCandle != null && (lastCandle.bottomWickRatio >= 0.50f && lastCandle.bodyHeight < lastCandle.totalHeight * 0.35f)
         val isEngulfing = candleList.size >= 2 && candleList[0].type != candleList[1].type && candleList[0].bodyHeight > candleList[1].bodyHeight * 1.2f
 
-        val resistanceY = if (minPriceY < Float.MAX_VALUE) minPriceY else (startY + (endY - startY) * 0.25f)
-        val supportY = if (maxPriceY > Float.MIN_VALUE) maxPriceY else (startY + (endY - startY) * 0.75f)
+        // Calcular Fuerza de Señal (Termómetro % CALL vs % PUT)
+        var callScore = 50
+        var putScore = 50
+
+        if (trend == TrendDirection.UPTREND) callScore += 15 else if (trend == TrendDirection.DOWNTREND) putScore += 15
+        if (touchesSupport) callScore += 25
+        if (touchesResistance) putScore += 25
+        if (hasBottomRejection) callScore += 20
+        if (hasTopRejection) putScore += 20
+        if (isChoqueCall) callScore += 20
+        if (isChoquePut) putScore += 20
+        if (isExhaustionCall) callScore += 25
+        if (isExhaustionPut) putScore += 25
+
+        val totalScore = (callScore + putScore).coerceAtLeast(1)
+        val callPct = ((callScore.toFloat() / totalScore) * 100).toInt().coerceIn(10, 90)
+        val putPct = 100 - callPct
+        val isSideways = Math.abs(callPct - putPct) < 14
+
+        // S/R calculados estrictamente dentro del rango de velas encontradas
+        val resistanceY = if (minPriceY < Float.MAX_VALUE) minPriceY else (startY + (endY - startY) * 0.30f)
+        val supportY = if (maxPriceY > Float.MIN_VALUE) maxPriceY else (startY + (endY - startY) * 0.70f)
 
         val highPoint = PointF(if (highestX > 0) highestX else (startX + endX) * 0.5f, resistanceY)
         val lowPoint = PointF(if (lowestX > 0) lowestX else (startX + endX) * 0.5f, supportY)
 
         val gCount = candleTypes.count { it == CandleType.GREEN }
         val rCount = candleTypes.count { it == CandleType.RED }
-        val trendStr = when (trend) {
-            TrendDirection.UPTREND -> "Alza ↗"
-            TrendDirection.DOWNTREND -> "Baja ↘"
-            TrendDirection.SIDEWAYS -> "Lateral →"
-        }
-
         val orientStr = if (isLandscape) "Horiz" else "Vert"
-        val diag = "[$orientStr] Velas: ${candleTypes.size} (V:$gCount R:$rCount) | $trendStr | Racha: $consecutive ${lastType.name}"
+        val diag = "[$orientStr] Velas: ${candleTypes.size} (V:$gCount R:$rCount) | Racha: $streakBadge"
 
         return VisionAnalysisResult(
             currentPriceY = latestPriceY,
@@ -296,6 +324,10 @@ class VisionAnalyzer {
             lastCandles = candleTypes,
             candleList = candleList,
             consecutiveCount = consecutive,
+            streakBadge = streakBadge,
+            signalPowerCall = callPct,
+            signalPowerPut = putPct,
+            isMarketSideways = isSideways,
             isHammer = isHammer,
             isEngulfing = isEngulfing,
             touchesSupport = touchesSupport,

@@ -69,11 +69,13 @@ class TradingEngine(
                 handler.post {
                     if (outcome == TradeOutcome.WIN) {
                         riskManager.recordTradeWin()
+                        autoDrawEngine.clearTradeEntry()
                         emitHapticAndAudioFeedback()
                         Toast.makeText(context, "🎉 OPERACIÓN GANADA (+1 W)", Toast.LENGTH_LONG).show()
                         onTradeExecutedListener?.invoke(TradeAction.BUY, true)
                     } else {
                         riskManager.recordTradeLoss()
+                        autoDrawEngine.clearTradeEntry()
                         emitHapticAndAudioFeedback()
                         Toast.makeText(context, "⚠️ OPERACIÓN PERDIDA (+1 L)", Toast.LENGTH_LONG).show()
                         onTradeExecutedListener?.invoke(TradeAction.BUY, false)
@@ -92,6 +94,9 @@ class TradingEngine(
         // 4. Auto-dibujar escenario técnico en TradeDraw según la estrategia
         handler.post {
             autoDrawEngine.updateTechnicalDrawings(strategy, analysis)
+            if (riskManager.hasPendingTrade) {
+                autoDrawEngine.updateTradeEntryLiveStatus(analysis.currentPriceY)
+            }
             onFrameProcessedListener?.invoke(analysis)
         }
 

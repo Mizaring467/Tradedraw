@@ -171,30 +171,76 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
         }
     }
 
-    /**
-     * Traza una caja de posición LONG o SHORT en el punto de entrada exacto.
-     */
-    fun drawTradeEntry(action: TradeAction, currentPriceY: Float, screenWidth: Float) {
-        val entryX = screenWidth * 0.70f
-        val boxWidth = screenWidth * 0.16f
-        val boxHeight = 110f
+    private var currentEntryY: Float = 0f
+    private var currentEntryAction: TradeAction? = null
 
-        val tool = if (action == TradeAction.BUY) TradingTool.LONG_POSITION else TradingTool.SHORT_POSITION
+    /**
+     * Traza la línea de precio de entrada (Strike Price) para opciones binarias.
+     * Reemplaza definitivamente la caja de Forex/StopLoss por una línea limpia ITM/OTM.
+     */
+    fun drawTradeEntry(action: TradeAction, entryPriceY: Float, screenWidth: Float) {
+        currentEntryY = entryPriceY
+        currentEntryAction = action
+
+        val label = if (action == TradeAction.BUY) "▲ CALL [ITM]" else "▼ PUT [ITM]"
         drawingView.addOrUpdateBotShape(
-            "BOT_TRADE_ENTRY",
+            "BOT_STRIKE_PRICE",
             DrawShape(
-                tool = tool,
-                startX = entryX - boxWidth,
-                startY = currentPriceY,
-                endX = entryX + boxWidth,
-                endY = currentPriceY + if (action == TradeAction.BUY) -boxHeight else boxHeight,
-                color = if (action == TradeAction.BUY) Color.GREEN else Color.RED,
-                strokeWidth = 4f
+                tool = TradingTool.STRIKE_PRICE_LINE,
+                startX = 0f,
+                startY = entryPriceY,
+                endX = screenWidth,
+                endY = entryPriceY,
+                color = Color.GREEN,
+                strokeWidth = 4f,
+                labelText = label
             )
         )
     }
 
+    /**
+     * Actualiza en tiempo real el estado ITM (Ganando - Verde) u OTM (Perdiendo - Rojo) del Strike Price.
+     */
+    fun updateTradeEntryLiveStatus(livePriceY: Float) {
+        val action = currentEntryAction ?: return
+        if (currentEntryY <= 0f) return
+
+        // En coordenadas de pantalla: Menor Y = Mayor Precio (Subió)
+        val isITM = if (action == TradeAction.BUY) {
+            livePriceY <= currentEntryY // En CALL gana si el precio actual está más arriba (menor Y)
+        } else {
+            livePriceY >= currentEntryY // En PUT gana si el precio actual está más abajo (mayor Y)
+        }
+
+        val actionName = if (action == TradeAction.BUY) "CALL" else "PUT"
+        val statusTag = if (isITM) "▲ $actionName [ITM]" else "▼ $actionName [OTM]"
+        val color = if (isITM) Color.GREEN else Color.RED
+
+        drawingView.addOrUpdateBotShape(
+            "BOT_STRIKE_PRICE",
+            DrawShape(
+                tool = TradingTool.STRIKE_PRICE_LINE,
+                startX = 0f,
+                startY = currentEntryY,
+                endX = 0f,
+                endY = currentEntryY,
+                color = color,
+                strokeWidth = 4f,
+                labelText = statusTag
+            )
+        )
+    }
+
+    fun clearTradeEntry() {
+        currentEntryY = 0f
+        currentEntryAction = null
+        val shapes = drawingView.getShapes().toMutableList()
+        shapes.removeAll { it.labelText.contains("BOT_STRIKE_PRICE") || it.tool == TradingTool.STRIKE_PRICE_LINE }
+        drawingView.setShapes(shapes)
+    }
+
     fun clearAutoDrawings() {
+        clearTradeEntry()
         drawingView.clearBotShapes()
     }
 }
