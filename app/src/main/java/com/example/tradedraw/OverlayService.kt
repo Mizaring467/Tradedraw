@@ -370,6 +370,14 @@ class OverlayService : Service() {
             showOmniRouteConfigDialog()
         }
 
+        val debugIcon = if (tradingEngine.debugModeEnabled) android.R.drawable.ic_menu_camera else android.R.drawable.ic_menu_info_details
+        addItemToSubmenu(debugIcon, if (tradingEngine.debugModeEnabled) "DEBUG: ON" else "DEBUG: OFF", Color.CYAN) {
+            tradingEngine.debugModeEnabled = !tradingEngine.debugModeEnabled
+            val msg = if (tradingEngine.debugModeEnabled) "Modo Debug Visual ACTIVADO\nGuardando capturas anotadas en /storage/emulated/0/TradeDraw/" else "Modo Debug Visual DESACTIVADO"
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+            showAISubmenu()
+        }
+
         val hudIcon = if (isHudVisible) R.drawable.ic_visibility else R.drawable.ic_visibility_off
         addItemToSubmenu(hudIcon, if (isHudVisible) "HUD: ON" else "HUD: OFF") {
             toggleHUDVisibility()
