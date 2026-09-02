@@ -14,6 +14,9 @@ object DebugVisualizer {
     private var lastSaveTime = 0L
     private const val SAVE_INTERVAL_MS = 2000L // Máximo 1 frame cada 2 segundos para no saturar almacenamiento
 
+    var lastSummary: String = "Esperando primer frame de análisis..."
+    var lastSavedPath: String? = null
+
     fun saveDebugFrame(
         context: Context,
         originalBitmap: Bitmap,
@@ -107,20 +110,17 @@ object DebugVisualizer {
             canvas.drawText("Precio Actual Y: ${currentPriceY.toInt()}px", 35f, 195f, textPaint.apply { color = Color.WHITE })
             canvas.drawText("Zona: Y[${scanBounds.top.toInt()}..${scanBounds.bottom.toInt()}] X[${scanBounds.left.toInt()}..${scanBounds.right.toInt()}]", 35f, 230f, textPaint.apply { color = Color.GRAY })
 
-            // 7. Guardar en almacenamiento público o privado
-            val targetDir = File("/storage/emulated/0/TradeDraw")
-            val dir = if (targetDir.exists() || targetDir.mkdirs()) {
-                targetDir
-            } else {
-                File(context.getExternalFilesDir(null), "TradeDraw_Debug").apply { if (!exists()) mkdirs() }
-            }
+            lastSummary = "• Orientación: $orientStr\n• Velas detectadas: ${analysis.candleList.size}\n• Racha: ${analysis.streakBadge}\n• Techo (Resistencia): ${detectedResistanceY.toInt()}px\n• Suelo (Soporte): ${detectedSupportY.toInt()}px\n• Precio actual: ${currentPriceY.toInt()}px\n• Zona: Y[${scanBounds.top.toInt()}..${scanBounds.bottom.toInt()}] X[${scanBounds.left.toInt()}..${scanBounds.right.toInt()}]"
 
+            // 7. Guardar en almacenamiento seguro de la app
+            val dir = File(context.getExternalFilesDir(null), "TradeDraw_Debug").apply { if (!exists()) mkdirs() }
             val timeStamp = SimpleDateFormat("HHmmss", Locale.getDefault()).format(Date())
             val file = File(dir, "DEBUG_${if (isLand) "HORIZ" else "VERT"}_$timeStamp.jpg")
 
             FileOutputStream(file).use { out ->
                 debugBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
             }
+            lastSavedPath = file.absolutePath
             Log.d("DebugVisualizer", "Frame guardado: ${file.absolutePath}")
         } catch (e: Exception) {
             Log.e("DebugVisualizer", "Error guardando frame de debug", e)

@@ -95,21 +95,21 @@ class VisionAnalyzer {
         val endY: Int
 
         if (isLandscape) {
-            // Horizontal (Landscape 2400x1080):
-            // - X: 5% a 82% (excluye botones Sube/Baja a la derecha en X > 85%)
-            // - Y: 15% a 78% (abarca la totalidad del área de velas de Binomo)
-            startX = (w * 0.05f).toInt().coerceAtLeast(0)
-            endX = (w * 0.82f).toInt().coerceAtMost(w - 1)
-            startY = (h * 0.15f).toInt().coerceAtLeast(0)
-            endY = (h * 0.78f).toInt().coerceAtMost(h - 1)
-        } else {
-            // Vertical (Portrait 1080x2400):
-            // - X: 6% a 94%
-            // - Y: 28% a 72% (excluye saldo/tabs Y < 28% y botones inferiores Y > 73%)
+            // Horizontal (Landscape 2400x1080 / 2712x1220):
+            // - X: 6% a 74% (excluye panel de botones Sube/Baja a la derecha en X > 75%)
+            // - Y: 22% a 74% (excluye saldo/tabs superiores Y < 22% y barra de tiempo/herramientas Y > 74%)
             startX = (w * 0.06f).toInt().coerceAtLeast(0)
-            endX = (w * 0.94f).toInt().coerceAtMost(w - 1)
+            endX = (w * 0.74f).toInt().coerceAtMost(w - 1)
+            startY = (h * 0.22f).toInt().coerceAtLeast(0)
+            endY = (h * 0.74f).toInt().coerceAtMost(h - 1)
+        } else {
+            // Vertical (Portrait 1080x2400 / 1220x2712):
+            // - X: 5% a 86% (excluye barra lateral de dibujo a la derecha)
+            // - Y: 28% a 70% (excluye saldo/tabs Y < 28% y botones inferiores/temporalidad Y > 70%)
+            startX = (w * 0.05f).toInt().coerceAtLeast(0)
+            endX = (w * 0.86f).toInt().coerceAtMost(w - 1)
             startY = (h * 0.28f).toInt().coerceAtLeast(0)
-            endY = (h * 0.72f).toInt().coerceAtMost(h - 1)
+            endY = (h * 0.70f).toInt().coerceAtMost(h - 1)
         }
 
         var minPriceY = Float.MAX_VALUE // Menor Y = Mayor precio (Resistencia / Techo)
@@ -136,6 +136,11 @@ class VisionAnalyzer {
 
             // 1. Paso: Buscar cuerpo de vela (Verde o Rojo) con umbrales HSV relajados
             for (y in startY..endY step 2) {
+                // FILTRO ANTI-BUCLE: Ignorar píxeles que caigan sobre líneas de soporte o resistencia ya dibujadas por el bot (+- 10px)
+                if (supportLinesY.any { Math.abs(y - it) <= 10f } || resistanceLinesY.any { Math.abs(y - it) <= 10f }) {
+                    continue
+                }
+
                 val pixel = bitmap.getPixel(x, y)
                 Color.colorToHSV(pixel, hsvBuffer)
                 val hue = hsvBuffer[0]
@@ -183,6 +188,9 @@ class VisionAnalyzer {
 
                 val wickScanTop = (bodyFirstY - 40).coerceAtLeast(startY)
                 for (y in bodyFirstY downTo wickScanTop step 2) {
+                    if (supportLinesY.any { Math.abs(y - it) <= 10f } || resistanceLinesY.any { Math.abs(y - it) <= 10f }) {
+                        continue
+                    }
                     val pixel = bitmap.getPixel(x, y)
                     Color.colorToHSV(pixel, hsvBuffer)
                     val sat = hsvBuffer[1]
@@ -196,6 +204,9 @@ class VisionAnalyzer {
 
                 val wickScanBottom = (bodyLastY + 40).coerceAtMost(endY)
                 for (y in bodyLastY..wickScanBottom step 2) {
+                    if (supportLinesY.any { Math.abs(y - it) <= 10f } || resistanceLinesY.any { Math.abs(y - it) <= 10f }) {
+                        continue
+                    }
                     val pixel = bitmap.getPixel(x, y)
                     Color.colorToHSV(pixel, hsvBuffer)
                     val sat = hsvBuffer[1]
