@@ -32,7 +32,7 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
                             startY = low.y,
                             endX = 0f,
                             endY = low.y,
-                            color = Color.GREEN,
+                            color = Color.parseColor("#ef4444"), // Soporte = ROJO
                             strokeWidth = 6f
                         )
                     )
@@ -46,7 +46,7 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
                             startY = high.y,
                             endX = 0f,
                             endY = high.y,
-                            color = Color.RED,
+                            color = Color.parseColor("#22c55e"), // Resistencia = VERDE
                             strokeWidth = 6f
                         )
                     )
@@ -148,7 +148,7 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
                             startY = low.y,
                             endX = 0f,
                             endY = low.y,
-                            color = Color.GREEN,
+                            color = Color.parseColor("#ef4444"), // Soporte = ROJO
                             strokeWidth = 6f
                         )
                     )
@@ -162,7 +162,7 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
                             startY = high.y,
                             endX = 0f,
                             endY = high.y,
-                            color = Color.RED,
+                            color = Color.parseColor("#22c55e"), // Resistencia = VERDE
                             strokeWidth = 6f
                         )
                     )
