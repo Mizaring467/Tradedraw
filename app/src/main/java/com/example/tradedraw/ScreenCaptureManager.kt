@@ -102,6 +102,19 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
             density = 320
         }
 
+        val configOrientation = context.resources.configuration.orientation
+        val isLandscapeConfig = configOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
+        if (isLandscapeConfig && width < height) {
+            val temp = width
+            width = height
+            height = temp
+        } else if (!isLandscapeConfig && width > height) {
+            val temp = width
+            width = height
+            height = temp
+        }
+
         @SuppressLint("WrongConstant")
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
 

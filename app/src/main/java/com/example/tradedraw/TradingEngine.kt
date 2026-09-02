@@ -168,7 +168,7 @@ class TradingEngine(
                 } else null
             }
             AutoTradeStrategy.MT_MASTER_COMBO -> {
-                // Combo Master Traders: Prioriza Rechazo > Choque > Agotamiento
+                // Combo Master Traders: Prioriza Rechazo > Choque > Agotamiento > Fuerza de Señal
                 if (analysis.hasBottomRejectionWick || analysis.touchesSupport) {
                     TradeAction.BUY
                 } else if (analysis.hasTopRejectionWick || analysis.touchesResistance) {
@@ -180,6 +180,10 @@ class TradingEngine(
                 } else if (analysis.isExhaustion3CandlesCall) {
                     TradeAction.BUY
                 } else if (analysis.isExhaustion3CandlesPut) {
+                    TradeAction.SELL
+                } else if (analysis.signalPowerCall >= 68) {
+                    TradeAction.BUY
+                } else if (analysis.signalPowerPut >= 68) {
                     TradeAction.SELL
                 } else null
             }
