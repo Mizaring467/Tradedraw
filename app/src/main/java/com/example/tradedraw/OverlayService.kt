@@ -435,11 +435,12 @@ class OverlayService : Service() {
         val keyDisplay = if (ai.apiKey.isNotBlank()) "••••" + ai.apiKey.takeLast(4) else "Sin configurar"
         val options = arrayOf(
             "1. ⚡ IA Remota: ${if (ai.isEnabled) "ACTIVADA [ON]" else "DESACTIVADA [OFF]"}",
-            "2. 🌐 Endpoint Base: ${ai.baseUrl}",
-            "3. 🔑 API Key: $keyDisplay",
-            "4. 🧠 Modelo: ${ai.model}",
-            "5. 🎯 Umbral Confianza: ${(ai.confidenceThreshold * 100).toInt()}%",
-            "6. 🧪 Probar Conexión con OmniRoute"
+            "2. 🚀 Presets Rápidos (OmniRoute / B.AI)",
+            "3. 🌐 Endpoint Base: ${ai.baseUrl}",
+            "4. 🔑 API Key: $keyDisplay",
+            "5. 🧠 Modelo: ${ai.model}",
+            "6. 🎯 Umbral Confianza: ${(ai.confidenceThreshold * 100).toInt()}%",
+            "7. 🧪 Probar Conexión con OmniRoute"
         )
         AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
             .setTitle("Configurar IA (OmniRoute / OpenAI)")
@@ -451,23 +452,24 @@ class OverlayService : Service() {
                         showOmniRouteConfigDialog()
                         updateHUDView()
                     }
-                    1 -> promptTextInput("Endpoint Base URL", ai.baseUrl) { newUrl ->
+                    1 -> showServerPresetsDialog()
+                    2 -> promptTextInput("Endpoint Base URL", ai.baseUrl) { newUrl ->
                         ai.baseUrl = newUrl
                         Toast.makeText(this, "URL guardada", Toast.LENGTH_SHORT).show()
                         showOmniRouteConfigDialog()
                     }
-                    2 -> promptTextInput("API Key de OmniRoute", ai.apiKey) { newKey ->
+                    3 -> promptTextInput("API Key de OmniRoute", ai.apiKey) { newKey ->
                         ai.apiKey = newKey
                         Toast.makeText(this, "API Key guardada", Toast.LENGTH_SHORT).show()
                         showOmniRouteConfigDialog()
                     }
-                    3 -> showModelPicker()
-                    4 -> promptNumberAdjustment("Umbral de Confianza (%)", (ai.confidenceThreshold * 100).toInt(), 30, 95) { pct ->
+                    4 -> showModelPicker()
+                    5 -> promptNumberAdjustment("Umbral de Confianza (%)", (ai.confidenceThreshold * 100).toInt(), 30, 95) { pct ->
                         ai.confidenceThreshold = pct / 100f
                         showOmniRouteConfigDialog()
                         updateHUDView()
                     }
-                    5 -> {
+                    6 -> {
                         Toast.makeText(this, "Probando conexión con OmniRoute...", Toast.LENGTH_SHORT).show()
                         ai.testConnection { success, msg ->
                             Toast.makeText(this, if (success) "✓ $msg" else "❌ $msg", Toast.LENGTH_LONG).show()
@@ -476,6 +478,45 @@ class OverlayService : Service() {
                 }
             }
             .setNegativeButton("Cerrar", null)
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun showServerPresetsDialog() {
+        val ai = tradingEngine.aiClient
+        val presets = arrayOf(
+            "🚀 OmniRoute Local (ADB / USB)\nhttp://localhost:20128/v1 · Gemini 3.7",
+            "📶 OmniRoute Wi-Fi PC (Red Local)\nhttp://192.168.1.245:20128/v1 · Gemini 3.7",
+            "⚡ B.AI Remoto (Cloud)\nhttps://api.b.ai/v1 · DeepSeek Vision"
+        )
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Seleccionar Proveedor / Preset")
+            .setItems(presets) { _, which ->
+                when (which) {
+                    0 -> {
+                        ai.baseUrl = "http://localhost:20128/v1"
+                        ai.apiKey = "sk-83f36ae9ddb73925-cc4afb-bc992e70"
+                        ai.model = "antigravity/gemini-3.7-flash-high"
+                        Toast.makeText(this, "Preset: OmniRoute Local activado", Toast.LENGTH_SHORT).show()
+                    }
+                    1 -> {
+                        ai.baseUrl = "http://192.168.1.245:20128/v1"
+                        ai.apiKey = "sk-83f36ae9ddb73925-cc4afb-bc992e70"
+                        ai.model = "antigravity/gemini-3.7-flash-high"
+                        Toast.makeText(this, "Preset: OmniRoute Wi-Fi PC activado", Toast.LENGTH_SHORT).show()
+                    }
+                    2 -> {
+                        ai.baseUrl = "https://api.b.ai/v1"
+                        ai.apiKey = "sk-9lt4tdgldm7tt48ylqkf693nouje0spi"
+                        ai.model = "deepseek-v4-flash-vision-exp"
+                        Toast.makeText(this, "Preset: B.AI Cloud activado", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                showOmniRouteConfigDialog()
+            }
+            .setNegativeButton("Cancelar", null)
             .create().apply {
                 window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
                 show()

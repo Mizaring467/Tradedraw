@@ -65,6 +65,7 @@ class TradingEngine(
 
         // 1. Si hay una operación abierta en curso, comprobar si apareció el resultado (Win / Loss)
         if (riskManager.hasPendingTrade) {
+            val elapsedSec = (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000
             val outcome = visionAnalyzer.detectTradeOutcome(bitmap)
             if (outcome != null) {
                 handler.post {
@@ -81,6 +82,13 @@ class TradingEngine(
                         Toast.makeText(context, "⚠️ OPERACIÓN PERDIDA (+1 L)", Toast.LENGTH_LONG).show()
                         onTradeExecutedListener?.invoke(TradeAction.BUY, false)
                     }
+                }
+            } else if (elapsedSec >= 65) {
+                // Timeout de seguridad: En Binomo las operaciones duran 60s. Si pasaron 65s sin banner, desbloquear
+                handler.post {
+                    riskManager.clearPendingTrade()
+                    autoDrawEngine.clearTradeEntry()
+                    Toast.makeText(context, "⏱️ Operación finalizada por tiempo (65s)", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -103,12 +111,10 @@ class TradingEngine(
 
         // 5. Evaluar señal de trading solo si no hay trade abierto
         if (!riskManager.hasPendingTrade) {
-            // Ejecutar SIEMPRE las reglas técnicas locales primero para respuesta instantánea en tiempo real
             val localSignal = evaluateStrategySignal(strategy, analysis, supports.isNotEmpty() || resistances.isNotEmpty())
-            if (localSignal != null) {
-                handleSignal(localSignal, analysis, bitmap, "Reglas Técnicas Locales")
-            } else if (aiClient.isEnabled && aiClient.apiKey.isNotBlank()) {
-                // Asíncronamente consultar IA remota sin bloquear el motor local
+
+            if (aiClient.isEnabled && aiClient.apiKey.isNotBlank()) {
+                // Mantener el análisis de IA continuo en vivo (OmniRoute / Gemini)
                 aiClient.analyzeFrame(bitmap) { aiResult ->
                     latestAIResult = aiResult
                     handler.post { onFrameProcessedListener?.invoke(analysis) }
@@ -116,10 +122,16 @@ class TradingEngine(
                     if (aiResult.isSuccess && aiResult.action != null && aiResult.confidence >= aiClient.confidenceThreshold) {
                         if (!riskManager.hasPendingTrade) {
                             val pct = (aiResult.confidence * 100).toInt()
-                            handleSignal(aiResult.action, analysis, bitmap, "IA (${pct}%): ${aiResult.reason}")
+                            handleSignal(aiResult.action, analysis, bitmap, "IA ($pct%): ${aiResult.reason}")
                         }
+                    } else if (localSignal != null && !riskManager.hasPendingTrade) {
+                        // Si la IA no tiene señal concluyente pero las reglas técnicas sí, operar
+                        handleSignal(localSignal, analysis, bitmap, "Reglas Técnicas Locales")
                     }
                 }
+            } else if (localSignal != null) {
+                // Ruta 100% Local (sin IA)
+                handleSignal(localSignal, analysis, bitmap, "Reglas Técnicas Locales")
             }
         }
     }

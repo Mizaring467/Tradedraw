@@ -33,15 +33,15 @@ class AIClient(private val context: Context) {
         set(value) = prefs.edit().putBoolean("ai_enabled", value).apply()
 
     var baseUrl: String
-        get() = prefs.getString("ai_base_url", "https://api.b.ai/v1") ?: "https://api.b.ai/v1"
+        get() = prefs.getString("ai_base_url", "http://localhost:20128/v1") ?: "http://localhost:20128/v1"
         set(value) = prefs.edit().putString("ai_base_url", value.trim().trimEnd('/')).apply()
 
     var apiKey: String
-        get() = prefs.getString("ai_api_key", "sk-9lt4tdgldm7tt48ylqkf693nouje0spi") ?: "sk-9lt4tdgldm7tt48ylqkf693nouje0spi"
+        get() = prefs.getString("ai_api_key", "sk-83f36ae9ddb73925-cc4afb-bc992e70") ?: "sk-83f36ae9ddb73925-cc4afb-bc992e70"
         set(value) = prefs.edit().putString("ai_api_key", value.trim()).apply()
 
     var model: String
-        get() = prefs.getString("ai_model", "deepseek-v4-flash-vision-exp") ?: "deepseek-v4-flash-vision-exp"
+        get() = prefs.getString("ai_model", "antigravity/gemini-3.7-flash-high") ?: "antigravity/gemini-3.7-flash-high"
         set(value) = prefs.edit().putString("ai_model", value.trim()).apply()
 
     var confidenceThreshold: Float
@@ -80,8 +80,8 @@ class AIClient(private val context: Context) {
                 val url = URL(urlString)
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
-                    connectTimeout = 3000
-                    readTimeout = 4000
+                    connectTimeout = 6000
+                    readTimeout = 12000
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json; charset=UTF-8")
                     setRequestProperty("Authorization", "Bearer $apiKey")
