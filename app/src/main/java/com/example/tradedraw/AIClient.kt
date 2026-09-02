@@ -80,8 +80,8 @@ class AIClient(private val context: Context) {
                 val url = URL(urlString)
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
-                    connectTimeout = 7000
-                    readTimeout = 9000
+                    connectTimeout = 3000
+                    readTimeout = 4000
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json; charset=UTF-8")
                     setRequestProperty("Authorization", "Bearer $apiKey")

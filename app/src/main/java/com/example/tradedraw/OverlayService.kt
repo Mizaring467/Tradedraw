@@ -484,34 +484,11 @@ class OverlayService : Service() {
 
     private fun showModelPicker() {
         val ai = tradingEngine.aiClient
-        val presets = arrayOf(
-            "deepseek-v4-flash-vision-exp",
-            "gemini-3.6-flash",
-            "gemini-3.5-flash",
-            "gpt-5.4-mini",
-            "claude-sonnet-4.6",
-            "deepseek-v4-flash",
-            "minimax-m3",
-            "Otro modelo personalizado..."
-        )
-        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
-            .setTitle("Seleccionar Modelo de Visión (B.AI)")
-            .setItems(presets) { _, which ->
-                if (which == presets.size - 1) {
-                    promptTextInput("Nombre de modelo", ai.model) { customModel ->
-                        ai.model = customModel
-                        showOmniRouteConfigDialog()
-                    }
-                } else {
-                    ai.model = presets[which]
-                    Toast.makeText(this, "Modelo: ${ai.model}", Toast.LENGTH_SHORT).show()
-                    showOmniRouteConfigDialog()
-                }
-            }
-            .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
-                show()
-            }
+        ModelPickerDialog(this, ai.model) { chosenModel ->
+            ai.model = chosenModel
+            Toast.makeText(this, "Modelo seleccionado: ${ai.model}", Toast.LENGTH_SHORT).show()
+            showOmniRouteConfigDialog()
+        }.show()
     }
 
     private fun promptTextInput(title: String, currentValue: String, onTextSaved: (String) -> Unit) {

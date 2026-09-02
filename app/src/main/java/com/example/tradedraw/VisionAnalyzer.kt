@@ -75,7 +75,18 @@ class VisionAnalyzer {
     ): VisionAnalysisResult {
         val w = bitmap.width
         val h = bitmap.height
-        val isLandscape = w > h
+        val rotation = if (context != null) {
+            val wm = context.getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                try { context.display?.rotation } catch (e: Exception) { null } ?: wm?.defaultDisplay?.rotation
+            } else {
+                @Suppress("DEPRECATION")
+                wm?.defaultDisplay?.rotation
+            }
+        } else null
+
+        val isLandscapeDisplay = rotation == android.view.Surface.ROTATION_90 || rotation == android.view.Surface.ROTATION_270
+        val isLandscape = w > h || isLandscapeDisplay
 
         // Delimitación estricta de la zona de velas reales:
         val startX: Int
