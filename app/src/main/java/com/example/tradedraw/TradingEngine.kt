@@ -1,6 +1,7 @@
 package com.example.tradedraw
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.media.RingtoneManager
 import android.os.Build
@@ -8,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import java.io.File
@@ -379,7 +381,15 @@ class TradingEngine(
     fun testAccessibilityClicks() {
         val accessibility = AutoTradeAccessibilityService.instance
         if (accessibility == null) {
-            Toast.makeText(context, "❌ Servicio de Accesibilidad NO conectado. Actívalo en Ajustes.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "❌ Accesibilidad NO conectada.\nAbriendo Ajustes de Accesibilidad...", Toast.LENGTH_LONG).show()
+            try {
+                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Log.e("TradingEngine", "Error abriendo ajustes de accesibilidad", e)
+            }
             return
         }
 
@@ -408,8 +418,11 @@ class TradingEngine(
                 }
             }
             val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            val ringtone = RingtoneManager.getRingtone(context, notificationUri)
-            ringtone?.play()
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            if (notificationUri != null) {
+                val ringtone = RingtoneManager.getRingtone(context, notificationUri)
+                ringtone?.play()
+            }
         } catch (e: Exception) {
             Log.e("TradingEngine", "Error en feedback háptico/audio", e)
         }

@@ -37,11 +37,11 @@ class AIClient(private val context: Context) {
         set(value) = prefs.edit().putString("ai_base_url", value.trim().trimEnd('/')).apply()
 
     var apiKey: String
-        get() = prefs.getString("ai_api_key", "sk-83f36ae9ddb73925-cc4afb-bc992e70") ?: "sk-83f36ae9ddb73925-cc4afb-bc992e70"
+        get() = prefs.getString("ai_api_key", "sk-5f238e76072d7926-95c3e9-7cd7ecb1") ?: "sk-5f238e76072d7926-95c3e9-7cd7ecb1"
         set(value) = prefs.edit().putString("ai_api_key", value.trim()).apply()
 
     var model: String
-        get() = prefs.getString("ai_model", "antigravity/gemini-3.7-flash-high") ?: "antigravity/gemini-3.7-flash-high"
+        get() = prefs.getString("ai_model", "antigravity/gemini-3.8-flash-high") ?: "antigravity/gemini-3.8-flash-high"
         set(value) = prefs.edit().putString("ai_model", value.trim()).apply()
 
     var confidenceThreshold: Float

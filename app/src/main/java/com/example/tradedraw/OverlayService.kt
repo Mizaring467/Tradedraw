@@ -103,6 +103,15 @@ class OverlayService : Service() {
         calibrationManager = CalibrationManager(this)
         tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager)
 
+        // Cargar estrategia guardada previamente
+        val savedStrat = getSharedPreferences("TradeDraw_Config", Context.MODE_PRIVATE)
+            .getString("saved_strategy", AutoTradeStrategy.MT_MASTER_COMBO.name)
+        tradingEngine.strategy = try {
+            AutoTradeStrategy.valueOf(savedStrat ?: AutoTradeStrategy.MT_MASTER_COMBO.name)
+        } catch (e: Exception) {
+            AutoTradeStrategy.MT_MASTER_COMBO
+        }
+
         AutoTradeAccessibilityService.onGestureClickListener = { x, y ->
             drawingView.triggerClickAnimation(x, y)
         }
@@ -120,12 +129,30 @@ class OverlayService : Service() {
         super.onConfigurationChanged(newConfig)
         screenCaptureManager?.refreshVirtualDisplay()
         mainHandler.postDelayed({
-            if (!::menuParams.isInitialized) return@postDelayed
-            val metrics = resources.displayMetrics
-            if (menuParams.x > metrics.widthPixels) menuParams.x = metrics.widthPixels - 200
-            if (menuParams.y > metrics.heightPixels) menuParams.y = metrics.heightPixels - 200
-            if (::menuView.isInitialized) windowManager.updateViewLayout(menuView, menuParams)
-        }, 500)
+            // 1. Redimensionar el lienzo flotante para cubrir la pantalla completa en la nueva orientación
+            if (::canvasParams.isInitialized && ::canvasView.isInitialized) {
+                canvasParams.width = WindowManager.LayoutParams.MATCH_PARENT
+                canvasParams.height = WindowManager.LayoutParams.MATCH_PARENT
+                windowManager.updateViewLayout(canvasView, canvasParams)
+            }
+
+            // 2. Reposicionar menú dentro de los nuevos bordes de pantalla
+            if (::menuParams.isInitialized && ::menuView.isInitialized) {
+                val metrics = resources.displayMetrics
+                if (menuParams.x > metrics.widthPixels - 100) menuParams.x = (metrics.widthPixels - 200).coerceAtLeast(0)
+                if (menuParams.y > metrics.heightPixels - 100) menuParams.y = (metrics.heightPixels - 200).coerceAtLeast(0)
+                windowManager.updateViewLayout(menuView, menuParams)
+            }
+
+            // 3. Reposicionar HUD dentro de los nuevos bordes
+            hudParams?.let { params ->
+                val view = hudView ?: return@let
+                val metrics = resources.displayMetrics
+                if (params.x > metrics.widthPixels - 100) params.x = 40
+                if (params.y > metrics.heightPixels - 100) params.y = 120
+                windowManager.updateViewLayout(view, params)
+            }
+        }, 350)
     }
 
     private fun setupCanvasWindow() {
@@ -372,10 +399,7 @@ class OverlayService : Service() {
 
         val debugIcon = if (tradingEngine.debugModeEnabled) android.R.drawable.ic_menu_camera else android.R.drawable.ic_menu_info_details
         addItemToSubmenu(debugIcon, if (tradingEngine.debugModeEnabled) "DEBUG: ON" else "DEBUG: OFF", Color.CYAN) {
-            tradingEngine.debugModeEnabled = !tradingEngine.debugModeEnabled
-            val msg = if (tradingEngine.debugModeEnabled) "Modo Debug Visual ACTIVADO\nGuardando capturas anotadas en /storage/emulated/0/TradeDraw/" else "Modo Debug Visual DESACTIVADO"
-            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
-            showAISubmenu()
+            showDebugDialog()
         }
 
         val hudIcon = if (isHudVisible) R.drawable.ic_visibility else R.drawable.ic_visibility_off
@@ -487,8 +511,9 @@ class OverlayService : Service() {
     private fun showServerPresetsDialog() {
         val ai = tradingEngine.aiClient
         val presets = arrayOf(
-            "🚀 OmniRoute Local (ADB / USB)\nhttp://localhost:20128/v1 · Gemini 3.7",
-            "📶 OmniRoute Wi-Fi PC (Red Local)\nhttp://192.168.1.245:20128/v1 · Gemini 3.7",
+            "📱 OmniRoute Termux (Móvil Local)\nhttp://localhost:20128/v1 · auto/best-vision ⭐",
+            "📶 OmniRoute Termux (Wi-Fi Celular)\nhttp://192.168.1.185:20128/v1 · auto/best-vision",
+            "💻 OmniRoute Wi-Fi PC (Red Local)\nhttp://192.168.1.245:20128/v1 · Gemini 3.7",
             "⚡ B.AI Remoto (Cloud)\nhttps://api.b.ai/v1 · DeepSeek Vision"
         )
         AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
@@ -497,17 +522,23 @@ class OverlayService : Service() {
                 when (which) {
                     0 -> {
                         ai.baseUrl = "http://localhost:20128/v1"
-                        ai.apiKey = "sk-83f36ae9ddb73925-cc4afb-bc992e70"
-                        ai.model = "antigravity/gemini-3.7-flash-high"
-                        Toast.makeText(this, "Preset: OmniRoute Local activado", Toast.LENGTH_SHORT).show()
+                        ai.apiKey = "sk-5f238e76072d7926-95c3e9-7cd7ecb1"
+                        ai.model = "auto/best-vision"
+                        Toast.makeText(this, "Preset: OmniRoute Termux Móvil activado", Toast.LENGTH_SHORT).show()
                     }
                     1 -> {
+                        ai.baseUrl = "http://192.168.1.185:20128/v1"
+                        ai.apiKey = "sk-5f238e76072d7926-95c3e9-7cd7ecb1"
+                        ai.model = "auto/best-vision"
+                        Toast.makeText(this, "Preset: OmniRoute Termux Wi-Fi activado", Toast.LENGTH_SHORT).show()
+                    }
+                    2 -> {
                         ai.baseUrl = "http://192.168.1.245:20128/v1"
-                        ai.apiKey = "sk-83f36ae9ddb73925-cc4afb-bc992e70"
+                        ai.apiKey = "sk-5f238e76072d7926-95c3e9-7cd7ecb1"
                         ai.model = "antigravity/gemini-3.7-flash-high"
                         Toast.makeText(this, "Preset: OmniRoute Wi-Fi PC activado", Toast.LENGTH_SHORT).show()
                     }
-                    2 -> {
+                    3 -> {
                         ai.baseUrl = "https://api.b.ai/v1"
                         ai.apiKey = "sk-9lt4tdgldm7tt48ylqkf693nouje0spi"
                         ai.model = "deepseek-v4-flash-vision-exp"
@@ -611,10 +642,36 @@ class OverlayService : Service() {
                     6 -> AutoTradeStrategy.TREND_FOLLOWING
                     else -> AutoTradeStrategy.COMBINED
                 }
+                getSharedPreferences("TradeDraw_Config", Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("saved_strategy", tradingEngine.strategy.name)
+                    .apply()
+
                 Toast.makeText(this, "Estrategia: ${tradingEngine.strategy.name}", Toast.LENGTH_SHORT).show()
                 updateHUDView()
                 showAISubmenu()
             }
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun showDebugDialog() {
+        val summary = DebugVisualizer.lastSummary
+        val isSaving = tradingEngine.debugModeEnabled
+        val lastPath = DebugVisualizer.lastSavedPath ?: "Ninguno guardado aún"
+
+        val message = "$summary\n\n📁 Almacenamiento:\n$lastPath"
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("🛠️ Diagnóstico Visual (Debug)")
+            .setMessage(message)
+            .setPositiveButton(if (isSaving) "Desactivar Guardado" else "Activar Guardar Frames") { _, _ ->
+                tradingEngine.debugModeEnabled = !tradingEngine.debugModeEnabled
+                Toast.makeText(this, if (tradingEngine.debugModeEnabled) "Guardado de frames activado" else "Guardado desactivado", Toast.LENGTH_SHORT).show()
+                showAISubmenu()
+            }
+            .setNeutralButton("Cerrar", null)
             .create().apply {
                 window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
                 show()

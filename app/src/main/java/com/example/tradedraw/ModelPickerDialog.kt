@@ -30,26 +30,29 @@ class ModelPickerDialog(
 ) {
 
     private val allModels = listOf(
-        // Gemini (Antigravity & OmniRoute)
-        ModelItem("antigravity/gemini-3.7-flash-high", "Gemini 3.7 Flash High (Antigravity)", "♊ Google Gemini", "OmniRoute · Máxima Precisión"),
-        ModelItem("antigravity/gemini-3.7-flash-medium", "Gemini 3.7 Flash Medium (Antigravity)", "♊ Google Gemini", "OmniRoute · Equilibrado"),
-        ModelItem("antigravity/gemini-3.7-flash-low", "Gemini 3.7 Flash Low (Antigravity)", "♊ Google Gemini", "OmniRoute · Ultra Rápido"),
-        ModelItem("auto/gemini", "Auto Gemini", "♊ Google Gemini", "OmniRoute · Enrutamiento Inteligente"),
+        // Antigravity Gemini 3.8 Flash (NUEVO)
+        ModelItem("antigravity/gemini-3.8-flash-high", "Gemini 3.8 Flash High ⭐", "♊ Antigravity Gemini 3.8", "Nuevo Lanzamiento · Máxima Precisión"),
+        ModelItem("antigravity/gemini-3.8-flash-medium", "Gemini 3.8 Flash Medium", "♊ Antigravity Gemini 3.8", "Nuevo Lanzamiento · Equilibrado"),
+        ModelItem("antigravity/gemini-3.8-flash-low", "Gemini 3.8 Flash Low", "♊ Antigravity Gemini 3.8", "Nuevo Lanzamiento · Ultra Rápido"),
+        ModelItem("antigravity/gemini-3.8-flash-tiered", "Gemini 3.8 Flash Tiered", "♊ Antigravity Gemini 3.8", "Pensamiento Adaptativo Dinámico"),
 
-        // OmniRoute Smart Combos
-        ModelItem("auto", "Auto Combo", "🎯 OmniRoute Smart", "Enrutador Automático Multi-IA"),
-        ModelItem("auto/fast", "Auto Fast", "🎯 OmniRoute Smart", "Menor Latencia"),
-        ModelItem("auto/smart", "Auto Smart", "🎯 OmniRoute Smart", "Máxima Inteligencia"),
+        // Antigravity Gemini 3.7 & Pro
+        ModelItem("antigravity/gemini-3.7-flash-high", "Gemini 3.7 Flash High", "♊ Antigravity Gemini", "Alta Precisión Visión"),
+        ModelItem("antigravity/gemini-3.7-flash-medium", "Gemini 3.7 Flash Medium", "♊ Antigravity Gemini", "Equilibrado"),
+        ModelItem("antigravity/gemini-3.7-flash-low", "Gemini 3.7 Flash Low", "♊ Antigravity Gemini", "Mínima Latencia"),
+        ModelItem("antigravity/gemini-pro-agent", "Gemini 3.1 Pro Agent", "♊ Antigravity Gemini", "Razonamiento Máximo"),
 
-        // Claude (OmniRoute)
-        ModelItem("auto/claude-sonnet", "Claude Sonnet (Auto)", "🤖 Anthropic Claude", "OmniRoute · Sonnet Combo"),
-        ModelItem("kiro/claude-sonnet-4.5", "Claude Sonnet 4.5", "🤖 Anthropic Claude", "OmniRoute · Kiro Sonnet"),
-        ModelItem("kiro/claude-haiku-4.5", "Claude Haiku 4.5", "🤖 Anthropic Claude", "OmniRoute · Kiro Haiku"),
+        // Claude (Anthropic en OmniRoute / Antigravity)
+        ModelItem("claude-sonnet-4-6", "Claude Sonnet 4.6 ⭐", "🤖 Anthropic Claude", "Antigravity Upstream"),
+        ModelItem("claude-opus-4-6-thinking", "Claude Opus 4.6 Thinking", "🤖 Anthropic Claude", "Razonamiento Profundo"),
+        ModelItem("auto/claude-sonnet", "Claude Sonnet (Auto)", "🤖 Anthropic Claude", "OmniRoute Smart"),
+        ModelItem("kiro/claude-sonnet-4.5", "Claude Sonnet 4.5", "🤖 Anthropic Claude", "Kiro Sonnet"),
+        ModelItem("kiro/claude-haiku-4.5", "Claude Haiku 4.5", "🤖 Anthropic Claude", "Kiro Haiku Rápido"),
 
-        // DeepSeek
-        ModelItem("deepseek-v4-flash-vision-exp", "DeepSeek-V4 Flash Vision", "⚡ DeepSeek", "B.AI / OmniRoute Visión"),
-        ModelItem("deepseek-v4-flash", "DeepSeek-V4 Flash", "⚡ DeepSeek", "B.AI / OmniRoute Flash"),
-        ModelItem("deepseek-v4-pro", "DeepSeek-V4 Pro", "⚡ DeepSeek", "Razonamiento Avanzado")
+        // B.AI (Cloud)
+        ModelItem("deepseek-v4-flash-vision-exp", "DeepSeek-V4 Flash Vision ⭐", "⚡ B.AI Cloud", "Visión Especializada"),
+        ModelItem("deepseek-v4-flash", "DeepSeek-V4 Flash", "⚡ B.AI Cloud", "Ultra Rápido"),
+        ModelItem("deepseek-v4-pro", "DeepSeek-V4 Pro", "⚡ B.AI Cloud", "Razonamiento Avanzado")
     )
 
     fun show() {
