@@ -127,6 +127,9 @@ class OverlayService : Service() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        if (::drawingView.isInitialized) {
+            drawingView.clearBotShapes()
+        }
         screenCaptureManager?.refreshVirtualDisplay()
         mainHandler.postDelayed({
             // 1. Redimensionar el lienzo flotante para cubrir la pantalla completa en la nueva orientación

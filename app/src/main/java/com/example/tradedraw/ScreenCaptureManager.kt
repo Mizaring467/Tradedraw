@@ -66,12 +66,100 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
     fun refreshVirtualDisplay() {
         backgroundHandler.post {
             try {
-                virtualDisplay?.release()
+                val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                val metrics = DisplayMetrics()
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    val bounds = windowManager.currentWindowMetrics.bounds
+                    width = bounds.width()
+                    height = bounds.height()
+                    density = context.resources.displayMetrics.densityDpi
+                } else {
+                    @Suppress("DEPRECATION")
+                    windowManager.defaultDisplay.getMetrics(metrics)
+                    width = metrics.widthPixels
+                    height = metrics.heightPixels
+                    density = metrics.densityDpi
+                }
+
+                val rotation = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    try { context.display?.rotation } catch (e: Exception) { null } ?: windowManager.defaultDisplay.rotation
+                } else {
+                    @Suppress("DEPRECATION")
+                    windowManager.defaultDisplay.rotation
+                }
+                val isLandscapeDisplay = rotation == android.view.Surface.ROTATION_90 || rotation == android.view.Surface.ROTATION_270
+                val configOrientation = context.resources.configuration.orientation
+                val isLandscapeConfig = (configOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) || isLandscapeDisplay
+
+                if (isLandscapeConfig && width < height) {
+                    val temp = width
+                    width = height
+                    height = temp
+                } else if (!isLandscapeConfig && width > height) {
+                    val temp = width
+                    width = height
+                    height = temp
+                }
+
+                // En Android 14 no se puede invocar MediaProjection#createVirtualDisplay múltiples veces.
+                // Usamos resize() y setSurface() con un nuevo ImageReader.
                 imageReader?.close()
-                virtualDisplay = null
-                imageReader = null
-                setupVirtualDisplay()
-                Log.d("ScreenCaptureManager", "VirtualDisplay refrescado para nueva orientación ($width x $height)")
+                @SuppressLint("WrongConstant")
+                val newReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
+                imageReader = newReader
+
+                if (virtualDisplay != null) {
+                    virtualDisplay?.resize(width, height, density)
+                    virtualDisplay?.setSurface(newReader.surface)
+                } else {
+                    val flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR or
+                            DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC or
+                            DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
+                    virtualDisplay = mediaProjection?.createVirtualDisplay(
+                        "TradeDraw_ScreenCapture",
+                        width, height, density,
+                        flags,
+                        newReader.surface, null, backgroundHandler
+                    )
+                }
+
+                var lastCaptureTime = 0L
+                val CAPTURE_INTERVAL_MS = 800L
+                newReader.setOnImageAvailableListener({ reader ->
+                    val image = try { reader.acquireLatestImage() } catch (e: Exception) { null } ?: return@setOnImageAvailableListener
+                    try {
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastCaptureTime >= CAPTURE_INTERVAL_MS) {
+                            lastCaptureTime = currentTime
+                            val planes = image.planes
+                            if (planes.isNotEmpty()) {
+                                val buffer: ByteBuffer = planes[0].buffer
+                                val pixelStride = planes[0].pixelStride
+                                val rowStride = planes[0].rowStride
+                                val rowPadding = rowStride - pixelStride * width
+
+                                val bitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888)
+                                bitmap.copyPixelsFromBuffer(buffer)
+
+                                val croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height)
+                                latestFrame = croppedBitmap
+                                totalFramesCaptured++
+
+                                if (isCapturing && onImageCapturedCallback != null) {
+                                    mainHandler.post {
+                                        onImageCapturedCallback?.invoke(croppedBitmap)
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ScreenCaptureManager", "Error en frame rotado", e)
+                    } finally {
+                        try { image.close() } catch (e: Exception) {}
+                    }
+                }, backgroundHandler)
+
+                Log.d("ScreenCaptureManager", "VirtualDisplay redimensionado exitosamente ($width x $height)")
             } catch (e: Exception) {
                 Log.e("ScreenCaptureManager", "Error refrescando VirtualDisplay", e)
             }
