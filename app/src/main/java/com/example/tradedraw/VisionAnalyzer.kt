@@ -1,8 +1,10 @@
 package com.example.tradedraw
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PointF
+import android.graphics.RectF
 
 enum class CandleType {
     GREEN, RED, DOJI
@@ -62,18 +64,20 @@ class VisionAnalyzer {
 
     /**
      * Analiza el gráfico en Binomo / Brokers (Tema Oscuro en Horizontal o Vertical).
-     * Delimita estrictamente la zona real de velas excluyendo cabeceras, pestañas y toolbars.
+     * Delimita con precisión milimétrica la zona de velas reales excluyendo cabeceras, pestañas y toolbars.
      */
     fun analyzeChart(
         bitmap: Bitmap,
         supportLinesY: List<Float>,
-        resistanceLinesY: List<Float>
+        resistanceLinesY: List<Float>,
+        context: Context? = null,
+        debugModeEnabled: Boolean = false
     ): VisionAnalysisResult {
         val w = bitmap.width
         val h = bitmap.height
         val isLandscape = w > h
 
-        // Delimitación estricta del gráfico de velas para NO escanear toolbars ni cabeceras:
+        // Delimitación estricta de la zona de velas reales:
         val startX: Int
         val endX: Int
         val startY: Int
@@ -81,20 +85,20 @@ class VisionAnalyzer {
 
         if (isLandscape) {
             // Horizontal (Landscape 2400x1080):
-            // - X: 8% a 76% (excluye botones Sube/Baja a la derecha en X > 78%)
-            // - Y: 28% a 74% (excluye pestañas superiores Y < 28% y toolbar de herramientas Y > 75%)
-            startX = (w * 0.08f).toInt().coerceAtLeast(0)
-            endX = (w * 0.76f).toInt().coerceAtMost(w - 1)
-            startY = (h * 0.28f).toInt().coerceAtLeast(0)
-            endY = (h * 0.74f).toInt().coerceAtMost(h - 1)
+            // - X: 5% a 82% (excluye botones Sube/Baja a la derecha en X > 85%)
+            // - Y: 15% a 52% (inicio real en Y=160px debajo de tabs; fin real en Y=510px antes del toolbar inferior)
+            startX = (w * 0.05f).toInt().coerceAtLeast(0)
+            endX = (w * 0.82f).toInt().coerceAtMost(w - 1)
+            startY = (h * 0.15f).toInt().coerceAtLeast(0)
+            endY = (h * 0.52f).toInt().coerceAtMost(h - 1)
         } else {
             // Vertical (Portrait 1080x2400):
             // - X: 6% a 94%
-            // - Y: 30% a 64% (excluye saldo/tabs Y < 30% y botones inferiores Y > 65%)
+            // - Y: 28% a 65% (excluye saldo/tabs Y < 28% y botones inferiores Y > 66%)
             startX = (w * 0.06f).toInt().coerceAtLeast(0)
             endX = (w * 0.94f).toInt().coerceAtMost(w - 1)
-            startY = (h * 0.30f).toInt().coerceAtLeast(0)
-            endY = (h * 0.64f).toInt().coerceAtMost(h - 1)
+            startY = (h * 0.28f).toInt().coerceAtLeast(0)
+            endY = (h * 0.65f).toInt().coerceAtMost(h - 1)
         }
 
         var minPriceY = Float.MAX_VALUE // Menor Y = Mayor precio (Resistencia / Techo)
@@ -106,8 +110,8 @@ class VisionAnalyzer {
         var totalGreenPixels = 0
         var totalRedPixels = 0
 
-        // Paso fino de escaneo (stepX = 6px) para nunca saltarse velas delgadas en pantallas 1080p/1440p
-        val stepX = ((endX - startX) / 120).coerceIn(4, 8)
+        // Paso fino de escaneo (3px a 5px) para capturar todas las velas delgadas de Binomo
+        val stepX = ((endX - startX) / 180).coerceIn(3, 5)
         val candleList = mutableListOf<CandleData>()
         val candleTypes = mutableListOf<CandleType>()
         var foundLatestPrice = false
@@ -119,7 +123,7 @@ class VisionAnalyzer {
             var bodyFirstY = -1
             var bodyLastY = -1
 
-            // 1. Paso: Buscar cuerpo de vela (Verde o Rojo sólido) dentro de los límites estrictos
+            // 1. Paso: Buscar cuerpo de vela (Verde o Rojo) con umbrales HSV relajados
             for (y in startY..endY step 2) {
                 val pixel = bitmap.getPixel(x, y)
                 Color.colorToHSV(pixel, hsvBuffer)
@@ -127,20 +131,20 @@ class VisionAnalyzer {
                 val sat = hsvBuffer[1]
                 val value = hsvBuffer[2]
 
-                // Descartar fondo oscuro (#131722, #181c27, etc.)
-                if (value < 0.22f || (sat < 0.20f && value < 0.65f)) {
+                // Descartar fondo oscuro
+                if (value < 0.18f || (sat < 0.18f && value < 0.60f)) {
                     continue
                 }
 
-                // Detección de Verde en velas Binomo (Hue 70° a 175°)
-                if (hue in 70f..175f && sat > 0.22f && value > 0.25f) {
+                // Detección de Verde en velas Binomo (Hue 65° a 180°)
+                if (hue in 65f..180f && sat > 0.16f && value > 0.18f) {
                     greenCount++
                     totalGreenPixels++
                     if (bodyFirstY == -1) bodyFirstY = y
                     bodyLastY = y
                 }
-                // Detección de Rojo en velas Binomo (Hue 335°-360° o 0°-30°)
-                else if ((hue >= 335f || hue <= 30f) && sat > 0.22f && value > 0.25f) {
+                // Detección de Rojo en velas Binomo (Hue 330°-360° o 0°-35°)
+                else if ((hue >= 330f || hue <= 35f) && sat > 0.16f && value > 0.18f) {
                     redCount++
                     totalRedPixels++
                     if (bodyFirstY == -1) bodyFirstY = y
@@ -148,7 +152,7 @@ class VisionAnalyzer {
                 }
             }
 
-            // Validar si la columna contiene una vela real
+            // Validar si la columna contiene una vela real (mínimo 3 muestras)
             if (greenCount >= 3 || redCount >= 3) {
                 val type = if (greenCount > redCount * 1.15f) {
                     CandleType.GREEN
@@ -172,9 +176,9 @@ class VisionAnalyzer {
                     Color.colorToHSV(pixel, hsvBuffer)
                     val sat = hsvBuffer[1]
                     val value = hsvBuffer[2]
-                    if (value > 0.30f && (sat > 0.18f || sat < 0.15f)) {
+                    if (value > 0.28f && (sat > 0.15f || sat < 0.15f)) {
                         wickTopY = y.toFloat()
-                    } else if (value < 0.20f) {
+                    } else if (value < 0.18f) {
                         break
                     }
                 }
@@ -185,9 +189,9 @@ class VisionAnalyzer {
                     Color.colorToHSV(pixel, hsvBuffer)
                     val sat = hsvBuffer[1]
                     val value = hsvBuffer[2]
-                    if (value > 0.30f && (sat > 0.18f || sat < 0.15f)) {
+                    if (value > 0.28f && (sat > 0.15f || sat < 0.15f)) {
                         wickBottomY = y.toFloat()
-                    } else if (value < 0.20f) {
+                    } else if (value < 0.18f) {
                         break
                     }
                 }
@@ -311,23 +315,23 @@ class VisionAnalyzer {
         // S/R calculados estrictamente dentro del rango de velas encontradas:
         // Resistencia = Menor Y (Techo de velas)
         // Soporte = Mayor Y (Suelo de velas)
-        val rawResistanceY = if (minPriceY < Float.MAX_VALUE) minPriceY else (startY + (endY - startY) * 0.25f)
-        val rawSupportY = if (maxPriceY > Float.MIN_VALUE) maxPriceY else (startY + (endY - startY) * 0.75f)
+        val rawResistanceY = if (minPriceY < Float.MAX_VALUE) minPriceY else (startY + (endY - startY) * 0.22f)
+        val rawSupportY = if (maxPriceY > Float.MIN_VALUE) maxPriceY else (startY + (endY - startY) * 0.78f)
 
-        // Rompimiento dinámico en vivo: Si el precio sube por encima de la resistencia, la resistencia sube con él
+        // Rompimiento dinámico en vivo
         val currentP = latestPriceY
         val adjustedResistanceY = if (currentP < rawResistanceY) currentP else rawResistanceY
         val adjustedSupportY = if (currentP > rawSupportY) currentP else rawSupportY
 
-        // Garantizar separación mínima de 60px para que NUNCA se monten una encima de la otra
-        val finalResistanceY: Float
-        val finalSupportY: Float
-        if (adjustedResistanceY < adjustedSupportY - 40f) {
-            finalResistanceY = adjustedResistanceY
-            finalSupportY = adjustedSupportY
-        } else {
-            finalResistanceY = (adjustedResistanceY).coerceAtMost(startY + (endY - startY) * 0.35f)
-            finalSupportY = (adjustedSupportY).coerceAtLeast(startY + (endY - startY) * 0.65f)
+        // Garantizar separación mínima proporcional para que NUNCA se monten una sobre otra
+        val minSep = (endY - startY) * 0.25f
+        var finalResistanceY = adjustedResistanceY
+        var finalSupportY = adjustedSupportY
+
+        if (finalSupportY <= finalResistanceY + minSep) {
+            val mid = (finalResistanceY + finalSupportY) / 2f
+            finalResistanceY = (mid - minSep / 2f).coerceAtLeast(startY.toFloat())
+            finalSupportY = (mid + minSep / 2f).coerceAtMost(endY.toFloat())
         }
 
         val highPoint = PointF(if (highestX > 0) highestX else (startX + endX) * 0.5f, finalResistanceY)
@@ -338,7 +342,7 @@ class VisionAnalyzer {
         val orientStr = if (isLandscape) "Horiz" else "Vert"
         val diag = "[$orientStr] Velas: ${candleTypes.size} (V:$gCount R:$rCount) | Racha: $streakBadge"
 
-        return VisionAnalysisResult(
+        val result = VisionAnalysisResult(
             currentPriceY = latestPriceY,
             highestPoint = highPoint,
             lowestPoint = lowPoint,
@@ -364,6 +368,17 @@ class VisionAnalyzer {
             redPixelsDetected = totalRedPixels,
             diagnosticSummary = diag
         )
+
+        // Modo Debug Visual: Guarda captura anotada si está activo
+        if (debugModeEnabled && context != null) {
+            val scanBounds = RectF(startX.toFloat(), startY.toFloat(), endX.toFloat(), endY.toFloat())
+            DebugVisualizer.saveDebugFrame(
+                context, bitmap, result, scanBounds,
+                finalResistanceY, finalSupportY, latestPriceY
+            )
+        }
+
+        return result
     }
 
     /**

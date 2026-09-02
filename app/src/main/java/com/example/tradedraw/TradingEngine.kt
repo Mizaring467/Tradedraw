@@ -35,6 +35,7 @@ class TradingEngine(
 ) {
     var mode: AutoTradeMode = AutoTradeMode.DISABLED
     var strategy: AutoTradeStrategy = AutoTradeStrategy.SUPPORT_RESISTANCE
+    var debugModeEnabled: Boolean = false
 
     private val visionAnalyzer = VisionAnalyzer()
     private val autoDrawEngine = AutoDrawEngine(drawingView)
@@ -88,7 +89,7 @@ class TradingEngine(
         val (supports, resistances) = drawingView.getSupportResistanceYLevels()
 
         // 3. Analizar frame visual con visión HSV
-        val analysis = visionAnalyzer.analyzeChart(bitmap, supports, resistances)
+        val analysis = visionAnalyzer.analyzeChart(bitmap, supports, resistances, context, debugModeEnabled)
         latestAnalysisResult = analysis
 
         // 4. Auto-dibujar escenario técnico en TradeDraw según la estrategia
