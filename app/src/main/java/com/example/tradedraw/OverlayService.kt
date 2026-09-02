@@ -485,15 +485,17 @@ class OverlayService : Service() {
     private fun showModelPicker() {
         val ai = tradingEngine.aiClient
         val presets = arrayOf(
-            "bai/deepseek-v4-flash-vision-exp",
-            "openrouter/google/gemini-3.7-flash",
-            "openrouter/openai/gpt-4o-mini",
-            "openrouter/openai/gpt-4o",
-            "antigravity/gemini-3.6-flash-high",
+            "deepseek-v4-flash-vision-exp",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash",
+            "gpt-5.4-mini",
+            "claude-sonnet-4.6",
+            "deepseek-v4-flash",
+            "minimax-m3",
             "Otro modelo personalizado..."
         )
         AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
-            .setTitle("Seleccionar Modelo de Visión")
+            .setTitle("Seleccionar Modelo de Visión (B.AI)")
             .setItems(presets) { _, which ->
                 if (which == presets.size - 1) {
                     promptTextInput("Nombre de modelo", ai.model) { customModel ->
