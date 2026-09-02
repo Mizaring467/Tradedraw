@@ -86,19 +86,19 @@ class VisionAnalyzer {
         if (isLandscape) {
             // Horizontal (Landscape 2400x1080):
             // - X: 5% a 82% (excluye botones Sube/Baja a la derecha en X > 85%)
-            // - Y: 15% a 52% (inicio real en Y=160px debajo de tabs; fin real en Y=510px antes del toolbar inferior)
+            // - Y: 15% a 78% (abarca la totalidad del área de velas de Binomo)
             startX = (w * 0.05f).toInt().coerceAtLeast(0)
             endX = (w * 0.82f).toInt().coerceAtMost(w - 1)
             startY = (h * 0.15f).toInt().coerceAtLeast(0)
-            endY = (h * 0.52f).toInt().coerceAtMost(h - 1)
+            endY = (h * 0.78f).toInt().coerceAtMost(h - 1)
         } else {
             // Vertical (Portrait 1080x2400):
             // - X: 6% a 94%
-            // - Y: 28% a 65% (excluye saldo/tabs Y < 28% y botones inferiores Y > 66%)
+            // - Y: 28% a 72% (excluye saldo/tabs Y < 28% y botones inferiores Y > 73%)
             startX = (w * 0.06f).toInt().coerceAtLeast(0)
             endX = (w * 0.94f).toInt().coerceAtMost(w - 1)
             startY = (h * 0.28f).toInt().coerceAtLeast(0)
-            endY = (h * 0.65f).toInt().coerceAtMost(h - 1)
+            endY = (h * 0.72f).toInt().coerceAtMost(h - 1)
         }
 
         var minPriceY = Float.MAX_VALUE // Menor Y = Mayor precio (Resistencia / Techo)
@@ -252,10 +252,35 @@ class VisionAnalyzer {
             TrendDirection.SIDEWAYS
         }
 
-        // Proximidad a soportes y resistencias
-        val threshold = 35f
-        val touchesSupport = supportLinesY.any { Math.abs(latestPriceY - it) < threshold }
-        val touchesResistance = resistanceLinesY.any { Math.abs(latestPriceY - it) < threshold }
+        // S/R calculados estrictamente dentro del rango de velas encontradas:
+        // Resistencia = Menor Y (Techo de velas)
+        // Soporte = Mayor Y (Suelo de velas)
+        val rawResistanceY = if (minPriceY < Float.MAX_VALUE) minPriceY else (startY + (endY - startY) * 0.22f)
+        val rawSupportY = if (maxPriceY > Float.MIN_VALUE) maxPriceY else (startY + (endY - startY) * 0.78f)
+
+        // Rompimiento dinámico en vivo
+        val currentP = latestPriceY
+        val adjustedResistanceY = if (currentP < rawResistanceY) currentP else rawResistanceY
+        val adjustedSupportY = if (currentP > rawSupportY) currentP else rawSupportY
+
+        // Garantizar separación mínima proporcional para que NUNCA se monten una sobre otra
+        val minSep = (endY - startY) * 0.25f
+        var finalResistanceY = adjustedResistanceY
+        var finalSupportY = adjustedSupportY
+
+        if (finalSupportY <= finalResistanceY + minSep) {
+            val mid = (finalResistanceY + finalSupportY) / 2f
+            finalResistanceY = (mid - minSep / 2f).coerceAtLeast(startY.toFloat())
+            finalSupportY = (mid + minSep / 2f).coerceAtMost(endY.toFloat())
+        }
+
+        val highPoint = PointF(if (highestX > 0) highestX else (startX + endX) * 0.5f, finalResistanceY)
+        val lowPoint = PointF(if (lowestX > 0) lowestX else (startX + endX) * 0.5f, finalSupportY)
+
+        // Proximidad a soportes y resistencias (manuales o calculados por el bot)
+        val threshold = ((endY - startY) * 0.08f).coerceAtLeast(35f)
+        val touchesSupport = supportLinesY.any { Math.abs(latestPriceY - it) < threshold } || (maxPriceY > Float.MIN_VALUE && Math.abs(latestPriceY - finalSupportY) < threshold)
+        val touchesResistance = resistanceLinesY.any { Math.abs(latestPriceY - it) < threshold } || (minPriceY < Float.MAX_VALUE && Math.abs(latestPriceY - finalResistanceY) < threshold)
 
         // --- PATRONES MASTER TRADERS ---
         val lastCandle = candleList.firstOrNull()
@@ -311,31 +336,6 @@ class VisionAnalyzer {
         val callPct = ((callScore.toFloat() / totalScore) * 100).toInt().coerceIn(10, 90)
         val putPct = 100 - callPct
         val isSideways = Math.abs(callPct - putPct) < 14
-
-        // S/R calculados estrictamente dentro del rango de velas encontradas:
-        // Resistencia = Menor Y (Techo de velas)
-        // Soporte = Mayor Y (Suelo de velas)
-        val rawResistanceY = if (minPriceY < Float.MAX_VALUE) minPriceY else (startY + (endY - startY) * 0.22f)
-        val rawSupportY = if (maxPriceY > Float.MIN_VALUE) maxPriceY else (startY + (endY - startY) * 0.78f)
-
-        // Rompimiento dinámico en vivo
-        val currentP = latestPriceY
-        val adjustedResistanceY = if (currentP < rawResistanceY) currentP else rawResistanceY
-        val adjustedSupportY = if (currentP > rawSupportY) currentP else rawSupportY
-
-        // Garantizar separación mínima proporcional para que NUNCA se monten una sobre otra
-        val minSep = (endY - startY) * 0.25f
-        var finalResistanceY = adjustedResistanceY
-        var finalSupportY = adjustedSupportY
-
-        if (finalSupportY <= finalResistanceY + minSep) {
-            val mid = (finalResistanceY + finalSupportY) / 2f
-            finalResistanceY = (mid - minSep / 2f).coerceAtLeast(startY.toFloat())
-            finalSupportY = (mid + minSep / 2f).coerceAtMost(endY.toFloat())
-        }
-
-        val highPoint = PointF(if (highestX > 0) highestX else (startX + endX) * 0.5f, finalResistanceY)
-        val lowPoint = PointF(if (lowestX > 0) lowestX else (startX + endX) * 0.5f, finalSupportY)
 
         val gCount = candleTypes.count { it == CandleType.GREEN }
         val rCount = candleTypes.count { it == CandleType.RED }
