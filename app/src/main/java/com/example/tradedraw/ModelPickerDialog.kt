@@ -30,28 +30,26 @@ class ModelPickerDialog(
 ) {
 
     private val allModels = listOf(
-        // DeepSeek
-        ModelItem("deepseek-v4-flash-vision-exp", "DeepSeek-V4-Flash-Vision-Exp", "⚡ DeepSeek", "Visión Flash · Recomendado"),
-        ModelItem("deepseek-v4-flash", "DeepSeek-V4-Flash", "⚡ DeepSeek", "Flash Rápido"),
-        ModelItem("deepseek-v4-pro", "DeepSeek-V4-Pro", "⚡ DeepSeek", "Razonamiento Avanzado"),
-        ModelItem("deepseek-chat", "DeepSeek-Chat", "⚡ DeepSeek", "Estándar"),
-
         // Gemini (Antigravity & OmniRoute)
-        ModelItem("gemini-3.7-flash-high", "Gemini 3.7 Flash High (Antigravity)", "♊ Google Gemini", "Alta Precisión · Recomendado"),
-        ModelItem("gemini-3.7-flash-medium", "Gemini 3.7 Flash Medium (Antigravity)", "♊ Google Gemini", "Equilibrado"),
-        ModelItem("gemini-3.7-flash-low", "Gemini 3.7 Flash Low (Antigravity)", "♊ Google Gemini", "Baja Latencia"),
-        ModelItem("gemini-3.6-flash", "Gemini 3.6 Flash", "♊ Google Gemini", "Rápido"),
-        ModelItem("gemini-3.5-flash", "Gemini 3.5 Flash", "♊ Google Gemini", "Ultra Rápido"),
+        ModelItem("antigravity/gemini-3.7-flash-high", "Gemini 3.7 Flash High (Antigravity)", "♊ Google Gemini", "OmniRoute · Máxima Precisión"),
+        ModelItem("antigravity/gemini-3.7-flash-medium", "Gemini 3.7 Flash Medium (Antigravity)", "♊ Google Gemini", "OmniRoute · Equilibrado"),
+        ModelItem("antigravity/gemini-3.7-flash-low", "Gemini 3.7 Flash Low (Antigravity)", "♊ Google Gemini", "OmniRoute · Ultra Rápido"),
+        ModelItem("auto/gemini", "Auto Gemini", "♊ Google Gemini", "OmniRoute · Enrutamiento Inteligente"),
 
-        // Claude
-        ModelItem("claude-3-7-sonnet-latest", "Claude Sonnet 4.6 (Antigravity)", "🤖 Anthropic Claude", "Alta Inteligencia"),
-        ModelItem("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet", "🤖 Anthropic Claude", "Visión Sonnet"),
-        ModelItem("claude-3-haiku-20240307", "Claude 3 Haiku", "🤖 Anthropic Claude", "Respuesta Veloz"),
+        // OmniRoute Smart Combos
+        ModelItem("auto", "Auto Combo", "🎯 OmniRoute Smart", "Enrutador Automático Multi-IA"),
+        ModelItem("auto/fast", "Auto Fast", "🎯 OmniRoute Smart", "Menor Latencia"),
+        ModelItem("auto/smart", "Auto Smart", "🎯 OmniRoute Smart", "Máxima Inteligencia"),
 
-        // OpenAI / OmniRoute
-        ModelItem("gpt-4o", "GPT-4o", "🌐 OpenAI / OmniRoute", "Omni Visión"),
-        ModelItem("gpt-4o-mini", "GPT-4o Mini", "🌐 OpenAI / OmniRoute", "Ligero y Rápido"),
-        ModelItem("o3-mini", "O3 Mini", "🌐 OpenAI / OmniRoute", "Razonamiento")
+        // Claude (OmniRoute)
+        ModelItem("auto/claude-sonnet", "Claude Sonnet (Auto)", "🤖 Anthropic Claude", "OmniRoute · Sonnet Combo"),
+        ModelItem("kiro/claude-sonnet-4.5", "Claude Sonnet 4.5", "🤖 Anthropic Claude", "OmniRoute · Kiro Sonnet"),
+        ModelItem("kiro/claude-haiku-4.5", "Claude Haiku 4.5", "🤖 Anthropic Claude", "OmniRoute · Kiro Haiku"),
+
+        // DeepSeek
+        ModelItem("deepseek-v4-flash-vision-exp", "DeepSeek-V4 Flash Vision", "⚡ DeepSeek", "B.AI / OmniRoute Visión"),
+        ModelItem("deepseek-v4-flash", "DeepSeek-V4 Flash", "⚡ DeepSeek", "B.AI / OmniRoute Flash"),
+        ModelItem("deepseek-v4-pro", "DeepSeek-V4 Pro", "⚡ DeepSeek", "Razonamiento Avanzado")
     )
 
     fun show() {
