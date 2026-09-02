@@ -29,19 +29,19 @@ class AIClient(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("TradeDraw_AIConfig", Context.MODE_PRIVATE)
 
     var isEnabled: Boolean
-        get() = prefs.getBoolean("ai_enabled", false)
+        get() = prefs.getBoolean("ai_enabled", true) // Activado por defecto
         set(value) = prefs.edit().putBoolean("ai_enabled", value).apply()
 
     var baseUrl: String
-        get() = prefs.getString("ai_base_url", "https://1proxy-api.aitradepulse.com/api/v1") ?: "https://1proxy-api.aitradepulse.com/api/v1"
+        get() = prefs.getString("ai_base_url", "https://api.b.ai/v1") ?: "https://api.b.ai/v1"
         set(value) = prefs.edit().putString("ai_base_url", value.trim().trimEnd('/')).apply()
 
     var apiKey: String
-        get() = prefs.getString("ai_api_key", "") ?: ""
+        get() = prefs.getString("ai_api_key", "sk-9lt4tdgldm7tt48ylqkf693nouje0spi") ?: "sk-9lt4tdgldm7tt48ylqkf693nouje0spi"
         set(value) = prefs.edit().putString("ai_api_key", value.trim()).apply()
 
     var model: String
-        get() = prefs.getString("ai_model", "bai/deepseek-v4-flash-vision-exp") ?: "bai/deepseek-v4-flash-vision-exp"
+        get() = prefs.getString("ai_model", "deepseek-v4-flash-vision-exp") ?: "deepseek-v4-flash-vision-exp"
         set(value) = prefs.edit().putString("ai_model", value.trim()).apply()
 
     var confidenceThreshold: Float
@@ -62,17 +62,17 @@ class AIClient(private val context: Context) {
         }
 
         if (isRequestInProgress) {
-            return // Evitar sobrecargar con llamadas concurrentes
+            return
         }
 
         isRequestInProgress = true
 
         workerHandler.post {
             try {
-                // 1. Redimensionar y comprimir bitmap a JPEG base64 (ancho máx 640px para respuesta rápida)
-                val base64Image = bitmapToBase64Jpeg(bitmap, 640, 70)
+                // 1. Redimensionar y comprimir bitmap a JPEG base64 (ancho máx 640px para respuesta en milisegundos)
+                val base64Image = bitmapToBase64Jpeg(bitmap, 640, 75)
 
-                // 2. Construir payload compatible con OpenAI / OmniRoute
+                // 2. Construir payload compatible con OpenAI / B.AI
                 val jsonPayload = buildVisionPayload(base64Image, model)
 
                 // 3. Ejecutar petición HTTP POST
@@ -80,8 +80,8 @@ class AIClient(private val context: Context) {
                 val url = URL(urlString)
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
-                    connectTimeout = 6000
-                    readTimeout = 8000
+                    connectTimeout = 7000
+                    readTimeout = 9000
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json; charset=UTF-8")
                     setRequestProperty("Authorization", "Bearer $apiKey")
@@ -128,8 +128,8 @@ class AIClient(private val context: Context) {
                 val url = URL(urlString)
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
-                    connectTimeout = 7000
-                    readTimeout = 7000
+                    connectTimeout = 8000
+                    readTimeout = 8000
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json; charset=UTF-8")
                     setRequestProperty("Authorization", "Bearer $apiKey")
@@ -144,7 +144,7 @@ class AIClient(private val context: Context) {
                         })
                     }
                     put("messages", messages)
-                    put("max_tokens", 20)
+                    put("max_tokens", 250)
                 }
 
                 OutputStreamWriter(conn.outputStream, "UTF-8").use { writer ->
@@ -155,7 +155,7 @@ class AIClient(private val context: Context) {
                 val responseCode = conn.responseCode
                 if (responseCode in 200..299) {
                     val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                    mainHandler.post { onResult(true, "Conexión exitosa con OmniRoute ($model)") }
+                    mainHandler.post { onResult(true, "Conexión exitosa con B.AI ($model)") }
                 } else {
                     val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $responseCode"
                     mainHandler.post { onResult(false, "Error $responseCode: $err") }
@@ -183,13 +183,13 @@ class AIClient(private val context: Context) {
         val payload = JSONObject()
         payload.put("model", modelName)
         payload.put("temperature", 0.15)
-        payload.put("max_tokens", 140)
+        payload.put("max_tokens", 500)
 
         val messages = JSONArray()
 
         val systemMsg = JSONObject().apply {
             put("role", "system")
-            put("content", "Eres un asistente de trading experto en análisis de velas para opciones binarias a 1 minuto. Analiza la captura del gráfico y responde OBLIGATORIAMENTE en formato JSON con esta estructura exacta:\n{\"action\": \"BUY\"|\"SELL\"|\"WAIT\", \"confidence\": 0.0 a 1.0, \"reason\": \"motivo breve en español (máximo 12 palabras)\"}\nNo agregues texto fuera del JSON.")
+            put("content", "Eres un asistente de trading experto en análisis de velas para opciones binarias a 1 minuto en Binomo. Analiza la captura del gráfico y responde OBLIGATORIAMENTE en formato JSON con esta estructura exacta:\n{\"action\": \"BUY\"|\"SELL\"|\"WAIT\", \"confidence\": 0.0 a 1.0, \"reason\": \"motivo breve en español (máximo 12 palabras)\"}\nNo agregues texto fuera del JSON.")
         }
         messages.put(systemMsg)
 
