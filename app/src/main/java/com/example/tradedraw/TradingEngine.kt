@@ -103,28 +103,22 @@ class TradingEngine(
 
         // 5. Evaluar señal de trading solo si no hay trade abierto
         if (!riskManager.hasPendingTrade) {
-            if (aiClient.isEnabled && aiClient.apiKey.isNotBlank()) {
-                // Ruta Primaria: Visión por IA (OmniRoute / OpenAI)
+            // Ejecutar SIEMPRE las reglas técnicas locales primero para respuesta instantánea en tiempo real
+            val localSignal = evaluateStrategySignal(strategy, analysis, supports.isNotEmpty() || resistances.isNotEmpty())
+            if (localSignal != null) {
+                handleSignal(localSignal, analysis, bitmap, "Reglas Técnicas Locales")
+            } else if (aiClient.isEnabled && aiClient.apiKey.isNotBlank()) {
+                // Asíncronamente consultar IA remota sin bloquear el motor local
                 aiClient.analyzeFrame(bitmap) { aiResult ->
                     latestAIResult = aiResult
-                    onFrameProcessedListener?.invoke(analysis)
+                    handler.post { onFrameProcessedListener?.invoke(analysis) }
 
                     if (aiResult.isSuccess && aiResult.action != null && aiResult.confidence >= aiClient.confidenceThreshold) {
-                        val pct = (aiResult.confidence * 100).toInt()
-                        handleSignal(aiResult.action, analysis, bitmap, "IA (${pct}%): ${aiResult.reason}")
-                    } else {
-                        // Fallback a reglas técnicas locales si la IA no dio señal concluyente
-                        val fallbackSignal = evaluateStrategySignal(strategy, analysis, supports.isNotEmpty() || resistances.isNotEmpty())
-                        if (fallbackSignal != null) {
-                            handleSignal(fallbackSignal, analysis, bitmap, "Reglas Técnicas (Fallback)")
+                        if (!riskManager.hasPendingTrade) {
+                            val pct = (aiResult.confidence * 100).toInt()
+                            handleSignal(aiResult.action, analysis, bitmap, "IA (${pct}%): ${aiResult.reason}")
                         }
                     }
-                }
-            } else {
-                // Ruta Local: Análisis de visión HSV por reglas
-                val signal = evaluateStrategySignal(strategy, analysis, supports.isNotEmpty() || resistances.isNotEmpty())
-                if (signal != null) {
-                    handleSignal(signal, analysis, bitmap, "Reglas Técnicas")
                 }
             }
         }

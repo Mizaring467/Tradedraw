@@ -102,8 +102,15 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
             density = 320
         }
 
+        val rotation = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            try { context.display?.rotation } catch (e: Exception) { null } ?: windowManager.defaultDisplay.rotation
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.rotation
+        }
+        val isLandscapeDisplay = rotation == android.view.Surface.ROTATION_90 || rotation == android.view.Surface.ROTATION_270
         val configOrientation = context.resources.configuration.orientation
-        val isLandscapeConfig = configOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val isLandscapeConfig = (configOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) || isLandscapeDisplay
 
         if (isLandscapeConfig && width < height) {
             val temp = width
