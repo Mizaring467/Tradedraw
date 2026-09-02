@@ -255,18 +255,13 @@ class VisionAnalyzer {
         // S/R calculados estrictamente dentro del rango de velas encontradas:
         // Resistencia = Menor Y (Techo de velas)
         // Soporte = Mayor Y (Suelo de velas)
-        val rawResistanceY = if (minPriceY < Float.MAX_VALUE) minPriceY else (startY + (endY - startY) * 0.22f)
-        val rawSupportY = if (maxPriceY > Float.MIN_VALUE) maxPriceY else (startY + (endY - startY) * 0.78f)
-
-        // Rompimiento dinámico en vivo
-        val currentP = latestPriceY
-        val adjustedResistanceY = if (currentP < rawResistanceY) currentP else rawResistanceY
-        val adjustedSupportY = if (currentP > rawSupportY) currentP else rawSupportY
+        val rawResistanceY = if (minPriceY < Float.MAX_VALUE) minPriceY else (startY + (endY - startY) * 0.18f)
+        val rawSupportY = if (maxPriceY > Float.MIN_VALUE) maxPriceY else (startY + (endY - startY) * 0.82f)
 
         // Garantizar separación mínima proporcional para que NUNCA se monten una sobre otra
-        val minSep = (endY - startY) * 0.25f
-        var finalResistanceY = adjustedResistanceY
-        var finalSupportY = adjustedSupportY
+        val minSep = (endY - startY) * 0.20f
+        var finalResistanceY = rawResistanceY
+        var finalSupportY = rawSupportY
 
         if (finalSupportY <= finalResistanceY + minSep) {
             val mid = (finalResistanceY + finalSupportY) / 2f
