@@ -212,6 +212,10 @@ class TradingEngine(
     }
 
     fun getStrategyStatusHint(): String {
+        if (AutoTradeAccessibilityService.instance == null && mode == AutoTradeMode.AUTONOMOUS) {
+            return "⚠️ Accesibilidad DESACTIVADA (Clics bloqueados en Android)"
+        }
+
         if (riskManager.hasPendingTrade) {
             val elapsed = (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000
             val actionName = if (riskManager.pendingTradeAction == TradeAction.BUY) "COMPRA" else "VENTA"
@@ -240,11 +244,7 @@ class TradingEngine(
 
         return when (strategy) {
             AutoTradeStrategy.SUPPORT_RESISTANCE -> {
-                if (supports.isEmpty() && resistances.isEmpty()) {
-                    "✏️ Dibuja un Soporte o Resistencia"
-                } else {
-                    "🔍 Vigilando rebote en S/R..."
-                }
+                "🔍 Vigilando rebote en Soporte / Resistencia en vivo..."
             }
             AutoTradeStrategy.MT_REJECTION -> {
                 if (analysis != null && (analysis.hasTopRejectionWick || analysis.hasBottomRejectionWick)) {
@@ -350,6 +350,7 @@ class TradingEngine(
             accessibility.performClickAt(x, y)
 
             handler.post {
+                drawingView.triggerClickAnimation(x, y)
                 autoDrawEngine.drawTradeEntry(action, analysis.currentPriceY, screenW)
                 saveAuditScreenshot(bitmap, action)
                 onTradeExecutedListener?.invoke(action, true)
@@ -357,7 +358,7 @@ class TradingEngine(
             }
         } else {
             handler.post {
-                Toast.makeText(context, "Accesibilidad requerida para clic autónomo", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "⚠️ Clic cancelado: Activa el Servicio de Accesibilidad en Ajustes para Auto-Trading", Toast.LENGTH_LONG).show()
             }
         }
     }

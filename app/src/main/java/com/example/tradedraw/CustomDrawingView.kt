@@ -432,8 +432,8 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     private fun buildMultiPointShape(): DrawShape? {
         if (tapPoints.isEmpty()) return null
         val colorToUse = when (currentTool) {
-            TradingTool.SUPPORT_LINE -> Color.RED
-            TradingTool.RESISTANCE_LINE -> Color.GREEN
+            TradingTool.SUPPORT_LINE -> Color.GREEN
+            TradingTool.RESISTANCE_LINE -> Color.RED
             else -> activeDrawingColor
         }
         val p0 = tapPoints[0]
