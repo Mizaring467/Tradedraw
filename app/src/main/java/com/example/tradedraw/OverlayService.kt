@@ -1007,8 +1007,14 @@ class OverlayService : Service() {
                         val dy = (event.rawY - touchY).toInt()
                         if (Math.abs(dx) > 10 || Math.abs(dy) > 10) isMove = true
                         hudParams?.let { p ->
-                            p.x = initX + dx
-                            p.y = initY + dy
+                            val metrics = resources.displayMetrics
+                            val screenW = metrics.widthPixels
+                            val screenH = metrics.heightPixels
+                            val hudW = v.width.takeIf { it > 0 } ?: 400
+                            val hudH = v.height.takeIf { it > 0 } ?: 200
+                            // Clampear para que el HUD no salga de pantalla
+                            p.x = (initX + dx).coerceIn(0, screenW - hudW)
+                            p.y = (initY + dy).coerceIn(0, screenH - hudH)
                             windowManager.updateViewLayout(v, p)
                         }
                         true
@@ -1037,8 +1043,29 @@ class OverlayService : Service() {
 
     private fun toggleHUDVisibility() {
         isHudVisible = !isHudVisible
-        hudView?.visibility = if (isHudVisible) View.VISIBLE else View.GONE
-        if (isHudVisible) updateHUDView()
+        if (isHudVisible) {
+            // Antes de mostrar, garantizar que el HUD esté dentro de la pantalla visible
+            hudParams?.let { p ->
+                val view = hudView ?: return@let
+                val metrics = resources.displayMetrics
+                val screenW = metrics.widthPixels
+                val screenH = metrics.heightPixels
+                val hudW = view.width.takeIf { it > 0 } ?: 400
+                val hudH = view.height.takeIf { it > 0 } ?: 200
+                // Si está fuera de pantalla en cualquier dirección, reposicionar a zona segura
+                val outOfBounds = p.x < -hudW || p.x > screenW - 40 ||
+                                  p.y < 0 || p.y > screenH - 80
+                if (outOfBounds) {
+                    p.x = 40
+                    p.y = 200
+                    windowManager.updateViewLayout(view, p)
+                }
+            }
+            hudView?.visibility = View.VISIBLE
+            updateHUDView()
+        } else {
+            hudView?.visibility = View.GONE
+        }
     }
 
     fun updateHUDView() {
