@@ -30,6 +30,8 @@ class OverlayService : Service() {
 
     companion object {
         private const val ACTION_STOP = "com.example.tradedraw.STOP"
+        @Volatile
+        var instance: OverlayService? = null
     }
 
     private lateinit var windowManager: WindowManager
@@ -62,6 +64,16 @@ class OverlayService : Service() {
     private var isHudVisible = false
     private var hudAlpha: Float = 0.70f
     private var isHudCollapsed: Boolean = true
+    private var agentChatOverlay: AgentChatOverlay? = null
+
+    fun openAgentChat() {
+        mainHandler.post {
+            if (agentChatOverlay == null) {
+                agentChatOverlay = AgentChatOverlay(this, tradingEngine)
+            }
+            agentChatOverlay?.show()
+        }
+    }
 
     private var isMenuExpanded = false
     private var isDrawingMode = false
@@ -132,6 +144,7 @@ class OverlayService : Service() {
                         Log.e("TradeDraw", "Estrategia desconocida: $stratName", e)
                     }
                 }
+                "OPEN_CHAT" -> openAgentChat()
             }
         }
     }
@@ -167,6 +180,7 @@ class OverlayService : Service() {
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate() {
         super.onCreate()
+        instance = this
         CrashLogger.install(this)
         CrashLogger.showPending(this)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -937,6 +951,10 @@ class OverlayService : Service() {
             btnCollapse.text = if (isHudCollapsed) "▼" else "▲"
         }
 
+        hudView?.findViewById<TextView>(R.id.hud_btn_chat)?.setOnClickListener {
+            openAgentChat()
+        }
+
         hudView?.findViewById<Button>(R.id.hud_btn_win)?.setOnClickListener {
             riskManager.recordTradeWin()
             updateHUDView()
@@ -1012,10 +1030,9 @@ class OverlayService : Service() {
                             val screenH = metrics.heightPixels
                             val hudW = v.width.takeIf { it > 0 } ?: 400
                             val hudH = v.height.takeIf { it > 0 } ?: 200
-                            val maxHudY = (screenH * 0.75f - hudH).toInt().coerceAtLeast(100)
-                            // Clampear para que el HUD no salga de pantalla ni tape los botones inferiores de trading
+                            // Libertad total de movimiento confinado estrictamente a los límites visibles de la pantalla
                             p.x = (initX + dx).coerceIn(0, screenW - hudW)
-                            p.y = (initY + dy).coerceIn(0, maxHudY)
+                            p.y = (initY + dy).coerceIn(0, screenH - hudH)
                             windowManager.updateViewLayout(v, p)
                         }
                         true
@@ -1027,6 +1044,23 @@ class OverlayService : Service() {
             v.visibility = View.GONE
             isHudVisible = false
             startHUDTimerLoop()
+        }
+    }
+
+    /**
+     * Vuelve el HUD temporalmente no-táctil por [durationMs] para permitir que los clics
+     * de trading de Accesibilidad atraviesen limpiamente hacia el broker sin importar dónde esté el HUD.
+     */
+    fun temporarilyBypassHUD(durationMs: Long = 250L) {
+        val v = hudView ?: return
+        val p = hudParams ?: return
+        mainHandler.post {
+            p.flags = p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            try { windowManager.updateViewLayout(v, p) } catch (e: Exception) {}
+            mainHandler.postDelayed({
+                p.flags = p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+                try { windowManager.updateViewLayout(v, p) } catch (e: Exception) {}
+            }, durationMs)
         }
     }
 
@@ -1045,7 +1079,7 @@ class OverlayService : Service() {
     private fun toggleHUDVisibility() {
         isHudVisible = !isHudVisible
         if (isHudVisible) {
-            // Antes de mostrar, garantizar que el HUD esté dentro de la pantalla visible y fuera de los botones de trading
+            // Antes de mostrar, garantizar que el HUD esté dentro de los bordes visibles de la pantalla
             hudParams?.let { p ->
                 val view = hudView ?: return@let
                 val metrics = resources.displayMetrics
@@ -1053,13 +1087,12 @@ class OverlayService : Service() {
                 val screenH = metrics.heightPixels
                 val hudW = view.width.takeIf { it > 0 } ?: 400
                 val hudH = view.height.takeIf { it > 0 } ?: 200
-                val maxAllowedY = (screenH * 0.75f - hudH).toInt().coerceAtLeast(100)
-                // Si está fuera de pantalla o sobre los botones de trading, reposicionar a zona superior segura
+                // Si está fuera de los límites de la pantalla, reposicionar a zona segura
                 val outOfBounds = p.x < 0 || p.x > screenW - 40 ||
-                                  p.y < 0 || p.y > maxAllowedY
+                                  p.y < 0 || p.y > screenH - 80
                 if (outOfBounds) {
                     p.x = 40
-                    p.y = 220
+                    p.y = 200
                     windowManager.updateViewLayout(view, p)
                 }
             }
@@ -1086,8 +1119,10 @@ class OverlayService : Service() {
             val txtPower = v.findViewById<TextView>(R.id.hud_power_bar)
             val btnOpacity = v.findViewById<TextView>(R.id.hud_btn_opacity)
             val btnCollapse = v.findViewById<TextView>(R.id.hud_btn_collapse)
+            val btnChat = v.findViewById<TextView>(R.id.hud_btn_chat)
             val detailsContainer = v.findViewById<View>(R.id.hud_details_container)
 
+            btnChat?.setOnClickListener { openAgentChat() }
             btnOpacity?.text = " 👁️ ${(hudAlpha * 100).toInt()}% "
             btnCollapse?.text = if (isHudCollapsed) "▼" else "▲"
             detailsContainer?.visibility = if (isHudCollapsed) View.GONE else View.VISIBLE
@@ -1204,6 +1239,35 @@ class OverlayService : Service() {
             } else {
                 btnRecalc?.text = "✓ S/R [Auto]"
                 btnRecalc?.setTextColor(Color.parseColor("#34d399"))
+            }
+
+            // Bloque didáctico: Tendencia Explicada y Próximo Movimiento Planeado
+            val txtTrendBadge = v.findViewById<TextView>(R.id.hud_trend_badge)
+            val txtTrendReason = v.findViewById<TextView>(R.id.hud_trend_reason)
+            val txtPlannedAction = v.findViewById<TextView>(R.id.hud_planned_action)
+
+            if (analysis != null) {
+                val isSideways = analysis.isMarketSideways
+                val trend = analysis.trend
+                val callPower = analysis.signalPowerCall
+                val putPower = analysis.signalPowerPut
+
+                if (isSideways) {
+                    txtTrendBadge?.text = "📊 Tendencia: LATERAL / RANGO (50/50)"
+                    txtTrendBadge?.setTextColor(Color.parseColor("#facc15"))
+                    txtTrendReason?.text = "Mercado indeciso con velas doji. El agente filtra entradas para proteger capital."
+                    txtPlannedAction?.text = "🎯 Plan: Esperar ruptura limpia de soporte o resistencia con volumen."
+                } else if (trend == TrendDirection.UPTREND) {
+                    txtTrendBadge?.text = "📈 Tendencia: ALCISTA ($callPower% Poder CALL)"
+                    txtTrendBadge?.setTextColor(Color.parseColor("#4ade80"))
+                    txtTrendReason?.text = "Máximos y mínimos crecientes sobre medias móviles dinámicas."
+                    txtPlannedAction?.text = "🎯 Plan: Buscar confirmación de rebote en soporte para entrar CALL al segundo :58s."
+                } else {
+                    txtTrendBadge?.text = "📉 Tendencia: BAJISTA ($putPower% Poder PUT)"
+                    txtTrendBadge?.setTextColor(Color.parseColor("#f87171"))
+                    txtTrendReason?.text = "Presión de venta dominante con rechazo en resistencias."
+                    txtPlannedAction?.text = "🎯 Plan: Buscar retroceso/pullback a resistencia para entrar PUT al segundo :58s."
+                }
             }
 
             // Tarjeta de Señal Operativa (Semiautomático / Autónomo)
@@ -1468,6 +1532,7 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (instance == this) instance = null
         httpBridge?.stop()
         httpBridge = null
         try {
@@ -1481,6 +1546,8 @@ class OverlayService : Service() {
         if (::calibrationManager.isInitialized) {
             calibrationManager.dismissCalibration()
         }
+        agentChatOverlay?.dismiss()
+        agentChatOverlay = null
         mainHandler.removeCallbacksAndMessages(null)
         try {
             if (::canvasView.isInitialized) windowManager.removeView(canvasView)

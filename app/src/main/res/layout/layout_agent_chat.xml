@@ -1,0 +1,169 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/agent_chat_root"
+    android:layout_width="320dp"
+    android:layout_height="400dp"
+    android:orientation="vertical"
+    android:background="@drawable/bg_hud_panel"
+    android:elevation="16dp"
+    android:padding="8dp">
+
+    <!-- Cabecera Arrastrable -->
+    <LinearLayout
+        android:id="@+id/chat_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="6dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="🤖 Agente TradeDraw AI"
+            android:textColor="#38bdf8"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/chat_status_indicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="● En vivo"
+            android:textColor="#22c55e"
+            android:textSize="9sp"
+            android:layout_marginEnd="8dp" />
+
+        <TextView
+            android:id="@+id/chat_btn_close"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:text="✖"
+            android:textColor="#cbd5e1"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:background="@drawable/bg_hud_chip"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#334155"
+        android:layout_marginBottom="6dp" />
+
+    <!-- Lista de Mensajes -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/chat_recycler_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="vertical" />
+
+    <!-- Chips de Acciones Rápidas -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="6dp">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/chip_what_do_you_see"
+                android:layout_width="wrap_content"
+                android:layout_height="22dp"
+                android:text="¿Qué ves ahora?"
+                android:textColor="#38bdf8"
+                android:textSize="9sp"
+                android:gravity="center"
+                android:background="@drawable/bg_hud_chip"
+                android:paddingHorizontal="6dp"
+                android:layout_marginEnd="4dp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/chip_why_not_trading"
+                android:layout_width="wrap_content"
+                android:layout_height="22dp"
+                android:text="¿Por qué no operas?"
+                android:textColor="#facc15"
+                android:textSize="9sp"
+                android:gravity="center"
+                android:background="@drawable/bg_hud_chip"
+                android:paddingHorizontal="6dp"
+                android:layout_marginEnd="4dp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/chip_recalc_sr"
+                android:layout_width="wrap_content"
+                android:layout_height="22dp"
+                android:text="↺ Recalcular S/R"
+                android:textColor="#34d399"
+                android:textSize="9sp"
+                android:gravity="center"
+                android:background="@drawable/bg_hud_chip"
+                android:paddingHorizontal="6dp"
+                android:layout_marginEnd="4dp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/chip_safe_mode"
+                android:layout_width="wrap_content"
+                android:layout_height="22dp"
+                android:text="🛡️ Modo Conservador"
+                android:textColor="#a855f7"
+                android:textSize="9sp"
+                android:gravity="center"
+                android:background="@drawable/bg_hud_chip"
+                android:paddingHorizontal="6dp"
+                android:clickable="true"
+                android:focusable="true" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <!-- Barra de Entrada de Texto -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <EditText
+            android:id="@+id/chat_input_text"
+            android:layout_width="0dp"
+            android:layout_height="34dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_hud_chip"
+            android:hint="Pregunta o instruye al agente..."
+            android:textColorHint="#64748b"
+            android:textColor="#f8fafc"
+            android:textSize="10sp"
+            android:paddingHorizontal="8dp"
+            android:maxLines="2"
+            android:inputType="textCapSentences" />
+
+        <Button
+            android:id="@+id/chat_btn_send"
+            android:layout_width="54dp"
+            android:layout_height="34dp"
+            android:text="Enviar"
+            android:textColor="#0f172a"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:backgroundTint="#38bdf8"
+            android:layout_marginStart="4dp"
+            android:padding="0dp" />
+    </LinearLayout>
+</LinearLayout>

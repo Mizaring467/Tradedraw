@@ -35,7 +35,17 @@ class TradingEngine(
     var calibrationManager: CalibrationManager? = null,
     val aiClient: AIClient = AIClient(context)
 ) {
+    val agentController = AutonomousAgentController(context, this, riskManager)
+
     var mode: AutoTradeMode = AutoTradeMode.DISABLED
+        set(value) {
+            field = value
+            if (value == AutoTradeMode.AUTONOMOUS) {
+                agentController.start()
+            } else {
+                agentController.stop()
+            }
+        }
     var strategy: AutoTradeStrategy = AutoTradeStrategy.AUTO_ADAPTIVE
     var debugModeEnabled: Boolean = false
 
