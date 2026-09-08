@@ -1,0 +1,53 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingVertical="3dp">
+
+    <!-- Mensaje del Usuario -->
+    <LinearLayout
+        android:id="@+id/chat_user_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:layout_marginStart="32dp"
+        android:background="@drawable/bg_chat_user"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/chat_user_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#f8fafc"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- Mensaje del Bot / Agente -->
+    <LinearLayout
+        android:id="@+id/chat_bot_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start"
+        android:layout_marginEnd="32dp"
+        android:background="@drawable/bg_chat_bot"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/chat_bot_sender"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🤖 Agente IA"
+            android:textColor="#a855f7"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="2dp" />
+
+        <TextView
+            android:id="@+id/chat_bot_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#e2e8f0"
+            android:textSize="11sp" />
+    </LinearLayout>
+</LinearLayout>

@@ -71,6 +71,22 @@
             android:clickable="true"
             android:focusable="true" />
 
+        <!-- Botón de Chat con Agente IA -->
+        <TextView
+            android:id="@+id/hud_btn_chat"
+            android:layout_width="wrap_content"
+            android:layout_height="18dp"
+            android:text=" 💬 Chat "
+            android:textColor="#a855f7"
+            android:textSize="8sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:background="@drawable/bg_hud_chip"
+            android:layout_marginStart="4dp"
+            android:paddingHorizontal="3dp"
+            android:clickable="true"
+            android:focusable="true" />
+
         <!-- Botón Minimizar / Desplegar (Colapsado por defecto con ▼) -->
         <TextView
             android:id="@+id/hud_btn_collapse"
@@ -163,6 +179,45 @@
             android:textColor="#94a3b8"
             android:textSize="8sp"
             android:layout_marginTop="1dp" />
+
+        <!-- BLOQUE DIDÁCTICO: Tendencia Explicada y Próximo Movimiento Planeado -->
+        <LinearLayout
+            android:id="@+id/hud_didactic_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_hud_signal_idle"
+            android:padding="3dp"
+            android:layout_marginTop="2dp">
+
+            <TextView
+                android:id="@+id/hud_trend_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📈 Tendencia: Lateral / Dojis (50%)"
+                android:textColor="#38bdf8"
+                android:textSize="8.5sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/hud_trend_reason"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Analizando confluencia de soporte y resistencia..."
+                android:textColor="#94a3b8"
+                android:textSize="7.5sp"
+                android:layout_marginTop="1dp" />
+
+            <TextView
+                android:id="@+id/hud_planned_action"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🎯 Plan: Vigilando confirmación de ruptura o rebote"
+                android:textColor="#facc15"
+                android:textSize="8sp"
+                android:textStyle="bold"
+                android:layout_marginTop="2dp" />
+        </LinearLayout>
 
         <!-- Tarjeta de Señal Operativa -->
         <LinearLayout

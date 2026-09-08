@@ -108,6 +108,9 @@ class AutoTradeAccessibilityService : AccessibilityService() {
      * El controlador de IA usará esto para hacer click en "Sube" o "Baja".
      */
     fun performClickAt(x: Float, y: Float) {
+        // Si el HUD está situado encima de las coordenadas objetivo, volverlo momentáneamente no-táctil
+        OverlayService.instance?.temporarilyBypassHUD(250L)
+
         val path = Path().apply {
             moveTo(x, y)
         }

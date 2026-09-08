@@ -267,6 +267,93 @@ class AIClient(private val context: Context) {
         }
     }
 
+    fun sendChatMessage(
+        userMessage: String,
+        marketContext: String,
+        onResponse: (replyText: String, commandTag: String?) -> Unit
+    ) {
+        if (apiKey.isBlank()) {
+            onResponse("API Key no configurada para el agente de IA.", null)
+            return
+        }
+
+        workerHandler.post {
+            try {
+                val systemPrompt = """
+                    Eres TradeDraw Agent 🤖, un agente autónomo de trading cuantitativo en tiempo real sobre Binomo.
+                    Estás operando en vivo en un Xiaomi POCO X6 Pro. Eres conciso, didáctico, experto en price action y transparente.
+                    
+                    ESTADO ACTUAL DEL MERCADO Y LA APP:
+                    $marketContext
+                    
+                    INSTRUCCIONES:
+                    - Responde siempre en español, de forma clara, directa y pedagógica (máximo 2 a 3 frases).
+                    - Si el usuario te pregunta por qué no operas o qué ves, explícale las condiciones técnicas actuales (ej. dojis, falta de confirmación en soporte/resistencia, cooldown o filtro de tendencia).
+                    - Si el usuario te da una orden para controlar la app, añade al final de tu respuesta EXACTAMENTE una de estas etiquetas de comando:
+                      - Para cambiar a modo Autónomo: [CMD:MODE_AUTONOMOUS]
+                      - Para cambiar a modo Semiautomático: [CMD:MODE_SEMIAUTO]
+                      - Para pausar/apagar: [CMD:MODE_DISABLED]
+                      - Para cambiar estrategia a Auto Adaptativa: [CMD:STRAT_AUTO]
+                      - Para cambiar estrategia a Seguir Tendencia: [CMD:STRAT_TREND]
+                      - Para recalcular soportes y resistencias: [CMD:RECALC_SR]
+                      - Para resetear estadísticas: [CMD:RESET_STATS]
+                """.trimIndent()
+
+                val messagesArray = JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("role", "system")
+                        put("content", systemPrompt)
+                    })
+                    put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", userMessage)
+                    })
+                }
+
+                val payload = JSONObject().apply {
+                    put("model", model)
+                    put("messages", messagesArray)
+                    put("max_tokens", 250)
+                    put("temperature", 0.3)
+                }
+
+                val url = URL("$baseUrl/chat/completions")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 8000
+                    readTimeout = 15000
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                    setRequestProperty("Authorization", "Bearer $apiKey")
+                }
+
+                OutputStreamWriter(conn.outputStream, "UTF-8").use { it.write(payload.toString()); it.flush() }
+
+                val responseCode = conn.responseCode
+                if (responseCode in 200..299) {
+                    val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(resp)
+                    val reply = json.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content").trim()
+
+                    var cmd: String? = null
+                    val regex = Regex("\\[CMD:([A-Z_]+)\\]")
+                    val match = regex.find(reply)
+                    if (match != null) {
+                        cmd = match.groupValues[1]
+                    }
+                    val cleanReply = reply.replace(regex, "").trim()
+
+                    mainHandler.post { onResponse(cleanReply, cmd) }
+                } else {
+                    mainHandler.post { onResponse("Error de conexión con el agente IA (HTTP $responseCode)", null) }
+                }
+            } catch (e: Exception) {
+                Log.e("AIClient", "Error enviando mensaje de chat", e)
+                mainHandler.post { onResponse("No pude conectar con el agente IA: ${e.message}", null) }
+            }
+        }
+    }
+
     fun destroy() {
         try {
             workerThread.quitSafely()
