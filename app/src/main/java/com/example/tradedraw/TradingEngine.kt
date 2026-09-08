@@ -256,8 +256,19 @@ class TradingEngine(
                     // Si la IA emite señal directa con confianza suficiente, ejecutar
                     if (aiResult.isSuccess && aiResult.action != null && aiResult.confidence >= aiClient.confidenceThreshold) {
                         if (!riskManager.hasPendingTrade && mode != AutoTradeMode.DISABLED) {
-                            val pct = (aiResult.confidence * 100).toInt()
-                            handleSignal(aiResult.action, analysis, bitmap, "IA ($pct%): ${aiResult.reason}")
+                            // Filtro anti-tendencia para señales IA:
+                            // En DOWNTREND fuerte, ignorar señales CALL de la IA (puede ser rebote falso)
+                            // En UPTREND fuerte, ignorar señales PUT de la IA
+                            val inDowntrend = analysis.trend == TrendDirection.DOWNTREND && !analysis.isMarketSideways
+                            val inUptrend = analysis.trend == TrendDirection.UPTREND && !analysis.isMarketSideways
+                            val aiTrendConflict = (aiResult.action == TradeAction.BUY && inDowntrend) ||
+                                                  (aiResult.action == TradeAction.SELL && inUptrend)
+                            if (!aiTrendConflict) {
+                                val pct = (aiResult.confidence * 100).toInt()
+                                handleSignal(aiResult.action, analysis, bitmap, "IA ($pct%): ${aiResult.reason}")
+                            } else {
+                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: conflicto con tendencia ${analysis.trend}")
+                            }
                         }
                     }
                 }
