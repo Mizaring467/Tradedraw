@@ -177,6 +177,10 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     }
 
     private fun parseBalanceString(text: String): Double? {
+        val lower = text.lowercase()
+        if (lower.contains("cantidad") || lower.contains("ingreso") || lower.contains("deposito") || lower.contains("depositar")) {
+            return null
+        }
         if (!text.contains("$") && !text.contains("€") && !text.contains("£") && !text.contains("Col") && !text.contains("USD")) {
             return null
         }
