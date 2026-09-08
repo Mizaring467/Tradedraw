@@ -143,76 +143,71 @@ class TradingEngine(
 
                 val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance() ?: 0.0
 
-                // 1. Verificación por Saldo Real (La verdad financiera definitiva y prioritaria)
-                if (baseBalance > 0.0 && currentBal > 0.0) {
-                    val diff = currentBal - baseBalance
-                    // Ganancia detectada: Binomo acreditó el pago de la operación (+retorno)
-                    if (diff > 10.0) {
-                        isWin = true
-                        method = "SALDO (+) Ganancia acreditada en Binomo: Diff=+$diff"
-                    } else if (elapsedSec >= 62) {
-                        // Pasados 62 segundos, la vela cerró definitivamente.
-                        if (diff < -10.0) {
-                            // Pérdida confirmada: el saldo cayó significativamente
-                            isWin = false
-                            method = "SALDO (-) Inversión no recuperada (Derrota real): Diff=$diff"
-                        } else if (elapsedSec >= 65) {
-                            // Empate SOLO si diff está muy cerca de 0 Y ya pasaron 65s (Binomo tuvo tiempo de actualizar)
-                            // diff entre -10 y +10 después de 65s = empate genuino (Binomo reembolsa el capital)
-                            if (diff >= -10.0 && diff <= 10.0) {
-                                isTie = true
-                                method = "SALDO (=) Reembolso por empate en Binomo tras 65s: Diff=$diff"
-                            } else if (diff > 10.0) {
-                                // Esta rama no debería llegar aquí (ya se resolvió arriba), pero por seguridad:
-                                isWin = true
-                                method = "SALDO (+) Ganancia confirmada a 65s: Diff=+$diff"
-                            }
-                        }
-                        // Si 62<=elapsedSec<65 y diff no es pérdida clara, esperar a los 65s
-                    }
-                }
-
-                // 2. Fallback por Acción del Precio: ÚNICAMENTE si el saldo accesible NO estuvo disponible
-                if (isWin == null && !isTie && (baseBalance <= 0.0 || currentBal <= 0.0) && elapsedSec >= 62) {
-                    val evalY = if (pendingTradeRecordedCandleCloseY > 0f) pendingTradeRecordedCandleCloseY else exitY
-                    if (entryY > 0f && evalY > 0f && action != null) {
-                        if (action == TradeAction.BUY) {
-                            if (evalY < entryY - 2.0f) {
-                                isWin = true
-                                method = "FALLBACK PRECIO (CALL WIN: CloseY=$evalY < EntryY=$entryY)"
-                            } else if (evalY > entryY + 2.0f) {
-                                isWin = false
-                                method = "FALLBACK PRECIO (CALL LOSS: CloseY=$evalY > EntryY=$entryY)"
-                            } else {
-                                isTie = true
-                                method = "FALLBACK PRECIO (CALL TIE)"
-                            }
-                        } else { // SELL / PUT
-                            if (evalY > entryY + 2.0f) {
-                                isWin = true
-                                method = "FALLBACK PRECIO (PUT WIN: CloseY=$evalY > EntryY=$entryY)"
-                            } else if (evalY < entryY - 2.0f) {
-                                isWin = false
-                                method = "FALLBACK PRECIO (PUT LOSS: CloseY=$evalY < EntryY=$entryY)"
-                            } else {
-                                isTie = true
-                                method = "FALLBACK PRECIO (PUT TIE)"
-                            }
-                        }
-                    }
-                }
-
-                // 3. Salvaguarda por Timeout Absoluto (68s)
-                if (isWin == null && !isTie && elapsedSec >= 68) {
+                    // 1. Verificación por Saldo Real (La verdad financiera definitiva y prioritaria)
                     if (baseBalance > 0.0 && currentBal > 0.0) {
                         val diff = currentBal - baseBalance
-                        isWin = diff > 10.0
-                        method = "TIMEOUT 68s (Saldo Diff=$diff)"
-                    } else {
-                        isWin = false
-                        method = "TIMEOUT 68s (Loss por defecto)"
+                        // Ganancia detectada: Binomo acreditó el pago de la operación (+retorno)
+                        if (diff > 10.0) {
+                            isWin = true
+                            method = "SALDO (+) Ganancia acreditada en Binomo: Diff=+$diff"
+                        } else if (elapsedSec >= 66 || (elapsedSec >= 63 && analysis.candleSecond in 3..25)) {
+                            // Pasados al menos 66 segundos (o en el segundo :03-:25 de la nueva vela),
+                            // Binomo ya cerró la expiración y acreditó cualquier premio pendiente.
+                            if (diff < -10.0) {
+                                // Pérdida confirmada: el saldo cayó y nunca subió tras la acreditación
+                                isWin = false
+                                method = "SALDO (-) Inversión no recuperada (Derrota real): Diff=$diff (elapsed=${elapsedSec}s)"
+                            } else if (elapsedSec >= 68) {
+                                // Empate genuino: diff muy cercano a 0 tras 68s (Binomo reembolsó el capital exacto)
+                                if (Math.abs(diff) <= 10.0) {
+                                    isTie = true
+                                    method = "SALDO (=) Reembolso por empate en Binomo tras 68s: Diff=$diff"
+                                }
+                            }
+                        }
                     }
-                }
+
+                    // 2. Fallback por Acción del Precio: ÚNICAMENTE si el saldo accesible NO estuvo disponible
+                    if (isWin == null && !isTie && (baseBalance <= 0.0 || currentBal <= 0.0) && elapsedSec >= 65) {
+                        val evalY = if (pendingTradeRecordedCandleCloseY > 0f) pendingTradeRecordedCandleCloseY else exitY
+                        if (entryY > 0f && evalY > 0f && action != null) {
+                            if (action == TradeAction.BUY) {
+                                if (evalY < entryY - 2.0f) {
+                                    isWin = true
+                                    method = "FALLBACK PRECIO (CALL WIN: CloseY=$evalY < EntryY=$entryY)"
+                                } else if (evalY > entryY + 2.0f) {
+                                    isWin = false
+                                    method = "FALLBACK PRECIO (CALL LOSS: CloseY=$evalY > EntryY=$entryY)"
+                                } else {
+                                    isTie = true
+                                    method = "FALLBACK PRECIO (CALL TIE)"
+                                }
+                            } else { // SELL / PUT
+                                if (evalY > entryY + 2.0f) {
+                                    isWin = true
+                                    method = "FALLBACK PRECIO (PUT WIN: CloseY=$evalY > EntryY=$entryY)"
+                                } else if (evalY < entryY - 2.0f) {
+                                    isWin = false
+                                    method = "FALLBACK PRECIO (PUT LOSS: CloseY=$evalY < EntryY=$entryY)"
+                                } else {
+                                    isTie = true
+                                    method = "FALLBACK PRECIO (PUT TIE)"
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Salvaguarda por Timeout Absoluto (72s)
+                    if (isWin == null && !isTie && elapsedSec >= 72) {
+                        if (baseBalance > 0.0 && currentBal > 0.0) {
+                            val diff = currentBal - baseBalance
+                            isWin = diff > 10.0
+                            method = "TIMEOUT 72s (Saldo Diff=$diff)"
+                        } else {
+                            isWin = false
+                            method = "TIMEOUT 72s (Loss por defecto)"
+                        }
+                    }
 
                 if (isWin != null || isTie) {
                     android.util.Log.d("TradingEngine", "Liquidación de trade: Win=$isWin, Tie=$isTie [$method]")
