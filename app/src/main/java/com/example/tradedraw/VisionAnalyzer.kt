@@ -719,14 +719,14 @@ class VisionAnalyzer {
                 yMax = (h * 0.96f).toInt().coerceAtMost(h - 1)
             }
         } else {
-            // Vertical: parte inferior
-            yMin = (h * 0.78f).toInt().coerceAtLeast(0)
+            // Vertical: franja inferior exclusiva de los botones de Binomo (evita falsos positivos con el HUD arriba)
+            yMin = (h * 0.87f).toInt().coerceAtLeast(0)
             yMax = (h * 0.96f).toInt().coerceAtMost(h - 1)
             if (isBuy) {
                 xMin = (w * 0.05f).toInt().coerceAtLeast(0)
-                xMax = (w * 0.48f).toInt().coerceAtMost(w - 1)
+                xMax = (w * 0.45f).toInt().coerceAtMost(w - 1)
             } else {
-                xMin = (w * 0.52f).toInt().coerceAtLeast(0)
+                xMin = (w * 0.55f).toInt().coerceAtLeast(0)
                 xMax = (w * 0.95f).toInt().coerceAtMost(w - 1)
             }
         }

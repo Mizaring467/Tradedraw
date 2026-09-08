@@ -1012,9 +1012,10 @@ class OverlayService : Service() {
                             val screenH = metrics.heightPixels
                             val hudW = v.width.takeIf { it > 0 } ?: 400
                             val hudH = v.height.takeIf { it > 0 } ?: 200
-                            // Clampear para que el HUD no salga de pantalla
+                            val maxHudY = (screenH * 0.75f - hudH).toInt().coerceAtLeast(100)
+                            // Clampear para que el HUD no salga de pantalla ni tape los botones inferiores de trading
                             p.x = (initX + dx).coerceIn(0, screenW - hudW)
-                            p.y = (initY + dy).coerceIn(0, screenH - hudH)
+                            p.y = (initY + dy).coerceIn(0, maxHudY)
                             windowManager.updateViewLayout(v, p)
                         }
                         true
@@ -1044,7 +1045,7 @@ class OverlayService : Service() {
     private fun toggleHUDVisibility() {
         isHudVisible = !isHudVisible
         if (isHudVisible) {
-            // Antes de mostrar, garantizar que el HUD esté dentro de la pantalla visible
+            // Antes de mostrar, garantizar que el HUD esté dentro de la pantalla visible y fuera de los botones de trading
             hudParams?.let { p ->
                 val view = hudView ?: return@let
                 val metrics = resources.displayMetrics
@@ -1052,12 +1053,13 @@ class OverlayService : Service() {
                 val screenH = metrics.heightPixels
                 val hudW = view.width.takeIf { it > 0 } ?: 400
                 val hudH = view.height.takeIf { it > 0 } ?: 200
-                // Si está fuera de pantalla en cualquier dirección, reposicionar a zona segura
-                val outOfBounds = p.x < -hudW || p.x > screenW - 40 ||
-                                  p.y < 0 || p.y > screenH - 80
+                val maxAllowedY = (screenH * 0.75f - hudH).toInt().coerceAtLeast(100)
+                // Si está fuera de pantalla o sobre los botones de trading, reposicionar a zona superior segura
+                val outOfBounds = p.x < 0 || p.x > screenW - 40 ||
+                                  p.y < 0 || p.y > maxAllowedY
                 if (outOfBounds) {
                     p.x = 40
-                    p.y = 200
+                    p.y = 220
                     windowManager.updateViewLayout(view, p)
                 }
             }

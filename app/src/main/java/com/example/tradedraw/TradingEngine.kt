@@ -135,7 +135,25 @@ class TradingEngine(
                 }
             }
 
-            // Ventana de resolución de la operación (a partir de 55s hasta 65s)
+            // 4a. Detección Temprana de Orden Fantasma:
+            // Si pasaron 6s y el broker NUNCA debitó el monto de inversión (saldo idéntico),
+            // significa que el clic no llegó a Binomo o el broker lo ignoró. Cancelar de inmediato
+            // para no dejar el HUD congelado en 'Esperando resultado...' 68 segundos.
+            val currentBalForCheck = AutoTradeAccessibilityService.instance?.readCurrentBalance() ?: 0.0
+            if (elapsedSec in 6..10 && baseBalance > 0.0 && currentBalForCheck > 0.0) {
+                val initDiff = currentBalForCheck - baseBalance
+                if (Math.abs(initDiff) < 10.0) {
+                    android.util.Log.w("TradingEngine", "Orden fantasma detectada: Saldo no debitado tras ${elapsedSec}s (Diff=$initDiff). Cancelando espera.")
+                    handler.post {
+                        riskManager.clearPendingTrade()
+                        autoDrawEngine.clearTradeEntry()
+                        Toast.makeText(context, "⚠️ Clic no recibido por Binomo (orden no abierta). Espera cancelada.", Toast.LENGTH_SHORT).show()
+                    }
+                    return
+                }
+            }
+
+            // Ventana de resolución de la operación (a partir de 55s hasta 68s)
             if (elapsedSec >= 55) {
                 var isWin: Boolean? = null
                 var isTie: Boolean = false
@@ -709,8 +727,8 @@ class TradingEngine(
                 if (action == TradeAction.BUY) Pair(screenW * 0.881f, screenH * 0.735f)
                 else Pair(screenW * 0.881f, screenH * 0.844f)
             } else {
-                if (action == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.88f)
-                else Pair(screenW * 0.75f, screenH * 0.88f)
+                if (action == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.91f)
+                else Pair(screenW * 0.75f, screenH * 0.91f)
             }
         }
 
