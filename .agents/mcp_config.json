@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "android-vision": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": [
+        "C:\\Users\\heidy\\mcp-scrcpy-vision\\dist\\index.js"
+      ],
+      "env": {
+        "SCRCPY_SERVER_PATH": "C:\\Users\\heidy\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Genymobile.scrcpy_Microsoft.Winget.Source_8wekyb3d8bbwe\\scrcpy-win64-v4.1\\scrcpy-server",
+        "SCRCPY_SERVER_VERSION": "4.1",
+        "ADB_PATH": "adb",
+        "FFMPEG_PATH": "ffmpeg",
+        "DEFAULT_MAX_SIZE": "1024",
+        "DEFAULT_MAX_FPS": "30",
+        "DEFAULT_FRAME_FPS": "5"
+      }
+    }
+  }
+}
