@@ -34,6 +34,11 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
     private val backgroundHandler = Handler(backgroundThread.looper)
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    @Volatile
+    private var isRecreatingDisplay = false
+    private var lastCaptureTime = 0L
+    private val CAPTURE_INTERVAL_MS = 800L
+
     var isCapturing = false
         private set
     private var onImageCapturedCallback: ((Bitmap) -> Unit)? = null
@@ -65,6 +70,7 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
 
     fun refreshVirtualDisplay() {
         backgroundHandler.post {
+            isRecreatingDisplay = true
             try {
                 val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
                 val metrics = DisplayMetrics()
@@ -123,45 +129,15 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
                     )
                 }
 
-                var lastCaptureTime = 0L
-                val CAPTURE_INTERVAL_MS = 800L
                 newReader.setOnImageAvailableListener({ reader ->
-                    val image = try { reader.acquireLatestImage() } catch (e: Exception) { null } ?: return@setOnImageAvailableListener
-                    try {
-                        val currentTime = System.currentTimeMillis()
-                        if (currentTime - lastCaptureTime >= CAPTURE_INTERVAL_MS) {
-                            lastCaptureTime = currentTime
-                            val planes = image.planes
-                            if (planes.isNotEmpty()) {
-                                val buffer: ByteBuffer = planes[0].buffer
-                                val pixelStride = planes[0].pixelStride
-                                val rowStride = planes[0].rowStride
-                                val rowPadding = rowStride - pixelStride * width
-
-                                val bitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888)
-                                bitmap.copyPixelsFromBuffer(buffer)
-
-                                val croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height)
-                                latestFrame = croppedBitmap
-                                totalFramesCaptured++
-
-                                if (isCapturing && onImageCapturedCallback != null) {
-                                    mainHandler.post {
-                                        onImageCapturedCallback?.invoke(croppedBitmap)
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("ScreenCaptureManager", "Error en frame rotado", e)
-                    } finally {
-                        try { image.close() } catch (e: Exception) {}
-                    }
+                    handleImageFromReader(reader)
                 }, backgroundHandler)
 
                 Log.d("ScreenCaptureManager", "VirtualDisplay redimensionado exitosamente ($width x $height)")
             } catch (e: Exception) {
                 Log.e("ScreenCaptureManager", "Error refrescando VirtualDisplay", e)
+            } finally {
+                isRecreatingDisplay = false
             }
         }
     }
@@ -224,48 +200,51 @@ class ScreenCaptureManager(private val context: Context, private val intent: Int
             imageReader?.surface, null, backgroundHandler
         )
 
-        var lastCaptureTime = 0L
-        val CAPTURE_INTERVAL_MS = 800L
-
         imageReader?.setOnImageAvailableListener({ reader ->
-            val image: Image? = try { reader.acquireLatestImage() } catch (e: Exception) { null }
+            handleImageFromReader(reader)
+        }, backgroundHandler)
+    }
 
-            if (image == null) return@setOnImageAvailableListener
+    private fun handleImageFromReader(reader: ImageReader) {
+        val image = try { reader.acquireLatestImage() } catch (e: Exception) { null } ?: return
+        try {
+            if (isRecreatingDisplay) return
 
-            try {
-                val currentTime = System.currentTimeMillis()
-                if (currentTime - lastCaptureTime >= CAPTURE_INTERVAL_MS) {
-                    lastCaptureTime = currentTime
+            val targetW = width
+            val targetH = height
+            // Tarea 5: Descartar frames con dimensiones discrepantes durante rotación
+            if (image.width != targetW || image.height != targetH) return
 
-                    val planes = image.planes
-                    if (planes.isNotEmpty()) {
-                        val buffer: ByteBuffer = planes[0].buffer
-                        val pixelStride = planes[0].pixelStride
-                        val rowStride = planes[0].rowStride
-                        val rowPadding = rowStride - pixelStride * width
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastCaptureTime >= CAPTURE_INTERVAL_MS) {
+                lastCaptureTime = currentTime
 
-                        val bitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888)
-                        bitmap.copyPixelsFromBuffer(buffer)
+                val planes = image.planes
+                if (planes.isNotEmpty()) {
+                    val buffer: ByteBuffer = planes[0].buffer
+                    val pixelStride = planes[0].pixelStride
+                    val rowStride = planes[0].rowStride
+                    val rowPadding = rowStride - pixelStride * targetW
 
-                        val croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height)
-                        latestFrame = croppedBitmap
-                        totalFramesCaptured++
+                    val bitmap = Bitmap.createBitmap(targetW + rowPadding / pixelStride, targetH, Bitmap.Config.ARGB_8888)
+                    bitmap.copyPixelsFromBuffer(buffer)
 
-                        if (isCapturing && onImageCapturedCallback != null) {
-                            mainHandler.post {
-                                onImageCapturedCallback?.invoke(croppedBitmap)
-                            }
+                    val croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, targetW, targetH)
+                    latestFrame = croppedBitmap
+                    totalFramesCaptured++
+
+                    if (isCapturing && onImageCapturedCallback != null) {
+                        mainHandler.post {
+                            onImageCapturedCallback?.invoke(croppedBitmap)
                         }
                     }
                 }
-            } catch (e: Exception) {
-                Log.e("ScreenCaptureManager", "Error procesando frame", e)
-            } finally {
-                try {
-                    image.close()
-                } catch (e: Exception) {}
             }
-        }, backgroundHandler)
+        } catch (e: Exception) {
+            Log.e("ScreenCaptureManager", "Error procesando frame", e)
+        } finally {
+            try { image.close() } catch (e: Exception) {}
+        }
     }
 
     fun startCapture(onImageCaptured: (Bitmap) -> Unit) {

@@ -7,7 +7,7 @@
     android:orientation="horizontal"
     android:gravity="center_vertical">
 
-    <!-- Contenedor del Menú Principal (Barra Vertical) -->
+    <!-- Contenedor del Menú Principal (Barra Vertical Glassmorphism) -->
     <LinearLayout
         android:id="@+id/main_menu_container"
         android:layout_width="wrap_content"
@@ -17,12 +17,13 @@
 
         <ImageView
             android:id="@+id/btn_main_bubble"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
+            android:layout_width="54dp"
+            android:layout_height="54dp"
             android:src="@drawable/app_logo"
-            android:background="@drawable/ic_launcher_background"
+            android:scaleType="fitCenter"
+            android:background="@drawable/bg_glass_panel"
             android:padding="8dp"
-            android:elevation="12dp"
+            android:elevation="14dp"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="Menu" />
@@ -38,123 +39,137 @@
 
             <LinearLayout
                 android:id="@+id/category_bar"
-                android:layout_width="60dp"
+                android:layout_width="54dp"
                 android:layout_height="wrap_content"
-                android:background="#EE0a0a0f"
+                android:background="@drawable/bg_glass_panel"
                 android:orientation="vertical"
-                android:padding="4dp"
-                android:elevation="10dp"
+                android:paddingVertical="8dp"
+                android:paddingHorizontal="3dp"
+                android:elevation="12dp"
                 android:gravity="center_horizontal">
 
+                <!-- 1. VISTA -->
                 <ImageButton
                     android:id="@+id/btn_cat_view"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
                     android:src="@drawable/ic_visibility"
-                    app:tint="#FFFFFF"
-                    android:background="?android:attr/selectableItemBackground"
+                    app:tint="#38BDF8"
+                    android:background="@drawable/bg_button_circle_ripple"
                     android:contentDescription="Vista" />
 
+                <!-- 2. EDICIÓN / DIBUJO -->
                 <ImageButton
                     android:id="@+id/btn_cat_edit"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:src="@android:drawable/ic_menu_edit"
-                    app:tint="#FFFFFF"
-                    android:background="?android:attr/selectableItemBackground"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:src="@drawable/ic_cat_edit"
+                    app:tint="#F1F5F9"
+                    android:background="@drawable/bg_button_circle_ripple"
                     android:contentDescription="Edición" />
 
+                <!-- 3. LÍNEAS -->
                 <ImageButton
                     android:id="@+id/btn_cat_lines"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
                     android:src="@drawable/ic_trend_line"
-                    app:tint="#FFFFFF"
-                    android:background="?android:attr/selectableItemBackground"
+                    app:tint="#F1F5F9"
+                    android:background="@drawable/bg_button_circle_ripple"
                     android:contentDescription="Líneas" />
 
+                <!-- 4. POSICIONES / FIGURAS -->
                 <ImageButton
                     android:id="@+id/btn_cat_shapes"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:src="@android:drawable/ic_menu_crop"
-                    app:tint="#FFFFFF"
-                    android:background="?android:attr/selectableItemBackground"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:src="@drawable/ic_cat_shapes"
+                    app:tint="#F1F5F9"
+                    android:background="@drawable/bg_button_circle_ripple"
                     android:contentDescription="Posiciones" />
 
+                <!-- 5. PLANTILLAS / ARCHIVOS -->
                 <ImageButton
                     android:id="@+id/btn_cat_files"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:src="@android:drawable/ic_menu_save"
-                    app:tint="#FFFFFF"
-                    android:background="?android:attr/selectableItemBackground"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:src="@drawable/ic_cat_templates"
+                    app:tint="#F1F5F9"
+                    android:background="@drawable/bg_button_circle_ripple"
                     android:contentDescription="Plantillas" />
 
+                <!-- 6. IA / AUTOTRADE -->
                 <ImageButton
                     android:id="@+id/btn_cat_ai"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:src="@android:drawable/ic_menu_camera"
-                    app:tint="#FFFF00"
-                    android:background="?android:attr/selectableItemBackground"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:src="@drawable/ic_cat_ai"
+                    app:tint="#FACC15"
+                    android:background="@drawable/bg_button_circle_ripple"
                     android:contentDescription="IA / AutoTrade" />
 
+                <!-- Separador Sutil con Brillo -->
                 <View
-                    android:layout_width="40dp"
+                    android:layout_width="32dp"
                     android:layout_height="1dp"
-                    android:background="#44ffffff"
-                    android:layout_marginVertical="8dp" />
+                    android:background="#33FFFFFF"
+                    android:layout_marginVertical="6dp" />
 
+                <!-- 7. DESHACER (UNDO) -->
                 <ImageButton
                     android:id="@+id/btn_undo_direct"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
                     android:src="@drawable/ic_undo"
-                    app:tint="#FFFFFF"
-                    android:background="?android:attr/selectableItemBackground"
+                    app:tint="#E2E8F0"
+                    android:background="@drawable/bg_button_circle_ripple"
                     android:contentDescription="Undo" />
 
+                <!-- 8. REHACER (REDO) -->
                 <ImageButton
                     android:id="@+id/btn_redo_direct"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
                     android:src="@drawable/ic_redo"
-                    app:tint="#FFFFFF"
-                    android:background="?android:attr/selectableItemBackground"
+                    app:tint="#E2E8F0"
+                    android:background="@drawable/bg_button_circle_ripple"
                     android:contentDescription="Redo" />
 
+                <!-- 9. SELECTOR COLOR -->
                 <ImageButton
                     android:id="@+id/btn_color_direct"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:src="@android:drawable/ic_menu_gallery"
-                    app:tint="#00FF00"
-                    android:background="?android:attr/selectableItemBackground"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:src="@drawable/ic_color_palette"
+                    app:tint="#10B981"
+                    android:background="@drawable/bg_button_circle_ripple"
                     android:contentDescription="Color" />
 
+                <!-- 10. BORRAR SELECCIÓN / ÚLTIMO -->
                 <ImageButton
                     android:id="@+id/btn_clear_direct"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:src="@android:drawable/ic_menu_delete"
-                    app:tint="#ef4444"
-                    android:background="?android:attr/selectableItemBackground"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:src="@drawable/ic_trash_delete"
+                    app:tint="#F43F5E"
+                    android:background="@drawable/bg_button_circle_ripple"
                     android:contentDescription="Borrar" />
 
+                <!-- Separador -->
                 <View
-                    android:layout_width="40dp"
+                    android:layout_width="32dp"
                     android:layout_height="1dp"
-                    android:background="#44ffffff"
-                    android:layout_marginVertical="8dp" />
+                    android:background="#33FFFFFF"
+                    android:layout_marginVertical="6dp" />
 
+                <!-- 11. CERRAR OVERLAY -->
                 <ImageButton
                     android:id="@+id/btn_cerrar_global"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:src="@android:drawable/ic_menu_close_clear_cancel"
-                    app:tint="#ef4444"
-                    android:background="?android:attr/selectableItemBackground"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:src="@drawable/ic_close"
+                    app:tint="#EF4444"
+                    android:background="@drawable/bg_button_circle_ripple"
                     android:contentDescription="Cerrar" />
 
             </LinearLayout>

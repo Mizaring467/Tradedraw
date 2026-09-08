@@ -24,6 +24,7 @@ data class DrawShape(
     var labelVisible: Boolean = true,
     var labelText: String = "",
     var isBotDrawn: Boolean = false,
+    var isManuallyLocked: Boolean = false,
     val pathPoints: MutableList<PointF> = mutableListOf()
 ) {
     fun toJson(): JSONObject {

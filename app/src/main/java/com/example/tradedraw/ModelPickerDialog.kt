@@ -37,22 +37,20 @@ class ModelPickerDialog(
         ModelItem("antigravity/gemini-3.8-flash-tiered", "Gemini 3.8 Flash Tiered", "♊ Antigravity Gemini 3.8", "Pensamiento Adaptativo Dinámico"),
 
         // Antigravity Gemini 3.7 & Pro
+        ModelItem("antigravity/gemini-3.7-flash-low", "Gemini 3.7 Flash Low ⭐", "♊ Antigravity Gemini", "Mínima Latencia · Ultra Rápido (4s)"),
         ModelItem("antigravity/gemini-3.7-flash-high", "Gemini 3.7 Flash High", "♊ Antigravity Gemini", "Alta Precisión Visión"),
         ModelItem("antigravity/gemini-3.7-flash-medium", "Gemini 3.7 Flash Medium", "♊ Antigravity Gemini", "Equilibrado"),
-        ModelItem("antigravity/gemini-3.7-flash-low", "Gemini 3.7 Flash Low", "♊ Antigravity Gemini", "Mínima Latencia"),
+        ModelItem("auto/gemini", "Gemini Smart Auto", "♊ Antigravity Gemini", "Selección Automática OmniRoute"),
         ModelItem("antigravity/gemini-pro-agent", "Gemini 3.1 Pro Agent", "♊ Antigravity Gemini", "Razonamiento Máximo"),
 
         // Claude (Anthropic en OmniRoute / Antigravity)
-        ModelItem("claude-sonnet-4-6", "Claude Sonnet 4.6 ⭐", "🤖 Anthropic Claude", "Antigravity Upstream"),
-        ModelItem("claude-opus-4-6-thinking", "Claude Opus 4.6 Thinking", "🤖 Anthropic Claude", "Razonamiento Profundo"),
-        ModelItem("auto/claude-sonnet", "Claude Sonnet (Auto)", "🤖 Anthropic Claude", "OmniRoute Smart"),
-        ModelItem("kiro/claude-sonnet-4.5", "Claude Sonnet 4.5", "🤖 Anthropic Claude", "Kiro Sonnet"),
-        ModelItem("kiro/claude-haiku-4.5", "Claude Haiku 4.5", "🤖 Anthropic Claude", "Kiro Haiku Rápido"),
+        ModelItem("antigravity/claude-sonnet-4-6", "Claude Sonnet 4.6 ⭐", "🤖 Anthropic Claude", "Antigravity Upstream"),
+        ModelItem("antigravity/claude-opus-4-6-thinking", "Claude Opus 4.6 Thinking", "🤖 Anthropic Claude", "Razonamiento Profundo"),
 
         // B.AI (Cloud)
-        ModelItem("deepseek-v4-flash-vision-exp", "DeepSeek-V4 Flash Vision ⭐", "⚡ B.AI Cloud", "Visión Especializada"),
-        ModelItem("deepseek-v4-flash", "DeepSeek-V4 Flash", "⚡ B.AI Cloud", "Ultra Rápido"),
-        ModelItem("deepseek-v4-pro", "DeepSeek-V4 Pro", "⚡ B.AI Cloud", "Razonamiento Avanzado")
+        ModelItem("bai/deepseek-v4-flash-vision-exp", "DeepSeek-V4 Flash Vision ⭐", "⚡ B.AI Cloud", "Visión Especializada"),
+        ModelItem("bai/deepseek-v4-flash", "DeepSeek-V4 Flash", "⚡ B.AI Cloud", "Ultra Rápido"),
+        ModelItem("bai/glm-5.3-flash", "GLM 5.3 Flash", "⚡ B.AI Cloud", "Baja Latencia")
     )
 
     fun show() {

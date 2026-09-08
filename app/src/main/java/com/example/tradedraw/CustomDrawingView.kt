@@ -50,6 +50,8 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     fun setLabelText(text: String) { this.pendingLabelText = text; invalidate() }
 
     var onShapesChange: (() -> Unit)? = null
+    // Callback cuando el usuario arrastra manualmente una línea del bot
+    var onBotShapeDragged: ((key: String) -> Unit)? = null
 
     private fun notifyShapesChange() { onShapesChange?.invoke() }
 
@@ -72,12 +74,46 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     private val handleStrokePaint = Paint().apply { color = Color.CYAN; style = Paint.Style.STROKE; strokeWidth = 4f; isAntiAlias = true }
     private val shapePaint = Paint().apply { isAntiAlias = true; strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND }
 
+    // Componentes de renderizado elegante estilo TradingView para Fibonacci Retracement
+    private data class FibLevel(val ratio: Float, val label: String, val color: Int, val fillAlpha: Int = 22)
+    private val fibLevels = listOf(
+        FibLevel(0.000f, "0 (0.0%)", Color.parseColor("#787b86"), 0),
+        FibLevel(0.236f, "0.236 (23.6%)", Color.parseColor("#f23645"), 24),
+        FibLevel(0.382f, "0.382 (38.2%)", Color.parseColor("#ff9800"), 24),
+        FibLevel(0.500f, "0.5 (50.0%)", Color.parseColor("#4caf50"), 24),
+        FibLevel(0.618f, "0.618 (61.8%)", Color.parseColor("#089981"), 42), // Golden Pocket destacado
+        FibLevel(0.786f, "0.786 (78.6%)", Color.parseColor("#00bcd4"), 24),
+        FibLevel(1.000f, "1 (100.0%)", Color.parseColor("#787b86"), 24)
+    )
+    private val fibFillPaint = Paint().apply { style = Paint.Style.FILL; isAntiAlias = true }
+    private val fibLinePaint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 2.2f; isAntiAlias = true }
+    private val fibTrendPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.8f
+        color = Color.parseColor("#94a3b8")
+        pathEffect = DashPathEffect(floatArrayOf(8f, 6f), 0f)
+        isAntiAlias = true
+    }
+    private val fibTextPaint = Paint().apply {
+        textSize = 21f
+        isAntiAlias = true
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    }
+    private val fibBadgePaint = Paint().apply {
+        style = Paint.Style.FILL
+        color = Color.argb(195, 15, 23, 42)
+        isAntiAlias = true
+    }
+
+    var onToolChanged: ((TradingTool) -> Unit)? = null
+
     fun setTool(tool: TradingTool) {
         this.currentTool = tool
         tapPoints.clear()
         previewPoint = null
         currentShape = null
         if (tool != TradingTool.SELECT_TOUCH) deselectAll()
+        onToolChanged?.invoke(tool)
         invalidate()
     }
 
@@ -206,12 +242,12 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
             TradingTool.TREND_LINE -> canvas.drawLine(shape.startX, shape.startY, shape.endX, shape.endY, paint)
             TradingTool.SUPPORT_LINE -> {
                 canvas.drawLine(0f, shape.startY, width.toFloat(), shape.startY, paint)
-                val label = if (shape.isBotDrawn) "SOPORTE [IA]" else "SOPORTE"
+                val label = if (shape.isManuallyLocked) "SOPORTE [Manual]" else if (shape.isBotDrawn) "SOPORTE [IA]" else "SOPORTE"
                 canvas.drawText(label, 25f, shape.startY - 15f, textPaint)
             }
             TradingTool.RESISTANCE_LINE -> {
                 canvas.drawLine(0f, shape.startY, width.toFloat(), shape.startY, paint)
-                val label = if (shape.isBotDrawn) "RESISTENCIA [IA]" else "RESISTENCIA"
+                val label = if (shape.isManuallyLocked) "RESISTENCIA [Manual]" else if (shape.isBotDrawn) "RESISTENCIA [IA]" else "RESISTENCIA"
                 canvas.drawText(label, 25f, shape.startY - 15f, textPaint)
             }
             TradingTool.RECTANGLE -> canvas.drawRect(Math.min(shape.startX, shape.endX), Math.min(shape.startY, shape.endY), Math.max(shape.startX, shape.endX), Math.max(shape.startY, shape.endY), paint)
@@ -320,15 +356,62 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     }
 
     private fun drawFibonacci(canvas: Canvas, shape: DrawShape, paint: Paint) {
-        val levels = listOf(0f, 0.236f, 0.382f, 0.5f, 0.618f, 0.786f, 1f)
-        val labels = listOf("0%", "23.6%", "38.2%", "50%", "61.8%", "78.6%", "100%")
+        val minX = Math.min(shape.startX, shape.endX)
+        val maxX = Math.max(shape.startX, shape.endX)
+        val left = if (maxX - minX < 30f) 0f else minX
+        val right = if (maxX - minX < 30f) width.toFloat() else maxX
         val diffY = shape.endY - shape.startY
-        canvas.drawLine(shape.startX, shape.startY, shape.endX, shape.endY, paint)
-        dashPaint.color = Color.LTGRAY
-        for (i in levels.indices) {
-            val levelY = shape.startY + diffY * levels[i]
-            canvas.drawLine(0f, levelY, width.toFloat(), levelY, dashPaint)
-            canvas.drawText(labels[i], width - 110f, levelY - 10f, textPaint)
+
+        // 1. Bandas de relleno translúcidas estilo TradingView entre niveles consecutivos
+        for (i in 0 until fibLevels.size - 1) {
+            val lvlCurr = fibLevels[i]
+            val lvlNext = fibLevels[i + 1]
+            val yCurr = shape.startY + diffY * lvlCurr.ratio
+            val yNext = shape.startY + diffY * lvlNext.ratio
+            val top = Math.min(yCurr, yNext)
+            val bottom = Math.max(yCurr, yNext)
+
+            val baseColor = lvlNext.color
+            val r = Color.red(baseColor)
+            val g = Color.green(baseColor)
+            val b = Color.blue(baseColor)
+            fibFillPaint.color = Color.argb(lvlNext.fillAlpha, r, g, b)
+            canvas.drawRect(left, top, right, bottom, fibFillPaint)
+        }
+
+        // 2. Línea de tendencia diagonal sutil que conecta el punto de anclaje inicial y final
+        canvas.drawLine(shape.startX, shape.startY, shape.endX, shape.endY, fibTrendPaint)
+
+        // 3. Líneas de nivel horizontales nítidas y badges con valores estilo TradingView
+        val badgeHeight = 28f
+        val badgePaddingH = 10f
+        val cornerRadius = 6f
+
+        for (lvl in fibLevels) {
+            val levelY = shape.startY + diffY * lvl.ratio
+            fibLinePaint.color = lvl.color
+            canvas.drawLine(left, levelY, right, levelY, fibLinePaint)
+
+            val text = lvl.label
+            val textWidth = fibTextPaint.measureText(text)
+            val badgeWidth = textWidth + badgePaddingH * 2
+            val badgeLeft = (right - badgeWidth - 6f).coerceAtLeast(left + 6f)
+            val badgeTop = levelY - badgeHeight / 2f
+
+            canvas.drawRoundRect(
+                badgeLeft,
+                badgeTop,
+                badgeLeft + badgeWidth,
+                badgeTop + badgeHeight,
+                cornerRadius,
+                cornerRadius,
+                fibBadgePaint
+            )
+
+            fibTextPaint.color = lvl.color
+            val textX = badgeLeft + badgePaddingH
+            val textY = levelY - ((fibTextPaint.descent() + fibTextPaint.ascent()) / 2f)
+            canvas.drawText(text, textX, textY, fibTextPaint)
         }
     }
 
@@ -366,8 +449,8 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
                     // Solo dibujar si NO hay nada seleccionado para evitar trazos accidentales
                     undoneShapes.clear()
                     val colorToUse = when (currentTool) {
-                        TradingTool.SUPPORT_LINE -> Color.GREEN
-                        TradingTool.RESISTANCE_LINE -> Color.RED
+                        TradingTool.SUPPORT_LINE -> Color.parseColor("#ef4444") // Soporte = ROJO
+                        TradingTool.RESISTANCE_LINE -> Color.parseColor("#22c55e") // Resistencia = VERDE
                         else -> activeDrawingColor
                     }
                     currentShape = DrawShape(currentTool, x, y, x, y, color = colorToUse, strokeWidth = currentStrokeWidth)
@@ -389,8 +472,33 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
             }
             MotionEvent.ACTION_UP -> {
                 isEraserDragging = false
-                if (selectedShape == null) {
-                    currentShape?.let { shapes.add(it); notifyShapesChange() }
+                // Detectar si se arrastró una línea del bot para bloquearla
+                if (selectedShape != null && selectedShape!!.isBotDrawn && dragMode != DragMode.NONE) {
+                    onBotShapeDragged?.invoke(selectedShape!!.labelText)
+                }
+                if (selectedShape == null && currentShape != null) {
+                    val finishedShape = currentShape!!
+                    val dx = Math.abs(finishedShape.endX - finishedShape.startX)
+                    val dy = Math.abs(finishedShape.endY - finishedShape.startY)
+                    val isSingleClickTool = finishedShape.tool == TradingTool.SUPPORT_LINE ||
+                            finishedShape.tool == TradingTool.RESISTANCE_LINE ||
+                            finishedShape.tool == TradingTool.HORIZONTAL_LINE ||
+                            finishedShape.tool == TradingTool.VERTICAL_LINE ||
+                            finishedShape.tool == TradingTool.TEXT_LABEL
+
+                    if (isSingleClickTool || dx > 15f || dy > 15f || finishedShape.tool == TradingTool.FREE_BRUSH) {
+                        shapes.add(finishedShape)
+                        notifyShapesChange()
+
+                        // Comportamiento TradingView: Seleccionar inmediatamente el objeto creado
+                        // y pasar a modo SELECT_TOUCH para permitir mover o redimensionar sin duplicar
+                        if (finishedShape.tool != TradingTool.FREE_BRUSH) {
+                            deselectAll()
+                            finishedShape.isSelected = true
+                            selectedShape = finishedShape
+                            setTool(TradingTool.SELECT_TOUCH)
+                        }
+                    }
                     currentShape = null
                 }
                 dragMode = DragMode.NONE
@@ -418,7 +526,14 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
                 invalidate()
                 if (tapPoints.size >= requiredPoints(currentTool)) {
                     val shape = buildMultiPointShape()
-                    if (shape != null) { shapes.add(shape); notifyShapesChange() }
+                    if (shape != null) {
+                        shapes.add(shape)
+                        notifyShapesChange()
+                        deselectAll()
+                        shape.isSelected = true
+                        selectedShape = shape
+                        setTool(TradingTool.SELECT_TOUCH)
+                    }
                     tapPoints.clear()
                     previewPoint = null
                     invalidate()
@@ -432,8 +547,8 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     private fun buildMultiPointShape(): DrawShape? {
         if (tapPoints.isEmpty()) return null
         val colorToUse = when (currentTool) {
-            TradingTool.SUPPORT_LINE -> Color.GREEN
-            TradingTool.RESISTANCE_LINE -> Color.RED
+            TradingTool.SUPPORT_LINE -> Color.parseColor("#ef4444") // Soporte = ROJO
+            TradingTool.RESISTANCE_LINE -> Color.parseColor("#22c55e") // Resistencia = VERDE
             else -> activeDrawingColor
         }
         val p0 = tapPoints[0]
@@ -450,30 +565,67 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
     }
 
     private fun handleAutoSelection(x: Float, y: Float): Boolean {
-        // 1. Probar nodos del objeto ya seleccionado para Redimensionar
+        // 1. Probar PRIMERO los nodos o cuerpo del objeto ya seleccionado
+        // Si el usuario toca un nodo de control (START/END/THIRD), SIEMPRE permitir arrastrar
         selectedShape?.let { s ->
             if (s.tool != TradingTool.FREE_BRUSH) {
                 if (isNear(x, y, s.startX, s.startY)) { dragMode = DragMode.START; return true }
                 if (isNear(x, y, s.endX, s.endY)) { dragMode = DragMode.END; return true }
-                if ((s.tool == TradingTool.TRIANGLE || s.tool == TradingTool.CHANNEL) && isNear(x, y, s.thirdX, s.thirdY)) { dragMode = DragMode.THIRD; return true }
+                if ((s.tool == TradingTool.TRIANGLE || s.tool == TradingTool.CHANNEL) && isNear(x, y, s.thirdX, s.thirdY)) {
+                    dragMode = DragMode.THIRD
+                    return true
+                }
             }
             // Probar cuerpo para Mover
             if (isHit(x, y, s)) { dragMode = DragMode.BODY; return true }
         }
 
-        // 2. Buscar nueva figura para Seleccionar (Prioridad a figuras sobre trazos libres)
+        // 2. Comprobar si se tocó un nodo de control o cuerpo de alguna figura existente
         for (i in shapes.size - 1 downTo 0) {
-            if (isHit(x, y, shapes[i])) {
+            val s = shapes[i]
+            if (s.tool != TradingTool.FREE_BRUSH) {
+                if (isNear(x, y, s.startX, s.startY)) {
+                    deselectAll()
+                    s.isSelected = true
+                    selectedShape = s
+                    setTool(TradingTool.SELECT_TOUCH)
+                    dragMode = DragMode.START
+                    return true
+                }
+                if (isNear(x, y, s.endX, s.endY)) {
+                    deselectAll()
+                    s.isSelected = true
+                    selectedShape = s
+                    setTool(TradingTool.SELECT_TOUCH)
+                    dragMode = DragMode.END
+                    return true
+                }
+                if ((s.tool == TradingTool.TRIANGLE || s.tool == TradingTool.CHANNEL) && isNear(x, y, s.thirdX, s.thirdY)) {
+                    deselectAll()
+                    s.isSelected = true
+                    selectedShape = s
+                    setTool(TradingTool.SELECT_TOUCH)
+                    dragMode = DragMode.THIRD
+                    return true
+                }
+            }
+
+            // Si la herramienta activa es ELEGIR (SELECT_TOUCH) o se toca directo la figura
+            if ((currentTool == TradingTool.SELECT_TOUCH || isHit(x, y, s)) && s.tool != TradingTool.FREE_BRUSH) {
                 deselectAll()
-                shapes[i].isSelected = true
-                selectedShape = shapes[i]
+                s.isSelected = true
+                selectedShape = s
+                setTool(TradingTool.SELECT_TOUCH)
                 dragMode = DragMode.BODY
                 return true
             }
         }
-        
-        // 3. Si se toca vacío, deseleccionar
-        if (selectedShape != null) { deselectAll(); return true }
+
+        // 3. Si se toca vacío estando en SELECT_TOUCH, deseleccionar
+        if (currentTool == TradingTool.SELECT_TOUCH && selectedShape != null) {
+            deselectAll()
+            return true
+        }
         return false
     }
 
@@ -518,7 +670,7 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
             TradingTool.TREND_LINE, TradingTool.RAY -> distToSegment(x, y, s.startX, s.startY, s.endX, s.endY) < t
             TradingTool.SUPPORT_LINE, TradingTool.RESISTANCE_LINE, TradingTool.HORIZONTAL_LINE -> Math.abs(y - s.startY) < t
             TradingTool.VERTICAL_LINE -> Math.abs(x - s.startX) < t
-            TradingTool.FIB_RETRACEMENT -> y in (Math.min(s.startY, s.endY) - t)..(Math.max(s.startY, s.endY) + t)
+            TradingTool.FIB_RETRACEMENT -> y in (Math.min(s.startY, s.endY) - t)..(Math.max(s.startY, s.endY) + t) && x in (Math.min(s.startX, s.endX) - t)..(Math.max(s.startX, s.endX) + t)
             TradingTool.RECTANGLE, TradingTool.LONG_POSITION, TradingTool.SHORT_POSITION, TradingTool.ZONE -> {
                 val l = Math.min(s.startX, s.endX) - t; val r = Math.max(s.startX, s.endX) + t
                 val m = s.startY; val d = Math.abs(s.endY - s.startY)
