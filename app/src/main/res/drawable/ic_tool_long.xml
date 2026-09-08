@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Marco de Zona Verde (Profit) -->
+    <path
+        android:fillColor="#3322C55E"
+        android:strokeColor="#22C55E"
+        android:strokeWidth="1.2"
+        android:pathData="M3,3h18v8H3z" />
+    <!-- Marco de Zona Roja (Risk) -->
+    <path
+        android:fillColor="#33EF4444"
+        android:strokeColor="#EF4444"
+        android:strokeWidth="1.2"
+        android:pathData="M3,11h18v10H3z" />
+    <!-- Flecha Long Ascendente -->
+    <path
+        android:fillColor="#22C55E"
+        android:pathData="M12,4l-4,5h3v4h2V9h3z" />
+</vector>

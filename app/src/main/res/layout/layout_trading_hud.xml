@@ -4,12 +4,13 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="#F00a0a0f"
-    android:padding="8dp"
-    android:elevation="18dp">
+    android:background="@drawable/bg_hud_panel"
+    android:padding="4dp"
+    android:elevation="12dp">
 
-    <!-- Fila 1: Modo, Estrategia y Radar de Racha de Velas -->
+    <!-- LÍNEA 1 DE CABECERA: Modo, Estrategia, Timer, Opacidad y Toggle Minimizar -->
     <LinearLayout
+        android:id="@+id/hud_header_line1"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
@@ -21,17 +22,18 @@
             android:layout_height="wrap_content"
             android:text="[OFF]"
             android:textColor="#94a3b8"
-            android:textSize="11sp"
+            android:textSize="9.5sp"
             android:textStyle="bold"
-            android:paddingEnd="6dp" />
+            android:paddingEnd="3dp" />
 
         <TextView
             android:id="@+id/hud_strategy"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Estrat: MT Combo"
+            android:text="Auto"
             android:textColor="#e2e8f0"
-            android:textSize="11sp" />
+            android:textSize="9.5sp"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/hud_streak_badge"
@@ -39,17 +41,60 @@
             android:layout_height="wrap_content"
             android:text="· 1D ⚪"
             android:textColor="#38bdf8"
-            android:textSize="10sp"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:layout_marginStart="3dp" />
+
+        <TextView
+            android:id="@+id/hud_timer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=" ⏱️ :00s"
+            android:textColor="#facc15"
+            android:textSize="9.5sp"
+            android:textStyle="bold"
             android:layout_marginStart="6dp" />
+
+        <!-- Botón de Opacidad -->
+        <TextView
+            android:id="@+id/hud_btn_opacity"
+            android:layout_width="wrap_content"
+            android:layout_height="18dp"
+            android:text=" 👁️ 70% "
+            android:textColor="#38bdf8"
+            android:textSize="8sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:background="@drawable/bg_hud_chip"
+            android:layout_marginStart="6dp"
+            android:paddingHorizontal="3dp"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <!-- Botón Minimizar / Desplegar (Colapsado por defecto con ▼) -->
+        <TextView
+            android:id="@+id/hud_btn_collapse"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:text="▼"
+            android:textColor="#cbd5e1"
+            android:textSize="8.5sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:background="@drawable/bg_hud_chip"
+            android:layout_marginStart="3dp"
+            android:clickable="true"
+            android:focusable="true" />
     </LinearLayout>
 
-    <!-- Fila 2: W/L, Winrate, Martingala y Temporizador de Vela 60s -->
+    <!-- LÍNEA 2 DE CABECERA: W/L, Winrate, Martingala y Termómetro (Ultra-compacto) -->
     <LinearLayout
+        android:id="@+id/hud_header_line2"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:layout_marginTop="3dp">
+        android:layout_marginTop="2dp">
 
         <TextView
             android:id="@+id/hud_stats"
@@ -57,7 +102,7 @@
             android:layout_height="wrap_content"
             android:text="W: 0 | L: 0"
             android:textColor="#22c55e"
-            android:textSize="11sp"
+            android:textSize="9sp"
             android:textStyle="bold" />
 
         <TextView
@@ -66,7 +111,7 @@
             android:layout_height="wrap_content"
             android:text=" (0%)"
             android:textColor="#94a3b8"
-            android:textSize="10sp" />
+            android:textSize="8.5sp" />
 
         <TextView
             android:id="@+id/hud_martingale_badge"
@@ -74,88 +119,145 @@
             android:layout_height="wrap_content"
             android:text=" [M0]"
             android:textColor="#fb923c"
-            android:textSize="10sp"
-            android:layout_marginStart="4dp" />
+            android:textSize="8.5sp"
+            android:textStyle="bold"
+            android:layout_marginStart="2dp" />
 
+        <!-- Termómetro Compacto -->
         <TextView
-            android:id="@+id/hud_timer"
+            android:id="@+id/hud_power_bar"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text=" ⏱️ :00s"
-            android:textColor="#facc15"
-            android:textSize="10sp"
+            android:text="[ 50% CALL ==== 50% PUT ]"
+            android:textColor="#38bdf8"
+            android:textSize="8sp"
             android:textStyle="bold"
             android:layout_marginStart="6dp" />
     </LinearLayout>
 
-    <!-- Fila 3: Termómetro de Señal (% CALL vs % PUT) -->
-    <TextView
-        android:id="@+id/hud_power_bar"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="[ 50% CALL █████░░░░░ 50% PUT ]"
-        android:textColor="#38bdf8"
-        android:textSize="9sp"
-        android:textStyle="bold"
-        android:layout_marginTop="3dp" />
-
-    <!-- Fila 4: Diagnóstico de Cámara / Visión -->
-    <TextView
-        android:id="@+id/hud_diag"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="📷 Frames: 0 | Visión: OK"
-        android:textColor="#94a3b8"
-        android:textSize="9sp"
-        android:layout_marginTop="2dp" />
-
-    <!-- Fila 5: Pista / Estado de la Estrategia -->
-    <TextView
-        android:id="@+id/hud_hint"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="⚪ En espera"
-        android:textColor="#cbd5e1"
-        android:textSize="10sp"
-        android:layout_marginTop="2dp" />
-
-    <!-- Fila 6: Estado / Cooldown / Strike Price ITM-OTM -->
-    <TextView
-        android:id="@+id/hud_status"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="⚪ En espera"
-        android:textColor="#cbd5e1"
-        android:textSize="10sp"
-        android:layout_marginTop="2dp" />
-
-    <!-- Fila 7: Botones rápidos para registrar resultado en Demo -->
+    <!-- CONTENEDOR DETALLADO (Colapsado / Oculto por defecto para no obstruir el gráfico) -->
     <LinearLayout
+        android:id="@+id/hud_details_container"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="5dp">
+        android:orientation="vertical"
+        android:layout_marginTop="3dp"
+        android:visibility="gone">
 
-        <Button
-            android:id="@+id/hud_btn_win"
-            android:layout_width="45dp"
-            android:layout_height="28dp"
-            android:text="+W"
-            android:textSize="9sp"
-            android:textColor="#ffffff"
-            android:backgroundTint="#15803d"
-            android:padding="0dp" />
+        <!-- Estado / Cooldown -->
+        <TextView
+            android:id="@+id/hud_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⚪ En espera"
+            android:textColor="#cbd5e1"
+            android:textSize="8.5sp"
+            android:layout_marginTop="1dp" />
 
-        <Button
-            android:id="@+id/hud_btn_loss"
-            android:layout_width="45dp"
-            android:layout_height="28dp"
-            android:text="+L"
-            android:textSize="9sp"
-            android:textColor="#ffffff"
-            android:backgroundTint="#b91c1c"
-            android:layout_marginStart="4dp"
-            android:padding="0dp" />
+        <!-- Diagnóstico de Cámara / Visión -->
+        <TextView
+            android:id="@+id/hud_diag"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📷 Frames: 0 | Visión: OK"
+            android:textColor="#94a3b8"
+            android:textSize="8sp"
+            android:layout_marginTop="1dp" />
+
+        <!-- Tarjeta de Señal Operativa -->
+        <LinearLayout
+            android:id="@+id/hud_signal_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_hud_signal_idle"
+            android:padding="3dp"
+            android:layout_marginTop="2dp">
+
+            <TextView
+                android:id="@+id/hud_signal_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="⚪ EN ESPERA DE SEÑAL"
+                android:textColor="#cbd5e1"
+                android:textSize="9sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/hud_signal_desc"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Vigilando patrones de acción del precio..."
+                android:textColor="#94a3b8"
+                android:textSize="8sp"
+                android:layout_marginTop="1dp" />
+
+            <TextView
+                android:id="@+id/hud_signal_countdown"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="#facc15"
+                android:textSize="8.5sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                android:layout_marginTop="1dp" />
+        </LinearLayout>
+
+        <!-- Pista / Estado de la Estrategia -->
+        <TextView
+            android:id="@+id/hud_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⚪ En espera"
+            android:textColor="#94a3b8"
+            android:textSize="8sp"
+            android:layout_marginTop="1dp" />
+
+        <!-- Botones de Acción (+W, +L, ↺ S/R IA) -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="3dp">
+
+            <Button
+                android:id="@+id/hud_btn_win"
+                android:layout_width="40dp"
+                android:layout_height="22dp"
+                android:text="+W"
+                android:textSize="8.5sp"
+                android:textStyle="bold"
+                android:textColor="#ffffff"
+                android:background="@drawable/bg_hud_btn_win"
+                android:padding="0dp" />
+
+            <Button
+                android:id="@+id/hud_btn_loss"
+                android:layout_width="40dp"
+                android:layout_height="22dp"
+                android:text="+L"
+                android:textSize="8.5sp"
+                android:textStyle="bold"
+                android:textColor="#ffffff"
+                android:background="@drawable/bg_hud_btn_loss"
+                android:layout_marginStart="3dp"
+                android:padding="0dp" />
+
+            <Button
+                android:id="@+id/hud_btn_recalc_ai"
+                android:layout_width="wrap_content"
+                android:layout_height="22dp"
+                android:text="↺ S/R"
+                android:textSize="8.5sp"
+                android:textStyle="bold"
+                android:textColor="#ffffff"
+                android:background="@drawable/bg_hud_btn_recalc"
+                android:layout_marginStart="5dp"
+                android:paddingStart="5dp"
+                android:paddingEnd="5dp" />
+        </LinearLayout>
     </LinearLayout>
 
 </LinearLayout>

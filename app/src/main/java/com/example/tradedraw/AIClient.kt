@@ -41,7 +41,11 @@ class AIClient(private val context: Context) {
         set(value) = prefs.edit().putString("ai_api_key", value.trim()).apply()
 
     var model: String
-        get() = prefs.getString("ai_model", "antigravity/gemini-3.8-flash-high") ?: "antigravity/gemini-3.8-flash-high"
+        get() {
+            val m = prefs.getString("ai_model", "antigravity/gemini-3.7-flash-low") ?: "antigravity/gemini-3.7-flash-low"
+            // Fallback preventivo si el usuario seleccionó 3.8 antes de que OmniRoute lo registre en el router
+            return if (m.contains("3.8")) "antigravity/gemini-3.7-flash-low" else m
+        }
         set(value) = prefs.edit().putString("ai_model", value.trim()).apply()
 
     var confidenceThreshold: Float
@@ -75,13 +79,13 @@ class AIClient(private val context: Context) {
                 // 2. Construir payload compatible con OpenAI / B.AI
                 val jsonPayload = buildVisionPayload(base64Image, model)
 
-                // 3. Ejecutar petición HTTP POST
+                // 3. Ejecutar petición HTTP POST con timeouts ampliados para visión multimodal
                 val urlString = "$baseUrl/chat/completions"
                 val url = URL(urlString)
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
-                    connectTimeout = 6000
-                    readTimeout = 12000
+                    connectTimeout = 8000
+                    readTimeout = 25000
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json; charset=UTF-8")
                     setRequestProperty("Authorization", "Bearer $apiKey")
@@ -183,7 +187,7 @@ class AIClient(private val context: Context) {
         val payload = JSONObject()
         payload.put("model", modelName)
         payload.put("temperature", 0.15)
-        payload.put("max_tokens", 500)
+        payload.put("max_tokens", 100)
 
         val messages = JSONArray()
 

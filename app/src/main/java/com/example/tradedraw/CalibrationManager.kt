@@ -48,24 +48,27 @@ class CalibrationManager(private val context: Context) {
     }
 
     fun getBuyCoordinates(): Pair<Float, Float> {
-        val p = activeProfile.name
-        val o = getOrientationKey()
-        val x = prefs.getFloat("${p}_${o}_buy_x", -1f)
-        val y = prefs.getFloat("${p}_${o}_buy_y", -1f)
-        if (x >= 0 && y >= 0) return Pair(x, y)
-
         val dm = context.resources.displayMetrics
         val w = dm.widthPixels.toFloat()
         val h = dm.heightPixels.toFloat()
         val isLandscape = w > h
 
+        val p = activeProfile.name
+        val o = getOrientationKey()
+        val x = prefs.getFloat("${p}_${o}_buy_x", -1f)
+        val y = prefs.getFloat("${p}_${o}_buy_y", -1f)
+        if (x >= 0 && y >= 0) {
+            val isValid = if (isLandscape) (x >= w * 0.80f) else (y >= h * 0.75f)
+            if (isValid) return Pair(x, y)
+        }
+
         return if (isLandscape) {
             // Horizontal (Landscape): Botones a la derecha
             when (activeProfile) {
-                BrokerProfile.BINOMO -> Pair(w * 0.88f, h * 0.72f) // Botón SUBE verde arriba de Baja
+                BrokerProfile.BINOMO -> Pair(w * 0.881f, h * 0.735f) // Botón SUBE verde arriba de Baja
                 BrokerProfile.QUOTEX -> Pair(w * 0.88f, h * 0.55f)
                 BrokerProfile.POCKET_OPTION -> Pair(w * 0.88f, h * 0.52f)
-                BrokerProfile.CUSTOM -> Pair(w * 0.88f, h * 0.72f)
+                BrokerProfile.CUSTOM -> Pair(w * 0.881f, h * 0.735f)
             }
         } else {
             // Vertical (Portrait): Botones abajo
@@ -79,24 +82,27 @@ class CalibrationManager(private val context: Context) {
     }
 
     fun getSellCoordinates(): Pair<Float, Float> {
-        val p = activeProfile.name
-        val o = getOrientationKey()
-        val x = prefs.getFloat("${p}_${o}_sell_x", -1f)
-        val y = prefs.getFloat("${p}_${o}_sell_y", -1f)
-        if (x >= 0 && y >= 0) return Pair(x, y)
-
         val dm = context.resources.displayMetrics
         val w = dm.widthPixels.toFloat()
         val h = dm.heightPixels.toFloat()
         val isLandscape = w > h
 
+        val p = activeProfile.name
+        val o = getOrientationKey()
+        val x = prefs.getFloat("${p}_${o}_sell_x", -1f)
+        val y = prefs.getFloat("${p}_${o}_sell_y", -1f)
+        if (x >= 0 && y >= 0) {
+            val isValid = if (isLandscape) (x >= w * 0.80f) else (y >= h * 0.75f)
+            if (isValid) return Pair(x, y)
+        }
+
         return if (isLandscape) {
             // Horizontal (Landscape): Botón BAJA rojo abajo de Sube
             when (activeProfile) {
-                BrokerProfile.BINOMO -> Pair(w * 0.88f, h * 0.86f) // Botón BAJA rojo
+                BrokerProfile.BINOMO -> Pair(w * 0.881f, h * 0.844f) // Botón BAJA rojo
                 BrokerProfile.QUOTEX -> Pair(w * 0.88f, h * 0.70f)
                 BrokerProfile.POCKET_OPTION -> Pair(w * 0.88f, h * 0.68f)
-                BrokerProfile.CUSTOM -> Pair(w * 0.88f, h * 0.86f)
+                BrokerProfile.CUSTOM -> Pair(w * 0.881f, h * 0.844f)
             }
         } else {
             // Vertical (Portrait): Botón BAJA abajo a la derecha

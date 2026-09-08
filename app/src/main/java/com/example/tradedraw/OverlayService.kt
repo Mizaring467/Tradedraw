@@ -2,8 +2,11 @@ package com.example.tradedraw
 
 import android.annotation.SuppressLint
 import android.app.*
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -12,6 +15,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.DisplayMetrics
+import android.util.Log
 import android.view.*
 import android.widget.*
 import android.content.pm.ServiceInfo
@@ -44,6 +48,8 @@ class OverlayService : Service() {
     private lateinit var templateManager: TemplateManager
 
     private var screenCaptureManager: ScreenCaptureManager? = null
+    var httpBridge: TradeDrawHttpBridge? = null
+        private set
     lateinit var riskManager: RiskManager
         private set
     lateinit var calibrationManager: CalibrationManager
@@ -54,13 +60,81 @@ class OverlayService : Service() {
     private var hudView: View? = null
     private var hudParams: WindowManager.LayoutParams? = null
     private var isHudVisible = false
+    private var hudAlpha: Float = 0.70f
+    private var isHudCollapsed: Boolean = true
 
     private var isMenuExpanded = false
     private var isDrawingMode = false
     private var currentActiveCategory: Int = -1
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    private val accessibilityCheckRunnable = object : Runnable {
+        override fun run() {
+            if (AutoTradeAccessibilityService.instance == null) {
+                Log.w("TradeDraw", "AutoTradeAccessibilityService desconectado. Notificando HUD.")
+                mainHandler.post { updateHUDView() }
+            }
+            mainHandler.postDelayed(this, 10000)
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private val overlayCommandReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.getStringExtra("action")?.uppercase() ?: ""
+            Log.d("TradeDraw", "ADB overlay command: $action")
+            when (action) {
+                "AUTO" -> setTradingMode(AutoTradeMode.AUTONOMOUS)
+                "SEMI" -> setTradingMode(AutoTradeMode.SEMIAUTOMATIC)
+                "STOP" -> setTradingMode(AutoTradeMode.DISABLED)
+                "DEB" -> showDebugDialog()
+                "HUD" -> toggleHUDVisibility()
+                "TEST" -> {
+                    val frame = screenCaptureManager?.latestFrame
+                    val visionCoords = if (frame != null) tradingEngine.visionAnalyzer.findBrokerButtonCoordinates(frame, true) else null
+                    val (bx, by) = visionCoords ?: calibrationManager.getBuyCoordinates()
+                    Log.d("TradeDraw", "TEST SUBE hacia ($bx, $by) [Visión=${visionCoords != null}]")
+                    AutoTradeAccessibilityService.instance?.performClickAt(bx, by)
+                }
+                "TEST_SELL" -> {
+                    val frame = screenCaptureManager?.latestFrame
+                    val visionCoords = if (frame != null) tradingEngine.visionAnalyzer.findBrokerButtonCoordinates(frame, false) else null
+                    val (sx, sy) = visionCoords ?: calibrationManager.getSellCoordinates()
+                    Log.d("TradeDraw", "TEST BAJA hacia ($sx, $sy) [Visión=${visionCoords != null}]")
+                    AutoTradeAccessibilityService.instance?.performClickAt(sx, sy)
+                }
+                "CLEAR_BOT" -> drawingView.clearBotShapes()
+                "RESET_STATS" -> {
+                    riskManager.resetStats()
+                    updateHUDView()
+                    Toast.makeText(this@OverlayService, "Contador W/L reiniciado", Toast.LENGTH_SHORT).show()
+                }
+                "SYNC_STATS" -> {
+                    val w = intent?.getIntExtra("wins", 0) ?: 0
+                    val l = intent?.getIntExtra("losses", 0) ?: 0
+                    riskManager.setStats(w, l)
+                    updateHUDView()
+                    Toast.makeText(this@OverlayService, "Sincronizado: W:$w | L:$l", Toast.LENGTH_SHORT).show()
+                }
+                "UNLOCK_LINES" -> {
+                    tradingEngine.unlockAllLines()
+                    Toast.makeText(this@OverlayService, "Líneas desbloqueadas → IA recalculando", Toast.LENGTH_SHORT).show()
+                }
+                "STRATEGY" -> {
+                    val stratName = intent?.getStringExtra("name")?.uppercase() ?: ""
+                    try {
+                        val st = AutoTradeStrategy.valueOf(stratName)
+                        tradingEngine.strategy = st
+                        updateHUDView()
+                        Toast.makeText(this@OverlayService, "Estrategia cambiada: ${st.name}", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Log.e("TradeDraw", "Estrategia desconocida: $stratName", e)
+                    }
+                }
+            }
+        }
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -68,10 +142,8 @@ class OverlayService : Service() {
             return START_NOT_STICKY
         }
 
-        // Llamar a startForeground AQUI, antes de hacer nada con MediaProjection
         startTradeDrawForeground()
 
-        // Recuperar intent de screen capture aquí si está disponible y si no lo hemos hecho aún
         if (screenCaptureManager == null) {
             val dataIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 intent?.getParcelableExtra("EXTRA_MEDIA_PROJECTION_DATA", Intent::class.java)
@@ -80,9 +152,13 @@ class OverlayService : Service() {
                 intent?.getParcelableExtra("EXTRA_MEDIA_PROJECTION_DATA") as Intent?
             }
             if (dataIntent != null) {
-                // IMPORTANTE: Android requiere que el servicio sea foreground de tipo mediaProjection
-                // ANTES de obtener el MediaProjection token. Ahora startTradeDrawForeground garantiza esto.
-                screenCaptureManager = ScreenCaptureManager(this, dataIntent)
+                val scm = ScreenCaptureManager(this, dataIntent)
+                screenCaptureManager = scm
+                scm.startCapture { bitmap ->
+                    httpBridge?.latestFrame = bitmap
+                    tradingEngine.onNewFrame(bitmap)
+                }
+                Log.d("TradeDraw", "ScreenCaptureManager iniciado y procesando frames")
             }
         }
         return START_STICKY
@@ -100,16 +176,17 @@ class OverlayService : Service() {
         setupCanvasWindow()
 
         riskManager = RiskManager(this)
+        riskManager.resetSession() // Sesión limpia en 0W / 0L para cada nuevo inicio de TradeDraw
         calibrationManager = CalibrationManager(this)
         tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager)
 
-        // Cargar estrategia guardada previamente
+        // Cargar estrategia guardada previamente (por defecto AUTO_ADAPTIVE)
         val savedStrat = getSharedPreferences("TradeDraw_Config", Context.MODE_PRIVATE)
-            .getString("saved_strategy", AutoTradeStrategy.MT_MASTER_COMBO.name)
+            .getString("saved_strategy", AutoTradeStrategy.AUTO_ADAPTIVE.name)
         tradingEngine.strategy = try {
-            AutoTradeStrategy.valueOf(savedStrat ?: AutoTradeStrategy.MT_MASTER_COMBO.name)
+            AutoTradeStrategy.valueOf(savedStrat ?: AutoTradeStrategy.AUTO_ADAPTIVE.name)
         } catch (e: Exception) {
-            AutoTradeStrategy.MT_MASTER_COMBO
+            AutoTradeStrategy.AUTO_ADAPTIVE
         }
 
         AutoTradeAccessibilityService.onGestureClickListener = { x, y ->
@@ -123,6 +200,21 @@ class OverlayService : Service() {
         setupMenuWindow()
         setupHUDWindow()
         bringMenuToFront()
+        mainHandler.post(accessibilityCheckRunnable)
+
+        // Iniciar Micro-Servidor HTTP local de ultra-baja latencia para supervisión y pruebas
+        httpBridge = TradeDrawHttpBridge(this, 8080).apply { start() }
+
+        val cmdFilter = IntentFilter("com.example.tradedraw.CMD")
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(overlayCommandReceiver, cmdFilter, Context.RECEIVER_EXPORTED)
+            } else {
+                registerReceiver(overlayCommandReceiver, cmdFilter)
+            }
+        } catch (e: Exception) {
+            Log.e("TradeDraw", "Error registrando overlayCommandReceiver", e)
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -305,22 +397,22 @@ class OverlayService : Service() {
 
     private fun showViewSubmenu() {
         prepareSubmenu()
-        addItemToSubmenu(if (drawingView.isCanvasVisible()) R.drawable.ic_visibility else R.drawable.ic_visibility_off, "VISTA") {
+        addItemToSubmenu(if (drawingView.isCanvasVisible()) R.drawable.ic_visibility else R.drawable.ic_visibility_off, "VISTA", Color.parseColor("#38bdf8")) {
             drawingView.toggleCanvasVisibility(); showViewSubmenu()
         }
-        addItemToSubmenu(if (isDrawingMode) R.drawable.ic_lock_closed else R.drawable.ic_lock_open, "LOCK") {
+        addItemToSubmenu(if (isDrawingMode) R.drawable.ic_lock_closed else R.drawable.ic_lock_open, "LOCK", Color.parseColor("#facc15")) {
             toggleLock(); showViewSubmenu()
         }
     }
 
     private fun showEditSubmenu() {
         prepareSubmenu()
-        addItemToSubmenu(android.R.drawable.ic_menu_edit, "LAPIZ") { selectTool(TradingTool.FREE_BRUSH) }
-        addItemToSubmenu(android.R.drawable.ic_menu_directions, "ELEGIR") { selectTool(TradingTool.SELECT_TOUCH) }
-        addItemToSubmenu(R.drawable.ic_measure, "MEDIR") { selectTool(TradingTool.MEASURE) }
-        addItemToSubmenu(android.R.drawable.ic_menu_edit, "TEXTO") { selectTool(TradingTool.TEXT_LABEL) }
-        addItemToSubmenu(android.R.drawable.ic_menu_close_clear_cancel, "BORRAR") { selectTool(TradingTool.ERASER_TOUCH) }
-        addItemToSubmenu(android.R.drawable.ic_menu_delete, "LIMPIAR", Color.RED) {
+        addItemToSubmenu(R.drawable.ic_tool_brush, "PINCEL", Color.parseColor("#f1f5f9")) { selectTool(TradingTool.FREE_BRUSH) }
+        addItemToSubmenu(R.drawable.ic_tool_pointer, "ELEGIR", Color.parseColor("#38bdf8")) { selectTool(TradingTool.SELECT_TOUCH) }
+        addItemToSubmenu(R.drawable.ic_measure, "MEDIR", Color.parseColor("#facc15")) { selectTool(TradingTool.MEASURE) }
+        addItemToSubmenu(R.drawable.ic_tool_text, "TEXTO", Color.parseColor("#f1f5f9")) { selectTool(TradingTool.TEXT_LABEL) }
+        addItemToSubmenu(R.drawable.ic_tool_eraser, "BORRADOR", Color.parseColor("#f43f5e")) { selectTool(TradingTool.ERASER_TOUCH) }
+        addItemToSubmenu(R.drawable.ic_trash_delete, "LIMPIAR", Color.parseColor("#ef4444")) {
             confirmClearAll()
         }
     }
@@ -339,76 +431,85 @@ class OverlayService : Service() {
 
     private fun showLinesSubmenu() {
         prepareSubmenu()
-        addItemToSubmenu(R.drawable.ic_trend_line, "LÍNEA") { selectTool(TradingTool.TREND_LINE) }
-        addItemToSubmenu(R.drawable.ic_ray, "RAYO") { selectTool(TradingTool.RAY) }
-        addItemToSubmenu(R.drawable.ic_horizontal_line, "HORIZ") { selectTool(TradingTool.HORIZONTAL_LINE) }
-        addItemToSubmenu(R.drawable.ic_vertical_line, "VERT") { selectTool(TradingTool.VERTICAL_LINE) }
-        addItemToSubmenu(R.drawable.ic_channel, "CANAL") { selectTool(TradingTool.CHANNEL) }
-        addItemToSubmenu(android.R.drawable.ic_menu_more, "SOPORT", Color.GREEN) { selectTool(TradingTool.SUPPORT_LINE) }
-        addItemToSubmenu(android.R.drawable.ic_menu_more, "RESIST", Color.RED) { selectTool(TradingTool.RESISTANCE_LINE) }
-        addItemToSubmenu(android.R.drawable.ic_menu_sort_by_size, "FIBO") { selectTool(TradingTool.FIB_RETRACEMENT) }
+        addItemToSubmenu(R.drawable.ic_trend_line, "LÍNEA", Color.parseColor("#f1f5f9")) { selectTool(TradingTool.TREND_LINE) }
+        addItemToSubmenu(R.drawable.ic_ray, "RAYO", Color.parseColor("#f1f5f9")) { selectTool(TradingTool.RAY) }
+        addItemToSubmenu(R.drawable.ic_horizontal_line, "HORIZ", Color.parseColor("#f1f5f9")) { selectTool(TradingTool.HORIZONTAL_LINE) }
+        addItemToSubmenu(R.drawable.ic_vertical_line, "VERT", Color.parseColor("#f1f5f9")) { selectTool(TradingTool.VERTICAL_LINE) }
+        addItemToSubmenu(R.drawable.ic_channel, "CANAL", Color.parseColor("#38bdf8")) { selectTool(TradingTool.CHANNEL) }
+        addItemToSubmenu(R.drawable.ic_tool_support, "SOPORTE", Color.parseColor("#ef4444")) { selectTool(TradingTool.SUPPORT_LINE) }
+        addItemToSubmenu(R.drawable.ic_tool_resistance, "RESIST", Color.parseColor("#22c55e")) { selectTool(TradingTool.RESISTANCE_LINE) }
+        addItemToSubmenu(R.drawable.ic_tool_fibonacci, "FIBO", Color.parseColor("#facc15")) { selectTool(TradingTool.FIB_RETRACEMENT) }
     }
 
     private fun showShapesSubmenu() {
         prepareSubmenu()
-        addItemToSubmenu(android.R.drawable.ic_menu_crop, "ZONA") { selectTool(TradingTool.RECTANGLE) }
-        addItemToSubmenu(R.drawable.ic_zone, "Z-FILL") { selectTool(TradingTool.ZONE) }
-        addItemToSubmenu(R.drawable.ic_circle, "CIRCULO") { selectTool(TradingTool.CIRCLE) }
-        addItemToSubmenu(R.drawable.ic_triangle, "TRIANG") { selectTool(TradingTool.TRIANGLE) }
-        addItemToSubmenu(android.R.drawable.ic_input_add, "LONG", Color.GREEN) { selectTool(TradingTool.LONG_POSITION) }
-        addItemToSubmenu(android.R.drawable.ic_delete, "SHORT", Color.RED) { selectTool(TradingTool.SHORT_POSITION) }
+        addItemToSubmenu(R.drawable.ic_tool_rectangle, "ZONA", Color.parseColor("#f1f5f9")) { selectTool(TradingTool.RECTANGLE) }
+        addItemToSubmenu(R.drawable.ic_zone, "Z-FILL", Color.parseColor("#38bdf8")) { selectTool(TradingTool.ZONE) }
+        addItemToSubmenu(R.drawable.ic_circle, "CIRCULO", Color.parseColor("#f1f5f9")) { selectTool(TradingTool.CIRCLE) }
+        addItemToSubmenu(R.drawable.ic_triangle, "TRIANG", Color.parseColor("#f1f5f9")) { selectTool(TradingTool.TRIANGLE) }
+        addItemToSubmenu(R.drawable.ic_tool_long, "LONG", Color.parseColor("#22c55e")) { selectTool(TradingTool.LONG_POSITION) }
+        addItemToSubmenu(R.drawable.ic_tool_short, "SHORT", Color.parseColor("#ef4444")) { selectTool(TradingTool.SHORT_POSITION) }
     }
 
     private fun showFilesSubmenu() {
         prepareSubmenu()
-        addItemToSubmenu(android.R.drawable.ic_menu_save, "SAVE") { saveTemplate() }
-        addItemToSubmenu(android.R.drawable.ic_menu_recent_history, "LOAD") { loadTemplate() }
-        addItemToSubmenu(android.R.drawable.ic_menu_share, "EXPORT") { shareTemplate() }
+        addItemToSubmenu(R.drawable.ic_template_save, "GUARDAR", Color.parseColor("#10b981")) { saveTemplate() }
+        addItemToSubmenu(R.drawable.ic_template_load, "CARGAR", Color.parseColor("#38bdf8")) { loadTemplate() }
+        addItemToSubmenu(R.drawable.ic_template_share, "EXPORTAR", Color.parseColor("#a855f7")) { shareTemplate() }
     }
 
     private fun showAISubmenu() {
         prepareSubmenu()
         val currentMode = tradingEngine.mode
         val (modeIcon, modeText, modeColor) = when (currentMode) {
-            AutoTradeMode.AUTONOMOUS -> Triple(android.R.drawable.ic_media_play, "AUTÓNOMO", Color.GREEN)
-            AutoTradeMode.SEMIAUTOMATIC -> Triple(android.R.drawable.ic_popup_sync, "SEMIAUTO", Color.YELLOW)
-            AutoTradeMode.DISABLED -> Triple(android.R.drawable.ic_media_pause, "MODO: OFF", Color.WHITE)
+            AutoTradeMode.AUTONOMOUS -> Triple(R.drawable.ic_ai_chip, "AUTÓNOMO", Color.GREEN)
+            AutoTradeMode.SEMIAUTOMATIC -> Triple(R.drawable.ic_ai_chip, "SEMIAUTO", Color.YELLOW)
+            AutoTradeMode.DISABLED -> Triple(R.drawable.ic_ai_chip, "MODO: OFF", Color.WHITE)
         }
 
         addItemToSubmenu(modeIcon, modeText, modeColor) {
             showModeDialog()
         }
 
-        addItemToSubmenu(android.R.drawable.ic_menu_sort_by_size, "ESTRAT", Color.CYAN) {
+        addItemToSubmenu(R.drawable.ic_ai_strategy, "ESTRAT", Color.CYAN) {
             showStrategyDialog()
         }
 
-        addItemToSubmenu(android.R.drawable.ic_menu_send, "TEST CLIC", Color.parseColor("#38bdf8")) {
+        addItemToSubmenu(R.drawable.ic_ai_test_click, "TEST CLIC", Color.parseColor("#38bdf8")) {
             tradingEngine.testAccessibilityClicks()
         }
 
-        addItemToSubmenu(android.R.drawable.ic_menu_myplaces, "CALIBRAR", Color.MAGENTA) {
+        addItemToSubmenu(R.drawable.ic_ai_calibrate, "CALIBRAR", Color.MAGENTA) {
             showCalibrationDialog()
         }
 
-        addItemToSubmenu(android.R.drawable.ic_menu_preferences, "RIESGO", Color.parseColor("#fb923c")) {
+        addItemToSubmenu(R.drawable.ic_ai_risk, "RIESGO", Color.parseColor("#fb923c")) {
             showRiskConfigDialog()
         }
 
-        val aiIcon = if (tradingEngine.aiClient.isEnabled) android.R.drawable.ic_menu_agenda else android.R.drawable.ic_menu_help
-        addItemToSubmenu(aiIcon, if (tradingEngine.aiClient.isEnabled) "IA: ON" else "IA: OFF", Color.parseColor("#a855f7")) {
+        val aiColor = if (tradingEngine.aiClient.isEnabled) Color.parseColor("#a855f7") else Color.GRAY
+        addItemToSubmenu(R.drawable.ic_ai_chip, if (tradingEngine.aiClient.isEnabled) "IA: ON" else "IA: OFF", aiColor) {
             showOmniRouteConfigDialog()
         }
 
-        val debugIcon = if (tradingEngine.debugModeEnabled) android.R.drawable.ic_menu_camera else android.R.drawable.ic_menu_info_details
-        addItemToSubmenu(debugIcon, if (tradingEngine.debugModeEnabled) "DEBUG: ON" else "DEBUG: OFF", Color.CYAN) {
+        val debugColor = if (tradingEngine.debugModeEnabled) Color.CYAN else Color.GRAY
+        addItemToSubmenu(R.drawable.ic_ai_debug, if (tradingEngine.debugModeEnabled) "DEBUG: ON" else "DEBUG: OFF", debugColor) {
             showDebugDialog()
         }
 
         val hudIcon = if (isHudVisible) R.drawable.ic_visibility else R.drawable.ic_visibility_off
-        addItemToSubmenu(hudIcon, if (isHudVisible) "HUD: ON" else "HUD: OFF") {
+        addItemToSubmenu(hudIcon, if (isHudVisible) "HUD: ON" else "HUD: OFF", Color.parseColor("#38bdf8")) {
             toggleHUDVisibility()
             showAISubmenu()
+        }
+
+        addItemToSubmenu(R.drawable.ic_visibility, "TRANSP ${(hudAlpha * 100).toInt()}%", Color.parseColor("#38bdf8")) {
+            showHUDOpacityDialog()
+        }
+
+        addItemToSubmenu(R.drawable.ic_lock_open, "RECALCULAR IA", Color.parseColor("#34d399")) {
+            tradingEngine.unlockAllLines()
+            Toast.makeText(this, "Líneas desbloqueadas → IA recalculando niveles", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -623,26 +724,32 @@ class OverlayService : Service() {
 
     private fun showStrategyDialog() {
         val strategies = arrayOf(
-            "🔥 1. MT: Combo Acción del Precio (Recomendado)",
-            "⚡ 2. MT: Mechas de Rechazo en S/R",
-            "🎯 3. MT: Choque de Máximos/Mínimos (Pullback)",
-            "📊 4. MT: Agotamiento de 3 Velas",
-            "5. Soportes y Resistencias (Clásico)",
-            "6. Patrón de Velas y Martillo",
-            "7. Seguidor de Tendencia",
-            "8. Combinada (Doble Confirmación)"
+            "🤖 1. AUTO: Modo Automático Total (Multi-Estrategia)",
+            "🔥 2. MT: Combo Acción del Precio",
+            "⚡ 3. MT: Mechas de Rechazo en S/R",
+            "🎯 4. MT: Choque de Máximos/Mínimos (Pullback)",
+            "📊 5. MT: Agotamiento de 3 Velas",
+            "🌊 6. MT: Vela Envolvente en S/R",
+            "🪤 7. MT: Falso Rompimiento (Trampa Institucional)",
+            "8. Soportes y Resistencias (Clásico)",
+            "9. Patrón de Velas y Martillo",
+            "10. Seguidor de Tendencia",
+            "11. Doble Confirmación"
         )
         AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
-            .setTitle("Seleccionar Estrategia (Acción del Precio)")
+            .setTitle("Seleccionar Estrategia (Master Traders)")
             .setItems(strategies) { _, which ->
                 tradingEngine.strategy = when (which) {
-                    0 -> AutoTradeStrategy.MT_MASTER_COMBO
-                    1 -> AutoTradeStrategy.MT_REJECTION
-                    2 -> AutoTradeStrategy.MT_CHOQUE_PULLBACK
-                    3 -> AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO
-                    4 -> AutoTradeStrategy.SUPPORT_RESISTANCE
-                    5 -> AutoTradeStrategy.CANDLE_PATTERNS
-                    6 -> AutoTradeStrategy.TREND_FOLLOWING
+                    0 -> AutoTradeStrategy.AUTO_ADAPTIVE
+                    1 -> AutoTradeStrategy.MT_MASTER_COMBO
+                    2 -> AutoTradeStrategy.MT_REJECTION
+                    3 -> AutoTradeStrategy.MT_CHOQUE_PULLBACK
+                    4 -> AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO
+                    5 -> AutoTradeStrategy.MT_ENGULFING_SR
+                    6 -> AutoTradeStrategy.MT_FALSE_BREAKOUT
+                    7 -> AutoTradeStrategy.SUPPORT_RESISTANCE
+                    8 -> AutoTradeStrategy.CANDLE_PATTERNS
+                    9 -> AutoTradeStrategy.TREND_FOLLOWING
                     else -> AutoTradeStrategy.COMBINED
                 }
                 getSharedPreferences("TradeDraw_Config", Context.MODE_PRIVATE)
@@ -749,6 +856,50 @@ class OverlayService : Service() {
             }
     }
 
+    private fun setHUDOpacity(alpha: Float) {
+        hudAlpha = alpha.coerceIn(0.15f, 1.0f)
+        getSharedPreferences("TradeDraw_HUDConfig", Context.MODE_PRIVATE)
+            .edit()
+            .putFloat("hud_alpha", hudAlpha)
+            .apply()
+        hudView?.alpha = hudAlpha
+        updateHUDView()
+    }
+
+    private fun cycleHUDOpacity() {
+        val nextAlpha = when {
+            hudAlpha > 0.90f -> 0.75f
+            hudAlpha > 0.65f -> 0.50f
+            hudAlpha > 0.40f -> 0.25f
+            else -> 1.00f
+        }
+        setHUDOpacity(nextAlpha)
+        Toast.makeText(this, "Transparencia HUD: ${(hudAlpha * 100).toInt()}%", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showHUDOpacityDialog() {
+        val options = arrayOf(
+            "100% (Sólido)",
+            "85% (Recomendado)",
+            "70% (Translúcido)",
+            "50% (Semi-transparente)",
+            "35% (Muy transparente)",
+            "20% (Ultra discreto)"
+        )
+        val values = floatArrayOf(1.0f, 0.85f, 0.70f, 0.50f, 0.35f, 0.20f)
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Transparencia del HUD")
+            .setItems(options) { _, which ->
+                setHUDOpacity(values[which])
+                Toast.makeText(this, "Opacidad: ${options[which]}", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancelar", null)
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     private fun setupHUDWindow() {
         val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
@@ -761,6 +912,31 @@ class OverlayService : Service() {
             x = 50; y = 50
         }
 
+        val hudPrefs = getSharedPreferences("TradeDraw_HUDConfig", Context.MODE_PRIVATE)
+        hudAlpha = hudPrefs.getFloat("hud_alpha", 0.70f)
+        isHudCollapsed = hudPrefs.getBoolean("hud_collapsed", true)
+        hudView?.alpha = hudAlpha
+
+        hudView?.findViewById<TextView>(R.id.hud_btn_opacity)?.apply {
+            setOnClickListener { cycleHUDOpacity() }
+            setOnLongClickListener {
+                showHUDOpacityDialog()
+                true
+            }
+        }
+
+        val detailsContainer = hudView?.findViewById<View>(R.id.hud_details_container)
+        val btnCollapse = hudView?.findViewById<TextView>(R.id.hud_btn_collapse)
+        detailsContainer?.visibility = if (isHudCollapsed) View.GONE else View.VISIBLE
+        btnCollapse?.text = if (isHudCollapsed) "▼" else "▲"
+
+        btnCollapse?.setOnClickListener {
+            isHudCollapsed = !isHudCollapsed
+            hudPrefs.edit().putBoolean("hud_collapsed", isHudCollapsed).apply()
+            detailsContainer?.visibility = if (isHudCollapsed) View.GONE else View.VISIBLE
+            btnCollapse.text = if (isHudCollapsed) "▼" else "▲"
+        }
+
         hudView?.findViewById<Button>(R.id.hud_btn_win)?.setOnClickListener {
             riskManager.recordTradeWin()
             updateHUDView()
@@ -769,6 +945,50 @@ class OverlayService : Service() {
             riskManager.recordTradeLoss()
             updateHUDView()
         }
+        hudView?.findViewById<Button>(R.id.hud_btn_recalc_ai)?.setOnClickListener {
+            tradingEngine.unlockAllLines()
+            updateHUDView()
+            Toast.makeText(this, "↺ S/R restablecido: IA recalculando en vivo", Toast.LENGTH_SHORT).show()
+        }
+
+        val showStatsManager = View.OnLongClickListener {
+            val options = arrayOf(
+                "🔄 Reiniciar Contador a 0 | 0",
+                "🎯 Sincronizar Manualmente con Binomo",
+                "📊 Resumen de Sesión"
+            )
+            AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+                .setTitle("Gestión de Contador W/L")
+                .setItems(options) { _, which ->
+                    when (which) {
+                        0 -> {
+                            riskManager.resetStats()
+                            updateHUDView()
+                            Toast.makeText(this, "Contador reiniciado a 0 | 0", Toast.LENGTH_SHORT).show()
+                        }
+                        1 -> {
+                            promptNumberAdjustment("Total Ganadas (W)", riskManager.totalWins, 0, 999) { newWins ->
+                                promptNumberAdjustment("Total Perdidas (L)", riskManager.totalLosses, 0, 999) { newLosses ->
+                                    riskManager.setStats(newWins, newLosses)
+                                    updateHUDView()
+                                    Toast.makeText(this, "Sincronizado: W:$newWins | L:$newLosses", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                        2 -> {
+                            val winrate = "%.1f%%".format(Locale.US, riskManager.getWinRate())
+                            Toast.makeText(this, "Sesión: ${riskManager.totalWins}W - ${riskManager.totalLosses}L ($winrate)", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                .create().apply {
+                    window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                    show()
+                }
+            true
+        }
+        hudView?.findViewById<Button>(R.id.hud_btn_win)?.setOnLongClickListener(showStatsManager)
+        hudView?.findViewById<Button>(R.id.hud_btn_loss)?.setOnLongClickListener(showStatsManager)
 
         hudView?.let { v ->
             var initX = 0; var initY = 0; var touchX = 0f; var touchY = 0f; var isMove = false
@@ -821,7 +1041,7 @@ class OverlayService : Service() {
         if (isHudVisible) updateHUDView()
     }
 
-    private fun updateHUDView() {
+    fun updateHUDView() {
         mainHandler.post {
             val v = hudView ?: return@post
             val txtMode = v.findViewById<TextView>(R.id.hud_mode)
@@ -835,11 +1055,38 @@ class OverlayService : Service() {
             val txtMartingale = v.findViewById<TextView>(R.id.hud_martingale_badge)
             val txtTimer = v.findViewById<TextView>(R.id.hud_timer)
             val txtPower = v.findViewById<TextView>(R.id.hud_power_bar)
+            val btnOpacity = v.findViewById<TextView>(R.id.hud_btn_opacity)
+            val btnCollapse = v.findViewById<TextView>(R.id.hud_btn_collapse)
+            val detailsContainer = v.findViewById<View>(R.id.hud_details_container)
+
+            btnOpacity?.text = " 👁️ ${(hudAlpha * 100).toInt()}% "
+            btnCollapse?.text = if (isHudCollapsed) "▼" else "▲"
+            detailsContainer?.visibility = if (isHudCollapsed) View.GONE else View.VISIBLE
+            v.alpha = hudAlpha
+
+            val isAccessConnected = AutoTradeAccessibilityService.instance != null
+            val (canTradeStatus, blockReason) = riskManager.canExecuteTrade()
 
             when (tradingEngine.mode) {
                 AutoTradeMode.AUTONOMOUS -> {
-                    txtMode.text = "[AUTO]"
-                    txtMode.setTextColor(Color.GREEN)
+                    if (!isAccessConnected) {
+                        txtMode.text = "[SIN ACCESO]"
+                        txtMode.setTextColor(Color.RED)
+                    } else if (!canTradeStatus && !riskManager.hasPendingTrade) {
+                        if (riskManager.stopLossStreak > 0 && riskManager.currentLossStreak >= riskManager.stopLossStreak) {
+                            txtMode.text = "[PAUSA SL]"
+                            txtMode.setTextColor(Color.parseColor("#f87171"))
+                        } else if (riskManager.takeProfitWins > 0 && riskManager.currentWins >= riskManager.takeProfitWins) {
+                            txtMode.text = "[PAUSA TP]"
+                            txtMode.setTextColor(Color.parseColor("#facc15"))
+                        } else {
+                            txtMode.text = "[COOLDOWN]"
+                            txtMode.setTextColor(Color.parseColor("#fb923c"))
+                        }
+                    } else {
+                        txtMode.text = "[AUTO]"
+                        txtMode.setTextColor(Color.GREEN)
+                    }
                 }
                 AutoTradeMode.SEMIAUTOMATIC -> {
                     txtMode.text = "[SEMI]"
@@ -851,11 +1098,34 @@ class OverlayService : Service() {
                 }
             }
 
+            txtMode.setOnClickListener {
+                if (AutoTradeAccessibilityService.instance == null) {
+                    try {
+                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                    } catch (e: Exception) {}
+                } else if (!canTradeStatus && !riskManager.hasPendingTrade && tradingEngine.mode == AutoTradeMode.AUTONOMOUS) {
+                    riskManager.resetStreakOnly()
+                    updateHUDView()
+                    Toast.makeText(this@OverlayService, "▶️ Operativa reanudada (Límites reseteados)", Toast.LENGTH_SHORT).show()
+                } else {
+                    showModeDialog()
+                }
+            }
+
             txtStrat.text = "Estrat: " + when (tradingEngine.strategy) {
+                AutoTradeStrategy.AUTO_ADAPTIVE -> "Auto"
                 AutoTradeStrategy.MT_MASTER_COMBO -> "MT Combo"
                 AutoTradeStrategy.MT_REJECTION -> "MT Rechazo"
                 AutoTradeStrategy.MT_CHOQUE_PULLBACK -> "MT Choque"
                 AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO -> "MT 3 Velas"
+                AutoTradeStrategy.MT_ENGULFING_SR -> "MT Envolvente"
+                AutoTradeStrategy.MT_FALSE_BREAKOUT -> "MT Trampa"
+                AutoTradeStrategy.COLOR_TREND -> "Color Trend"
+                AutoTradeStrategy.STRIKE_BREAKOUT -> "Strike Break"
+                AutoTradeStrategy.AI_REMOTE -> "IA Remota"
                 AutoTradeStrategy.SUPPORT_RESISTANCE -> "S/R"
                 AutoTradeStrategy.CANDLE_PATTERNS -> "Velas"
                 AutoTradeStrategy.TREND_FOLLOWING -> "Tendencia"
@@ -897,6 +1167,44 @@ class OverlayService : Service() {
 
             txtHint.text = tradingEngine.getStrategyStatusHint()
 
+            // Botón de estado S/R (Manual vs Auto)
+            val btnRecalc = v.findViewById<Button>(R.id.hud_btn_recalc_ai)
+            if (tradingEngine.hasLockedLines()) {
+                btnRecalc?.text = "↺ S/R [Manual]"
+                btnRecalc?.setTextColor(Color.parseColor("#facc15"))
+            } else {
+                btnRecalc?.text = "✓ S/R [Auto]"
+                btnRecalc?.setTextColor(Color.parseColor("#34d399"))
+            }
+
+            // Tarjeta de Señal Operativa (Semiautomático / Autónomo)
+            val cardSignal = v.findViewById<LinearLayout>(R.id.hud_signal_card)
+            val txtSignalTitle = v.findViewById<TextView>(R.id.hud_signal_title)
+            val txtSignalDesc = v.findViewById<TextView>(R.id.hud_signal_desc)
+            val txtSignalCountdown = v.findViewById<TextView>(R.id.hud_signal_countdown)
+
+            val activeSignal = tradingEngine.currentActiveSignal
+            if (activeSignal != null) {
+                val elapsed = (System.currentTimeMillis() - activeSignal.timestamp) / 1000
+                val remaining = activeSignal.expirySeconds - elapsed
+                if (remaining > 0) {
+                    val isBuy = activeSignal.action == TradeAction.BUY
+                    cardSignal?.setBackgroundResource(if (isBuy) R.drawable.bg_hud_signal_buy else R.drawable.bg_hud_signal_sell)
+                    val modeTag = if (tradingEngine.mode == AutoTradeMode.SEMIAUTOMATIC) " [¡OPERAR EN BINOMO!]" else ""
+                    txtSignalTitle?.text = "${activeSignal.title}$modeTag"
+                    txtSignalTitle?.setTextColor(if (isBuy) Color.parseColor("#4ade80") else Color.parseColor("#f87171"))
+                    txtSignalDesc?.text = "${activeSignal.reason} · Expira: 1 Minuto"
+                    txtSignalDesc?.setTextColor(Color.parseColor("#f8fafc"))
+                    txtSignalCountdown?.visibility = View.VISIBLE
+                    txtSignalCountdown?.text = "⏱️ Ventana de Entrada: ${remaining}s restantes"
+                } else {
+                    tradingEngine.clearActiveSignal()
+                    renderIdleSignalCard(cardSignal, txtSignalTitle, txtSignalDesc, txtSignalCountdown)
+                }
+            } else {
+                renderIdleSignalCard(cardSignal, txtSignalTitle, txtSignalDesc, txtSignalCountdown)
+            }
+
             if (riskManager.hasPendingTrade) {
                 val elapsed = (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000
                 txtStatus.text = "🤖 Operación en curso (${elapsed}s) · Esperando resultado..."
@@ -914,21 +1222,65 @@ class OverlayService : Service() {
         }
     }
 
+    private fun renderIdleSignalCard(
+        card: LinearLayout?,
+        title: TextView?,
+        desc: TextView?,
+        countdown: TextView?
+    ) {
+        card?.setBackgroundResource(R.drawable.bg_hud_signal_idle)
+        countdown?.visibility = View.GONE
+        when (tradingEngine.mode) {
+            AutoTradeMode.SEMIAUTOMATIC -> {
+                title?.text = "🟡 MODO SEMIAUTO: Vigilando Entrada"
+                title?.setTextColor(Color.parseColor("#facc15"))
+                desc?.text = "El bot te indicará cuándo y hacia dónde operar."
+                desc?.setTextColor(Color.parseColor("#94a3b8"))
+            }
+            AutoTradeMode.AUTONOMOUS -> {
+                title?.text = "🟢 MODO AUTO: Vigilando Entrada"
+                title?.setTextColor(Color.parseColor("#4ade80"))
+                desc?.text = "El bot abrirá la operación automáticamente al detectar setup."
+                desc?.setTextColor(Color.parseColor("#94a3b8"))
+            }
+            AutoTradeMode.DISABLED -> {
+                title?.text = "⚪ MODO OFF: En Espera"
+                title?.setTextColor(Color.parseColor("#94a3b8"))
+                desc?.text = "Selecciona Autónomo o Semiauto en el menú de IA para operar."
+                desc?.setTextColor(Color.parseColor("#64748b"))
+            }
+        }
+    }
+
     private fun prepareSubmenu() {
         submenuContainer.removeAllViews()
     }
 
     private fun addItemToSubmenu(iconRes: Int, text: String, tint: Int? = null, onClick: () -> Unit) {
         val item = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(20, 10, 20, 10)
-            isClickable = true; isFocusable = true; setBackgroundResource(android.R.drawable.list_selector_background)
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(20, 10, 20, 10)
+            isClickable = true
+            isFocusable = true
+            setBackgroundResource(R.drawable.bg_button_circle_ripple)
             setOnClickListener { onClick() }
         }
         val img = ImageView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(60, 60); setImageResource(iconRes); tint?.let { setColorFilter(it) } ?: setColorFilter(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(54, 54)
+            setImageResource(iconRes)
+            tint?.let { setColorFilter(it) } ?: setColorFilter(Color.WHITE)
         }
-        val txt = TextView(this).apply { this.text = text; setTextColor(Color.WHITE); textSize = 9f }
-        item.addView(img); item.addView(txt); submenuContainer.addView(item)
+        val txt = TextView(this).apply {
+            this.text = text
+            setTextColor(Color.parseColor("#E2E8F0"))
+            textSize = 9.5f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+        }
+        item.addView(img)
+        item.addView(txt)
+        submenuContainer.addView(item)
     }
 
     private fun selectTool(tool: TradingTool) {
@@ -1087,6 +1439,11 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        httpBridge?.stop()
+        httpBridge = null
+        try {
+            unregisterReceiver(overlayCommandReceiver)
+        } catch (e: Exception) {}
         screenCaptureManager?.destroy()
         if (::tradingEngine.isInitialized) {
             tradingEngine.stop()

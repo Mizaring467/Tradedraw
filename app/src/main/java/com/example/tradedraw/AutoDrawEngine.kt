@@ -4,27 +4,77 @@ import android.graphics.Color
 import android.graphics.PointF
 
 enum class AutoTradeStrategy {
-    SUPPORT_RESISTANCE,
-    CANDLE_PATTERNS,
-    TREND_FOLLOWING,
-    COMBINED,
+    AUTO_ADAPTIVE,          // Modo Automático Total: Multi-Estrategia Adaptativa (Recomendado)
+    MT_MASTER_COMBO,        // Master Traders: Combo Acción del Precio (Mayor Probabilidad)
+    MT_FALSE_BREAKOUT,      // Master Traders: Falso Rompimiento / Trampa en S/R
+    MT_ENGULFING_SR,        // Master Traders: Patrón Envolvente en S/R
     MT_REJECTION,           // Master Traders: Mechas de Rechazo en S/R
     MT_CHOQUE_PULLBACK,     // Master Traders: Choque de Máximos/Mínimos (Breakout-Retest)
     MT_3_VELAS_AGOTAMIENTO, // Master Traders: Patrón 3 Velas y Agotamiento de Tendencia
-    MT_MASTER_COMBO         // Master Traders: Combo Acción del Precio (Mayor Probabilidad)
+    COLOR_TREND,            // Seguidor de Color / Tendencia
+    STRIKE_BREAKOUT,        // Ruptura de Strike / Nivel
+    AI_REMOTE,              // Análisis Remoto IA
+    SUPPORT_RESISTANCE,     // Soportes y Resistencias Clásico
+    CANDLE_PATTERNS,        // Patrón de Velas y Martillo
+    TREND_FOLLOWING,        // Seguidor de Tendencia
+    COMBINED                // Doble Confirmación
 }
 
 class AutoDrawEngine(private val drawingView: CustomDrawingView) {
+
+    // Líneas bloqueadas manualmente por el usuario (no se sobreescriben con cada frame)
+    private val manuallyLockedLines = mutableSetOf<String>()
+
+    fun lockLine(key: String) {
+        manuallyLockedLines.add(key)
+        android.util.Log.d("AutoDrawEngine", "Línea bloqueada manualmente: $key")
+        // Cambiar etiqueta visual a [Manual]
+        val shapes = drawingView.getShapes()
+        val shape = shapes.find { it.isBotDrawn && it.labelText == key }
+        if (shape != null) {
+            shape.isManuallyLocked = true
+            drawingView.invalidate()
+        }
+    }
+
+    fun unlockLine(key: String) {
+        manuallyLockedLines.remove(key)
+        android.util.Log.d("AutoDrawEngine", "Línea desbloqueada: $key")
+        val shapes = drawingView.getShapes()
+        val shape = shapes.find { it.isBotDrawn && it.labelText == key }
+        if (shape != null) {
+            shape.isManuallyLocked = false
+            drawingView.invalidate()
+        }
+    }
+
+    fun unlockAllLines() {
+        manuallyLockedLines.clear()
+        drawingView.getShapes().filter { it.isBotDrawn }.forEach { it.isManuallyLocked = false }
+        drawingView.invalidate()
+        android.util.Log.d("AutoDrawEngine", "Todas las líneas desbloqueadas")
+    }
+
+    fun hasLockedLines(): Boolean = manuallyLockedLines.isNotEmpty()
+
+    private fun updateBotShapeIfNotLocked(key: String, shape: DrawShape) {
+        if (manuallyLockedLines.contains(key)) {
+            // No sobreescribir: el usuario la ajustó manualmente
+            return
+        }
+        drawingView.addOrUpdateBotShape(key, shape)
+    }
 
     /**
      * Dibuja o actualiza automáticamente las herramientas técnicas de TradeDraw
      * en base al análisis de visión actual y la estrategia seleccionada.
      */
     fun updateTechnicalDrawings(strategy: AutoTradeStrategy, result: VisionAnalysisResult) {
+        android.util.Log.d("AutoDrawEngine", "updateTechnicalDrawings: strat=$strategy, lowY=${result.lowestPoint?.y}, highY=${result.highestPoint?.y}")
         when (strategy) {
-            AutoTradeStrategy.SUPPORT_RESISTANCE, AutoTradeStrategy.MT_REJECTION -> {
+            AutoTradeStrategy.AUTO_ADAPTIVE, AutoTradeStrategy.SUPPORT_RESISTANCE, AutoTradeStrategy.MT_REJECTION, AutoTradeStrategy.MT_ENGULFING_SR, AutoTradeStrategy.MT_FALSE_BREAKOUT, AutoTradeStrategy.COMBINED, AutoTradeStrategy.MT_MASTER_COMBO, AutoTradeStrategy.STRIKE_BREAKOUT, AutoTradeStrategy.AI_REMOTE -> {
                 result.lowestPoint?.let { low ->
-                    drawingView.addOrUpdateBotShape(
+                    updateBotShapeIfNotLocked(
                         "BOT_SUPPORT",
                         DrawShape(
                             tool = TradingTool.SUPPORT_LINE,
@@ -38,7 +88,7 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
                     )
                 }
                 result.highestPoint?.let { high ->
-                    drawingView.addOrUpdateBotShape(
+                    updateBotShapeIfNotLocked(
                         "BOT_RESISTANCE",
                         DrawShape(
                             tool = TradingTool.RESISTANCE_LINE,
@@ -103,7 +153,7 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
                     )
                 }
             }
-            AutoTradeStrategy.TREND_FOLLOWING -> {
+            AutoTradeStrategy.TREND_FOLLOWING, AutoTradeStrategy.COLOR_TREND -> {
                 if (result.lowestPoint != null && result.highestPoint != null) {
                     val isUp = result.trend == TrendDirection.UPTREND
                     val startP = if (isUp) result.lowestPoint else result.highestPoint
@@ -134,36 +184,6 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
                             endY = result.highestPoint.y,
                             color = Color.YELLOW,
                             strokeWidth = 4f
-                        )
-                    )
-                }
-            }
-            AutoTradeStrategy.COMBINED, AutoTradeStrategy.MT_MASTER_COMBO -> {
-                result.lowestPoint?.let { low ->
-                    drawingView.addOrUpdateBotShape(
-                        "BOT_SUPPORT",
-                        DrawShape(
-                            tool = TradingTool.SUPPORT_LINE,
-                            startX = 0f,
-                            startY = low.y,
-                            endX = 0f,
-                            endY = low.y,
-                            color = Color.parseColor("#ef4444"), // Soporte = ROJO
-                            strokeWidth = 6f
-                        )
-                    )
-                }
-                result.highestPoint?.let { high ->
-                    drawingView.addOrUpdateBotShape(
-                        "BOT_RESISTANCE",
-                        DrawShape(
-                            tool = TradingTool.RESISTANCE_LINE,
-                            startX = 0f,
-                            startY = high.y,
-                            endX = 0f,
-                            endY = high.y,
-                            color = Color.parseColor("#22c55e"), // Resistencia = VERDE
-                            strokeWidth = 6f
                         )
                     )
                 }
