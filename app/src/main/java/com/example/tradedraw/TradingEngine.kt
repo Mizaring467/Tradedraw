@@ -23,10 +23,14 @@ enum class TradeAction {
 }
 
 enum class AutoTradeMode {
-    AUTONOMOUS,      // Ejecuta clics automáticos con gestión de riesgo
+    AUTONOMOUS,      // Ejecuta clics automáticos
     SEMIAUTOMATIC,   // Alerta y prepara dibujos, usuario opera
-    YOLO,            // Opera de forma continua sin límites de Stop Loss ni pausas
     DISABLED         // Apagado
+}
+
+enum class AutonomousSubMode {
+    CONSERVATIVE,    // Con gestión de riesgo estándar (Stop Loss, Take Profit, Cooldown)
+    YOLO             // Sin Stop Loss ni límites, operativa continua y desatendida
 }
 
 class TradingEngine(
@@ -41,12 +45,14 @@ class TradingEngine(
     var mode: AutoTradeMode = AutoTradeMode.DISABLED
         set(value) {
             field = value
-            if (value == AutoTradeMode.AUTONOMOUS || value == AutoTradeMode.YOLO) {
+            if (value == AutoTradeMode.AUTONOMOUS) {
                 agentController.start()
             } else {
                 agentController.stop()
             }
         }
+
+    var autonomousSubMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE
     var strategy: AutoTradeStrategy = AutoTradeStrategy.AUTO_ADAPTIVE
     var debugModeEnabled: Boolean = false
 
@@ -147,10 +153,7 @@ class TradingEngine(
                 }
             }
 
-            // 4a. Detección Temprana de Orden Fantasma:
-            // Si pasaron 6s y el broker NUNCA debitó el monto de inversión (saldo idéntico),
-            // significa que el clic no llegó a Binomo o el broker lo ignoró. Cancelar de inmediato
-            // para no dejar el HUD congelado en 'Esperando resultado...' 68 segundos.
+            // 4a. Detección Temprana de Orden Fantasma
             val currentBalForCheck = AutoTradeAccessibilityService.instance?.readCurrentBalance() ?: 0.0
             if (elapsedSec in 6..10 && baseBalance > 0.0 && currentBalForCheck > 0.0) {
                 val initDiff = currentBalForCheck - baseBalance
@@ -166,8 +169,8 @@ class TradingEngine(
                 }
             }
 
-            // Ventana de resolución de la operación (a partir de 55s hasta 68s)
-            if (elapsedSec >= 55) {
+            // Ventana de resolución de la operación INSTANTÁNEA (a partir de 45s apenas expira o cambia el saldo)
+            if (elapsedSec >= 45) {
                 var isWin: Boolean? = null
                 var isTie: Boolean = false
                 var resolvedWinCount = 1
@@ -176,76 +179,83 @@ class TradingEngine(
 
                 val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance() ?: 0.0
 
-                    // 1. Verificación por Saldo Real (La verdad financiera definitiva y prioritaria)
-                    if (baseBalance > 0.0 && currentBal > 0.0) {
-                        val diff = currentBal - baseBalance
-                        val unitAmt = if (riskManager.unitTradeAmount > 1000.0) riskManager.unitTradeAmount else 80000.0
+                // 1. Verificación por Saldo Real (Acreditación Inmediata)
+                if (baseBalance > 0.0 && currentBal > 0.0) {
+                    val diff = currentBal - baseBalance
+                    val unitAmt = if (riskManager.unitTradeAmount > 1000.0) riskManager.unitTradeAmount else 80000.0
 
-                        // Ganancia detectada: Binomo acreditó el pago de la operación (+retorno)
-                        if (diff > 10.0) {
-                            isWin = true
-                            // Payout ~83%: la ganancia neta acreditada es diff / (unitAmt * 0.80)
-                            resolvedWinCount = Math.max(1, Math.round(diff / (unitAmt * 0.80)).toInt())
-                            method = "SALDO (+) Ganancia acreditada en Binomo: Diff=+$diff ($resolvedWinCount contrato(s))"
-                        } else if (elapsedSec >= 66 || (elapsedSec >= 63 && analysis.candleSecond in 3..25)) {
-                            // Pasados al menos 66 segundos (o en el segundo :03-:25 de la nueva vela),
-                            // Binomo ya cerró la expiración y acreditó cualquier premio pendiente.
-                            if (diff < -10.0) {
-                                // Pérdida confirmada: el saldo cayó y nunca subió tras la acreditación
-                                isWin = false
-                                resolvedLossCount = Math.max(1, Math.round(Math.abs(diff) / unitAmt).toInt())
-                                method = "SALDO (-) Inversión no recuperada: Diff=$diff ($resolvedLossCount contrato(s))"
-                            } else if (elapsedSec >= 68) {
-                                // Empate genuino: diff muy cercano a 0 tras 68s (Binomo reembolsó el capital exacto)
-                                if (Math.abs(diff) <= 10.0) {
-                                    isTie = true
-                                    method = "SALDO (=) Reembolso por empate en Binomo tras 68s: Diff=$diff"
-                                }
-                            }
-                        }
-                    }
-
-                    // 2. Fallback por Acción del Precio: ÚNICAMENTE si el saldo accesible NO estuvo disponible
-                    if (isWin == null && !isTie && (baseBalance <= 0.0 || currentBal <= 0.0) && elapsedSec >= 65) {
+                    // Ganancia detectada instantáneamente: Binomo acreditó el pago de la operación (+retorno)
+                    if (diff > 10.0) {
+                        isWin = true
+                        resolvedWinCount = Math.max(1, Math.round(diff / (unitAmt * 0.80)).toInt())
+                        method = "SALDO (+) Ganancia acreditada instantánea: Diff=+$diff ($resolvedWinCount contrato(s))"
+                    } else if (elapsedSec >= 59 || (elapsedSec >= 50 && analysis.candleSecond in 0..15)) {
+                        // Apenas expira el minuto (segundo :59 o primeros segundos de la nueva vela):
+                        // Si el saldo quedó debitado y el precio cerró por debajo de la entrada, liquidar de inmediato.
                         val evalY = if (pendingTradeRecordedCandleCloseY > 0f) pendingTradeRecordedCandleCloseY else exitY
                         if (entryY > 0f && evalY > 0f && action != null) {
-                            if (action == TradeAction.BUY) {
-                                if (evalY < entryY - 2.0f) {
-                                    isWin = true
-                                    method = "FALLBACK PRECIO (CALL WIN: CloseY=$evalY < EntryY=$entryY)"
-                                } else if (evalY > entryY + 2.0f) {
-                                    isWin = false
-                                    method = "FALLBACK PRECIO (CALL LOSS: CloseY=$evalY > EntryY=$entryY)"
-                                } else {
-                                    isTie = true
-                                    method = "FALLBACK PRECIO (CALL TIE)"
-                                }
-                            } else { // SELL / PUT
-                                if (evalY > entryY + 2.0f) {
-                                    isWin = true
-                                    method = "FALLBACK PRECIO (PUT WIN: CloseY=$evalY > EntryY=$entryY)"
-                                } else if (evalY < entryY - 2.0f) {
-                                    isWin = false
-                                    method = "FALLBACK PRECIO (PUT LOSS: CloseY=$evalY < EntryY=$entryY)"
-                                } else {
-                                    isTie = true
-                                    method = "FALLBACK PRECIO (PUT TIE)"
-                                }
+                            val priceWon = if (action == TradeAction.BUY) evalY < (entryY - 1.5f) else evalY > (entryY + 1.5f)
+                            val priceLost = if (action == TradeAction.BUY) evalY > (entryY + 1.5f) else evalY < (entryY - 1.5f)
+                            if (priceLost && diff < -10.0) {
+                                isWin = false
+                                resolvedLossCount = Math.max(1, Math.round(Math.abs(diff) / unitAmt).toInt())
+                                method = "INSTANTÁNEO EXPIRACIÓN (Precio & Saldo -${Math.abs(diff).toInt()} COP)"
+                            } else if (priceWon && elapsedSec >= 62) {
+                                isWin = true
+                                method = "INSTANTÁNEO EXPIRACIÓN (Precio Ganador ITM tras ${elapsedSec}s)"
+                            }
+                        } else if (diff < -10.0 && elapsedSec >= 62) {
+                            isWin = false
+                            resolvedLossCount = Math.max(1, Math.round(Math.abs(diff) / unitAmt).toInt())
+                            method = "SALDO (-) Inversión no recuperada a los ${elapsedSec}s: Diff=$diff"
+                        } else if (elapsedSec >= 64 && Math.abs(diff) <= 10.0) {
+                            isTie = true
+                            method = "SALDO (=) Reembolso por empate en Binomo"
+                        }
+                    }
+                }
+
+                // 2. Fallback por Acción del Precio: Si el saldo accesible NO estuvo disponible
+                if (isWin == null && !isTie && (baseBalance <= 0.0 || currentBal <= 0.0) && elapsedSec >= 59) {
+                    val evalY = if (pendingTradeRecordedCandleCloseY > 0f) pendingTradeRecordedCandleCloseY else exitY
+                    if (entryY > 0f && evalY > 0f && action != null) {
+                        if (action == TradeAction.BUY) {
+                            if (evalY < entryY - 2.0f) {
+                                isWin = true
+                                method = "FALLBACK PRECIO (CALL WIN: CloseY=$evalY < EntryY=$entryY)"
+                            } else if (evalY > entryY + 2.0f) {
+                                isWin = false
+                                method = "FALLBACK PRECIO (CALL LOSS: CloseY=$evalY > EntryY=$entryY)"
+                            } else {
+                                isTie = true
+                                method = "FALLBACK PRECIO (CALL TIE)"
+                            }
+                        } else { // SELL / PUT
+                            if (evalY > entryY + 2.0f) {
+                                isWin = true
+                                method = "FALLBACK PRECIO (PUT WIN: CloseY=$evalY > EntryY=$entryY)"
+                            } else if (evalY < entryY - 2.0f) {
+                                isWin = false
+                                method = "FALLBACK PRECIO (PUT LOSS: CloseY=$evalY < EntryY=$entryY)"
+                            } else {
+                                isTie = true
+                                method = "FALLBACK PRECIO (PUT TIE)"
                             }
                         }
                     }
+                }
 
-                    // 3. Salvaguarda por Timeout Absoluto (72s)
-                    if (isWin == null && !isTie && elapsedSec >= 72) {
-                        if (baseBalance > 0.0 && currentBal > 0.0) {
-                            val diff = currentBal - baseBalance
-                            isWin = diff > 10.0
-                            method = "TIMEOUT 72s (Saldo Diff=$diff)"
-                        } else {
-                            isWin = false
-                            method = "TIMEOUT 72s (Loss por defecto)"
-                        }
+                // 3. Salvaguarda por Timeout Absoluto (68s)
+                if (isWin == null && !isTie && elapsedSec >= 68) {
+                    if (baseBalance > 0.0 && currentBal > 0.0) {
+                        val diff = currentBal - baseBalance
+                        isWin = diff > 10.0
+                        method = "TIMEOUT 68s (Saldo Diff=$diff)"
+                    } else {
+                        isWin = false
+                        method = "TIMEOUT 68s (Loss por defecto)"
                     }
+                }
 
                 if (isWin != null || isTie) {
                     // Bloqueo Atómico: Solo UN frame puede liquidar la operación activa.
@@ -586,12 +596,12 @@ class TradingEngine(
     }
 
     fun getStrategyStatusHint(): String {
-        if (AutoTradeAccessibilityService.instance == null && (mode == AutoTradeMode.AUTONOMOUS || mode == AutoTradeMode.YOLO)) {
+        if (AutoTradeAccessibilityService.instance == null && mode == AutoTradeMode.AUTONOMOUS) {
             return "⚠️ Accesibilidad DESACTIVADA (Clics bloqueados en Android)"
         }
 
-        val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(mode)
-        if (!canTradeStatus && !riskManager.hasPendingTrade && (mode == AutoTradeMode.AUTONOMOUS || mode == AutoTradeMode.YOLO)) {
+        val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(mode, autonomousSubMode)
+        if (!canTradeStatus && !riskManager.hasPendingTrade && mode == AutoTradeMode.AUTONOMOUS) {
             return "🛑 $blockReason · Toca [MODO] para reanudar"
         }
 
@@ -698,7 +708,7 @@ class TradingEngine(
         bitmap: Bitmap,
         reasonDescription: String
     ) {
-        val (canTrade, reason) = riskManager.canExecuteTrade(mode)
+        val (canTrade, reason) = riskManager.canExecuteTrade(mode, autonomousSubMode)
         val actionText = if (action == TradeAction.BUY) "COMPRA / CALL (Sube)" else "VENTA / PUT (Baja)"
         val emoji = if (action == TradeAction.BUY) "🟢 ▲" else "🔴 ▼"
 
@@ -726,7 +736,7 @@ class TradingEngine(
             return
         }
 
-        if (mode == AutoTradeMode.AUTONOMOUS || mode == AutoTradeMode.YOLO) {
+        if (mode == AutoTradeMode.AUTONOMOUS) {
             if (!canTrade) {
                 return
             }
