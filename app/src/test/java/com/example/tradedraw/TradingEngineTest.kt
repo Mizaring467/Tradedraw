@@ -291,5 +291,29 @@ class TradingEngineTest {
         assertNull("Mercado lateral debe vetar trade", action)
         assertTrue("Debe informar mercado lateral / dojis", reason.contains("Mercado Lateral"))
     }
+
+    @Test
+    fun testProhibitedZoneBlocksSellAtSupportAndBuyAtResistance() {
+        // Venta (SELL) cuando el precio toca directamente el soporte debe ser bloqueada
+        val sellAtSupport = VisionAnalysisResult(
+            trend = TrendDirection.DOWNTREND,
+            isChoquePut = true,
+            touchesSupport = true
+        )
+        val (actionSell, reasonSell) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, sellAtSupport)
+        assertNull("Venta sobre soporte debe ser bloqueada para evitar rebotes", actionSell)
+        assertTrue("Razón debe advertir precio sobre soporte", reasonSell.contains("Precio sobre Soporte"))
+
+        // Compra (BUY) cuando el precio toca directamente la resistencia debe ser bloqueada
+        val buyAtResistance = VisionAnalysisResult(
+            trend = TrendDirection.UPTREND,
+            isChoqueCall = true,
+            touchesResistance = true
+        )
+        val (actionBuy, reasonBuy) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, buyAtResistance)
+        assertNull("Compra bajo resistencia debe ser bloqueada para evitar rebotes", actionBuy)
+        assertTrue("Razón debe advertir precio bajo resistencia", reasonBuy.contains("Precio bajo Resistencia"))
+    }
 }
+
 

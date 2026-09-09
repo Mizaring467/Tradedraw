@@ -252,11 +252,15 @@ class TradingEngine(
                             val isMarketUnfavorable = analysis.isMarketSideways || analysis.isConsolidationTight
                             val inDowntrend = analysis.trend == TrendDirection.DOWNTREND
                             val inUptrend = analysis.trend == TrendDirection.UPTREND
+                            val touchesBarrierConflict = (aiResult.action == TradeAction.SELL && analysis.touchesSupport && !analysis.isFalseBreakoutPut) ||
+                                                         (aiResult.action == TradeAction.BUY && analysis.touchesResistance && !analysis.isFalseBreakoutCall)
                             val aiTrendConflict = (aiResult.action == TradeAction.BUY && inDowntrend && !analysis.isFalseBreakoutCall) ||
                                                   (aiResult.action == TradeAction.SELL && inUptrend && !analysis.isFalseBreakoutPut)
 
                             if (isMarketUnfavorable) {
                                 android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: Mercado lateral / consolidación")
+                            } else if (touchesBarrierConflict) {
+                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: Impacto directo contra barrera S/R")
                             } else if (!isTimingValid) {
                                 android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} pospuesta: fuera de ventana sniper (⏱ ${sec}s)")
                             } else if (aiTrendConflict) {
@@ -336,7 +340,7 @@ class TradingEngine(
                 return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper (:57-:07)")
             }
 
-            return when (strategy) {
+            val rawResult = when (strategy) {
                 AutoTradeStrategy.AUTO_ADAPTIVE -> {
                     // Modo Automático Total: Confluencia Multi-Factor + Sniping de Entrada
                     val inDowntrend = analysis.trend == TrendDirection.DOWNTREND
@@ -546,6 +550,17 @@ class TradingEngine(
                     }
                 }
             }
+
+            val (action, _) = rawResult
+            // Filtro de Zona Prohibida S/R: Evitar vender directamente contra soporte o comprar contra resistencia
+            if (action == TradeAction.SELL && analysis.touchesSupport && !analysis.isFalseBreakoutPut) {
+                return Pair(null, "⚠️ Venta bloqueada: Precio sobre Soporte (Riesgo de rebote alcista)")
+            }
+            if (action == TradeAction.BUY && analysis.touchesResistance && !analysis.isFalseBreakoutCall) {
+                return Pair(null, "⚠️ Compra bloqueada: Precio bajo Resistencia (Riesgo de rebote bajista)")
+            }
+
+            return rawResult
         }
     }
 
