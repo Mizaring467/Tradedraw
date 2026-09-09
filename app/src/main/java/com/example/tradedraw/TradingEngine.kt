@@ -58,6 +58,7 @@ class TradingEngine(
 
     private var pendingTradeHasObservedWin: Boolean = false
     private var pendingTradeRecordedCandleCloseY: Float = 0f
+    private val isTradeResolving = java.util.concurrent.atomic.AtomicBoolean(false)
     private var lastFeedbackEmitTime: Long = 0L
 
     var latestAnalysisResult: VisionAnalysisResult? = null
@@ -157,6 +158,7 @@ class TradingEngine(
                     handler.post {
                         riskManager.clearPendingTrade()
                         autoDrawEngine.clearTradeEntry()
+                        isTradeResolving.set(false)
                         Toast.makeText(context, "⚠️ Clic no recibido por Binomo (orden no abierta). Espera cancelada.", Toast.LENGTH_SHORT).show()
                     }
                     return
@@ -238,7 +240,12 @@ class TradingEngine(
                     }
 
                 if (isWin != null || isTie) {
-                    android.util.Log.d("TradingEngine", "Liquidación de trade: Win=$isWin, Tie=$isTie [$method]")
+                    // Bloqueo Atómico: Solo UN frame puede liquidar la operación activa.
+                    // Todos los frames concurrentes posteriores son descartados de inmediato a nivel de CPU.
+                    if (!isTradeResolving.compareAndSet(false, true)) {
+                        return
+                    }
+                    android.util.Log.d("TradingEngine", "Liquidación atómica de trade único: Win=$isWin, Tie=$isTie [$method]")
                     val finalWin = isWin ?: false
                     handler.post {
                         pendingTradeHasObservedWin = false
@@ -260,6 +267,7 @@ class TradingEngine(
                             Toast.makeText(context, "⚠️ OPERACIÓN PERDIDA (+1 L)", Toast.LENGTH_LONG).show()
                             onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, false)
                         }
+                        isTradeResolving.set(false)
                     }
                 }
             }
@@ -753,6 +761,7 @@ class TradingEngine(
         val accessibility = AutoTradeAccessibilityService.instance
         if (accessibility != null) {
             val baseBal = accessibility.readCurrentBalance() ?: 0.0
+            isTradeResolving.set(false)
             riskManager.recordTradeSent(action, analysis.currentPriceY, baseBal)
             accessibility.performClickAt(x, y)
 

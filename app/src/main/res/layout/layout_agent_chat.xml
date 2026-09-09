@@ -142,6 +142,20 @@
                 android:gravity="center"
                 android:background="@drawable/bg_hud_chip"
                 android:paddingHorizontal="6dp"
+                android:layout_marginEnd="4dp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/chip_reset_wl"
+                android:layout_width="wrap_content"
+                android:layout_height="22dp"
+                android:text="🎯 Reset W/L"
+                android:textColor="#f87171"
+                android:textSize="9sp"
+                android:gravity="center"
+                android:background="@drawable/bg_hud_chip"
+                android:paddingHorizontal="6dp"
                 android:clickable="true"
                 android:focusable="true" />
         </LinearLayout>

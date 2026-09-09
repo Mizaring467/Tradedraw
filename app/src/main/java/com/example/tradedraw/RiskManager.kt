@@ -206,6 +206,10 @@ class RiskManager(context: Context? = null) {
 
     @Synchronized
     fun recordTradeWin() {
+        if (!hasPendingTrade) {
+            android.util.Log.w("RiskManager", "recordTradeWin ignorado: No hay trade pendiente (llamada duplicada bloqueada)")
+            return
+        }
         currentWins++
         totalWins++
         currentLossStreak = 0
@@ -215,6 +219,10 @@ class RiskManager(context: Context? = null) {
 
     @Synchronized
     fun recordTradeLoss() {
+        if (!hasPendingTrade) {
+            android.util.Log.w("RiskManager", "recordTradeLoss ignorado: No hay trade pendiente (llamada duplicada bloqueada)")
+            return
+        }
         totalLosses++
         currentLossStreak++
         lastTradeTime = System.currentTimeMillis()
@@ -235,6 +243,13 @@ class RiskManager(context: Context? = null) {
         totalLosses = losses.coerceAtLeast(0)
         currentWins = wins.coerceAtLeast(0)
         currentLossStreak = 0
+    }
+
+    @Synchronized
+    fun correctStats(wins: Int, losses: Int) {
+        setStats(wins, losses)
+        OverlayService.instance?.updateHUDView()
+        android.util.Log.i("RiskManager", "Marcador corregido a: $wins W | $losses L")
     }
 
     @Synchronized
