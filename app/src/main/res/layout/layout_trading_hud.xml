@@ -103,6 +103,48 @@
             android:focusable="true" />
     </LinearLayout>
 
+    <!-- BARRA DESLIZANTE PROFESIONAL DE OPACIDAD (SeekBar interactiva) -->
+    <LinearLayout
+        android:id="@+id/hud_opacity_slider_container"
+        android:layout_width="match_parent"
+        android:layout_height="24dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_hud_chip"
+        android:paddingHorizontal="6dp"
+        android:layout_marginTop="2dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="👁️ Opacidad"
+            android:textColor="#38bdf8"
+            android:textSize="8sp"
+            android:textStyle="bold" />
+
+        <SeekBar
+            android:id="@+id/hud_seek_opacity"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="80"
+            android:progress="50"
+            android:thumbTint="#38bdf8"
+            android:progressTint="#38bdf8"
+            android:progressBackgroundTint="#334155" />
+
+        <TextView
+            android:id="@+id/hud_txt_opacity_value"
+            android:layout_width="28dp"
+            android:layout_height="wrap_content"
+            android:text="70%"
+            android:gravity="end"
+            android:textColor="#f8fafc"
+            android:textSize="8sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
     <!-- LÍNEA 2 DE CABECERA: W/L, Winrate, Martingala y Termómetro (Ultra-compacto) -->
     <LinearLayout
         android:id="@+id/hud_header_line2"
