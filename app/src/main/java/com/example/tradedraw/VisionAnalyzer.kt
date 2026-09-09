@@ -317,23 +317,30 @@ class VisionAnalyzer {
         val effectiveSupportY = supportLinesY.minByOrNull { Math.abs(latestPriceY - it) } ?: finalSupportY
         val effectiveResistanceY = resistanceLinesY.minByOrNull { Math.abs(latestPriceY - it) } ?: finalResistanceY
 
-       // Proximidad a soportes y resistencias (manuales o calculados por el bot)
-        val threshold = ((endY - startY) * 0.025f).coerceIn(10f, 20f)
+        // Proximidad estricta a soportes y resistencias reales (validación de zona institucional)
+        val threshold = ((endY - startY) * 0.035f).coerceIn(12f, 28f)
         val lastCandle = candleList.firstOrNull()
 
-        // 1. Mechas de Rechazo (Rejection Wicks >= 35%)
-        val hasTopRejection = lastCandle != null && lastCandle.topWickRatio >= 0.35f
-        val hasBottomRejection = lastCandle != null && lastCandle.bottomWickRatio >= 0.35f
+        // 1. Mechas de Rechazo Significativas (Rejection Wicks >= 40% del rango total de la vela)
+        val hasTopRejection = lastCandle != null && lastCandle.topWickRatio >= 0.40f
+        val hasBottomRejection = lastCandle != null && lastCandle.bottomWickRatio >= 0.40f
 
-        val touchesSupport = (supportLinesY.any { Math.abs(latestPriceY - it) <= threshold } ||
-                (maxPriceY > Float.MIN_VALUE && Math.abs(latestPriceY - finalSupportY) <= threshold)) &&
-                (hasBottomRejection || lastType == CandleType.GREEN)
-        val touchesResistance = (resistanceLinesY.any { Math.abs(latestPriceY - it) <= threshold } ||
-                (minPriceY < Float.MAX_VALUE && Math.abs(latestPriceY - finalResistanceY) <= threshold)) &&
-                (hasTopRejection || lastType == CandleType.RED)
+        val isNearSupportLevel = supportLinesY.any { Math.abs(latestPriceY - it) <= threshold || (lastCandle != null && Math.abs(lastCandle.bottomY - it) <= threshold) } ||
+                (maxPriceY > Float.MIN_VALUE && (Math.abs(latestPriceY - finalSupportY) <= threshold || (lastCandle != null && Math.abs(lastCandle.bottomY - finalSupportY) <= threshold))) ||
+                Math.abs(latestPriceY - effectiveSupportY) <= threshold ||
+                (lastCandle != null && Math.abs(lastCandle.bottomY - effectiveSupportY) <= threshold)
 
-        val isRejectionCall = hasBottomRejection && (touchesSupport || (lastCandle != null && (Math.abs(lastCandle.bottomY - effectiveSupportY) <= threshold || Math.abs(lastCandle.bottomY - finalSupportY) <= threshold)))
-        val isRejectionPut = hasTopRejection && (touchesResistance || (lastCandle != null && (Math.abs(lastCandle.topY - effectiveResistanceY) <= threshold || Math.abs(lastCandle.topY - finalResistanceY) <= threshold)))
+        val isNearResistanceLevel = resistanceLinesY.any { Math.abs(latestPriceY - it) <= threshold || (lastCandle != null && Math.abs(lastCandle.topY - it) <= threshold) } ||
+                (minPriceY < Float.MAX_VALUE && (Math.abs(latestPriceY - finalResistanceY) <= threshold || (lastCandle != null && Math.abs(lastCandle.topY - finalResistanceY) <= threshold))) ||
+                Math.abs(latestPriceY - effectiveResistanceY) <= threshold ||
+                (lastCandle != null && Math.abs(lastCandle.topY - effectiveResistanceY) <= threshold)
+
+        val touchesSupport = isNearSupportLevel && (hasBottomRejection || lastType == CandleType.GREEN)
+        val touchesResistance = isNearResistanceLevel && (hasTopRejection || lastType == CandleType.RED)
+
+        // Rechazo VÁLIDO: Exige que la mecha ocurra SOBRE o tocando el soporte/resistencia, nunca en vacío
+        val isRejectionCall = hasBottomRejection && isNearSupportLevel
+        val isRejectionPut = hasTopRejection && isNearResistanceLevel
 
         // 2. Choque de Máximos y Mínimos (Breakout + Retest)
         var isChoqueCall = false
@@ -490,16 +497,16 @@ class VisionAnalyzer {
         val finalConfCall = confCall.coerceIn(0, 100)
         val finalConfPut = confPut.coerceIn(0, 100)
 
-        // Micro-Sincronización Reloj Sniper (00:55-00:59 o 00:00-00:08)
+        // Micro-Sincronización Reloj Sniper Estricto (00:57-00:59 o 00:00-00:07 apertura de vela)
         val candleSecond = ((System.currentTimeMillis() / 1000) % 60).toInt()
-        val isSniperTimingWindow = candleSecond in 57..59 || candleSecond in 0..6 || candleSecond in 28..33
-        val isLateTimingForbidden = candleSecond in 42..55
+        val isSniperTimingWindow = candleSecond in 57..59 || candleSecond in 0..7
+        val isLateTimingForbidden = candleSecond in 12..56
 
         // Sniping de Mejor Strike (Pullback / Testeo en nivel clave)
         val targetSupport = if (supportLinesY.isNotEmpty()) effectiveSupportY else finalSupportY
         val targetResistance = if (resistanceLinesY.isNotEmpty()) effectiveResistanceY else finalResistanceY
-        val isPullbackSniperCall = (touchesSupport || latestPriceY >= targetSupport - 12f || hasBottomRejection) && !isSideways && !isConsolidationTight
-        val isPullbackSniperPut = (touchesResistance || latestPriceY <= targetResistance + 12f || hasTopRejection) && !isSideways && !isConsolidationTight
+        val isPullbackSniperCall = (touchesSupport || Math.abs(latestPriceY - targetSupport) <= threshold || (isRejectionCall && Math.abs(latestPriceY - targetSupport) <= threshold * 1.4f)) && !isSideways && !isConsolidationTight
+        val isPullbackSniperPut = (touchesResistance || Math.abs(latestPriceY - targetResistance) <= threshold || (isRejectionPut && Math.abs(latestPriceY - targetResistance) <= threshold * 1.4f)) && !isSideways && !isConsolidationTight
 
         val gCount = candleTypes.count { it == CandleType.GREEN }
         val rCount = candleTypes.count { it == CandleType.RED }
