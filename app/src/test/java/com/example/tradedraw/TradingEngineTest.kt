@@ -256,4 +256,40 @@ class TradingEngineTest {
         assertNull("Debe bloquear operaciones ante consolidación estrecha", action)
         assertEquals("⏳ Rango estrecho / Sin volatilidad: Esperando expansión", reason)
     }
+
+    @Test
+    fun testLateTimingUniversalVeto() {
+        // Vela en el segundo 25 (isLateTimingForbidden = true): debe ser rechazada para evitar entradas perdedoras
+        val lateAnalysis = VisionAnalysisResult(
+            candleSecond = 25,
+            isLateTimingForbidden = true,
+            isRejectionCall = true,
+            isPullbackSniperCall = true
+        )
+        val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, lateAnalysis)
+        assertNull("Entrada tardía debe bloquearse", action)
+        assertTrue("Razón debe advertir entrada tardía", reason.contains("Entrada tardía"))
+
+        // Salvo falso rompimiento institucional
+        val lateTrapAnalysis = VisionAnalysisResult(
+            candleSecond = 25,
+            isLateTimingForbidden = true,
+            isFalseBreakoutCall = true
+        )
+        val (actionTrap, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, lateTrapAnalysis)
+        assertEquals("Trampa institucional permite entrada", TradeAction.BUY, actionTrap)
+    }
+
+    @Test
+    fun testMarketSidewaysUniversalVeto() {
+        val sidewaysAnalysis = VisionAnalysisResult(
+            isMarketSideways = true,
+            isRejectionCall = true,
+            isPullbackSniperCall = true
+        )
+        val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, sidewaysAnalysis)
+        assertNull("Mercado lateral debe vetar trade", action)
+        assertTrue("Debe informar mercado lateral / dojis", reason.contains("Mercado Lateral"))
+    }
 }
+
