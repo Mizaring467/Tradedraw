@@ -67,6 +67,7 @@ class TradingEngine(
     private var pendingTradeRecordedCandleCloseY: Float = 0f
     private val isTradeResolving = java.util.concurrent.atomic.AtomicBoolean(false)
     private var lastFeedbackEmitTime: Long = 0L
+    private var lastTradeResolutionTime: Long = 0L
 
     var latestAnalysisResult: VisionAnalysisResult? = null
         private set
@@ -153,95 +154,66 @@ class TradingEngine(
                 }
             }
 
-            // 4a. Detección Temprana de Orden Fantasma
-            val currentBalForCheck = AutoTradeAccessibilityService.instance?.readCurrentBalance() ?: 0.0
-            if (elapsedSec in 6..10 && baseBalance > 0.0 && currentBalForCheck > 0.0) {
-                val initDiff = currentBalForCheck - baseBalance
-                if (Math.abs(initDiff) < 10.0) {
-                    android.util.Log.w("TradingEngine", "Orden fantasma detectada: Saldo no debitado tras ${elapsedSec}s (Diff=$initDiff). Cancelando espera.")
-                    handler.post {
-                        riskManager.clearPendingTrade()
-                        autoDrawEngine.clearTradeEntry()
-                        isTradeResolving.set(false)
-                        Toast.makeText(context, "⚠️ Clic no recibido por Binomo (orden no abierta). Espera cancelada.", Toast.LENGTH_SHORT).show()
-                    }
-                    return
+            // Capturar el precio de cierre al expirar la vela (:58-:02) tras al menos 45s de trade
+            if (elapsedSec >= 45 && (analysis.candleSecond in 0..2 || analysis.candleSecond in 58..59)) {
+                if (pendingTradeRecordedCandleCloseY == 0f && analysis.currentPriceY > 0f) {
+                    pendingTradeRecordedCandleCloseY = analysis.currentPriceY
                 }
             }
 
-            // Ventana de resolución de la operación INSTANTÁNEA (a partir de 45s apenas expira o cambia el saldo)
-            if (elapsedSec >= 45) {
+            // Ventana de resolución estricta al EXPIRAR la vela de 1 minuto (>= 58s o primeros 10s de la nueva vela)
+            val isExpired = elapsedSec >= 58 || (elapsedSec >= 50 && analysis.candleSecond in 0..10)
+            if (isExpired) {
                 var isWin: Boolean? = null
                 var isTie: Boolean = false
-                var resolvedWinCount = 1
-                var resolvedLossCount = 1
                 var method = ""
 
                 val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance() ?: 0.0
+                val evalY = if (pendingTradeRecordedCandleCloseY > 0f) pendingTradeRecordedCandleCloseY else exitY
 
-                // 1. Verificación por Saldo Real (Acreditación Inmediata)
+                // Comparación de precio al cierre de la vela (Verdad gráfica inmutable)
+                val priceWon = if (entryY > 0f && evalY > 0f && action != null) {
+                    if (action == TradeAction.BUY) evalY < (entryY - 1.5f) else evalY > (entryY + 1.5f)
+                } else null
+
+                val priceLost = if (entryY > 0f && evalY > 0f && action != null) {
+                    if (action == TradeAction.BUY) evalY > (entryY + 1.5f) else evalY < (entryY - 1.5f)
+                } else null
+
+                val priceTie = if (entryY > 0f && evalY > 0f && action != null) {
+                    Math.abs(evalY - entryY) <= 1.5f
+                } else false
+
+                // 1. Verificación por Saldo Real (si está disponible y es coherente)
                 if (baseBalance > 0.0 && currentBal > 0.0) {
                     val diff = currentBal - baseBalance
-                    val unitAmt = if (riskManager.unitTradeAmount > 1000.0) riskManager.unitTradeAmount else 80000.0
-
-                    // Ganancia detectada instantáneamente: Binomo acreditó el pago de la operación (+retorno)
                     if (diff > 10.0) {
                         isWin = true
-                        resolvedWinCount = Math.max(1, Math.round(diff / (unitAmt * 0.80)).toInt())
-                        method = "SALDO (+) Ganancia acreditada instantánea: Diff=+$diff ($resolvedWinCount contrato(s))"
-                    } else if (elapsedSec >= 59 || (elapsedSec >= 50 && analysis.candleSecond in 0..15)) {
-                        // Apenas expira el minuto (segundo :59 o primeros segundos de la nueva vela):
-                        // Si el saldo quedó debitado y el precio cerró por debajo de la entrada, liquidar de inmediato.
-                        val evalY = if (pendingTradeRecordedCandleCloseY > 0f) pendingTradeRecordedCandleCloseY else exitY
-                        if (entryY > 0f && evalY > 0f && action != null) {
-                            val priceWon = if (action == TradeAction.BUY) evalY < (entryY - 1.5f) else evalY > (entryY + 1.5f)
-                            val priceLost = if (action == TradeAction.BUY) evalY > (entryY + 1.5f) else evalY < (entryY - 1.5f)
-                            if (priceLost && diff < -10.0) {
-                                isWin = false
-                                resolvedLossCount = Math.max(1, Math.round(Math.abs(diff) / unitAmt).toInt())
-                                method = "INSTANTÁNEO EXPIRACIÓN (Precio & Saldo -${Math.abs(diff).toInt()} COP)"
-                            } else if (priceWon && elapsedSec >= 62) {
-                                isWin = true
-                                method = "INSTANTÁNEO EXPIRACIÓN (Precio Ganador ITM tras ${elapsedSec}s)"
-                            }
-                        } else if (diff < -10.0 && elapsedSec >= 62) {
-                            isWin = false
-                            resolvedLossCount = Math.max(1, Math.round(Math.abs(diff) / unitAmt).toInt())
-                            method = "SALDO (-) Inversión no recuperada a los ${elapsedSec}s: Diff=$diff"
-                        } else if (elapsedSec >= 64 && Math.abs(diff) <= 10.0) {
-                            isTie = true
-                            method = "SALDO (=) Reembolso por empate en Binomo"
-                        }
+                        method = "SALDO (+) Ganancia acreditada: Diff=+$diff COP"
+                    } else if (diff < -10.0 && priceLost == true) {
+                        isWin = false
+                        method = "SALDO (-) Pérdida confirmada: Diff=$diff COP"
+                    } else if (priceWon == true) {
+                        isWin = true
+                        method = "PRECIO ITM (Cierre a favor de $action tras ${elapsedSec}s)"
+                    } else if (priceLost == true) {
+                        isWin = false
+                        method = "PRECIO OTM (Cierre en contra de $action tras ${elapsedSec}s)"
+                    } else if (Math.abs(diff) <= 10.0 && priceTie) {
+                        isTie = true
+                        method = "EMPATE (Sin variación de saldo ni precio)"
                     }
-                }
-
-                // 2. Fallback por Acción del Precio: Si el saldo accesible NO estuvo disponible
-                if (isWin == null && !isTie && (baseBalance <= 0.0 || currentBal <= 0.0) && elapsedSec >= 59) {
-                    val evalY = if (pendingTradeRecordedCandleCloseY > 0f) pendingTradeRecordedCandleCloseY else exitY
-                    if (entryY > 0f && evalY > 0f && action != null) {
-                        if (action == TradeAction.BUY) {
-                            if (evalY < entryY - 2.0f) {
-                                isWin = true
-                                method = "FALLBACK PRECIO (CALL WIN: CloseY=$evalY < EntryY=$entryY)"
-                            } else if (evalY > entryY + 2.0f) {
-                                isWin = false
-                                method = "FALLBACK PRECIO (CALL LOSS: CloseY=$evalY > EntryY=$entryY)"
-                            } else {
-                                isTie = true
-                                method = "FALLBACK PRECIO (CALL TIE)"
-                            }
-                        } else { // SELL / PUT
-                            if (evalY > entryY + 2.0f) {
-                                isWin = true
-                                method = "FALLBACK PRECIO (PUT WIN: CloseY=$evalY > EntryY=$entryY)"
-                            } else if (evalY < entryY - 2.0f) {
-                                isWin = false
-                                method = "FALLBACK PRECIO (PUT LOSS: CloseY=$evalY < EntryY=$entryY)"
-                            } else {
-                                isTie = true
-                                method = "FALLBACK PRECIO (PUT TIE)"
-                            }
-                        }
+                } else {
+                    // 2. Fallback por Acción del Precio pura
+                    if (priceWon == true) {
+                        isWin = true
+                        method = "PRECIO PURO (CloseY=$evalY vs EntryY=$entryY -> WIN)"
+                    } else if (priceLost == true) {
+                        isWin = false
+                        method = "PRECIO PURO (CloseY=$evalY vs EntryY=$entryY -> LOSS)"
+                    } else if (priceTie) {
+                        isTie = true
+                        method = "PRECIO PURO (CloseY=$evalY == EntryY=$entryY -> TIE)"
                     }
                 }
 
@@ -253,13 +225,12 @@ class TradingEngine(
                         method = "TIMEOUT 68s (Saldo Diff=$diff)"
                     } else {
                         isWin = false
-                        method = "TIMEOUT 68s (Loss por defecto)"
+                        method = "TIMEOUT 68s (Loss preventivo)"
                     }
                 }
 
                 if (isWin != null || isTie) {
                     // Bloqueo Atómico: Solo UN frame puede liquidar la operación activa.
-                    // Todos los frames concurrentes posteriores son descartados de inmediato a nivel de CPU.
                     if (!isTradeResolving.compareAndSet(false, true)) {
                         return
                     }
@@ -273,28 +244,30 @@ class TradingEngine(
                             autoDrawEngine.clearTradeEntry()
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
                         } else if (finalWin) {
-                            riskManager.recordTradeWins(resolvedWinCount)
+                            riskManager.recordTradeWin()
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
-                            val winMsg = if (resolvedWinCount > 1) "🎉 $resolvedWinCount OPERACIONES GANADAS (+$resolvedWinCount W)" else "🎉 OPERACIÓN GANADA (+1 W)"
-                            Toast.makeText(context, winMsg, Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "🎉 OPERACIÓN GANADA (+1 W)", Toast.LENGTH_LONG).show()
                             onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
                         } else {
-                            riskManager.recordTradeLosses(resolvedLossCount)
+                            riskManager.recordTradeLoss()
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
-                            val lossMsg = if (resolvedLossCount > 1) "⚠️ $resolvedLossCount OPERACIONES PERDIDAS (+$resolvedLossCount L)" else "⚠️ OPERACIÓN PERDIDA (+1 L)"
-                            Toast.makeText(context, lossMsg, Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "⚠️ OPERACIÓN PERDIDA (+1 L)", Toast.LENGTH_LONG).show()
                             onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, false)
                         }
                         isTradeResolving.set(false)
+                        lastTradeResolutionTime = System.currentTimeMillis()
                     }
                 }
             }
         }
 
-        // 5. Evaluar señal de trading solo si no hay trade abierto y el modo está activo
-        if (!riskManager.hasPendingTrade && mode != AutoTradeMode.DISABLED) {
+        val timeSinceLastResolution = System.currentTimeMillis() - lastTradeResolutionTime
+        val isSpacingCooldown = lastTradeResolutionTime > 0L && timeSinceLastResolution < 15000L && analysis.candleSecond in 10..55
+
+        // 5. Evaluar señal de trading solo si no hay trade abierto, sin cooldown de espaciado y el modo está activo
+        if (!riskManager.hasPendingTrade && !isSpacingCooldown && mode != AutoTradeMode.DISABLED) {
             val localSignal = evaluateStrategySignal(strategy, analysis, supports.isNotEmpty() || resistances.isNotEmpty())
 
             // 5a. Mantener la IA analizando en segundo plano si está activa (sin bloquear señales locales)
@@ -304,19 +277,21 @@ class TradingEngine(
                     latestAITimestamp = System.currentTimeMillis()
                     handler.post { onFrameProcessedListener?.invoke(analysis) }
 
-                    // Si la IA emite señal directa con confianza suficiente, ejecutar
+                    // Si la IA emite señal directa con confianza suficiente, ejecutar sincronizada con reloj sniper
                     if (aiResult.isSuccess && aiResult.action != null && aiResult.confidence >= aiClient.confidenceThreshold) {
                         if (!riskManager.hasPendingTrade && mode != AutoTradeMode.DISABLED) {
-                            // Filtro anti-tendencia para señales IA:
-                            // En DOWNTREND fuerte, ignorar señales CALL de la IA (puede ser rebote falso)
-                            // En UPTREND fuerte, ignorar señales PUT de la IA
+                            val sec = analysis.candleSecond
+                            val isTimingValid = analysis.isSniperTimingWindow || (sec in 57..59 || sec in 0..8)
                             val inDowntrend = analysis.trend == TrendDirection.DOWNTREND && !analysis.isMarketSideways
                             val inUptrend = analysis.trend == TrendDirection.UPTREND && !analysis.isMarketSideways
                             val aiTrendConflict = (aiResult.action == TradeAction.BUY && inDowntrend) ||
                                                   (aiResult.action == TradeAction.SELL && inUptrend)
-                            if (!aiTrendConflict) {
+
+                            if (!isTimingValid) {
+                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} pospuesta: fuera de ventana sniper (⏱ ${sec}s)")
+                            } else if (!aiTrendConflict) {
                                 val pct = (aiResult.confidence * 100).toInt()
-                                handleSignal(aiResult.action, analysis, bitmap, "IA ($pct%): ${aiResult.reason}")
+                                handleSignal(aiResult.action, analysis, bitmap, "IA ($pct% | ⏱ ${sec}s): ${aiResult.reason}")
                             } else {
                                 android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: conflicto con tendencia ${analysis.trend}")
                             }
@@ -400,10 +375,10 @@ class TradingEngine(
                         isLate -> Pair(null, "⏳ Entrada tardía (${sec}s): Esperando apertura de vela")
 
                         // 2. Mechas de Rechazo y Absorción en S/R con Sniping de Pullback (90% confluencia)
-                        !inDowntrend && (analysis.isRejectionCall || analysis.hasBottomRejectionWick || (analysis.touchesSupport && analysis.lastCandles.firstOrNull() == CandleType.RED)) &&
+                        !inDowntrend && (analysis.isRejectionCall || (analysis.touchesSupport && analysis.hasBottomRejectionWick)) &&
                             (analysis.isPullbackSniperCall || analysis.isSniperTimingWindow) ->
                             Pair(TradeAction.BUY, "🎯 Auto [Mecha Rechazo Soporte | ⏱ ${sec}s] -> CALL")
-                        !inUptrend && (analysis.isRejectionPut || analysis.hasTopRejectionWick || (analysis.touchesResistance && analysis.lastCandles.firstOrNull() == CandleType.GREEN)) &&
+                        !inUptrend && (analysis.isRejectionPut || (analysis.touchesResistance && analysis.hasTopRejectionWick)) &&
                             (analysis.isPullbackSniperPut || analysis.isSniperTimingWindow) ->
                             Pair(TradeAction.SELL, "🎯 Auto [Mecha Rechazo Resistencia | ⏱ ${sec}s] -> PUT")
 
@@ -450,10 +425,10 @@ class TradingEngine(
                        }
                         isLate -> Pair(null, "⏳ Entrada tardía (${sec}s): Esperando apertura de vela")
                        // 2. Mechas de Rechazo en S/R (Filtradas por tendencia)
-                       !inDowntrend && (analysis.isRejectionCall || analysis.hasBottomRejectionWick || (analysis.touchesSupport && analysis.lastCandles.firstOrNull() == CandleType.RED)) -> {
+                       !inDowntrend && (analysis.isRejectionCall || (analysis.touchesSupport && analysis.hasBottomRejectionWick)) -> {
                            Pair(TradeAction.BUY, "🎯 MT Combo: Mecha de Rechazo en Soporte -> CALL")
                        }
-                        !inUptrend && (analysis.isRejectionPut || analysis.hasTopRejectionWick || (analysis.touchesResistance && analysis.lastCandles.firstOrNull() == CandleType.GREEN)) -> {
+                        !inUptrend && (analysis.isRejectionPut || (analysis.touchesResistance && analysis.hasTopRejectionWick)) -> {
                             Pair(TradeAction.SELL, "🎯 MT Combo: Mecha de Rechazo en Resistencia -> PUT")
                         }
                         // 3. Patrón Envolvente en S/R
@@ -478,11 +453,11 @@ class TradingEngine(
                             Pair(TradeAction.SELL, "🎯 MT Combo: Agotamiento 3 Velas Verdes -> PUT")
                         }
                         // Soporte / Resistencia Clásico
-                        !inDowntrend && analysis.touchesSupport -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Rebote en Soporte -> CALL")
+                        !inDowntrend && analysis.touchesSupport && (analysis.lastCandles.firstOrNull() == CandleType.GREEN || analysis.isPullbackSniperCall) -> {
+                            Pair(TradeAction.BUY, "🎯 MT Combo: Rebote Confirmado en Soporte -> CALL")
                         }
-                        !inUptrend && analysis.touchesResistance -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Rebote en Resistencia -> PUT")
+                        !inUptrend && analysis.touchesResistance && (analysis.lastCandles.firstOrNull() == CandleType.RED || analysis.isPullbackSniperPut) -> {
+                            Pair(TradeAction.SELL, "🎯 MT Combo: Rebote Confirmado en Resistencia -> PUT")
                         }
                        // 6. Termómetro de Señal / Tendencia Alta Probabilidad >= 75%
                         !inDowntrend && analysis.isSniperTimingWindow && (analysis.signalPowerCall >= 75 || (analysis.isCallSignal && analysis.signalScore >= 75)) -> {
@@ -512,9 +487,9 @@ class TradingEngine(
                 }
                 AutoTradeStrategy.MT_REJECTION -> {
                     when {
-                        analysis.isRejectionCall || analysis.hasBottomRejectionWick || (analysis.touchesSupport && analysis.lastCandles.firstOrNull() == CandleType.RED) ->
+                        analysis.isRejectionCall || (analysis.touchesSupport && analysis.hasBottomRejectionWick) ->
                             Pair(TradeAction.BUY, "🎯 MT Mecha Rechazo: Absorción en Soporte -> CALL")
-                        analysis.isRejectionPut || analysis.hasTopRejectionWick || (analysis.touchesResistance && analysis.lastCandles.firstOrNull() == CandleType.GREEN) ->
+                        analysis.isRejectionPut || (analysis.touchesResistance && analysis.hasTopRejectionWick) ->
                             Pair(TradeAction.SELL, "🎯 MT Mecha Rechazo: Absorción en Resistencia -> PUT")
                         else -> Pair(null, "")
                     }
