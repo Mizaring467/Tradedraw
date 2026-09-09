@@ -132,3 +132,28 @@ git commit -m "feat/fix: descripción clara del cambio"
 git push origin main
 ```
 Luego, verifica en la pestaña de **Actions** del repositorio de GitHub que el build haya concluido en verde (✓) y deja el enlace al artefacto descargable para el usuario.
+
+---
+
+## ⚡ 8. Automatización y Auditoría del Dispositivo con MCP scrcpy (`android-vision`)
+
+Para interactuar con el dispositivo Android (POCO X6 Pro / `192.168.1.185:5555`) a alta velocidad y bajo consumo de recursos, este proyecto tiene configurado el servidor MCP **`android-vision`** (basado en `mcp-scrcpy-vision` con soporte de `scrcpy-server` v4.1 y `ffmpeg`):
+
+### Herramientas MCP disponibles (vía `call_mcp_tool`):
+1. **Captura de Pantalla Instantánea:**
+   - Herramienta: `android.vision.snapshot`
+   - Parámetros: `{ "serial": "192.168.1.185:5555" }`
+   - *Ventaja:* Retorna la imagen en ~1s sin recalentar la CPU del teléfono con `screencap` repetidos.
+2. **Pulsación / Tap Ultra Rápido:**
+   - Herramienta: `android.input.tap`
+   - Parámetros: `{ "x": <coordX>, "y": <coordY>, "serial": "192.168.1.185:5555" }`
+   - *Ventaja:* Inyección de evento directa (< 10 ms vs ~400 ms de `adb shell input tap`).
+3. **Desplazamiento y Gestos:**
+   - `android.input.swipe`: `{ "x1": <x1>, "y1": <y1>, "x2": <x2>, "y2": <y2>, "durationMs": <ms> }`
+4. **Inspección de UI Dinámica:**
+   - `android.ui.dump` / `android.ui.findElement` para inspeccionar jerarquía de vistas de forma mucho más rápida que `uiautomator dump` tradicional.
+5. **Streaming en Tiempo Real (H.264):**
+   - `android.vision.startStream` / `android.vision.stopStream` para monitoreo continuo mediante resource frames.
+
+> ⚠️ **Regla para Agentes:** **NO** ejecutes comandos de PowerShell lentos como `adb shell screencap` o `adb shell input tap` salvo que el MCP no responda; utiliza siempre las herramientas del servidor MCP `android-vision` para máxima velocidad y estabilidad.
+

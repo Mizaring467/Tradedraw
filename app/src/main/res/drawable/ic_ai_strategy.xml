@@ -3,16 +3,35 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Vela 1 Verde -->
+    <!-- Trend Channels and Candlestick Matrix -->
+    <!-- Bullish Candle 1 -->
     <path
-        android:fillColor="#22C55E"
-        android:pathData="M6,2h2v4h-2zM5,6h4v8H5zM6,14h2v4h-2z" />
-    <!-- Vela 2 Roja -->
+        android:strokeColor="#34D399"
+        android:strokeWidth="1.2"
+        android:pathData="M6,3v18" />
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M4.5,7h3v8h-3z" />
+
+    <!-- Bearish Candle 2 -->
+    <path
+        android:strokeColor="#F87171"
+        android:strokeWidth="1.2"
+        android:pathData="M12,4v16" />
     <path
         android:fillColor="#EF4444"
-        android:pathData="M16,6h2v3h-2zM15,9h4v9h-4zM16,18h2v4h-2z" />
-    <!-- Línea de señal / rayo -->
+        android:pathData="M10.5,9h3v7h-3z" />
+
+    <!-- Predictive Wave Line -->
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M3,16L8,11L13,14L21,5" />
+
+    <!-- Execution Target Node -->
     <path
         android:fillColor="#FACC15"
-        android:pathData="M11,4l-2,7h3l-2,7 6,-8h-3l2,-6z" />
+        android:pathData="M21,5m-2.2,0a2.2,2.2 0 1,1 4.4,0a2.2,2.2 0 1,1 -4.4,0" />
 </vector>
