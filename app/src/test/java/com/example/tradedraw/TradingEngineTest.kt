@@ -114,11 +114,11 @@ class TradingEngineTest {
 
     @Test
     fun testMasterComboSignalThermometerThreshold() {
-        // Termómetro >= 68% dispara señal si no hay patrones previos
-        val analysisCallHigh = VisionAnalysisResult(signalPowerCall = 70)
+        // Termómetro con timing sniper >= 75% dispara señal si no hay patrones previos
+        val analysisCallHigh = VisionAnalysisResult(signalPowerCall = 75, isSniperTimingWindow = true)
         assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisCallHigh))
 
-        val analysisPutHigh = VisionAnalysisResult(signalPowerPut = 75)
+        val analysisPutHigh = VisionAnalysisResult(signalPowerPut = 80, isSniperTimingWindow = true)
         assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisPutHigh))
 
         val analysisWeak = VisionAnalysisResult(signalPowerCall = 65, signalPowerPut = 60)
@@ -243,5 +243,17 @@ class TradingEngineTest {
         val (actionWithPullback, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, mechaWithPullback)
         assertEquals("Mecha con pullback sniper debe gatillar CALL", TradeAction.BUY, actionWithPullback)
         assertTrue("La razón debe incluir el segundo 58s", reason.contains("58s"))
+    }
+
+    @Test
+    fun testConsolidationTightStrictlyBlocksTrade() {
+        val tightAnalysis = VisionAnalysisResult(
+            isConsolidationTight = true,
+            isFalseBreakoutCall = true,
+            signalPowerCall = 90
+        )
+        val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, tightAnalysis)
+        assertNull("Debe bloquear operaciones ante consolidación estrecha", action)
+        assertEquals("⏳ Rango estrecho / Sin volatilidad: Esperando expansión", reason)
     }
 }

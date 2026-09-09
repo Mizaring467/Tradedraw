@@ -76,8 +76,9 @@ class VisualHarnessTest {
 
         val analysis = analyzer.evaluateCandlePatterns(
             candleList = candles,
-            supportLinesY = listOf(700f)
-        )
+            supportLinesY = listOf(700f),
+            isLandscape = true
+        ).copy(trend = TrendDirection.UPTREND)
 
         assertTrue(analysis.hasBottomRejectionWick)
         val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(

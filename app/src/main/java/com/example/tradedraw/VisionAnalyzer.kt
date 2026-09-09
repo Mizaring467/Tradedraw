@@ -78,7 +78,10 @@ data class VisionAnalysisResult(
     val isSniperTimingWindow: Boolean = false,
     val isLateTimingForbidden: Boolean = false,
     val isPullbackSniperCall: Boolean = false,
-    val isPullbackSniperPut: Boolean = false
+    val isPullbackSniperPut: Boolean = false,
+    val isConsolidationTight: Boolean = false,
+    val confluenceScoreCall: Int = 50,
+    val confluenceScorePut: Int = 50
 )
 
 class VisionAnalyzer {
@@ -115,6 +118,100 @@ class VisionAnalyzer {
     }
 
     /**
+     * Agrupa y fusiona columnas de escaneo adyacentes que corresponden a una misma vela física.
+     * Esto evita que una vela ancha de 12-25px genere múltiples velas duplicadas en candleList.
+     */
+    fun clusterAndMergeCandleColumns(rawColumns: List<CandleData>, minSpacingPx: Float = 10f): List<CandleData> {
+        if (rawColumns.isEmpty()) return emptyList()
+
+        val clusters = mutableListOf<MutableList<CandleData>>()
+        var currentCluster = mutableListOf<CandleData>()
+
+        for (col in rawColumns) {
+            if (currentCluster.isEmpty()) {
+                currentCluster.add(col)
+            } else {
+                val lastInCluster = currentCluster.last()
+                val dist = Math.abs(col.x - lastInCluster.x)
+                val sameColor = col.type == lastInCluster.type
+                // Solapamiento vertical de cuerpo para asegurar que es la misma vela
+                val bodyOverlap = col.bodyTopY < lastInCluster.bodyBottomY + 10f && col.bodyBottomY > lastInCluster.bodyTopY - 10f
+
+                if (dist <= minSpacingPx && sameColor && bodyOverlap) {
+                    currentCluster.add(col)
+                } else {
+                    clusters.add(currentCluster)
+                    currentCluster = mutableListOf(col)
+                }
+            }
+        }
+        if (currentCluster.isNotEmpty()) {
+            clusters.add(currentCluster)
+        }
+
+        return clusters.map { group ->
+            val dominantType = group.first().type
+            val avgX = group.map { it.x }.average().toFloat()
+            val minTopY = group.minOf { it.topY }
+            val maxBottomY = group.maxOf { it.bottomY }
+            val avgBodyTopY = group.map { it.bodyTopY }.average().toFloat()
+            val avgBodyBottomY = group.map { it.bodyBottomY }.average().toFloat()
+
+            createCandle(
+                type = dominantType,
+                x = avgX,
+                topY = minTopY,
+                bottomY = maxBottomY,
+                bodyTopY = avgBodyTopY,
+                bodyBottomY = avgBodyBottomY
+            )
+        }
+    }
+
+    /**
+     * Identifica niveles fractales de soporte y resistencia basados en Swing Highs y Swing Lows (N=2).
+     */
+    fun detectFractalLevels(candles: List<CandleData>): Pair<List<Float>, List<Float>> {
+        val swingHighs = mutableListOf<Float>()
+        val swingLows = mutableListOf<Float>()
+
+        if (candles.size < 5) {
+            val tops = candles.map { it.topY }
+            val bottoms = candles.map { it.bottomY }
+            return Pair(
+                bottoms.maxOrNull()?.let { listOf(it) } ?: emptyList(),
+                tops.minOrNull()?.let { listOf(it) } ?: emptyList()
+            )
+        }
+
+        // Pivotes con ventana de 2 a cada lado
+        for (i in 2 until candles.size - 2) {
+            val current = candles[i]
+            // Swing High (Resistencia / Techo -> menor Y en coordenadas de pantalla)
+            val isSwingHigh = current.topY <= candles[i - 1].topY &&
+                    current.topY <= candles[i - 2].topY &&
+                    current.topY <= candles[i + 1].topY &&
+                    current.topY <= candles[i + 2].topY
+
+            if (isSwingHigh) {
+                swingHighs.add(current.topY)
+            }
+
+            // Swing Low (Soporte / Piso -> mayor Y en coordenadas de pantalla)
+            val isSwingLow = current.bottomY >= candles[i - 1].bottomY &&
+                    current.bottomY >= candles[i - 2].bottomY &&
+                    current.bottomY >= candles[i + 1].bottomY &&
+                    current.bottomY >= candles[i + 2].bottomY
+
+            if (isSwingLow) {
+                swingLows.add(current.bottomY)
+            }
+        }
+
+        return Pair(swingLows, swingHighs)
+    }
+
+    /**
      * Evalúa si una longitud de corrida vertical cumple con el filtro de ruido (>= 6px).
      * Cada paso de muestreo es de 2px, por lo que 3 muestras equivalen a 6px.
      */
@@ -146,18 +243,22 @@ class VisionAnalyzer {
 
         val candleTypes = candleList.map { it.type }
 
-        if (candleList.isNotEmpty()) {
-            val confirmedTops = candleList.map { it.topY }
-            val confirmedBottoms = candleList.map { it.bottomY }
+       if (candleList.isNotEmpty()) {
+            val historicalCandles = if (candleList.size >= 3) candleList.drop(1) else candleList
 
-            minPriceY = confirmedTops.minOrNull() ?: (startY + (endY - startY) * 0.25f)
-            maxPriceY = confirmedBottoms.maxOrNull() ?: (startY + (endY - startY) * 0.75f)
+            // Detección institucional por Fractales (Swing Highs y Swing Lows)
+            val (fractalSupports, fractalResistances) = detectFractalLevels(historicalCandles)
+            val confirmedTops = historicalCandles.map { it.topY }
+            val confirmedBottoms = historicalCandles.map { it.bottomY }
 
-            highestX = candleList.find { it.topY == minPriceY }?.x ?: ((startX + endX) * 0.5f)
-            lowestX = candleList.find { it.bottomY == maxPriceY }?.x ?: ((startX + endX) * 0.5f)
+            minPriceY = fractalResistances.minOrNull() ?: (confirmedTops.minOrNull() ?: (startY + (endY - startY) * 0.25f))
+            maxPriceY = fractalSupports.maxOrNull() ?: (confirmedBottoms.maxOrNull() ?: (startY + (endY - startY) * 0.75f))
+
+            highestX = historicalCandles.find { it.topY == minPriceY }?.x ?: ((startX + endX) * 0.5f)
+            lowestX = historicalCandles.find { it.bottomY == maxPriceY }?.x ?: ((startX + endX) * 0.5f)
 
             latestPriceY = (candleList.first().bodyTopY + candleList.first().bodyBottomY) / 2f
-        }
+       }
 
         // Racha consecutiva de la última vela hacia atrás
         val lastType = candleTypes.firstOrNull() ?: CandleType.DOJI
@@ -177,11 +278,17 @@ class VisionAnalyzer {
         }
 
         // Tendencia general basada en la posición de extremos
-        val trend = if (minPriceY < Float.MAX_VALUE && maxPriceY > Float.MIN_VALUE && candleList.size >= 2) {
-            if (highestX > lowestX) TrendDirection.UPTREND else TrendDirection.DOWNTREND
-        } else {
-            TrendDirection.SIDEWAYS
-        }
+       val trend = if (minPriceY < Float.MAX_VALUE && maxPriceY > Float.MIN_VALUE && candleList.size >= 2) {
+            val recent = candleList.take(5)
+            val firstPrice = (recent.first().bodyTopY + recent.first().bodyBottomY) / 2f
+            val lastPrice = (recent.last().bodyTopY + recent.last().bodyBottomY) / 2f
+            if (firstPrice < lastPrice - 15f && highestX > lowestX) TrendDirection.UPTREND
+            else if (firstPrice > lastPrice + 15f && lowestX > highestX) TrendDirection.DOWNTREND
+            else if (highestX > lowestX) TrendDirection.UPTREND
+            else TrendDirection.DOWNTREND
+       } else {
+           TrendDirection.SIDEWAYS
+       }
 
         // S/R calculados estrictamente dentro del rango de velas encontradas:
         // Resistencia = Menor Y (Techo de velas)
@@ -210,22 +317,23 @@ class VisionAnalyzer {
         val effectiveSupportY = supportLinesY.minByOrNull { Math.abs(latestPriceY - it) } ?: finalSupportY
         val effectiveResistanceY = resistanceLinesY.minByOrNull { Math.abs(latestPriceY - it) } ?: finalResistanceY
 
-        // Proximidad a soportes y resistencias (manuales o calculados por el bot)
-        val threshold = ((endY - startY) * 0.08f).coerceIn(30f, 60f)
-        val touchesSupport = supportLinesY.any { Math.abs(latestPriceY - it) <= 30f || Math.abs(latestPriceY - it) < threshold } ||
-                (maxPriceY > Float.MIN_VALUE && (Math.abs(latestPriceY - finalSupportY) <= 30f || Math.abs(latestPriceY - finalSupportY) < threshold))
-        val touchesResistance = resistanceLinesY.any { Math.abs(latestPriceY - it) <= 30f || Math.abs(latestPriceY - it) < threshold } ||
-                (minPriceY < Float.MAX_VALUE && (Math.abs(latestPriceY - finalResistanceY) <= 30f || Math.abs(latestPriceY - finalResistanceY) < threshold))
-
-        // --- PATRONES MASTER TRADERS ---
+       // Proximidad a soportes y resistencias (manuales o calculados por el bot)
+        val threshold = ((endY - startY) * 0.025f).coerceIn(10f, 20f)
         val lastCandle = candleList.firstOrNull()
 
         // 1. Mechas de Rechazo (Rejection Wicks >= 35%)
         val hasTopRejection = lastCandle != null && lastCandle.topWickRatio >= 0.35f
         val hasBottomRejection = lastCandle != null && lastCandle.bottomWickRatio >= 0.35f
 
-        val isRejectionCall = hasBottomRejection && (touchesSupport || (lastCandle != null && (Math.abs(lastCandle.bottomY - effectiveSupportY) <= 30f || Math.abs(lastCandle.bottomY - finalSupportY) <= 30f)))
-        val isRejectionPut = hasTopRejection && (touchesResistance || (lastCandle != null && (Math.abs(lastCandle.topY - effectiveResistanceY) <= 30f || Math.abs(lastCandle.topY - finalResistanceY) <= 30f)))
+        val touchesSupport = (supportLinesY.any { Math.abs(latestPriceY - it) <= threshold } ||
+                (maxPriceY > Float.MIN_VALUE && Math.abs(latestPriceY - finalSupportY) <= threshold)) &&
+                (hasBottomRejection || lastType == CandleType.GREEN)
+        val touchesResistance = (resistanceLinesY.any { Math.abs(latestPriceY - it) <= threshold } ||
+                (minPriceY < Float.MAX_VALUE && Math.abs(latestPriceY - finalResistanceY) <= threshold)) &&
+                (hasTopRejection || lastType == CandleType.RED)
+
+        val isRejectionCall = hasBottomRejection && (touchesSupport || (lastCandle != null && (Math.abs(lastCandle.bottomY - effectiveSupportY) <= threshold || Math.abs(lastCandle.bottomY - finalSupportY) <= threshold)))
+        val isRejectionPut = hasTopRejection && (touchesResistance || (lastCandle != null && (Math.abs(lastCandle.topY - effectiveResistanceY) <= threshold || Math.abs(lastCandle.topY - finalResistanceY) <= threshold)))
 
         // 2. Choque de Máximos y Mínimos (Breakout + Retest)
         var isChoqueCall = false
@@ -350,18 +458,48 @@ class VisionAnalyzer {
             avgBodyHeight < 15.0 || dojiRatio >= 0.50f
         } else false
 
+        // Filtro Cuantitativo de Consolidación Estrecha (tradingview-quantitative)
+        val isConsolidationTight = if (recentCandles.size >= 4) {
+            val sample = recentCandles.take(5)
+            val avgBodyHeight = sample.map { it.bodyHeight }.average()
+            val highestY = sample.minOf { it.topY }
+            val lowestY = sample.maxOf { it.bottomY }
+            val rangeHeight = lowestY - highestY
+            val dojiCount = sample.count { it.bodyHeight < 12f || (it.bodyHeight <= it.totalHeight * 0.20f) || it.type == CandleType.DOJI }
+            avgBodyHeight < 10.0 || rangeHeight < 28f || dojiCount >= 3
+        } else false
+
         val isSideways = isSidewaysByCandles || (candleList.size >= 5 && Math.abs(callPct - putPct) < 12)
 
+        // Confluencia Multi-Factor Cuantitativa (0-100%)
+        var confCall = 40
+        var confPut = 40
+        if (trend == TrendDirection.UPTREND) confCall += 25
+        if (trend == TrendDirection.DOWNTREND) confPut += 25
+        if (touchesSupport) confCall += 25
+        if (touchesResistance) confPut += 25
+        if (isFalseBreakoutCall) confCall += 35 else if (isEngulfingCall) confCall += 30 else if (isRejectionCall || hasBottomRejection) confCall += 20
+        if (isFalseBreakoutPut) confPut += 35 else if (isEngulfingPut) confPut += 30 else if (isRejectionPut || hasTopRejection) confPut += 20
+        if (candleTypes.firstOrNull() == CandleType.GREEN) confCall += 10
+        if (candleTypes.firstOrNull() == CandleType.RED) confPut += 10
+
+        if (isSideways || isConsolidationTight) {
+            confCall = (confCall * 0.6f).toInt()
+            confPut = (confPut * 0.6f).toInt()
+        }
+        val finalConfCall = confCall.coerceIn(0, 100)
+        val finalConfPut = confPut.coerceIn(0, 100)
+
         // Micro-Sincronización Reloj Sniper (00:55-00:59 o 00:00-00:08)
-       val candleSecond = ((System.currentTimeMillis() / 1000) % 60).toInt()
+        val candleSecond = ((System.currentTimeMillis() / 1000) % 60).toInt()
         val isSniperTimingWindow = candleSecond in 57..59 || candleSecond in 0..6 || candleSecond in 28..33
         val isLateTimingForbidden = candleSecond in 42..55
 
-       // Sniping de Mejor Strike (Pullback / Testeo en nivel clave)
+        // Sniping de Mejor Strike (Pullback / Testeo en nivel clave)
         val targetSupport = if (supportLinesY.isNotEmpty()) effectiveSupportY else finalSupportY
         val targetResistance = if (resistanceLinesY.isNotEmpty()) effectiveResistanceY else finalResistanceY
-        val isPullbackSniperCall = (touchesSupport || latestPriceY >= targetSupport - 12f || hasBottomRejection) && !isSideways
-        val isPullbackSniperPut = (touchesResistance || latestPriceY <= targetResistance + 12f || hasTopRejection) && !isSideways
+        val isPullbackSniperCall = (touchesSupport || latestPriceY >= targetSupport - 12f || hasBottomRejection) && !isSideways && !isConsolidationTight
+        val isPullbackSniperPut = (touchesResistance || latestPriceY <= targetResistance + 12f || hasTopRejection) && !isSideways && !isConsolidationTight
 
         val gCount = candleTypes.count { it == CandleType.GREEN }
         val rCount = candleTypes.count { it == CandleType.RED }
@@ -404,13 +542,16 @@ class VisionAnalyzer {
             dynamicSupportY = finalSupportY,
             greenPixelsDetected = totalGreenPixels,
             redPixelsDetected = totalRedPixels,
-           diagnosticSummary = diag,
-           candleSecond = candleSecond,
-           isSniperTimingWindow = isSniperTimingWindow,
+            diagnosticSummary = diag,
+            candleSecond = candleSecond,
+            isSniperTimingWindow = isSniperTimingWindow,
             isLateTimingForbidden = isLateTimingForbidden,
-           isPullbackSniperCall = isPullbackSniperCall,
-           isPullbackSniperPut = isPullbackSniperPut
-       )
+            isPullbackSniperCall = isPullbackSniperCall,
+            isPullbackSniperPut = isPullbackSniperPut,
+            isConsolidationTight = isConsolidationTight,
+            confluenceScoreCall = finalConfCall,
+            confluenceScorePut = finalConfPut
+        )
     }
 
     /**
@@ -483,18 +624,8 @@ class VisionAnalyzer {
             var bestRunLength = 0
 
             for (y in startY..endY step 2) {
-                // FILTRO ANTI-OVERLAY: Ignorar zona de ±30px alrededor de líneas y textos ya trazados por el bot
-                if (supportLinesY.any { Math.abs(y - it) <= 30f } || resistanceLinesY.any { Math.abs(y - it) <= 30f }) {
-                    if (runCount > 0) {
-                        if (runCount > bestRunLength) {
-                            bestRunLength = runCount
-                            bestRunColor = currentRunColor
-                            bestRunStartY = runStartY
-                            bestRunEndY = y - 2
-                        }
-                        runCount = 0
-                        currentRunColor = 0
-                    }
+                // FILTRO ANTI-OVERLAY FINO: Solo ignorar la línea exacta (±2px) para no perder mechas ni toques en niveles
+                if (supportLinesY.any { Math.abs(y - it) <= 2f } || resistanceLinesY.any { Math.abs(y - it) <= 2f }) {
                     continue
                 }
 
@@ -580,7 +711,7 @@ class VisionAnalyzer {
 
                 val wickScanTop = (bestRunStartY - 60).coerceAtLeast(startY)
                 for (y in bestRunStartY downTo wickScanTop step 2) {
-                    if (supportLinesY.any { Math.abs(y - it) <= 30f } || resistanceLinesY.any { Math.abs(y - it) <= 30f }) continue
+                    if (supportLinesY.any { Math.abs(y - it) <= 2f } || resistanceLinesY.any { Math.abs(y - it) <= 2f }) continue
                     val pixel = bitmap.getPixel(x, y)
                     Color.colorToHSV(pixel, hsvBuffer)
                     val hue = hsvBuffer[0]
@@ -602,7 +733,7 @@ class VisionAnalyzer {
 
                 val wickScanBottom = (bestRunEndY + 60).coerceAtMost(endY)
                 for (y in bestRunEndY..wickScanBottom step 2) {
-                    if (supportLinesY.any { Math.abs(y - it) <= 30f } || resistanceLinesY.any { Math.abs(y - it) <= 30f }) continue
+                    if (supportLinesY.any { Math.abs(y - it) <= 2f } || resistanceLinesY.any { Math.abs(y - it) <= 2f }) continue
                     val pixel = bitmap.getPixel(x, y)
                     Color.colorToHSV(pixel, hsvBuffer)
                     val hue = hsvBuffer[0]
@@ -634,9 +765,12 @@ class VisionAnalyzer {
             }
         }
 
-        // Evaluar patrones técnicos y estrategias Master Trader
+        // Fusión y agrupamiento horizontal para condensar columnas adyacentes de la misma vela
+        val clusteredCandles = clusterAndMergeCandleColumns(candleList, minSpacingPx = stepX * 2.5f)
+
+        // Evaluar patrones técnicos y estrategias Master Trader con las velas reales discretizadas
         val result = evaluateCandlePatterns(
-            candleList = candleList,
+            candleList = clusteredCandles,
             supportLinesY = supportLinesY,
             resistanceLinesY = resistanceLinesY,
             startY = startY.toFloat(),

@@ -17,7 +17,7 @@ class RiskManager(context: Context? = null) {
         const val DEFAULT_LOSS_COOLDOWN_SECONDS = 60
        const val DEFAULT_STOP_LOSS_STREAK = 3
        const val DEFAULT_TAKE_PROFIT_WINS = 20 // 20 victorias por bloque (0 = Ilimitado)
-        const val DEFAULT_MAX_MARTINGALE_LEVEL = 1
+        const val DEFAULT_MAX_MARTINGALE_LEVEL = 2
     }
 
     @Volatile

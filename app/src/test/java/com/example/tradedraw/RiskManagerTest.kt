@@ -49,6 +49,7 @@ class RiskManagerTest {
         assertEquals("Initial Martingale status should be M0", "[M0 | $10.0]", riskManager.getMartingaleStatusBadge())
 
         // 1st Loss -> M1
+        riskManager.recordTradeSent(TradeAction.BUY)
         riskManager.recordTradeLoss()
         assertEquals("Loss streak should be 1", 1, riskManager.currentLossStreak)
         assertEquals("Total losses should be 1", 1, riskManager.totalLosses)
@@ -56,12 +57,14 @@ class RiskManagerTest {
         assertEquals("M1 amount should be 10 * 2.2 = 22.0", 22.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
 
         // 2nd Loss -> M2
+        riskManager.recordTradeSent(TradeAction.BUY)
         riskManager.recordTradeLoss()
         assertEquals("Loss streak should be 2", 2, riskManager.currentLossStreak)
         assertEquals("Total losses should be 2", 2, riskManager.totalLosses)
         assertEquals("M2 amount should be 22 * 2.2 = 48.4", 48.4f, riskManager.getCurrentInvestmentAmount(), 0.01f)
 
         // Win -> Reset to M0
+        riskManager.recordTradeSent(TradeAction.BUY)
         riskManager.recordTradeWin()
         assertEquals("Loss streak should reset to 0", 0, riskManager.currentLossStreak)
         assertEquals("Current wins should be 1", 1, riskManager.currentWins)
@@ -73,9 +76,11 @@ class RiskManagerTest {
     @Test
     fun testMaxMartingaleCappedAtM1ForRealMoneySafety() {
         riskManager.maxMartingaleLevel = 1
+        riskManager.recordTradeSent(TradeAction.BUY)
         riskManager.recordTradeLoss() // 1 loss -> M1
         assertEquals("1st loss is M1 (10 * 2.2 = 22.0)", 22.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
 
+        riskManager.recordTradeSent(TradeAction.BUY)
         riskManager.recordTradeLoss() // 2 losses -> Capped at M1 for real money protection
         assertEquals("2nd loss should be capped at M1 (22.0)", 22.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
     }
@@ -83,8 +88,11 @@ class RiskManagerTest {
     @Test
     fun testStopLossAndTakeProfitLimits() {
         // Test Stop Loss
+        riskManager.recordTradeSent(TradeAction.BUY)
         riskManager.recordTradeLoss()
+        riskManager.recordTradeSent(TradeAction.BUY)
         riskManager.recordTradeLoss()
+        riskManager.recordTradeSent(TradeAction.BUY)
         riskManager.recordTradeLoss() // 3 consecutive losses
         assertEquals(3, riskManager.currentLossStreak)
 
@@ -94,7 +102,10 @@ class RiskManagerTest {
 
         // Reset and Test Take Profit
         riskManager.resetSession()
-        repeat(5) { riskManager.recordTradeWin() }
+        repeat(5) {
+            riskManager.recordTradeSent(TradeAction.BUY)
+            riskManager.recordTradeWin()
+        }
         assertEquals(5, riskManager.currentWins)
 
         val (canTradeTP, reasonTP) = riskManager.canExecuteTrade()
