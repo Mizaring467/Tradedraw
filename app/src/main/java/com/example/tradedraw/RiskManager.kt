@@ -127,6 +127,12 @@ class RiskManager(context: Context? = null) {
     var pendingTradeBaseBalance: Double = 0.0
         internal set
 
+    @Volatile
+    var sessionStartBalance: Double = 0.0
+
+    @Volatile
+    var unitTradeAmount: Double = 80000.0 // Monto de inversión base en Binomo (Col$80,000)
+
     @Synchronized
     fun getRemainingCooldown(): Int {
         if (lastTradeTime == 0L) return 0
@@ -137,7 +143,7 @@ class RiskManager(context: Context? = null) {
     }
 
     @Synchronized
-    fun canExecuteTrade(): Pair<Boolean, String> {
+    fun canExecuteTrade(mode: AutoTradeMode? = null): Pair<Boolean, String> {
         if (hasPendingTrade) {
             val elapsed = (System.currentTimeMillis() - pendingTradeStartTime) / 1000
             // Timeout de seguridad: las operaciones de 1m en Binomo duran entre 45s y 75s
@@ -146,6 +152,10 @@ class RiskManager(context: Context? = null) {
             } else {
                 return Pair(false, "Operación abierta en curso (${elapsed}s)")
             }
+        }
+        // En MODO YOLO: Sin restricciones de Stop Loss, Take Profit ni pausas de cooldown
+        if (mode == AutoTradeMode.YOLO) {
+            return Pair(true, "🚀 MODO YOLO: Operativa continua sin límites")
         }
         if (stopLossStreak > 0 && currentLossStreak >= stopLossStreak) {
             return Pair(false, "Stop Loss alcanzado ($stopLossStreak derrotas)")
@@ -205,29 +215,37 @@ class RiskManager(context: Context? = null) {
     }
 
     @Synchronized
-    fun recordTradeWin() {
+    fun recordTradeWins(count: Int = 1) {
         if (!hasPendingTrade) {
-            android.util.Log.w("RiskManager", "recordTradeWin ignorado: No hay trade pendiente (llamada duplicada bloqueada)")
+            android.util.Log.w("RiskManager", "recordTradeWins ignorado: No hay trade pendiente (llamada duplicada bloqueada)")
             return
         }
-        currentWins++
-        totalWins++
+        val safeCount = count.coerceAtLeast(1)
+        currentWins += safeCount
+        totalWins += safeCount
         currentLossStreak = 0
         lastTradeTime = System.currentTimeMillis()
         clearPendingTrade()
     }
 
     @Synchronized
-    fun recordTradeLoss() {
+    fun recordTradeLosses(count: Int = 1) {
         if (!hasPendingTrade) {
-            android.util.Log.w("RiskManager", "recordTradeLoss ignorado: No hay trade pendiente (llamada duplicada bloqueada)")
+            android.util.Log.w("RiskManager", "recordTradeLosses ignorado: No hay trade pendiente (llamada duplicada bloqueada)")
             return
         }
-        totalLosses++
-        currentLossStreak++
+        val safeCount = count.coerceAtLeast(1)
+        totalLosses += safeCount
+        currentLossStreak += safeCount
         lastTradeTime = System.currentTimeMillis()
         clearPendingTrade()
     }
+
+    @Synchronized
+    fun recordTradeWin() = recordTradeWins(1)
+
+    @Synchronized
+    fun recordTradeLoss() = recordTradeLosses(1)
 
     @Synchronized
     fun resetStats() {
@@ -272,18 +290,20 @@ class RiskManager(context: Context? = null) {
 
     @Synchronized
     fun getMartingaleStatusBadge(): String {
+        if (!martingaleEnabled) return "[OFF]"
         val level = "M$currentLossStreak"
         val amt = getCurrentInvestmentAmount()
-        return if (martingaleEnabled) "[$level | $$amt]" else "[$level]"
+        return "[$level | $$amt]"
     }
 
     @Synchronized
-    fun resetSession() {
+    fun resetSession(startBal: Double = 0.0) {
         currentLossStreak = 0
         currentWins = 0
         totalWins = 0
         totalLosses = 0
         lastTradeTime = 0L
+        if (startBal > 0.0) sessionStartBalance = startBal
         clearPendingTrade()
     }
 }

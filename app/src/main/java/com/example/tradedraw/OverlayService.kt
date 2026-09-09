@@ -98,6 +98,7 @@ class OverlayService : Service() {
             Log.d("TradeDraw", "ADB overlay command: $action")
             when (action) {
                 "AUTO" -> setTradingMode(AutoTradeMode.AUTONOMOUS)
+                "YOLO" -> setTradingMode(AutoTradeMode.YOLO)
                 "SEMI" -> setTradingMode(AutoTradeMode.SEMIAUTOMATIC)
                 "STOP" -> setTradingMode(AutoTradeMode.DISABLED)
                 "DEB" -> showDebugDialog()
@@ -477,6 +478,7 @@ class OverlayService : Service() {
         val currentMode = tradingEngine.mode
         val (modeIcon, modeText, modeColor) = when (currentMode) {
             AutoTradeMode.AUTONOMOUS -> Triple(R.drawable.ic_ai_chip, "AUTÓNOMO", Color.GREEN)
+            AutoTradeMode.YOLO -> Triple(R.drawable.ic_ai_chip, "YOLO 🚀", Color.parseColor("#ec4899"))
             AutoTradeMode.SEMIAUTOMATIC -> Triple(R.drawable.ic_ai_chip, "SEMIAUTO", Color.YELLOW)
             AutoTradeMode.DISABLED -> Triple(R.drawable.ic_ai_chip, "MODO: OFF", Color.WHITE)
         }
@@ -701,14 +703,20 @@ class OverlayService : Service() {
     }
 
     private fun showModeDialog() {
-        val modes = arrayOf("🟢 Modo Autónomo (Bot opera solo)", "🟡 Modo Semiautomático (Bot te avisa y dibuja)", "⚪ Desactivado (Manual)")
+        val modes = arrayOf(
+            "🟢 Modo Autónomo (Gestión de Riesgo normal)",
+            "🚀 Modo YOLO (Sin Stop Loss ni pausas, opera continuo)",
+            "🟡 Modo Semiautomático (Bot te avisa y dibuja)",
+            "⚪ Desactivado (Manual)"
+        )
         AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
             .setTitle("Modo de Trading")
             .setItems(modes) { _, which ->
                 when (which) {
                     0 -> setTradingMode(AutoTradeMode.AUTONOMOUS)
-                    1 -> setTradingMode(AutoTradeMode.SEMIAUTOMATIC)
-                    2 -> setTradingMode(AutoTradeMode.DISABLED)
+                    1 -> setTradingMode(AutoTradeMode.YOLO)
+                    2 -> setTradingMode(AutoTradeMode.SEMIAUTOMATIC)
+                    3 -> setTradingMode(AutoTradeMode.DISABLED)
                 }
                 showAISubmenu()
             }
@@ -931,8 +939,37 @@ class OverlayService : Service() {
         isHudCollapsed = hudPrefs.getBoolean("hud_collapsed", true)
         hudView?.alpha = hudAlpha
 
+        val sliderContainer = hudView?.findViewById<View>(R.id.hud_opacity_slider_container)
+        val seekOpacity = hudView?.findViewById<SeekBar>(R.id.hud_seek_opacity)
+        val txtOpacityVal = hudView?.findViewById<TextView>(R.id.hud_txt_opacity_value)
+
+        val currentPct = (hudAlpha * 100).toInt().coerceIn(20, 100)
+        seekOpacity?.progress = currentPct - 20
+        txtOpacityVal?.text = "$currentPct%"
+
+        seekOpacity?.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val pct = (progress + 20).coerceIn(20, 100)
+                hudAlpha = pct / 100f
+                hudView?.alpha = hudAlpha
+                txtOpacityVal?.text = "$pct%"
+                hudView?.findViewById<TextView>(R.id.hud_btn_opacity)?.text = " 👁️ $pct% "
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                hudPrefs.edit().putFloat("hud_alpha", hudAlpha).apply()
+            }
+        })
+
         hudView?.findViewById<TextView>(R.id.hud_btn_opacity)?.apply {
-            setOnClickListener { cycleHUDOpacity() }
+            text = " 👁️ $currentPct% "
+            setOnClickListener {
+                if (sliderContainer != null) {
+                    sliderContainer.visibility = if (sliderContainer.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                }
+            }
             setOnLongClickListener {
                 showHUDOpacityDialog()
                 true
@@ -1149,7 +1186,7 @@ class OverlayService : Service() {
             v.alpha = hudAlpha
 
             val isAccessConnected = AutoTradeAccessibilityService.instance != null
-            val (canTradeStatus, blockReason) = riskManager.canExecuteTrade()
+            val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(tradingEngine.mode)
 
             when (tradingEngine.mode) {
                 AutoTradeMode.AUTONOMOUS -> {
@@ -1172,6 +1209,15 @@ class OverlayService : Service() {
                         txtMode.setTextColor(Color.GREEN)
                     }
                 }
+                AutoTradeMode.YOLO -> {
+                    if (!isAccessConnected) {
+                        txtMode.text = "[SIN ACCESO]"
+                        txtMode.setTextColor(Color.RED)
+                    } else {
+                        txtMode.text = "[YOLO 🚀]"
+                        txtMode.setTextColor(Color.parseColor("#ec4899"))
+                    }
+                }
                 AutoTradeMode.SEMIAUTOMATIC -> {
                     txtMode.text = "[SEMI]"
                     txtMode.setTextColor(Color.YELLOW)
@@ -1190,7 +1236,7 @@ class OverlayService : Service() {
                         }
                         startActivity(intent)
                     } catch (e: Exception) {}
-                } else if (!canTradeStatus && !riskManager.hasPendingTrade && tradingEngine.mode == AutoTradeMode.AUTONOMOUS) {
+                } else if (!canTradeStatus && !riskManager.hasPendingTrade && (tradingEngine.mode == AutoTradeMode.AUTONOMOUS || tradingEngine.mode == AutoTradeMode.YOLO)) {
                     riskManager.resetStreakOnly()
                     updateHUDView()
                     Toast.makeText(this@OverlayService, "▶️ Operativa reanudada (Límites reseteados)", Toast.LENGTH_SHORT).show()
@@ -1344,6 +1390,12 @@ class OverlayService : Service() {
         card?.setBackgroundResource(R.drawable.bg_hud_signal_idle)
         countdown?.visibility = View.GONE
         when (tradingEngine.mode) {
+            AutoTradeMode.YOLO -> {
+                title?.text = "🚀 MODO YOLO: Operando Continuo"
+                title?.setTextColor(Color.parseColor("#ec4899"))
+                desc?.text = "Operativa sin Stop Loss ni límites de pérdidas. Opera ante cada setup."
+                desc?.setTextColor(Color.parseColor("#f472b6"))
+            }
             AutoTradeMode.SEMIAUTOMATIC -> {
                 title?.text = "🟡 MODO SEMIAUTO: Vigilando Entrada"
                 title?.setTextColor(Color.parseColor("#facc15"))

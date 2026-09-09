@@ -23,8 +23,9 @@ enum class TradeAction {
 }
 
 enum class AutoTradeMode {
-    AUTONOMOUS,      // Ejecuta clics automáticos
+    AUTONOMOUS,      // Ejecuta clics automáticos con gestión de riesgo
     SEMIAUTOMATIC,   // Alerta y prepara dibujos, usuario opera
+    YOLO,            // Opera de forma continua sin límites de Stop Loss ni pausas
     DISABLED         // Apagado
 }
 
@@ -40,7 +41,7 @@ class TradingEngine(
     var mode: AutoTradeMode = AutoTradeMode.DISABLED
         set(value) {
             field = value
-            if (value == AutoTradeMode.AUTONOMOUS) {
+            if (value == AutoTradeMode.AUTONOMOUS || value == AutoTradeMode.YOLO) {
                 agentController.start()
             } else {
                 agentController.stop()
@@ -169,6 +170,8 @@ class TradingEngine(
             if (elapsedSec >= 55) {
                 var isWin: Boolean? = null
                 var isTie: Boolean = false
+                var resolvedWinCount = 1
+                var resolvedLossCount = 1
                 var method = ""
 
                 val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance() ?: 0.0
@@ -176,17 +179,22 @@ class TradingEngine(
                     // 1. Verificación por Saldo Real (La verdad financiera definitiva y prioritaria)
                     if (baseBalance > 0.0 && currentBal > 0.0) {
                         val diff = currentBal - baseBalance
+                        val unitAmt = if (riskManager.unitTradeAmount > 1000.0) riskManager.unitTradeAmount else 80000.0
+
                         // Ganancia detectada: Binomo acreditó el pago de la operación (+retorno)
                         if (diff > 10.0) {
                             isWin = true
-                            method = "SALDO (+) Ganancia acreditada en Binomo: Diff=+$diff"
+                            // Payout ~83%: la ganancia neta acreditada es diff / (unitAmt * 0.80)
+                            resolvedWinCount = Math.max(1, Math.round(diff / (unitAmt * 0.80)).toInt())
+                            method = "SALDO (+) Ganancia acreditada en Binomo: Diff=+$diff ($resolvedWinCount contrato(s))"
                         } else if (elapsedSec >= 66 || (elapsedSec >= 63 && analysis.candleSecond in 3..25)) {
                             // Pasados al menos 66 segundos (o en el segundo :03-:25 de la nueva vela),
                             // Binomo ya cerró la expiración y acreditó cualquier premio pendiente.
                             if (diff < -10.0) {
                                 // Pérdida confirmada: el saldo cayó y nunca subió tras la acreditación
                                 isWin = false
-                                method = "SALDO (-) Inversión no recuperada (Derrota real): Diff=$diff (elapsed=${elapsedSec}s)"
+                                resolvedLossCount = Math.max(1, Math.round(Math.abs(diff) / unitAmt).toInt())
+                                method = "SALDO (-) Inversión no recuperada: Diff=$diff ($resolvedLossCount contrato(s))"
                             } else if (elapsedSec >= 68) {
                                 // Empate genuino: diff muy cercano a 0 tras 68s (Binomo reembolsó el capital exacto)
                                 if (Math.abs(diff) <= 10.0) {
@@ -255,16 +263,18 @@ class TradingEngine(
                             autoDrawEngine.clearTradeEntry()
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
                         } else if (finalWin) {
-                            riskManager.recordTradeWin()
+                            riskManager.recordTradeWins(resolvedWinCount)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
-                            Toast.makeText(context, "🎉 OPERACIÓN GANADA (+1 W)", Toast.LENGTH_LONG).show()
+                            val winMsg = if (resolvedWinCount > 1) "🎉 $resolvedWinCount OPERACIONES GANADAS (+$resolvedWinCount W)" else "🎉 OPERACIÓN GANADA (+1 W)"
+                            Toast.makeText(context, winMsg, Toast.LENGTH_LONG).show()
                             onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
                         } else {
-                            riskManager.recordTradeLoss()
+                            riskManager.recordTradeLosses(resolvedLossCount)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
-                            Toast.makeText(context, "⚠️ OPERACIÓN PERDIDA (+1 L)", Toast.LENGTH_LONG).show()
+                            val lossMsg = if (resolvedLossCount > 1) "⚠️ $resolvedLossCount OPERACIONES PERDIDAS (+$resolvedLossCount L)" else "⚠️ OPERACIÓN PERDIDA (+1 L)"
+                            Toast.makeText(context, lossMsg, Toast.LENGTH_LONG).show()
                             onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, false)
                         }
                         isTradeResolving.set(false)
@@ -576,12 +586,12 @@ class TradingEngine(
     }
 
     fun getStrategyStatusHint(): String {
-        if (AutoTradeAccessibilityService.instance == null && mode == AutoTradeMode.AUTONOMOUS) {
+        if (AutoTradeAccessibilityService.instance == null && (mode == AutoTradeMode.AUTONOMOUS || mode == AutoTradeMode.YOLO)) {
             return "⚠️ Accesibilidad DESACTIVADA (Clics bloqueados en Android)"
         }
 
-        val (canTradeStatus, blockReason) = riskManager.canExecuteTrade()
-        if (!canTradeStatus && !riskManager.hasPendingTrade && mode == AutoTradeMode.AUTONOMOUS) {
+        val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(mode)
+        if (!canTradeStatus && !riskManager.hasPendingTrade && (mode == AutoTradeMode.AUTONOMOUS || mode == AutoTradeMode.YOLO)) {
             return "🛑 $blockReason · Toca [MODO] para reanudar"
         }
 
@@ -688,7 +698,7 @@ class TradingEngine(
         bitmap: Bitmap,
         reasonDescription: String
     ) {
-        val (canTrade, reason) = riskManager.canExecuteTrade()
+        val (canTrade, reason) = riskManager.canExecuteTrade(mode)
         val actionText = if (action == TradeAction.BUY) "COMPRA / CALL (Sube)" else "VENTA / PUT (Baja)"
         val emoji = if (action == TradeAction.BUY) "🟢 ▲" else "🔴 ▼"
 
@@ -716,7 +726,7 @@ class TradingEngine(
             return
         }
 
-        if (mode == AutoTradeMode.AUTONOMOUS) {
+        if (mode == AutoTradeMode.AUTONOMOUS || mode == AutoTradeMode.YOLO) {
             if (!canTrade) {
                 return
             }
@@ -763,18 +773,8 @@ class TradingEngine(
             val baseBal = accessibility.readCurrentBalance() ?: 0.0
             isTradeResolving.set(false)
             riskManager.recordTradeSent(action, analysis.currentPriceY, baseBal)
+            // Despacho táctil único e inequívoco (sin repeticiones artificiales)
             accessibility.performClickAt(x, y)
-
-            // Refuerzo táctil a los 350ms si el saldo aún no se ha debitado (asegura registro en WebView)
-            handler.postDelayed({
-                if (riskManager.hasPendingTrade) {
-                    val balNow = accessibility.readCurrentBalance() ?: 0.0
-                    if (baseBal > 0.0 && balNow > 0.0 && Math.abs(balNow - baseBal) < 10.0) {
-                        android.util.Log.d("TradingEngine", "Refuerzo táctil hacia ($x, $y)")
-                        accessibility.performClickAt(x, y)
-                    }
-                }
-            }, 350L)
 
             handler.post {
                 drawingView.triggerClickAnimation(x, y)

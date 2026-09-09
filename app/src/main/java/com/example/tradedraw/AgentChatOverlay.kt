@@ -159,6 +159,12 @@ class AgentChatOverlay(
         v.findViewById<View>(R.id.chip_safe_mode)?.setOnClickListener {
             postUserMessage("Activa el modo conservador y opera solo a favor de tendencia")
         }
+        v.findViewById<View>(R.id.chip_yolo_mode)?.setOnClickListener {
+            postUserMessage("Activa el modo YOLO y opera continuamente sin parar")
+        }
+        v.findViewById<View>(R.id.chip_stop_yolo)?.setOnClickListener {
+            postUserMessage("Para el bot de inmediato")
+        }
         v.findViewById<View>(R.id.chip_reset_wl)?.setOnClickListener {
             postUserMessage("Resetea el marcador de victorias y derrotas a 0")
         }
@@ -222,7 +228,35 @@ class AgentChatOverlay(
             return
         }
 
-        // 3. Detección de reactivación / reset SL
+        // 3. Detección inmediata de detención del bot / frenado de YOLO
+        if (lower.contains("detén yolo") || lower.contains("para yolo") || lower.contains("desactiva yolo") || 
+            lower.contains("para el bot") || lower.contains("detén el bot") || lower.contains("deten el bot") ||
+            lower == "para" || lower == "stop" || lower == "pausa" || lower.contains("detente") || lower.contains("para ya")) {
+            tradingEngine.mode = AutoTradeMode.DISABLED
+            OverlayService.instance?.updateHUDView()
+            val botMsg = "🛑 Trading y modo YOLO detenidos. El bot ha quedado pausado de forma segura."
+            messages.add(ChatMessage(botMsg, false))
+            adapter?.notifyItemInserted(messages.size - 1)
+            chatView?.findViewById<RecyclerView>(R.id.chat_recycler_view)?.scrollToPosition(messages.size - 1)
+            statusIndicator?.text = "● En vivo"
+            statusIndicator?.setTextColor(android.graphics.Color.parseColor("#94a3b8"))
+            return
+        }
+
+        // 4. Detección inmediata de activación de MODO YOLO
+        if (lower.contains("activa modo yolo") || lower.contains("modo yolo") || lower == "yolo" || lower.contains("activa yolo") || lower.contains("pon modo yolo")) {
+            tradingEngine.mode = AutoTradeMode.YOLO
+            OverlayService.instance?.updateHUDView()
+            val botMsg = "🚀 ¡MODO YOLO ACTIVADO! Operando continuamente sin Stop Loss ni Take Profit ante cada señal válida. Escribe 'para' o toca '🛑 Parar Bot' cuando quieras pausar."
+            messages.add(ChatMessage(botMsg, false))
+            adapter?.notifyItemInserted(messages.size - 1)
+            chatView?.findViewById<RecyclerView>(R.id.chat_recycler_view)?.scrollToPosition(messages.size - 1)
+            statusIndicator?.text = "● En vivo"
+            statusIndicator?.setTextColor(android.graphics.Color.parseColor("#ec4899"))
+            return
+        }
+
+        // 5. Detección de reactivación normal / reset SL
         if (lower.contains("continua") || lower.contains("continúa") || lower.contains("sigue") || 
             lower.contains("reanuda") || lower.contains("reset sl") || lower.contains("ignora stop")) {
             executeAgentCommand("RESUME_TRADING")
@@ -277,15 +311,20 @@ class AgentChatOverlay(
                 OverlayService.instance?.updateHUDView()
                 Toast.makeText(context, "🤖 Modo cambiado a AUTÓNOMO", Toast.LENGTH_SHORT).show()
             }
+            "MODE_YOLO" -> {
+                tradingEngine.mode = AutoTradeMode.YOLO
+                OverlayService.instance?.updateHUDView()
+                Toast.makeText(context, "🚀 Modo cambiado a YOLO (Sin límites)", Toast.LENGTH_SHORT).show()
+            }
             "MODE_SEMIAUTO" -> {
                 tradingEngine.mode = AutoTradeMode.SEMIAUTOMATIC
                 OverlayService.instance?.updateHUDView()
                 Toast.makeText(context, "🤖 Modo cambiado a SEMIAUTOMÁTICO", Toast.LENGTH_SHORT).show()
             }
-            "MODE_DISABLED" -> {
+            "MODE_DISABLED", "STOP_TRADING" -> {
                 tradingEngine.mode = AutoTradeMode.DISABLED
                 OverlayService.instance?.updateHUDView()
-                Toast.makeText(context, "🤖 Trading pausado", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "🛑 Trading pausado", Toast.LENGTH_SHORT).show()
             }
             "STRAT_AUTO" -> {
                 tradingEngine.strategy = AutoTradeStrategy.AUTO_ADAPTIVE
