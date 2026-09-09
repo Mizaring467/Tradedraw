@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "backtesting-trading-strategies": {
+      "source": "jeremylongshore/tons-of-skills-marketplace",
+      "sourceType": "github",
+      "skillPath": "skills/.curated/backtesting-trading-strategies/SKILL.md",
+      "computedHash": "9c0cab57e93133004418939bc8c172372ef402e9af416fa89317b378824cc56f"
+    },
+    "trading-signal": {
+      "source": "binance/binance-skills-hub",
+      "sourceType": "github",
+      "skillPath": "skills/binance-web3/trading-signal/SKILL.md",
+      "computedHash": "ab9ce2059f0007cc0195d331cb58cda14484a48ab8130d1aebc01b4dd696087b"
+    },
+    "tradingview-quantitative": {
+      "source": "hypier/tradingview-quantitative-skills",
+      "sourceType": "github",
+      "skillPath": "tradingview-quantitative/SKILL.md",
+      "computedHash": "a1d96e8df77184eef8eed06e4847b26fa0e706544b47ddc6957c77629d81cbd2"
+    }
+  }
+}

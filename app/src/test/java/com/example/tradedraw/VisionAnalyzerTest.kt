@@ -306,4 +306,60 @@ class VisionAnalyzerTest {
         assertEquals(120f, result.dynamicResistanceY, 0.1f)
         assertEquals(380f, result.dynamicSupportY, 0.1f)
     }
+
+    @Test
+    fun testCandleClusteringAndMerging() {
+        // Simular 3 columnas verticales pertenecientes a una misma vela ancha verde de 12px
+        val col1 = analyzer.createCandle(CandleType.GREEN, 500f, 200f, 300f, 220f, 280f)
+        val col2 = analyzer.createCandle(CandleType.GREEN, 504f, 195f, 305f, 218f, 282f)
+        val col3 = analyzer.createCandle(CandleType.GREEN, 508f, 202f, 298f, 222f, 278f)
+
+        // Otra vela roja separada
+        val col4 = analyzer.createCandle(CandleType.RED, 530f, 250f, 350f, 260f, 340f)
+
+        val merged = analyzer.clusterAndMergeCandleColumns(listOf(col1, col2, col3, col4), minSpacingPx = 10f)
+
+        assertEquals("Debe consolidar las 3 columnas en 1 sola vela + 1 vela roja = 2 velas en total", 2, merged.size)
+        assertEquals(CandleType.GREEN, merged[0].type)
+        assertEquals(CandleType.RED, merged[1].type)
+        assertEquals(195f, merged[0].topY, 0.1f) // Captura el extremo más alto
+        assertEquals(305f, merged[0].bottomY, 0.1f) // Captura el extremo más bajo
+    }
+
+    @Test
+    fun testFractalSwingLevelsDetection() {
+        // Crear 7 velas formando un Swing High en la vela central (índice 3)
+        // y un Swing Low en la vela 5
+        val c0 = analyzer.createCandle(CandleType.GREEN, 100f, 300f, 400f, 320f, 380f)
+        val c1 = analyzer.createCandle(CandleType.GREEN, 120f, 250f, 420f, 270f, 400f)
+        val c2 = analyzer.createCandle(CandleType.GREEN, 140f, 220f, 410f, 240f, 390f)
+        val c3 = analyzer.createCandle(CandleType.GREEN, 160f, 180f, 430f, 200f, 410f) // Swing High: topY = 180f (menor que vecinos)
+        val c4 = analyzer.createCandle(CandleType.RED, 180f, 230f, 440f, 250f, 420f)
+        val c5 = analyzer.createCandle(CandleType.RED, 200f, 280f, 500f, 300f, 480f) // Swing Low: bottomY = 500f (mayor que vecinos)
+        val c6 = analyzer.createCandle(CandleType.GREEN, 220f, 260f, 450f, 280f, 430f)
+
+        val (supports, resistances) = analyzer.detectFractalLevels(listOf(c0, c1, c2, c3, c4, c5, c6))
+
+        assertTrue("Debe detectar al menos una resistencia fractal", resistances.isNotEmpty())
+        assertEquals(180f, resistances[0], 0.1f)
+    }
+
+    @Test
+    fun testConsolidationTightFilterAndConfluenceScore() {
+        // Velas microscópicas con cuerpo menor a 10px (compresión sin volumen)
+        val tightCandles = List(5) { i ->
+            analyzer.createCandle(CandleType.DOJI, 200f + i * 15f, 300f, 315f, 305f, 310f)
+        }
+
+        val result = analyzer.evaluateCandlePatterns(
+            candleList = tightCandles,
+            supportLinesY = emptyList(),
+            resistanceLinesY = emptyList(),
+            isLandscape = true
+        )
+
+        assertTrue("Debe marcar consolidación estrecha cuando los cuerpos son minúsculos", result.isConsolidationTight)
+        assertTrue("El score de confluencia CALL debe penalizarse ante consolidación", result.confluenceScoreCall <= 50)
+        assertTrue("El score de confluencia PUT debe penalizarse ante consolidación", result.confluenceScorePut <= 50)
+    }
 }
