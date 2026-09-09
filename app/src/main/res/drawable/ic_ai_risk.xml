@@ -3,7 +3,17 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
+    <!-- Perimeter Shield -->
     <path
-        android:fillColor="#FB923C"
-        android:pathData="M12,2L4,5v6.09c0,5.05 3.41,9.76 8,10.91 4.59,-1.15 8,-5.86 8,-10.91V5L12,2zM12,12.5V19.5c-3.17,-0.99 -5.5,-4.4 -5.5,-8.1V6.3l5.5,-2.06v8.26z" />
+        android:strokeColor="#FB923C"
+        android:strokeWidth="1.7"
+        android:strokeLineJoin="round"
+        android:pathData="M12,2L4,5v6.2c0,5.2 3.4,10 8,11.2c4.6,-1.2 8,-6 8,-11.2V5L12,2z" />
+    <!-- Pulse Line for Risk Metrics -->
+    <path
+        android:strokeColor="#FDBA74"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M8,12l2.5,2.5L13,9.5L16,13" />
 </vector>
