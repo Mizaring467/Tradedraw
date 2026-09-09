@@ -143,7 +143,7 @@ class RiskManager(context: Context? = null) {
     }
 
     @Synchronized
-    fun canExecuteTrade(mode: AutoTradeMode? = null): Pair<Boolean, String> {
+    fun canExecuteTrade(mode: AutoTradeMode? = null, subMode: AutonomousSubMode? = null): Pair<Boolean, String> {
         if (hasPendingTrade) {
             val elapsed = (System.currentTimeMillis() - pendingTradeStartTime) / 1000
             // Timeout de seguridad: las operaciones de 1m en Binomo duran entre 45s y 75s
@@ -153,8 +153,8 @@ class RiskManager(context: Context? = null) {
                 return Pair(false, "Operación abierta en curso (${elapsed}s)")
             }
         }
-        // En MODO YOLO: Sin restricciones de Stop Loss, Take Profit ni pausas de cooldown
-        if (mode == AutoTradeMode.YOLO) {
+        // En SUBMODO YOLO: Sin restricciones de Stop Loss, Take Profit ni pausas de cooldown
+        if (subMode == AutonomousSubMode.YOLO) {
             return Pair(true, "🚀 MODO YOLO: Operativa continua sin límites")
         }
         if (stopLossStreak > 0 && currentLossStreak >= stopLossStreak) {

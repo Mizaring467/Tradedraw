@@ -97,8 +97,14 @@ class OverlayService : Service() {
             val action = intent?.getStringExtra("action")?.uppercase() ?: ""
             Log.d("TradeDraw", "ADB overlay command: $action")
             when (action) {
-                "AUTO" -> setTradingMode(AutoTradeMode.AUTONOMOUS)
-                "YOLO" -> setTradingMode(AutoTradeMode.YOLO)
+                "AUTO" -> {
+                    tradingEngine.autonomousSubMode = AutonomousSubMode.CONSERVATIVE
+                    setTradingMode(AutoTradeMode.AUTONOMOUS)
+                }
+                "YOLO" -> {
+                    tradingEngine.autonomousSubMode = AutonomousSubMode.YOLO
+                    setTradingMode(AutoTradeMode.AUTONOMOUS)
+                }
                 "SEMI" -> setTradingMode(AutoTradeMode.SEMIAUTOMATIC)
                 "STOP" -> setTradingMode(AutoTradeMode.DISABLED)
                 "DEB" -> showDebugDialog()
@@ -476,9 +482,15 @@ class OverlayService : Service() {
     private fun showAISubmenu() {
         prepareSubmenu()
         val currentMode = tradingEngine.mode
+        val subMode = tradingEngine.autonomousSubMode
         val (modeIcon, modeText, modeColor) = when (currentMode) {
-            AutoTradeMode.AUTONOMOUS -> Triple(R.drawable.ic_ai_chip, "AUTÓNOMO", Color.GREEN)
-            AutoTradeMode.YOLO -> Triple(R.drawable.ic_ai_chip, "YOLO 🚀", Color.parseColor("#ec4899"))
+            AutoTradeMode.AUTONOMOUS -> {
+                if (subMode == AutonomousSubMode.YOLO) {
+                    Triple(R.drawable.ic_ai_chip, "AUTO: YOLO 🚀", Color.parseColor("#ec4899"))
+                } else {
+                    Triple(R.drawable.ic_ai_chip, "AUTO: CONSERVADOR", Color.GREEN)
+                }
+            }
             AutoTradeMode.SEMIAUTOMATIC -> Triple(R.drawable.ic_ai_chip, "SEMIAUTO", Color.YELLOW)
             AutoTradeMode.DISABLED -> Triple(R.drawable.ic_ai_chip, "MODO: OFF", Color.WHITE)
         }
@@ -704,8 +716,7 @@ class OverlayService : Service() {
 
     private fun showModeDialog() {
         val modes = arrayOf(
-            "🟢 Modo Autónomo (Gestión de Riesgo normal)",
-            "🚀 Modo YOLO (Sin Stop Loss ni pausas, opera continuo)",
+            "🟢 Modo Autónomo (Elegir submodo...)",
             "🟡 Modo Semiautomático (Bot te avisa y dibuja)",
             "⚪ Desactivado (Manual)"
         )
@@ -713,10 +724,37 @@ class OverlayService : Service() {
             .setTitle("Modo de Trading")
             .setItems(modes) { _, which ->
                 when (which) {
-                    0 -> setTradingMode(AutoTradeMode.AUTONOMOUS)
-                    1 -> setTradingMode(AutoTradeMode.YOLO)
-                    2 -> setTradingMode(AutoTradeMode.SEMIAUTOMATIC)
-                    3 -> setTradingMode(AutoTradeMode.DISABLED)
+                    0 -> showAutonomousSubModeDialog()
+                    1 -> setTradingMode(AutoTradeMode.SEMIAUTOMATIC)
+                    2 -> setTradingMode(AutoTradeMode.DISABLED)
+                }
+                showAISubmenu()
+            }
+            .create().apply {
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                show()
+            }
+    }
+
+    private fun showAutonomousSubModeDialog() {
+        val subModes = arrayOf(
+            "🛡️ Submodo Conservador (Gestión de Riesgo normal, Stop Loss & Cooldowns)",
+            "🚀 Submodo YOLO (Sin Stop Loss ni límites de pérdidas, opera continuo)"
+        )
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+            .setTitle("Submodo Autónomo")
+            .setItems(subModes) { _, which ->
+                when (which) {
+                    0 -> {
+                        tradingEngine.autonomousSubMode = AutonomousSubMode.CONSERVATIVE
+                        setTradingMode(AutoTradeMode.AUTONOMOUS)
+                        Toast.makeText(this, "🤖 Modo Autónomo: Conservador", Toast.LENGTH_SHORT).show()
+                    }
+                    1 -> {
+                        tradingEngine.autonomousSubMode = AutonomousSubMode.YOLO
+                        setTradingMode(AutoTradeMode.AUTONOMOUS)
+                        Toast.makeText(this, "🚀 Modo Autónomo: YOLO", Toast.LENGTH_SHORT).show()
+                    }
                 }
                 showAISubmenu()
             }
@@ -1186,13 +1224,16 @@ class OverlayService : Service() {
             v.alpha = hudAlpha
 
             val isAccessConnected = AutoTradeAccessibilityService.instance != null
-            val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(tradingEngine.mode)
+            val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(tradingEngine.mode, tradingEngine.autonomousSubMode)
 
             when (tradingEngine.mode) {
                 AutoTradeMode.AUTONOMOUS -> {
                     if (!isAccessConnected) {
                         txtMode.text = "[SIN ACCESO]"
                         txtMode.setTextColor(Color.RED)
+                    } else if (tradingEngine.autonomousSubMode == AutonomousSubMode.YOLO) {
+                        txtMode.text = "[YOLO 🚀]"
+                        txtMode.setTextColor(Color.parseColor("#ec4899"))
                     } else if (!canTradeStatus && !riskManager.hasPendingTrade) {
                         if (riskManager.stopLossStreak > 0 && riskManager.currentLossStreak >= riskManager.stopLossStreak) {
                             txtMode.text = "[PAUSA SL]"
@@ -1207,15 +1248,6 @@ class OverlayService : Service() {
                     } else {
                         txtMode.text = "[AUTO]"
                         txtMode.setTextColor(Color.GREEN)
-                    }
-                }
-                AutoTradeMode.YOLO -> {
-                    if (!isAccessConnected) {
-                        txtMode.text = "[SIN ACCESO]"
-                        txtMode.setTextColor(Color.RED)
-                    } else {
-                        txtMode.text = "[YOLO 🚀]"
-                        txtMode.setTextColor(Color.parseColor("#ec4899"))
                     }
                 }
                 AutoTradeMode.SEMIAUTOMATIC -> {
@@ -1236,7 +1268,7 @@ class OverlayService : Service() {
                         }
                         startActivity(intent)
                     } catch (e: Exception) {}
-                } else if (!canTradeStatus && !riskManager.hasPendingTrade && (tradingEngine.mode == AutoTradeMode.AUTONOMOUS || tradingEngine.mode == AutoTradeMode.YOLO)) {
+                } else if (!canTradeStatus && !riskManager.hasPendingTrade && tradingEngine.mode == AutoTradeMode.AUTONOMOUS) {
                     riskManager.resetStreakOnly()
                     updateHUDView()
                     Toast.makeText(this@OverlayService, "▶️ Operativa reanudada (Límites reseteados)", Toast.LENGTH_SHORT).show()
@@ -1390,22 +1422,23 @@ class OverlayService : Service() {
         card?.setBackgroundResource(R.drawable.bg_hud_signal_idle)
         countdown?.visibility = View.GONE
         when (tradingEngine.mode) {
-            AutoTradeMode.YOLO -> {
-                title?.text = "🚀 MODO YOLO: Operando Continuo"
-                title?.setTextColor(Color.parseColor("#ec4899"))
-                desc?.text = "Operativa sin Stop Loss ni límites de pérdidas. Opera ante cada setup."
-                desc?.setTextColor(Color.parseColor("#f472b6"))
+            AutoTradeMode.AUTONOMOUS -> {
+                if (tradingEngine.autonomousSubMode == AutonomousSubMode.YOLO) {
+                    title?.text = "🚀 AUTO: SUBMODO YOLO (Continuo)"
+                    title?.setTextColor(Color.parseColor("#ec4899"))
+                    desc?.text = "Operativa continua sin Stop Loss ni pausas. Opera ante cada setup."
+                    desc?.setTextColor(Color.parseColor("#f472b6"))
+                } else {
+                    title?.text = "🟢 AUTO: SUBMODO CONSERVADOR"
+                    title?.setTextColor(Color.parseColor("#4ade80"))
+                    desc?.text = "Gestión de riesgo activa (Stop Loss, Take Profit y Cooldowns)."
+                    desc?.setTextColor(Color.parseColor("#94a3b8"))
+                }
             }
             AutoTradeMode.SEMIAUTOMATIC -> {
                 title?.text = "🟡 MODO SEMIAUTO: Vigilando Entrada"
                 title?.setTextColor(Color.parseColor("#facc15"))
                 desc?.text = "El bot te indicará cuándo y hacia dónde operar."
-                desc?.setTextColor(Color.parseColor("#94a3b8"))
-            }
-            AutoTradeMode.AUTONOMOUS -> {
-                title?.text = "🟢 MODO AUTO: Vigilando Entrada"
-                title?.setTextColor(Color.parseColor("#4ade80"))
-                desc?.text = "El bot abrirá la operación automáticamente al detectar setup."
                 desc?.setTextColor(Color.parseColor("#94a3b8"))
             }
             AutoTradeMode.DISABLED -> {
