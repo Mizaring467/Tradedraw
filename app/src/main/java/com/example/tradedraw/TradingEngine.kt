@@ -229,7 +229,9 @@ class TradingEngine(
         }
 
         val timeSinceLastResolution = System.currentTimeMillis() - lastTradeResolutionTime
-        val isSpacingCooldown = lastTradeResolutionTime > 0L && timeSinceLastResolution < 15000L && analysis.candleSecond in 10..55
+        // Espaciado inteligente: Si la última operación fue derrota, enfriamiento de 45s para no repetir en la misma micro-tendencia
+        val minSpacingMs = if (riskManager.currentLossStreak > 0) 45000L else 12000L
+        val isSpacingCooldown = lastTradeResolutionTime > 0L && timeSinceLastResolution < minSpacingMs
 
         // 5. Evaluar señal de trading solo si no hay trade abierto, sin cooldown de espaciado y el modo está activo
         if (!riskManager.hasPendingTrade && !isSpacingCooldown && mode != AutoTradeMode.DISABLED) {
@@ -246,19 +248,22 @@ class TradingEngine(
                     if (aiResult.isSuccess && aiResult.action != null && aiResult.confidence >= aiClient.confidenceThreshold) {
                         if (!riskManager.hasPendingTrade && mode != AutoTradeMode.DISABLED) {
                             val sec = analysis.candleSecond
-                            val isTimingValid = analysis.isSniperTimingWindow || (sec in 57..59 || sec in 0..8)
-                            val inDowntrend = analysis.trend == TrendDirection.DOWNTREND && !analysis.isMarketSideways
-                            val inUptrend = analysis.trend == TrendDirection.UPTREND && !analysis.isMarketSideways
-                            val aiTrendConflict = (aiResult.action == TradeAction.BUY && inDowntrend) ||
-                                                  (aiResult.action == TradeAction.SELL && inUptrend)
+                            val isTimingValid = analysis.isSniperTimingWindow || (sec in 57..59 || sec in 0..7)
+                            val isMarketUnfavorable = analysis.isMarketSideways || analysis.isConsolidationTight
+                            val inDowntrend = analysis.trend == TrendDirection.DOWNTREND
+                            val inUptrend = analysis.trend == TrendDirection.UPTREND
+                            val aiTrendConflict = (aiResult.action == TradeAction.BUY && inDowntrend && !analysis.isFalseBreakoutCall) ||
+                                                  (aiResult.action == TradeAction.SELL && inUptrend && !analysis.isFalseBreakoutPut)
 
-                            if (!isTimingValid) {
+                            if (isMarketUnfavorable) {
+                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: Mercado lateral / consolidación")
+                            } else if (!isTimingValid) {
                                 android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} pospuesta: fuera de ventana sniper (⏱ ${sec}s)")
-                            } else if (!aiTrendConflict) {
+                            } else if (aiTrendConflict) {
+                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: conflicto con tendencia ${analysis.trend}")
+                            } else {
                                 val pct = (aiResult.confidence * 100).toInt()
                                 handleSignal(aiResult.action, analysis, bitmap, "IA ($pct% | ⏱ ${sec}s): ${aiResult.reason}")
-                            } else {
-                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: conflicto con tendencia ${analysis.trend}")
                             }
                         }
                     }
@@ -324,6 +329,12 @@ class TradingEngine(
 
             val sec = analysis.candleSecond
             val isLate = analysis.isLateTimingForbidden
+
+            // Veto universal de entrada tardía para opciones binarias a 1 minuto
+            // (Permitido únicamente en trampas institucionales / falsos rompimientos con confirmación)
+            if (isLate && !analysis.isFalseBreakoutCall && !analysis.isFalseBreakoutPut) {
+                return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper (:57-:07)")
+            }
 
             return when (strategy) {
                 AutoTradeStrategy.AUTO_ADAPTIVE -> {
