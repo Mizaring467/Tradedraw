@@ -1,4 +1,4 @@
-﻿package com.example.tradedraw
+package com.example.tradedraw
 
 import android.content.Context
 import android.os.Handler
@@ -69,10 +69,9 @@ class AutonomousAgentController(
     }
 
     /**
-     * 1. Reconciliación Financiera Automática:
-     * Compara el saldo real de Binomo con el estado de TradeDraw.
-     * Si Binomo acreditó una ganancia que la app no registró, la auto-corrige inmediatamente como WIN.
-     * Si hubo una deducción no contada, auto-corrige como LOSS y ajusta Martingala.
+     * 1. Reconciliación Financiera y Monitoreo de Saldo:
+     * Mantiene actualizado el último balance observado de Binomo sin alterar
+     * artificialmente el contador de victorias/derrotas fuera de una expiración real.
      */
     private fun auditFinancialSync() {
         val accessibility = AutoTradeAccessibilityService.instance ?: return
@@ -84,34 +83,28 @@ class AutonomousAgentController(
             return
         }
 
-        // Solo reconciliar si no hay un trade en ventana de resolución activa (55s a 70s)
+        // Solo actualizar el saldo de referencia cuando no haya operaciones en curso
         if (!riskManager.hasPendingTrade) {
-            val diff = currentBal - lastAuditedBalance
-
-            // Caso A: Saldo subió significativamente fuera de un trade registrado
-            if (diff > BALANCE_DIFF_THRESHOLD) {
-                Log.w(TAG, "Reconciliación: Ganancia no contabilizada en Binomo (+$$diff). Auto-corrigiendo a +1 WIN.")
-                mainHandler.post {
-                    riskManager.recordTradeWin()
-                    OverlayService.instance?.updateHUDView()
-                    Toast.makeText(context, "🤖 AGENTE: Victoria detectada en broker (+$$diff). Saldo y HUD sincronizados.", Toast.LENGTH_SHORT).show()
-                }
-                lastAuditedBalance = currentBal
-            }
-            // Caso B: Saldo disminuyó significativamente fuera de un trade registrado
-            else if (diff < -BALANCE_DIFF_THRESHOLD) {
-                Log.w(TAG, "Reconciliación: Deducción no contabilizada en Binomo ($$diff). Auto-corrigiendo a +1 LOSS.")
-                mainHandler.post {
-                    riskManager.recordTradeLoss()
-                    OverlayService.instance?.updateHUDView()
-                    Toast.makeText(context, "🤖 AGENTE: Deducción registrada en broker ($$diff). Martingala auto-ajustada.", Toast.LENGTH_SHORT).show()
-                }
-                lastAuditedBalance = currentBal
-            } else {
-                lastAuditedBalance = currentBal
-            }
+            lastAuditedBalance = currentBal
         }
     }
+
+    /**
+     * Reanuda la operativa autónoma forzando el reinicio del Stop Loss/Rachas,
+     * reactivando el modo AUTONOMOUS y recalculando soportes/resistencias.
+     */
+    fun resumeAutonomousTrading(reason: String = "Instrucción del usuario"): String {
+        riskManager.resetStreakOnly()
+        tradingEngine.mode = AutoTradeMode.AUTONOMOUS
+        tradingEngine.unlockAllLines()
+        mainHandler.post {
+            OverlayService.instance?.updateHUDView()
+            Toast.makeText(context, "🤖 AGENTE: Operativa reanudada ($reason). Stop Loss reseteado.", Toast.LENGTH_SHORT).show()
+        }
+        Log.i(TAG, "resumeAutonomousTrading ejecutado: $reason")
+        return "Operativa autónoma reanudada exitosamente. Stop Loss reseteado y modo AUTONOMOUS activo."
+    }
+
 
     /**
      * 2. Auto-Adaptación de Estrategia:

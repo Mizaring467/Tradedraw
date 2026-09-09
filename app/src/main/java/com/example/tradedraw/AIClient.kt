@@ -297,6 +297,7 @@ class AIClient(private val context: Context) {
                       - Para cambiar estrategia a Seguir Tendencia: [CMD:STRAT_TREND]
                       - Para recalcular soportes y resistencias: [CMD:RECALC_SR]
                       - Para resetear estadísticas: [CMD:RESET_STATS]
+                      - Para continuar operando, reanudar o ignorar/resetear Stop Loss: [CMD:RESUME_TRADING]
                 """.trimIndent()
 
                 val messagesArray = JSONArray().apply {

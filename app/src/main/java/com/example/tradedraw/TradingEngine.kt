@@ -351,10 +351,11 @@ class TradingEngine(
                 return Pair(null, "⚠️ Mercado Lateral / Dojis detectados: Esperando volatilidad")
             }
 
-            val sec = analysis.candleSecond
+           val sec = analysis.candleSecond
+            val isLate = analysis.isLateTimingForbidden
 
-            return when (strategy) {
-                AutoTradeStrategy.AUTO_ADAPTIVE -> {
+           return when (strategy) {
+               AutoTradeStrategy.AUTO_ADAPTIVE -> {
                     // Modo Automático Total: Triple Confluencia + Sniping de Entrada (95% -> 70%)
                     // Filtro de tendencia: En tendencia fuerte, solo operar setups de muy alta confluencia en contra
                     val inDowntrend = analysis.trend == TrendDirection.DOWNTREND
@@ -362,11 +363,14 @@ class TradingEngine(
 
                     when {
                         // 1. Prioridad Máxima: Falso Rompimiento / Trampa Institucional (95% confluencia)
-                        // Permitido incluso contra tendencia (son reversiones de alta probabilidad)
-                        analysis.isFalseBreakoutCall -> Pair(TradeAction.BUY, "🎯 Auto [Trampa en Soporte | ⏱ ${sec}s] -> CALL")
-                        analysis.isFalseBreakoutPut -> Pair(TradeAction.SELL, "🎯 Auto [Trampa en Resistencia | ⏱ ${sec}s] -> PUT")
+                       // Permitido incluso contra tendencia (son reversiones de alta probabilidad)
+                       analysis.isFalseBreakoutCall -> Pair(TradeAction.BUY, "🎯 Auto [Trampa en Soporte | ⏱ ${sec}s] -> CALL")
+                       analysis.isFalseBreakoutPut -> Pair(TradeAction.SELL, "🎯 Auto [Trampa en Resistencia | ⏱ ${sec}s] -> PUT")
 
-                        // 2. Mechas de Rechazo y Absorción en S/R con Sniping de Pullback (90% confluencia)
+                        // Veto de entrada tardía para el resto de setups
+                        isLate -> Pair(null, "⏳ Entrada tardía (${sec}s): Esperando apertura de vela")
+
+                       // 2. Mechas de Rechazo y Absorción en S/R con Sniping de Pullback (90% confluencia)
                         // En DOWNTREND: no entrar CALL por simple rechazo/mecha (mercado puede seguir bajando)
                         !inDowntrend && (analysis.isRejectionCall || analysis.hasBottomRejectionWick || (analysis.touchesSupport && analysis.lastCandles.firstOrNull() == CandleType.RED)) &&
                             (analysis.isPullbackSniperCall || analysis.isSniperTimingWindow) ->
@@ -391,32 +395,33 @@ class TradingEngine(
                         !inDowntrend && analysis.touchesSupport && analysis.isPullbackSniperCall -> Pair(TradeAction.BUY, "🎯 Auto [Rebote en Soporte | ⏱ ${sec}s] -> CALL")
                         !inUptrend && analysis.touchesResistance && analysis.isPullbackSniperPut -> Pair(TradeAction.SELL, "🎯 Auto [Rebote en Resistencia | ⏱ ${sec}s] -> PUT")
 
-                        // 7. Impulso y Termómetro de Alta Probabilidad >= 68% — solo a favor de tendencia
-                        !inDowntrend && (analysis.signalPowerCall >= 68 || (analysis.isCallSignal && analysis.signalScore >= 68)) -> {
-                            val score = if (analysis.signalPowerCall >= 68) analysis.signalPowerCall else analysis.signalScore
-                            Pair(TradeAction.BUY, "🎯 Auto [Tendencia Fuerte ($score%) | ⏱ ${sec}s] -> CALL")
-                        }
-                        !inUptrend && (analysis.signalPowerPut >= 68 || (analysis.isPutSignal && analysis.signalScore >= 68)) -> {
-                            val score = if (analysis.signalPowerPut >= 68) analysis.signalPowerPut else analysis.signalScore
-                            Pair(TradeAction.SELL, "🎯 Auto [Tendencia Fuerte ($score%) | ⏱ ${sec}s] -> PUT")
-                        }
+                       // 7. Impulso y Termómetro de Alta Probabilidad >= 68% — solo a favor de tendencia
+                        !inDowntrend && analysis.isSniperTimingWindow && (analysis.signalPowerCall >= 75 || (analysis.isCallSignal && analysis.signalScore >= 75)) -> {
+                            val score = if (analysis.signalPowerCall >= 75) analysis.signalPowerCall else analysis.signalScore
+                           Pair(TradeAction.BUY, "🎯 Auto [Tendencia Fuerte ($score%) | ⏱ ${sec}s] -> CALL")
+                       }
+                        !inUptrend && analysis.isSniperTimingWindow && (analysis.signalPowerPut >= 75 || (analysis.isPutSignal && analysis.signalScore >= 75)) -> {
+                            val score = if (analysis.signalPowerPut >= 75) analysis.signalPowerPut else analysis.signalScore
+                           Pair(TradeAction.SELL, "🎯 Auto [Tendencia Fuerte ($score%) | ⏱ ${sec}s] -> PUT")
+                       }
                         else -> Pair(null, "")
                     }
                 }
-                AutoTradeStrategy.MT_MASTER_COMBO -> {
-                    // Jerarquía Master Traders
-                    when {
-                        // 1. Falso Rompimiento / Trampa en S/R
-                        analysis.isFalseBreakoutCall -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Trampa / Falso Rompimiento de Soporte -> CALL")
-                        }
-                        analysis.isFalseBreakoutPut -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Trampa / Falso Rompimiento de Resistencia -> PUT")
-                        }
-                        // 2. Mechas de Rechazo en S/R
-                        analysis.isRejectionCall || analysis.hasBottomRejectionWick || (analysis.touchesSupport && analysis.lastCandles.firstOrNull() == CandleType.RED) -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Mecha de Rechazo en Soporte -> CALL")
-                        }
+               AutoTradeStrategy.MT_MASTER_COMBO -> {
+                   // Jerarquía Master Traders
+                   when {
+                       // 1. Falso Rompimiento / Trampa en S/R
+                       analysis.isFalseBreakoutCall -> {
+                           Pair(TradeAction.BUY, "🎯 MT Combo: Trampa / Falso Rompimiento de Soporte -> CALL")
+                       }
+                       analysis.isFalseBreakoutPut -> {
+                           Pair(TradeAction.SELL, "🎯 MT Combo: Trampa / Falso Rompimiento de Resistencia -> PUT")
+                       }
+                        isLate -> Pair(null, "⏳ Entrada tardía (${sec}s): Esperando apertura de vela")
+                       // 2. Mechas de Rechazo en S/R
+                       analysis.isRejectionCall || analysis.hasBottomRejectionWick || (analysis.touchesSupport && analysis.lastCandles.firstOrNull() == CandleType.RED) -> {
+                           Pair(TradeAction.BUY, "🎯 MT Combo: Mecha de Rechazo en Soporte -> CALL")
+                       }
                         analysis.isRejectionPut || analysis.hasTopRejectionWick || (analysis.touchesResistance && analysis.lastCandles.firstOrNull() == CandleType.GREEN) -> {
                             Pair(TradeAction.SELL, "🎯 MT Combo: Mecha de Rechazo en Resistencia -> PUT")
                         }
@@ -448,16 +453,16 @@ class TradingEngine(
                         analysis.touchesResistance -> {
                             Pair(TradeAction.SELL, "🎯 MT Combo: Rebote en Resistencia -> PUT")
                         }
-                        // 6. Termómetro de Señal / Tendencia Alta Probabilidad >= 68%
-                        analysis.signalPowerCall >= 68 || (analysis.isCallSignal && analysis.signalScore >= 68) -> {
-                            val score = if (analysis.signalPowerCall >= 68) analysis.signalPowerCall else analysis.signalScore
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Tendencia Alta ($score%) -> CALL")
-                        }
-                        analysis.signalPowerPut >= 68 || (analysis.isPutSignal && analysis.signalScore >= 68) -> {
-                            val score = if (analysis.signalPowerPut >= 68) analysis.signalPowerPut else analysis.signalScore
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Tendencia Baja ($score%) -> PUT")
-                        }
-                        else -> Pair(null, "")
+                       // 6. Termómetro de Señal / Tendencia Alta Probabilidad >= 68%
+                        analysis.isSniperTimingWindow && (analysis.signalPowerCall >= 75 || (analysis.isCallSignal && analysis.signalScore >= 75)) -> {
+                            val score = if (analysis.signalPowerCall >= 75) analysis.signalPowerCall else analysis.signalScore
+                           Pair(TradeAction.BUY, "🎯 MT Combo: Tendencia Alta ($score%) -> CALL")
+                       }
+                        analysis.isSniperTimingWindow && (analysis.signalPowerPut >= 75 || (analysis.isPutSignal && analysis.signalScore >= 75)) -> {
+                            val score = if (analysis.signalPowerPut >= 75) analysis.signalPowerPut else analysis.signalScore
+                           Pair(TradeAction.SELL, "🎯 MT Combo: Tendencia Baja ($score%) -> PUT")
+                       }
+                       else -> Pair(null, "")
                     }
                 }
                 AutoTradeStrategy.MT_FALSE_BREAKOUT -> {
@@ -737,8 +742,9 @@ class TradingEngine(
                 if (action == TradeAction.BUY) Pair(screenW * 0.881f, screenH * 0.735f)
                 else Pair(screenW * 0.881f, screenH * 0.844f)
             } else {
-                if (action == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.91f)
-                else Pair(screenW * 0.75f, screenH * 0.91f)
+                // Centro exacto del área táctil de los botones en Binomo vertical (89.2% de la pantalla)
+                if (action == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.892f)
+                else Pair(screenW * 0.75f, screenH * 0.892f)
             }
         }
 
@@ -749,6 +755,17 @@ class TradingEngine(
             val baseBal = accessibility.readCurrentBalance() ?: 0.0
             riskManager.recordTradeSent(action, analysis.currentPriceY, baseBal)
             accessibility.performClickAt(x, y)
+
+            // Refuerzo táctil a los 350ms si el saldo aún no se ha debitado (asegura registro en WebView)
+            handler.postDelayed({
+                if (riskManager.hasPendingTrade) {
+                    val balNow = accessibility.readCurrentBalance() ?: 0.0
+                    if (baseBal > 0.0 && balNow > 0.0 && Math.abs(balNow - baseBal) < 10.0) {
+                        android.util.Log.d("TradingEngine", "Refuerzo táctil hacia ($x, $y)")
+                        accessibility.performClickAt(x, y)
+                    }
+                }
+            }, 350L)
 
             handler.post {
                 drawingView.triggerClickAnimation(x, y)

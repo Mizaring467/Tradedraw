@@ -1047,22 +1047,42 @@ class OverlayService : Service() {
         }
     }
 
+    fun isPointInsideHUD(x: Float, y: Float): Boolean {
+        if (!isHudVisible) return false
+        val p = hudParams ?: return false
+        val v = hudView ?: return false
+        val w = v.width.takeIf { it > 0 } ?: 400
+        val h = v.height.takeIf { it > 0 } ?: 200
+        return x >= p.x && x <= (p.x + w) && y >= p.y && y <= (p.y + h)
+    }
+
     /**
      * Vuelve el HUD temporalmente no-táctil por [durationMs] para permitir que los clics
      * de trading de Accesibilidad atraviesen limpiamente hacia el broker sin importar dónde esté el HUD.
      */
-    fun temporarilyBypassHUD(durationMs: Long = 250L) {
-        val v = hudView ?: return
-        val p = hudParams ?: return
+    fun temporarilyBypassHUD(durationMs: Long = 250L, onBypassed: (() -> Unit)? = null) {
+        val v = hudView ?: run {
+            onBypassed?.invoke()
+            return
+        }
+        val p = hudParams ?: run {
+            onBypassed?.invoke()
+            return
+        }
         mainHandler.post {
             p.flags = p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
             try { windowManager.updateViewLayout(v, p) } catch (e: Exception) {}
+            // Esperar 40ms a que WindowManager aplique el cambio antes de emitir el toque
+            mainHandler.postDelayed({
+                onBypassed?.invoke()
+            }, 40L)
             mainHandler.postDelayed({
                 p.flags = p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
                 try { windowManager.updateViewLayout(v, p) } catch (e: Exception) {}
             }, durationMs)
         }
     }
+
 
     private val hudTimerRunnable = object : Runnable {
         override fun run() {
