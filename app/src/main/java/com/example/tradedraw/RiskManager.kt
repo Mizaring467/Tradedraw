@@ -11,12 +11,12 @@ class RiskManager(context: Context? = null) {
         null
     }
 
-    companion object {
-        const val MAX_PENDING_TRADE_TIMEOUT_SEC = 75L
-        const val DEFAULT_COOLDOWN_SECONDS = 10
-        const val DEFAULT_LOSS_COOLDOWN_SECONDS = 45
-        const val DEFAULT_STOP_LOSS_STREAK = 3
-        const val DEFAULT_TAKE_PROFIT_WINS = 20 // 20 victorias por bloque (0 = Ilimitado)
+   companion object {
+       const val MAX_PENDING_TRADE_TIMEOUT_SEC = 75L
+       const val DEFAULT_COOLDOWN_SECONDS = 10
+        const val DEFAULT_LOSS_COOLDOWN_SECONDS = 60
+       const val DEFAULT_STOP_LOSS_STREAK = 3
+       const val DEFAULT_TAKE_PROFIT_WINS = 20 // 20 victorias por bloque (0 = Ilimitado)
         const val DEFAULT_MAX_MARTINGALE_LEVEL = 1
     }
 
@@ -272,4 +272,3 @@ class RiskManager(context: Context? = null) {
         clearPendingTrade()
     }
 }
-

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/agent_chat_root"
     android:layout_width="320dp"
@@ -110,6 +110,20 @@
                 android:layout_height="22dp"
                 android:text="↺ Recalcular S/R"
                 android:textColor="#34d399"
+                android:textSize="9sp"
+                android:gravity="center"
+                android:background="@drawable/bg_hud_chip"
+                android:paddingHorizontal="6dp"
+                android:layout_marginEnd="4dp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/chip_resume_trading"
+                android:layout_width="wrap_content"
+                android:layout_height="22dp"
+                android:text="▶ Continuar / Reset SL"
+                android:textColor="#22c55e"
                 android:textSize="9sp"
                 android:gravity="center"
                 android:background="@drawable/bg_hud_chip"

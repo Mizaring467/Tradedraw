@@ -108,13 +108,21 @@ class AutoTradeAccessibilityService : AccessibilityService() {
      * El controlador de IA usará esto para hacer click en "Sube" o "Baja".
      */
     fun performClickAt(x: Float, y: Float) {
-        // Si el HUD está situado encima de las coordenadas objetivo, volverlo momentáneamente no-táctil
-        OverlayService.instance?.temporarilyBypassHUD(250L)
+        val overlay = OverlayService.instance
+        if (overlay != null && overlay.isPointInsideHUD(x, y)) {
+            overlay.temporarilyBypassHUD(250L) {
+                dispatchClickGesture(x, y)
+            }
+        } else {
+            dispatchClickGesture(x, y)
+        }
+    }
 
+    private fun dispatchClickGesture(x: Float, y: Float) {
         val path = Path().apply {
             moveTo(x, y)
         }
-        val stroke = GestureDescription.StrokeDescription(path, 0, 100)
+        val stroke = GestureDescription.StrokeDescription(path, 0, 80)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
 
         dispatchGesture(gesture, object : GestureResultCallback() {
@@ -124,7 +132,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             }
 
             override fun onCancelled(gestureDescription: GestureDescription?) {
-                Log.d("TradeDraw", "Click at ($x, $y) cancelled")
+                Log.w("TradeDraw", "Click at ($x, $y) cancelled by system")
             }
         }, null)
     }
@@ -154,11 +162,18 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     /**
      * Lee el saldo actual del broker desde la jerarquía accesible de Android.
      * Soporta formatos: "Col$50,112,911.36", "$1,250.50", "50 112 911,36", etc.
+     * Excluye etiquetas de órdenes en el gráfico o botones de la parte inferior.
      */
     fun readCurrentBalance(): Double? {
         val root = try { rootInActiveWindow } catch (e: Exception) { null }
         val found = if (root != null) findBalanceInNode(root) else null
         if (found != null && found > 0.0) {
+            // Anti-glitch: si el saldo previo era de millones (ej. cuenta demo ~50M),
+            // rechazar saltos repentinos hacia valores de inversión (ej. 20k, 80k) provenientes del gráfico.
+            if (latestObservedBalance > 1_000_000.0 && found < 500_000.0) {
+                Log.w("TradeDraw", "Lectura de balance descartada por glitch (valor: $found vs previo: $latestObservedBalance)")
+                return latestObservedBalance
+            }
             latestObservedBalance = found
             return found
         }
@@ -167,6 +182,15 @@ class AutoTradeAccessibilityService : AccessibilityService() {
 
     private fun findBalanceInNode(node: android.view.accessibility.AccessibilityNodeInfo?): Double? {
         if (node == null) return null
+        
+        // Descartar nodos situados en la mitad inferior de la pantalla (donde están botones y órdenes activas)
+        val rect = android.graphics.Rect()
+        node.getBoundsInScreen(rect)
+        val displayH = resources.displayMetrics.heightPixels
+        if (rect.top > (displayH * 0.35f)) {
+            return null // Saldo de Binomo siempre está en la cabecera superior (top < 35% de la pantalla)
+        }
+
         val text = node.text?.toString() ?: ""
         if (text.isNotBlank()) {
             val parsed = parseBalanceString(text)

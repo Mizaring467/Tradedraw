@@ -153,6 +153,9 @@ class AgentChatOverlay(
         v.findViewById<View>(R.id.chip_recalc_sr)?.setOnClickListener {
             postUserMessage("Recalcula los soportes y resistencias de la IA")
         }
+        v.findViewById<View>(R.id.chip_resume_trading)?.setOnClickListener {
+            postUserMessage("Continúa operando, resetea el Stop Loss y reanuda el modo autónomo")
+        }
         v.findViewById<View>(R.id.chip_safe_mode)?.setOnClickListener {
             postUserMessage("Activa el modo conservador y opera solo a favor de tendencia")
         }
@@ -195,6 +198,12 @@ class AgentChatOverlay(
             - Operación activa: ${risk.hasPendingTrade} | Cooldown: ${risk.getRemainingCooldown()}s
         """.trimIndent()
 
+        val lower = text.lowercase()
+        if (lower.contains("continua") || lower.contains("continúa") || lower.contains("sigue") || 
+            lower.contains("reanuda") || lower.contains("reset sl") || lower.contains("ignora stop")) {
+            executeAgentCommand("RESUME_TRADING")
+        }
+
         tradingEngine.aiClient.sendChatMessage(text, contextData) { reply, cmdTag ->
             statusIndicator?.text = "● En vivo"
             statusIndicator?.setTextColor(android.graphics.Color.parseColor("#22c55e"))
@@ -212,6 +221,9 @@ class AgentChatOverlay(
 
     private fun executeAgentCommand(cmd: String) {
         when (cmd) {
+            "RESUME_TRADING" -> {
+                tradingEngine.agentController.resumeAutonomousTrading("Chat de Usuario")
+            }
             "MODE_AUTONOMOUS" -> {
                 tradingEngine.mode = AutoTradeMode.AUTONOMOUS
                 OverlayService.instance?.updateHUDView()

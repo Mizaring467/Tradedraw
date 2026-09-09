@@ -76,6 +76,7 @@ data class VisionAnalysisResult(
     val signalScore: Int = 50,
     val candleSecond: Int = ((System.currentTimeMillis() / 1000) % 60).toInt(),
     val isSniperTimingWindow: Boolean = false,
+    val isLateTimingForbidden: Boolean = false,
     val isPullbackSniperCall: Boolean = false,
     val isPullbackSniperPut: Boolean = false
 )
@@ -352,10 +353,11 @@ class VisionAnalyzer {
         val isSideways = isSidewaysByCandles || (candleList.size >= 5 && Math.abs(callPct - putPct) < 12)
 
         // Micro-Sincronización Reloj Sniper (00:55-00:59 o 00:00-00:08)
-        val candleSecond = ((System.currentTimeMillis() / 1000) % 60).toInt()
-        val isSniperTimingWindow = candleSecond in 55..59 || candleSecond in 0..8
+       val candleSecond = ((System.currentTimeMillis() / 1000) % 60).toInt()
+        val isSniperTimingWindow = candleSecond in 57..59 || candleSecond in 0..6 || candleSecond in 28..33
+        val isLateTimingForbidden = candleSecond in 42..55
 
-        // Sniping de Mejor Strike (Pullback / Testeo en nivel clave)
+       // Sniping de Mejor Strike (Pullback / Testeo en nivel clave)
         val targetSupport = if (supportLinesY.isNotEmpty()) effectiveSupportY else finalSupportY
         val targetResistance = if (resistanceLinesY.isNotEmpty()) effectiveResistanceY else finalResistanceY
         val isPullbackSniperCall = (touchesSupport || latestPriceY >= targetSupport - 12f || hasBottomRejection) && !isSideways
@@ -402,12 +404,13 @@ class VisionAnalyzer {
             dynamicSupportY = finalSupportY,
             greenPixelsDetected = totalGreenPixels,
             redPixelsDetected = totalRedPixels,
-            diagnosticSummary = diag,
-            candleSecond = candleSecond,
-            isSniperTimingWindow = isSniperTimingWindow,
-            isPullbackSniperCall = isPullbackSniperCall,
-            isPullbackSniperPut = isPullbackSniperPut
-        )
+           diagnosticSummary = diag,
+           candleSecond = candleSecond,
+           isSniperTimingWindow = isSniperTimingWindow,
+            isLateTimingForbidden = isLateTimingForbidden,
+           isPullbackSniperCall = isPullbackSniperCall,
+           isPullbackSniperPut = isPullbackSniperPut
+       )
     }
 
     /**
