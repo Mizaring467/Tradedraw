@@ -161,72 +161,37 @@ class TradingEngine(
                 }
             }
 
-            // Ventana de resolución estricta al EXPIRAR la vela de 1 minuto (>= 58s o primeros 10s de la nueva vela)
-            val isExpired = elapsedSec >= 58 || (elapsedSec >= 50 && analysis.candleSecond in 0..10)
+            // Ventana de resolución estricta al EXPIRAR la vela de 1 minuto
+            // Espera a que la vela cierre (:00) y Binomo liquide el trade en pantalla (segundo 2..8 tras al menos 52s, o timeout a los 62s)
+            val isExpired = elapsedSec >= 62 || (elapsedSec >= 52 && analysis.candleSecond in 2..8)
             if (isExpired) {
                 var isWin: Boolean? = null
                 var isTie: Boolean = false
                 var method = ""
 
-                val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance() ?: 0.0
-                val evalY = if (pendingTradeRecordedCandleCloseY > 0f) pendingTradeRecordedCandleCloseY else exitY
+                val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance() 
+                    ?: AutoTradeAccessibilityService.latestObservedBalance
 
-                // Comparación de precio al cierre de la vela (Verdad gráfica inmutable)
-                val priceWon = if (entryY > 0f && evalY > 0f && action != null) {
-                    if (action == TradeAction.BUY) evalY < (entryY - 1.5f) else evalY > (entryY + 1.5f)
-                } else null
-
-                val priceLost = if (entryY > 0f && evalY > 0f && action != null) {
-                    if (action == TradeAction.BUY) evalY > (entryY + 1.5f) else evalY < (entryY - 1.5f)
-                } else null
-
-                val priceTie = if (entryY > 0f && evalY > 0f && action != null) {
-                    Math.abs(evalY - entryY) <= 1.5f
-                } else false
-
-                // 1. Verificación por Saldo Real (si está disponible y es coherente)
+                // 1. Verificación por Saldo Real Inmutable de Binomo
                 if (baseBalance > 0.0 && currentBal > 0.0) {
                     val diff = currentBal - baseBalance
                     if (diff > 10.0) {
+                        // Binomo acreditó las ganancias (+1 W)
                         isWin = true
-                        method = "SALDO (+) Ganancia acreditada: Diff=+$diff COP"
-                    } else if (diff < -10.0 && priceLost == true) {
+                        method = "SALDO (+) Ganancia acreditada por Binomo: Diff=+$diff COP"
+                    } else if (diff < -10.0) {
+                        // Binomo debitó la inversión sin retorno (+1 L)
                         isWin = false
-                        method = "SALDO (-) Pérdida confirmada: Diff=$diff COP"
-                    } else if (priceWon == true) {
-                        isWin = true
-                        method = "PRECIO ITM (Cierre a favor de $action tras ${elapsedSec}s)"
-                    } else if (priceLost == true) {
+                        method = "SALDO (-) Pérdida debitada por Binomo: Diff=$diff COP"
+                    } else if (elapsedSec >= 62) {
+                        // Saldo sin incremento tras 62 segundos completos: en opciones binarias es pérdida
                         isWin = false
-                        method = "PRECIO OTM (Cierre en contra de $action tras ${elapsedSec}s)"
-                    } else if (Math.abs(diff) <= 10.0 && priceTie) {
-                        isTie = true
-                        method = "EMPATE (Sin variación de saldo ni precio)"
+                        method = "SIN ACREDITACIÓN TRAS 62s (Diff=$diff -> Pérdida)"
                     }
-                } else {
-                    // 2. Fallback por Acción del Precio pura
-                    if (priceWon == true) {
-                        isWin = true
-                        method = "PRECIO PURO (CloseY=$evalY vs EntryY=$entryY -> WIN)"
-                    } else if (priceLost == true) {
-                        isWin = false
-                        method = "PRECIO PURO (CloseY=$evalY vs EntryY=$entryY -> LOSS)"
-                    } else if (priceTie) {
-                        isTie = true
-                        method = "PRECIO PURO (CloseY=$evalY == EntryY=$entryY -> TIE)"
-                    }
-                }
-
-                // 3. Salvaguarda por Timeout Absoluto (68s)
-                if (isWin == null && !isTie && elapsedSec >= 68) {
-                    if (baseBalance > 0.0 && currentBal > 0.0) {
-                        val diff = currentBal - baseBalance
-                        isWin = diff > 10.0
-                        method = "TIMEOUT 68s (Saldo Diff=$diff)"
-                    } else {
-                        isWin = false
-                        method = "TIMEOUT 68s (Loss preventivo)"
-                    }
+                } else if (elapsedSec >= 65) {
+                    // Si no hubo saldo legible tras 65 segundos, NUNCA asumir victoria
+                    isWin = false
+                    method = "TIMEOUT 65s (Sin saldo legible -> Loss preventivo)"
                 }
 
                 if (isWin != null || isTie) {
@@ -758,7 +723,8 @@ class TradingEngine(
 
         val accessibility = AutoTradeAccessibilityService.instance
         if (accessibility != null) {
-            val baseBal = accessibility.readCurrentBalance() ?: 0.0
+            val observed = accessibility.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
+            val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
             isTradeResolving.set(false)
             riskManager.recordTradeSent(action, analysis.currentPriceY, baseBal)
             // Despacho táctil único e inequívoco (sin repeticiones artificiales)
