@@ -159,6 +159,9 @@ class AgentChatOverlay(
         v.findViewById<View>(R.id.chip_safe_mode)?.setOnClickListener {
             postUserMessage("Activa el modo conservador y opera solo a favor de tendencia")
         }
+        v.findViewById<View>(R.id.chip_reset_wl)?.setOnClickListener {
+            postUserMessage("Resetea el marcador de victorias y derrotas a 0")
+        }
 
         windowManager.addView(v, p)
         isVisible = true
@@ -185,6 +188,46 @@ class AgentChatOverlay(
         statusIndicator?.text = "● Escribiendo..."
         statusIndicator?.setTextColor(android.graphics.Color.parseColor("#facc15"))
 
+        val lower = text.lowercase()
+
+        // 1. Detección inmediata de reseteo completo de marcador
+        if (lower.contains("reset wl") || lower.contains("resetea marcador") || lower.contains("reinicia marcador") || 
+            lower.contains("borra las victorias") || lower.contains("marcador a cero") || lower.contains("marcador a 0")) {
+            tradingEngine.riskManager.correctStats(0, 0)
+            val botMsg = "🎯 Marcador W/L reiniciado a 0 Victorias y 0 Derrotas en el HUD."
+            messages.add(ChatMessage(botMsg, false))
+            adapter?.notifyItemInserted(messages.size - 1)
+            chatView?.findViewById<RecyclerView>(R.id.chat_recycler_view)?.scrollToPosition(messages.size - 1)
+            statusIndicator?.text = "● En vivo"
+            statusIndicator?.setTextColor(android.graphics.Color.parseColor("#22c55e"))
+            return
+        }
+
+        // 2. Detección inmediata de corrección manual de estadísticas (ej. "corrige a 1 victoria y 0 derrotas", "1w 0l")
+        val matchWL = Regex("""(?:corrige|ajusta|pon|marcador|son|lleva|cuenta|fija|actualiza)?\D*?(\d+)\s*(?:victoria|victorias|w|ganada|ganadas)\D*?(\d+)\s*(?:derrota|derrotas|l|perdida|perdidas)""", RegexOption.IGNORE_CASE).find(lower)
+        val matchLW = if (matchWL == null) {
+            Regex("""(?:corrige|ajusta|pon|marcador|son|lleva|cuenta|fija|actualiza)?\D*?(\d+)\s*(?:derrota|derrotas|l|perdida|perdidas)\D*?(\d+)\s*(?:victoria|victorias|w|ganada|ganadas)""", RegexOption.IGNORE_CASE).find(lower)
+        } else null
+
+        if (matchWL != null || matchLW != null) {
+            val wins = if (matchWL != null) matchWL.groupValues[1].toInt() else matchLW!!.groupValues[2].toInt()
+            val losses = if (matchWL != null) matchWL.groupValues[2].toInt() else matchLW!!.groupValues[1].toInt()
+            tradingEngine.riskManager.correctStats(wins, losses)
+            val botMsg = "🎯 ¡Entendido! He sincronizado y corregido el marcador en el HUD a $wins Victorias y $losses Derrotas."
+            messages.add(ChatMessage(botMsg, false))
+            adapter?.notifyItemInserted(messages.size - 1)
+            chatView?.findViewById<RecyclerView>(R.id.chat_recycler_view)?.scrollToPosition(messages.size - 1)
+            statusIndicator?.text = "● En vivo"
+            statusIndicator?.setTextColor(android.graphics.Color.parseColor("#22c55e"))
+            return
+        }
+
+        // 3. Detección de reactivación / reset SL
+        if (lower.contains("continua") || lower.contains("continúa") || lower.contains("sigue") || 
+            lower.contains("reanuda") || lower.contains("reset sl") || lower.contains("ignora stop")) {
+            executeAgentCommand("RESUME_TRADING")
+        }
+
         // Construir contexto en vivo del mercado
         val analysis = tradingEngine.latestAnalysisResult
         val balance = AutoTradeAccessibilityService.instance?.readCurrentBalance() ?: 0.0
@@ -197,12 +240,6 @@ class AgentChatOverlay(
             - Poder: CALL ${analysis?.signalPowerCall ?: 50}% / PUT ${analysis?.signalPowerPut ?: 50}%
             - Operación activa: ${risk.hasPendingTrade} | Cooldown: ${risk.getRemainingCooldown()}s
         """.trimIndent()
-
-        val lower = text.lowercase()
-        if (lower.contains("continua") || lower.contains("continúa") || lower.contains("sigue") || 
-            lower.contains("reanuda") || lower.contains("reset sl") || lower.contains("ignora stop")) {
-            executeAgentCommand("RESUME_TRADING")
-        }
 
         tradingEngine.aiClient.sendChatMessage(text, contextData) { reply, cmdTag ->
             statusIndicator?.text = "● En vivo"
@@ -220,6 +257,17 @@ class AgentChatOverlay(
     }
 
     private fun executeAgentCommand(cmd: String) {
+        if (cmd.startsWith("CORRECT_STATS:")) {
+            val parts = cmd.removePrefix("CORRECT_STATS:").split(":")
+            if (parts.size >= 2) {
+                val w = parts[0].toIntOrNull() ?: 0
+                val l = parts[1].toIntOrNull() ?: 0
+                tradingEngine.riskManager.correctStats(w, l)
+                Toast.makeText(context, "🎯 Marcador corregido a $w W / $l L", Toast.LENGTH_SHORT).show()
+                return
+            }
+        }
+
         when (cmd) {
             "RESUME_TRADING" -> {
                 tradingEngine.agentController.resumeAutonomousTrading("Chat de Usuario")
