@@ -13,3 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+loops/journal/audits_baseline/
+
