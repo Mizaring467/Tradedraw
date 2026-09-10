@@ -81,7 +81,12 @@ data class VisionAnalysisResult(
     val isPullbackSniperPut: Boolean = false,
     val isConsolidationTight: Boolean = false,
     val confluenceScoreCall: Int = 50,
-    val confluenceScorePut: Int = 50
+    val confluenceScorePut: Int = 50,
+    val latestCandleX: Float = 0f,
+    val isChartOffCenterRight: Boolean = false,
+    val isChartOffCenterLeft: Boolean = false,
+    val isPriceNearBottom: Boolean = false,
+    val isPriceNearTop: Boolean = false
 )
 
 class VisionAnalyzer {
@@ -513,6 +518,15 @@ class VisionAnalyzer {
         val orientStr = if (isLandscape) "Horiz" else "Vert"
         val diag = "[$orientStr] Velas: ${candleTypes.size} (V:$gCount R:$rCount) | Racha: $streakBadge | ⏱ ${candleSecond}s"
 
+        // Métricas de Viewport y desplazamiento de gráfico
+        val latestCandleX = candleList.firstOrNull()?.x ?: ((startX + endX) * 0.5f)
+        val chartWidth = (endX - startX).coerceAtLeast(10f)
+        val chartHeight = (endY - startY).coerceAtLeast(10f)
+        val isChartOffCenterRight = candleList.isNotEmpty() && latestCandleX > (startX + chartWidth * 0.88f)
+        val isChartOffCenterLeft = candleList.isNotEmpty() && latestCandleX < (startX + chartWidth * 0.45f)
+        val isPriceNearBottom = latestPriceY > (endY - chartHeight * 0.08f)
+        val isPriceNearTop = latestPriceY < (startY + chartHeight * 0.08f)
+
         return VisionAnalysisResult(
             currentPriceY = latestPriceY,
             highestPoint = highPoint,
@@ -557,7 +571,12 @@ class VisionAnalyzer {
             isPullbackSniperPut = isPullbackSniperPut,
             isConsolidationTight = isConsolidationTight,
             confluenceScoreCall = finalConfCall,
-            confluenceScorePut = finalConfPut
+            confluenceScorePut = finalConfPut,
+            latestCandleX = latestCandleX,
+            isChartOffCenterRight = isChartOffCenterRight,
+            isChartOffCenterLeft = isChartOffCenterLeft,
+            isPriceNearBottom = isPriceNearBottom,
+            isPriceNearTop = isPriceNearTop
         )
     }
 

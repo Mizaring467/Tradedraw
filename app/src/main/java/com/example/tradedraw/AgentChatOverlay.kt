@@ -278,6 +278,23 @@ class AgentChatOverlay(
             executeAgentCommand("RESUME_TRADING")
         }
 
+        // 7. Detección de Acomodar / Centrar / Mover Gráfico
+        if (lower.contains("acomoda") || lower.contains("centra") || lower.contains("mueve el gr") ||
+            lower.contains("recenter") || lower.contains("mover el gr") || lower.contains("acomodar el gr") || lower.contains("centrar el gr")) {
+            val moved = tradingEngine.agentController.recenterChart("Chat del Usuario")
+            val botMsg = if (moved) {
+                "✥ He acomodado y re-centrado el gráfico suavemente para que las velas y el precio queden en su posición óptima."
+            } else {
+                "⚠️ No se pudo mover el gráfico ahora mismo (hay una operación abierta o el servicio de accesibilidad no está disponible)."
+            }
+            messages.add(ChatMessage(botMsg, false))
+            adapter?.notifyItemInserted(messages.size - 1)
+            chatView?.findViewById<RecyclerView>(R.id.chat_recycler_view)?.scrollToPosition(messages.size - 1)
+            statusIndicator?.text = "● En vivo"
+            statusIndicator?.setTextColor(android.graphics.Color.parseColor("#22c55e"))
+            return
+        }
+
         // Construir contexto en vivo del mercado
         val analysis = tradingEngine.latestAnalysisResult
         val balance = AutoTradeAccessibilityService.instance?.readCurrentBalance() ?: 0.0
@@ -362,6 +379,9 @@ class AgentChatOverlay(
                 tradingEngine.riskManager.resetStats()
                 OverlayService.instance?.updateHUDView()
                 Toast.makeText(context, "🤖 Marcador W/L reseteado", Toast.LENGTH_SHORT).show()
+            }
+            "RECENTER_CHART" -> {
+                tradingEngine.agentController.recenterChart("Comando IA")
             }
         }
     }
