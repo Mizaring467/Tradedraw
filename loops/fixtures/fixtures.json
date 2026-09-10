@@ -1,0 +1,94 @@
+{
+  "fixtures": [
+    {
+      "name": "rejection_support_bounce",
+      "strategy": "MT_REJECTION",
+      "description": "Rebote alcista por mecha de absorcion en soporte",
+      "expected_action": "BUY",
+      "payout": 0.83,
+      "candles": [
+        {"x": 100, "topY": 400, "bottomY": 480, "bodyTopY": 410, "bodyBottomY": 470, "type": "RED", "topWickRatio": 0.12, "bottomWickRatio": 0.12, "bodyHeight": 60},
+        {"x": 120, "topY": 430, "bottomY": 510, "bodyTopY": 440, "bodyBottomY": 500, "type": "RED", "topWickRatio": 0.12, "bottomWickRatio": 0.12, "bodyHeight": 60},
+        {"x": 140, "topY": 480, "bottomY": 580, "bodyTopY": 490, "bodyBottomY": 530, "type": "GREEN", "topWickRatio": 0.10, "bottomWickRatio": 0.50, "bodyHeight": 40}
+      ],
+      "supports": [575.0],
+      "resistances": [380.0],
+      "outcome_future_candle": "GREEN"
+    },
+    {
+      "name": "rejection_resistance_bounce",
+      "strategy": "MT_REJECTION",
+      "description": "Rechazo bajista por mecha de absorcion en resistencia",
+      "expected_action": "SELL",
+      "payout": 0.83,
+      "candles": [
+        {"x": 100, "topY": 500, "bottomY": 580, "bodyTopY": 510, "bodyBottomY": 570, "type": "GREEN", "topWickRatio": 0.12, "bottomWickRatio": 0.12, "bodyHeight": 60},
+        {"x": 120, "topY": 440, "bottomY": 520, "bodyTopY": 450, "bodyBottomY": 510, "type": "GREEN", "topWickRatio": 0.12, "bottomWickRatio": 0.12, "bodyHeight": 60},
+        {"x": 140, "topY": 380, "bottomY": 470, "bodyTopY": 430, "bodyBottomY": 465, "type": "RED", "topWickRatio": 0.55, "bottomWickRatio": 0.05, "bodyHeight": 35}
+      ],
+      "supports": [600.0],
+      "resistances": [385.0],
+      "outcome_future_candle": "RED"
+    },
+    {
+      "name": "choque_pullback_support",
+      "strategy": "MT_CHOQUE_PULLBACK",
+      "description": "Retest a nivel roto previo",
+      "expected_action": "BUY",
+      "payout": 0.83,
+      "candles": [
+        {"x": 100, "topY": 450, "bottomY": 500, "bodyTopY": 460, "bodyBottomY": 490, "type": "GREEN", "topWickRatio": 0.20, "bottomWickRatio": 0.20, "bodyHeight": 30},
+        {"x": 120, "topY": 410, "bottomY": 460, "bodyTopY": 415, "bodyBottomY": 455, "type": "GREEN", "topWickRatio": 0.10, "bottomWickRatio": 0.10, "bodyHeight": 40},
+        {"x": 140, "topY": 450, "bottomY": 485, "bodyTopY": 455, "bodyBottomY": 480, "type": "RED", "topWickRatio": 0.15, "bottomWickRatio": 0.15, "bodyHeight": 25}
+      ],
+      "supports": [485.0],
+      "resistances": [350.0],
+      "outcome_future_candle": "GREEN"
+    },
+    {
+      "name": "exhaustion_3_candles_reversal",
+      "strategy": "MT_3_VELAS_AGOTAMIENTO",
+      "description": "Agotamiento de 3 velas rojas consecutivas con cuerpos decrecientes",
+      "expected_action": "BUY",
+      "payout": 0.83,
+      "candles": [
+        {"x": 100, "topY": 380, "bottomY": 480, "bodyTopY": 390, "bodyBottomY": 470, "type": "RED", "topWickRatio": 0.10, "bottomWickRatio": 0.10, "bodyHeight": 80},
+        {"x": 120, "topY": 470, "bottomY": 530, "bodyTopY": 475, "bodyBottomY": 520, "type": "RED", "topWickRatio": 0.08, "bottomWickRatio": 0.15, "bodyHeight": 45},
+        {"x": 140, "topY": 520, "bottomY": 550, "bodyTopY": 525, "bodyBottomY": 545, "type": "RED", "topWickRatio": 0.15, "bottomWickRatio": 0.15, "bodyHeight": 20}
+      ],
+      "supports": [555.0],
+      "resistances": [350.0],
+      "outcome_future_candle": "GREEN"
+    },
+    {
+      "name": "false_breakout_trap_support",
+      "strategy": "MT_MASTER_COMBO",
+      "description": "Trampa bajista institucional: mecha perfora soporte y cuerpo cierra por encima",
+      "expected_action": "BUY",
+      "payout": 0.83,
+      "candles": [
+        {"x": 100, "topY": 420, "bottomY": 490, "bodyTopY": 430, "bodyBottomY": 480, "type": "RED", "topWickRatio": 0.14, "bottomWickRatio": 0.14, "bodyHeight": 50},
+        {"x": 120, "topY": 470, "bottomY": 540, "bodyTopY": 480, "bodyBottomY": 530, "type": "RED", "topWickRatio": 0.14, "bottomWickRatio": 0.14, "bodyHeight": 50},
+        {"x": 140, "topY": 480, "bottomY": 565, "bodyTopY": 490, "bodyBottomY": 525, "type": "GREEN", "topWickRatio": 0.10, "bottomWickRatio": 0.47, "bodyHeight": 35}
+      ],
+      "supports": [530.0],
+      "resistances": [380.0],
+      "outcome_future_candle": "GREEN"
+    },
+    {
+      "name": "sideways_doji_filter",
+      "strategy": "AUTO_ADAPTIVE",
+      "description": "Filtro anti-mercado lateral y dojis continuos (debe rechazar operar)",
+      "expected_action": null,
+      "payout": 0.83,
+      "candles": [
+        {"x": 100, "topY": 450, "bottomY": 470, "bodyTopY": 458, "bodyBottomY": 462, "type": "DOJI", "topWickRatio": 0.40, "bottomWickRatio": 0.40, "bodyHeight": 4},
+        {"x": 120, "topY": 452, "bottomY": 468, "bodyTopY": 459, "bodyBottomY": 461, "type": "DOJI", "topWickRatio": 0.40, "bottomWickRatio": 0.40, "bodyHeight": 2},
+        {"x": 140, "topY": 448, "bottomY": 472, "bodyTopY": 458, "bodyBottomY": 463, "type": "RED", "topWickRatio": 0.40, "bottomWickRatio": 0.40, "bodyHeight": 5}
+      ],
+      "supports": [470.0],
+      "resistances": [450.0],
+      "outcome_future_candle": "DOJI"
+    }
+  ]
+}
