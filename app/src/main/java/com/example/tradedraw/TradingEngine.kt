@@ -184,15 +184,16 @@ class TradingEngine(
                         // Binomo debitó la inversión sin retorno (+1 L)
                         isWin = false
                         method = "SALDO (-) Pérdida debitada por Binomo: Diff=$diff COP"
-                    } else if (elapsedSec >= 62) {
-                        // Saldo sin incremento tras 62 segundos completos: en opciones binarias es pérdida
-                        isWin = false
-                        method = "SIN ACREDITACIÓN TRAS 62s (Diff=$diff -> Pérdida)"
+                    } else if (Math.abs(diff) <= 10.0 && elapsedSec >= 15) {
+                        // Saldo inalterado: La orden NUNCA fue procesada por Binomo (clic no recibido)
+                        // Cancelar limpiamente sin registrar pérdida ni avanzar Martingala
+                        isTie = true
+                        method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado)"
                     }
                 } else if (elapsedSec >= 65) {
-                    // Si no hubo saldo legible tras 65 segundos, NUNCA asumir victoria
-                    isWin = false
-                    method = "TIMEOUT 65s (Sin saldo legible -> Loss preventivo)"
+                    // Si no hubo saldo legible tras 65 segundos, cancelar como empate preventivo sin alterar equity
+                    isTie = true
+                    method = "TIMEOUT 65s (Sin saldo legible -> Cancelación preventiva)"
                 }
 
                 if (isWin != null || isTie) {
@@ -206,16 +207,19 @@ class TradingEngine(
                         pendingTradeHasObservedWin = false
                         pendingTradeRecordedCandleCloseY = 0f
                         if (isTie) {
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "TIE", currentBal, elapsedSec, method)
                             riskManager.clearPendingTrade()
                             autoDrawEngine.clearTradeEntry()
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
                         } else if (finalWin) {
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method)
                             riskManager.recordTradeWin()
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
                             Toast.makeText(context, "🎉 OPERACIÓN GANADA (+1 W)", Toast.LENGTH_LONG).show()
                             onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
                         } else {
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method)
                             riskManager.recordTradeLoss()
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
@@ -277,20 +281,26 @@ class TradingEngine(
 
             // 5b. Ejecución de Señal Técnica Local en Tiempo Real
             if (localSignal != null && !riskManager.hasPendingTrade) {
-                val ai = latestAIResult
-                val isAIFresh = (System.currentTimeMillis() - latestAITimestamp) <= 12000L // Máximo 12s de validez para IA
-                // Filtro inteligente: No operar solo si la IA FRESCA contradice la señal local con certeza >= 70%
-                val isConflicted = if (isAIFresh && ai != null && ai.isSuccess && ai.confidence >= 0.70f) {
-                    (localSignal == TradeAction.BUY && ai.action == TradeAction.SELL) ||
-                    (localSignal == TradeAction.SELL && ai.action == TradeAction.BUY)
-                } else false
-
-                if (!isConflicted) {
-                    val aiTag = if (isAIFresh && ai != null && ai.isSuccess && ai.action == localSignal) " + IA Confirmada" else ""
-                    val description = if (lastSignalReason.isNotBlank()) "$lastSignalReason$aiTag" else "Estrategia Local (${strategy.name})$aiTag"
-                    handleSignal(localSignal, analysis, bitmap, description)
+                val sec = analysis.candleSecond
+                val isTimingValid = analysis.isSniperTimingWindow || (sec in 56..59 || sec in 0..7)
+                if (!isTimingValid) {
+                    android.util.Log.d("TradingEngine", "Señal local $localSignal pospuesta: fuera de ventana sniper (⏱ ${sec}s)")
                 } else {
-                    android.util.Log.d("TradingEngine", "Señal local $localSignal omitida por conflicto con análisis reciente de IA (${ai?.action})")
+                    val ai = latestAIResult
+                    val isAIFresh = (System.currentTimeMillis() - latestAITimestamp) <= 12000L // Máximo 12s de validez para IA
+                    // Filtro inteligente: No operar solo si la IA FRESCA contradice la señal local con certeza >= 70%
+                    val isConflicted = if (isAIFresh && ai != null && ai.isSuccess && ai.confidence >= 0.70f) {
+                        (localSignal == TradeAction.BUY && ai.action == TradeAction.SELL) ||
+                        (localSignal == TradeAction.SELL && ai.action == TradeAction.BUY)
+                    } else false
+
+                    if (!isConflicted) {
+                        val aiTag = if (isAIFresh && ai != null && ai.isSuccess && ai.action == localSignal) " + IA Confirmada" else ""
+                        val description = if (lastSignalReason.isNotBlank()) "$lastSignalReason$aiTag" else "Estrategia Local (${strategy.name})$aiTag"
+                        handleSignal(localSignal, analysis, bitmap, description)
+                    } else {
+                        android.util.Log.d("TradingEngine", "Señal local $localSignal omitida por conflicto con análisis reciente de IA (${ai?.action})")
+                    }
                 }
             }
         }
@@ -336,9 +346,9 @@ class TradingEngine(
             val isLate = analysis.isLateTimingForbidden
 
             // Veto universal de entrada tardía para opciones binarias a 1 minuto
-            // (Permitido únicamente en trampas institucionales con confirmación de absorción en S/R)
-            if (isLate && !analysis.isFalseBreakoutCall && !analysis.isFalseBreakoutPut) {
-                return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper (:55-:03)")
+            // En expiración a 1 min, TODA entrada debe ocurrir en la apertura (:56-:07) para no operar velas agotadas
+            if (isLate) {
+                return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper (:56-:07)")
             }
 
             val rawResult = when (strategy) {

@@ -167,22 +167,25 @@ class OverlayService : Service() {
 
         startTradeDrawForeground()
 
-        if (screenCaptureManager == null) {
-            val dataIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                intent?.getParcelableExtra("EXTRA_MEDIA_PROJECTION_DATA", Intent::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                intent?.getParcelableExtra("EXTRA_MEDIA_PROJECTION_DATA") as Intent?
+        val dataIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent?.getParcelableExtra("EXTRA_MEDIA_PROJECTION_DATA", Intent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent?.getParcelableExtra("EXTRA_MEDIA_PROJECTION_DATA") as Intent?
+        }
+        if (dataIntent != null) {
+            try {
+                screenCaptureManager?.destroy()
+            } catch (e: Exception) {
+                Log.e("TradeDraw", "Error reciclando ScreenCaptureManager previo", e)
             }
-            if (dataIntent != null) {
-                val scm = ScreenCaptureManager(this, dataIntent)
-                screenCaptureManager = scm
-                scm.startCapture { bitmap ->
-                    httpBridge?.latestFrame = bitmap
-                    tradingEngine.onNewFrame(bitmap)
-                }
-                Log.d("TradeDraw", "ScreenCaptureManager iniciado y procesando frames")
+            val scm = ScreenCaptureManager(this, dataIntent)
+            screenCaptureManager = scm
+            scm.startCapture { bitmap ->
+                httpBridge?.latestFrame = bitmap
+                tradingEngine.onNewFrame(bitmap)
             }
+            Log.d("TradeDraw", "ScreenCaptureManager reiniciado con nuevo token y procesando frames")
         }
         return START_STICKY
     }
