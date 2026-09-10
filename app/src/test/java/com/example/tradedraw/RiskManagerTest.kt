@@ -86,7 +86,37 @@ class RiskManagerTest {
     }
 
     @Test
+    fun testAntiTiltCooldownAfterMG1Failure() {
+        riskManager.maxMartingaleLevel = 1
+        riskManager.martingaleEnabled = true
+        riskManager.lossCooldownSeconds = 120
+
+        // 1ra derrota -> Nivel 1 permitido
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+
+        // 2da derrota -> MG1 falló (> maxMartingaleLevel = 1), debe forzar pausa anti-tilt incluso en modo YOLO
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(2, riskManager.currentLossStreak)
+
+        val (canTradeNormal, reasonNormal) = riskManager.canExecuteTrade()
+        assertFalse("Debe bloquearse por pausa anti-tilt tras fallo MG1", canTradeNormal)
+        assertTrue("Razón debe mencionar pausa anti-tilt", reasonNormal.contains("Pausa Anti-Tilt"))
+
+        val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("Incluso en YOLO debe bloquearse tras fallo MG1", canTradeYolo)
+        assertTrue("Razón YOLO debe mencionar pausa anti-tilt", reasonYolo.contains("Pausa Anti-Tilt"))
+    }
+
+    @Test
     fun testStopLossAndTakeProfitLimits() {
+        // Deshabilitamos martingala para testear puramente el stop loss general
+        riskManager.martingaleEnabled = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+
         // Test Stop Loss
         riskManager.recordTradeSent(TradeAction.BUY)
         riskManager.recordTradeLoss()
