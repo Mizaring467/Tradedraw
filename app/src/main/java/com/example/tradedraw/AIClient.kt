@@ -49,7 +49,7 @@ class AIClient(private val context: Context) {
         set(value) = prefs.edit().putString("ai_model", value.trim()).apply()
 
     var confidenceThreshold: Float
-        get() = prefs.getFloat("ai_confidence", 0.60f)
+        get() = prefs.getFloat("ai_confidence", 0.80f)
         set(value) = prefs.edit().putFloat("ai_confidence", value).apply()
 
     private val workerThread = HandlerThread("AIClientWorker").apply { start() }
