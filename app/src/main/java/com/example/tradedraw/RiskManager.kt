@@ -14,11 +14,11 @@ class RiskManager(context: Context? = null) {
    companion object {
        const val MAX_PENDING_TRADE_TIMEOUT_SEC = 75L
        const val DEFAULT_COOLDOWN_SECONDS = 10
-        const val DEFAULT_LOSS_COOLDOWN_SECONDS = 120
-       const val DEFAULT_STOP_LOSS_STREAK = 3
-       const val DEFAULT_TAKE_PROFIT_WINS = 20 // 20 victorias por bloque (0 = Ilimitado)
+        const val DEFAULT_LOSS_COOLDOWN_SECONDS = 180
+        const val DEFAULT_STOP_LOSS_STREAK = 3
+        const val DEFAULT_TAKE_PROFIT_WINS = 20 // 20 victorias por bloque (0 = Ilimitado)
         const val DEFAULT_MAX_MARTINGALE_LEVEL = 1
-        const val DEFAULT_MARTINGALE_MULTIPLIER = 2.2f
+        const val DEFAULT_MARTINGALE_MULTIPLIER = 2.0f
     }
 
     @Volatile

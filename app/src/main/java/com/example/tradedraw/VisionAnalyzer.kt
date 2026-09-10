@@ -86,7 +86,9 @@ data class VisionAnalysisResult(
     val isChartOffCenterRight: Boolean = false,
     val isChartOffCenterLeft: Boolean = false,
     val isPriceNearBottom: Boolean = false,
-    val isPriceNearTop: Boolean = false
+    val isPriceNearTop: Boolean = false,
+    val hasStrongMomentumDown: Boolean = false,
+    val hasStrongMomentumUp: Boolean = false
 )
 
 class VisionAnalyzer {
@@ -282,18 +284,40 @@ class VisionAnalyzer {
             else -> "1D ⚪"
         }
 
-        // Tendencia general basada en la posición de extremos
-       val trend = if (minPriceY < Float.MAX_VALUE && maxPriceY > Float.MIN_VALUE && candleList.size >= 2) {
-            val recent = candleList.take(5)
-            val firstPrice = (recent.first().bodyTopY + recent.first().bodyBottomY) / 2f
-            val lastPrice = (recent.last().bodyTopY + recent.last().bodyBottomY) / 2f
-            if (firstPrice < lastPrice - 15f && highestX > lowestX) TrendDirection.UPTREND
-            else if (firstPrice > lastPrice + 15f && lowestX > highestX) TrendDirection.DOWNTREND
-            else if (highestX > lowestX) TrendDirection.UPTREND
-            else TrendDirection.DOWNTREND
-       } else {
-           TrendDirection.SIDEWAYS
-       }
+        // Tendencia institucional basada en medias móviles de velas recientes (8-12 velas) y pendiente
+        val trend = if (candleList.size >= 3) {
+            val sampleSize = candleList.size.coerceAtMost(10)
+            val sample = candleList.take(sampleSize)
+
+            // Determinar si candleList está ordenada de derecha a izquierda (más reciente en index 0) o de izquierda a derecha
+            val isOrderedRightToLeft = sample.size >= 2 && sample.first().x >= sample.last().x
+            val candleNewest = if (isOrderedRightToLeft) sample.first() else sample.last()
+            val candleOldest = if (isOrderedRightToLeft) sample.last() else sample.first()
+
+            val priceNewest = if (candleNewest.type == CandleType.GREEN) candleNewest.bodyTopY else candleNewest.bodyBottomY
+            val priceOldest = if (candleOldest.type == CandleType.GREEN) candleOldest.bodyTopY else candleOldest.bodyBottomY
+
+            val redCount = sample.count { it.type == CandleType.RED }
+            val greenCount = sample.count { it.type == CandleType.GREEN }
+
+            // Pendiente temporal (precio más reciente vs más antiguo: menor Y = precio más alto)
+            val netPriceChange = priceNewest - priceOldest // > 0 significa que el precio cayó hacia mayor Y
+            val minMoveThreshold = (endY - startY) * 0.015f
+
+            when {
+                // Caída bajista: precio nuevo cayó (mayor Y) con mayoría de rojas o inclinación fuerte
+                netPriceChange > minMoveThreshold && redCount >= greenCount -> TrendDirection.DOWNTREND
+                netPriceChange > minMoveThreshold * 2.0f -> TrendDirection.DOWNTREND
+                // Subida alcista: precio nuevo subió (menor Y) con mayoría de verdes o inclinación fuerte
+                netPriceChange < -minMoveThreshold && greenCount >= redCount -> TrendDirection.UPTREND
+                netPriceChange < -minMoveThreshold * 2.0f -> TrendDirection.UPTREND
+                highestX > lowestX && greenCount > redCount -> TrendDirection.UPTREND
+                lowestX > highestX && redCount > greenCount -> TrendDirection.DOWNTREND
+                else -> TrendDirection.SIDEWAYS
+            }
+        } else {
+            TrendDirection.SIDEWAYS
+        }
 
         // S/R calculados estrictamente dentro del rango de velas encontradas:
         // Resistencia = Menor Y (Techo de velas)
@@ -347,19 +371,21 @@ class VisionAnalyzer {
         val isRejectionCall = hasBottomRejection && isNearSupportLevel
         val isRejectionPut = hasTopRejection && isNearResistanceLevel
 
-        // 2. Choque de Máximos y Mínimos (Breakout + Retest)
+        // 2. Choque de Máximos y Mínimos (Breakout + Retest con confirmación)
         var isChoqueCall = false
         var isChoquePut = false
         if (candleList.size >= 3) {
             val c0 = candleList[0]
             val c1 = candleList[1]
             val c2 = candleList[2]
-            // Breakout alcista previo retesteado por c0
-            if (c2.bodyBottomY > c1.bodyTopY && Math.abs(c0.bottomY - c2.bodyTopY) <= threshold) {
+            // Breakout alcista previo retesteado por c0 con absorción compradora
+            val touchesBreakoutSupport = Math.abs(c0.bottomY - c2.bodyTopY) <= threshold || Math.abs(c0.bottomY - c1.bodyTopY) <= threshold
+            if (c2.bodyBottomY > c1.bodyTopY && touchesBreakoutSupport && (c0.bottomWickRatio >= 0.15f || c0.type == CandleType.GREEN)) {
                 isChoqueCall = true
             }
-            // Breakout bajista previo retesteado por c0
-            if (c2.bodyTopY < c1.bodyBottomY && Math.abs(c0.topY - c2.bodyBottomY) <= threshold) {
+            // Breakout bajista previo retesteado por c0 con absorción vendedora
+            val touchesBreakoutResistance = Math.abs(c0.topY - c2.bodyBottomY) <= threshold || Math.abs(c0.topY - c1.bodyBottomY) <= threshold
+            if (c2.bodyTopY < c1.bodyBottomY && touchesBreakoutResistance && (c0.topWickRatio >= 0.15f || c0.type == CandleType.RED)) {
                 isChoquePut = true
             }
         }
@@ -383,6 +409,25 @@ class VisionAnalyzer {
 
             if (allRed && decayingBodies) isExhaustionCall = true
             else if (allGreen && decayingBodies) isExhaustionPut = true
+        }
+
+        // Detección de Impulso Violento / Momentum Acelerado (Falling Knives / Rocket Pumps)
+        // 3 velas consecutivas del mismo color donde los cuerpos no decrecen o no hay rechazo (peligro para contra-tendencia)
+        var hasStrongMomentumDown = false
+        var hasStrongMomentumUp = false
+        if (candleList.size >= 3) {
+            val c0 = candleList[0]
+            val c1 = candleList[1]
+            val c2 = candleList[2]
+            val allRed = c0.type == CandleType.RED && c1.type == CandleType.RED && c2.type == CandleType.RED
+            val allGreen = c0.type == CandleType.GREEN && c1.type == CandleType.GREEN && c2.type == CandleType.GREEN
+            val avgHeight = (c0.bodyHeight + c1.bodyHeight + c2.bodyHeight) / 3f
+            if (allRed && (c0.bodyHeight >= c1.bodyHeight * 0.85f || avgHeight >= 18f) && c0.bottomWickRatio < 0.35f) {
+                hasStrongMomentumDown = true
+            }
+            if (allGreen && (c0.bodyHeight >= c1.bodyHeight * 0.85f || avgHeight >= 18f) && c0.topWickRatio < 0.35f) {
+                hasStrongMomentumUp = true
+            }
         }
 
         val isHammer = lastCandle != null && (lastCandle.bottomWickRatio >= 0.50f && lastCandle.bodyHeight < lastCandle.totalHeight * 0.35f)
@@ -481,7 +526,7 @@ class VisionAnalyzer {
             avgBodyHeight < 10.0 || rangeHeight < 28f || dojiCount >= 3
         } else false
 
-        val isSideways = isSidewaysByCandles || (candleList.size >= 5 && Math.abs(callPct - putPct) < 12)
+        val isSideways = isSidewaysByCandles || (trend == TrendDirection.SIDEWAYS && candleList.size >= 5 && Math.abs(callPct - putPct) < 12)
 
         // Confluencia Multi-Factor Cuantitativa (0-100%)
         var confCall = 40
@@ -502,10 +547,10 @@ class VisionAnalyzer {
         val finalConfCall = confCall.coerceIn(0, 100)
         val finalConfPut = confPut.coerceIn(0, 100)
 
-        // Micro-Sincronización Reloj Sniper Estricto (00:55-00:59 o 00:00-00:03 anticipado 2s por delay físico)
+        // Micro-Sincronización Reloj Sniper Estricto (00:56-00:59 o 00:00-00:02 anticipado 2s por delay físico)
         val candleSecond = ((System.currentTimeMillis() / 1000) % 60).toInt()
-        val isSniperTimingWindow = candleSecond in 55..59 || candleSecond in 0..3
-        val isLateTimingForbidden = candleSecond in 5..54
+        val isSniperTimingWindow = candleSecond in 56..59 || candleSecond in 0..2
+        val isLateTimingForbidden = candleSecond in 3..55
 
         // Sniping de Mejor Strike (Pullback / Testeo en nivel clave)
         val targetSupport = if (supportLinesY.isNotEmpty()) effectiveSupportY else finalSupportY
@@ -576,7 +621,9 @@ class VisionAnalyzer {
             isChartOffCenterRight = isChartOffCenterRight,
             isChartOffCenterLeft = isChartOffCenterLeft,
             isPriceNearBottom = isPriceNearBottom,
-            isPriceNearTop = isPriceNearTop
+            isPriceNearTop = isPriceNearTop,
+            hasStrongMomentumDown = hasStrongMomentumDown,
+            hasStrongMomentumUp = hasStrongMomentumUp
         )
     }
 
@@ -615,19 +662,19 @@ class VisionAnalyzer {
         if (isLandscape) {
             // Horizontal (Landscape 2400x1080 / 2712x1220):
             // - X: 6% a 74% (excluye panel de botones Sube/Baja a la derecha en X > 75%)
-            // - Y: 22% a 74% (excluye saldo/tabs superiores Y < 22% y barra de tiempo/herramientas Y > 74%)
+            // - Y: 20% a 76% (excluye saldo/tabs superiores Y < 20% y barra de tiempo/herramientas Y > 76%)
             startX = (w * 0.06f).toInt().coerceAtLeast(0)
             endX = (w * 0.74f).toInt().coerceAtMost(w - 1)
-            startY = (h * 0.22f).toInt().coerceAtLeast(0)
-            endY = (h * 0.74f).toInt().coerceAtMost(h - 1)
+            startY = (h * 0.20f).toInt().coerceAtLeast(0)
+            endY = (h * 0.76f).toInt().coerceAtMost(h - 1)
         } else {
             // Vertical (Portrait 1080x2400 / 1220x2712):
             // - X: 5% a 78% (excluye columna de cotización / precios y badges de compra a la derecha)
-            // - Y: 28% a 68% (excluye saldo/tabs superiores y controles inferiores de tiempo/botones)
+            // - Y: 19% a 72% (cubre velas completas excluyendo saldo/tabs superiores y controles inferiores)
             startX = (w * 0.05f).toInt().coerceAtLeast(0)
             endX = (w * 0.78f).toInt().coerceAtMost(w - 1)
-            startY = (h * 0.28f).toInt().coerceAtLeast(0)
-            endY = (h * 0.68f).toInt().coerceAtMost(h - 1)
+            startY = (h * 0.19f).toInt().coerceAtLeast(0)
+            endY = (h * 0.72f).toInt().coerceAtMost(h - 1)
         }
 
         var totalGreenPixels = 0

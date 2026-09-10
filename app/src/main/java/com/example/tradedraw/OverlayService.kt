@@ -1037,6 +1037,21 @@ class OverlayService : Service() {
             openAgentChat()
         }
 
+        hudView?.findViewById<LinearLayout>(R.id.hud_signal_card)?.setOnClickListener {
+            if (tradingEngine.mode == AutoTradeMode.AUTONOMOUS) {
+                tradingEngine.autonomousSubMode = if (tradingEngine.autonomousSubMode == AutonomousSubMode.YOLO) {
+                    AutonomousSubMode.CONSERVATIVE
+                } else {
+                    AutonomousSubMode.YOLO
+                }
+                updateHUDView()
+                val subName = if (tradingEngine.autonomousSubMode == AutonomousSubMode.YOLO) "🚀 YOLO (Continuo)" else "🟢 Conservador"
+                Toast.makeText(this, "Submodo: $subName", Toast.LENGTH_SHORT).show()
+            } else {
+                showModeDialog()
+            }
+        }
+
         hudView?.findViewById<Button>(R.id.hud_btn_win)?.setOnClickListener {
             riskManager.recordTradeWin()
             updateHUDView()
@@ -1331,8 +1346,29 @@ class OverlayService : Service() {
             }
 
             val frames = screenCaptureManager?.totalFramesCaptured ?: 0L
-            val diagStr = analysis?.diagnosticSummary ?: "Visión: Esperando frame..."
+            val diagStr = if (frames == 0L && screenCaptureManager == null) {
+                "⚠️ Visión inactiva (Toca aquí para iniciar)"
+            } else {
+                analysis?.diagnosticSummary ?: "Visión: Esperando frame..."
+            }
             txtDiag.text = "📷 Frames: $frames | $diagStr"
+            if (frames == 0L) {
+                txtDiag.setTextColor(Color.parseColor("#facc15"))
+            } else {
+                txtDiag.setTextColor(Color.parseColor("#94a3b8"))
+            }
+
+            txtDiag.setOnClickListener {
+                try {
+                    val intent = Intent(this@OverlayService, MainActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    }
+                    startActivity(intent)
+                    Toast.makeText(this@OverlayService, "Toca 'INICIAR OVERLAY' y elige 'Toda la pantalla'", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Log.e("TradeDraw", "Error abriendo MainActivity", e)
+                }
+            }
 
             txtHint.text = tradingEngine.getStrategyStatusHint()
 
