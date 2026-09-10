@@ -497,10 +497,10 @@ class VisionAnalyzer {
         val finalConfCall = confCall.coerceIn(0, 100)
         val finalConfPut = confPut.coerceIn(0, 100)
 
-        // Micro-Sincronización Reloj Sniper Estricto (00:57-00:59 o 00:00-00:07 apertura de vela)
+        // Micro-Sincronización Reloj Sniper Estricto (00:55-00:59 o 00:00-00:03 anticipado 2s por delay físico)
         val candleSecond = ((System.currentTimeMillis() / 1000) % 60).toInt()
-        val isSniperTimingWindow = candleSecond in 57..59 || candleSecond in 0..7
-        val isLateTimingForbidden = candleSecond in 12..56
+        val isSniperTimingWindow = candleSecond in 55..59 || candleSecond in 0..3
+        val isLateTimingForbidden = candleSecond in 5..54
 
         // Sniping de Mejor Strike (Pullback / Testeo en nivel clave)
         val targetSupport = if (supportLinesY.isNotEmpty()) effectiveSupportY else finalSupportY

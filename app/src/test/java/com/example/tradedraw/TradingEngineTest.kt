@@ -114,12 +114,15 @@ class TradingEngineTest {
 
     @Test
     fun testMasterComboSignalThermometerThreshold() {
-        // Termómetro con timing sniper >= 75% dispara señal si no hay patrones previos
-        val analysisCallHigh = VisionAnalysisResult(signalPowerCall = 75, isSniperTimingWindow = true)
+        // Termómetro con timing sniper >= 80% dispara señal si no hay patrones previos
+        val analysisCallHigh = VisionAnalysisResult(signalPowerCall = 80, isSniperTimingWindow = true)
         assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisCallHigh))
 
-        val analysisPutHigh = VisionAnalysisResult(signalPowerPut = 80, isSniperTimingWindow = true)
+        val analysisPutHigh = VisionAnalysisResult(signalPowerPut = 85, isSniperTimingWindow = true)
         assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisPutHigh))
+
+        val analysisBelow80 = VisionAnalysisResult(signalPowerCall = 75, isSniperTimingWindow = true)
+        assertNull("75% debe ser filtrado ahora que el umbral A+ es 80%", TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisBelow80))
 
         val analysisWeak = VisionAnalysisResult(signalPowerCall = 65, signalPowerPut = 60)
         assertNull(TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisWeak))

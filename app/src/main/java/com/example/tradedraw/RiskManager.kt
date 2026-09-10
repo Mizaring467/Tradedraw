@@ -14,10 +14,11 @@ class RiskManager(context: Context? = null) {
    companion object {
        const val MAX_PENDING_TRADE_TIMEOUT_SEC = 75L
        const val DEFAULT_COOLDOWN_SECONDS = 10
-        const val DEFAULT_LOSS_COOLDOWN_SECONDS = 60
+        const val DEFAULT_LOSS_COOLDOWN_SECONDS = 120
        const val DEFAULT_STOP_LOSS_STREAK = 3
        const val DEFAULT_TAKE_PROFIT_WINS = 20 // 20 victorias por bloque (0 = Ilimitado)
-        const val DEFAULT_MAX_MARTINGALE_LEVEL = 2
+        const val DEFAULT_MAX_MARTINGALE_LEVEL = 1
+        const val DEFAULT_MARTINGALE_MULTIPLIER = 2.2f
     }
 
     @Volatile
@@ -56,14 +57,14 @@ class RiskManager(context: Context? = null) {
         }
 
     @Volatile
-    var martingaleEnabled: Boolean = prefs?.getBoolean("martingale_on", false) ?: false
+    var martingaleEnabled: Boolean = prefs?.getBoolean("martingale_on", true) ?: true
         set(value) {
             field = value
             prefs?.edit()?.putBoolean("martingale_on", value)?.apply()
         }
 
     @Volatile
-    var martingaleMultiplier: Float = prefs?.getFloat("martingale_mult", 2.0f) ?: 2.0f
+    var martingaleMultiplier: Float = prefs?.getFloat("martingale_mult", DEFAULT_MARTINGALE_MULTIPLIER) ?: DEFAULT_MARTINGALE_MULTIPLIER
         set(value) {
             field = value
             prefs?.edit()?.putFloat("martingale_mult", value)?.apply()
@@ -151,6 +152,15 @@ class RiskManager(context: Context? = null) {
                 clearPendingTrade()
             } else {
                 return Pair(false, "Operación abierta en curso (${elapsed}s)")
+            }
+        }
+        // Si falló el nivel máximo de martingala (MG1 fallido -> pérdidas consecutivas > maxMartingaleLevel),
+        // forzamos pausa de enfriamiento de 120s incluso en YOLO para proteger la cuenta contra tilt
+        if (martingaleEnabled && currentLossStreak > maxMartingaleLevel) {
+            val elapsed = (System.currentTimeMillis() - lastTradeTime) / 1000
+            val remaining = lossCooldownSeconds - elapsed
+            if (remaining > 0) {
+                return Pair(false, "🛑 Pausa Anti-Tilt tras fallo MG1 (${remaining}s)")
             }
         }
         // En SUBMODO YOLO: Sin restricciones de Stop Loss, Take Profit ni pausas de cooldown

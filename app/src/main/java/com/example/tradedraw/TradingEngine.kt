@@ -248,7 +248,7 @@ class TradingEngine(
                     if (aiResult.isSuccess && aiResult.action != null && aiResult.confidence >= aiClient.confidenceThreshold) {
                         if (!riskManager.hasPendingTrade && mode != AutoTradeMode.DISABLED) {
                             val sec = analysis.candleSecond
-                            val isTimingValid = analysis.isSniperTimingWindow || (sec in 57..59 || sec in 0..7)
+                            val isTimingValid = analysis.isSniperTimingWindow || (sec in 55..59 || sec in 0..3)
                             val isMarketUnfavorable = analysis.isMarketSideways || analysis.isConsolidationTight
                             val inDowntrend = analysis.trend == TrendDirection.DOWNTREND
                             val inUptrend = analysis.trend == TrendDirection.UPTREND
@@ -337,7 +337,7 @@ class TradingEngine(
             // Veto universal de entrada tardía para opciones binarias a 1 minuto
             // (Permitido únicamente en trampas institucionales / falsos rompimientos con confirmación)
             if (isLate && !analysis.isFalseBreakoutCall && !analysis.isFalseBreakoutPut) {
-                return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper (:57-:07)")
+                return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper (:55-:03)")
             }
 
             val rawResult = when (strategy) {
@@ -378,12 +378,12 @@ class TradingEngine(
                         !inDowntrend && analysis.touchesSupport && analysis.isPullbackSniperCall -> Pair(TradeAction.BUY, "🎯 Auto [Rebote en Soporte | ⏱ ${sec}s] -> CALL")
                         !inUptrend && analysis.touchesResistance && analysis.isPullbackSniperPut -> Pair(TradeAction.SELL, "🎯 Auto [Rebote en Resistencia | ⏱ ${sec}s] -> PUT")
 
-                        // 7. Impulso y Confluencia Cuantitativa Alta >= 75% — solo a favor de tendencia
-                        !inDowntrend && (analysis.confluenceScoreCall >= 75 || analysis.signalPowerCall >= 75 || (analysis.isCallSignal && analysis.signalScore >= 75)) -> {
+                        // 7. Impulso y Confluencia Cuantitativa Alta >= 80% — solo a favor de tendencia
+                        !inDowntrend && (analysis.confluenceScoreCall >= 80 || analysis.signalPowerCall >= 80 || (analysis.isCallSignal && analysis.signalScore >= 80)) -> {
                             val score = Math.max(analysis.confluenceScoreCall, analysis.signalPowerCall)
                             Pair(TradeAction.BUY, "🎯 Auto [Confluencia Fuerte ($score%) | ⏱ ${sec}s] -> CALL")
                         }
-                        !inUptrend && (analysis.confluenceScorePut >= 75 || analysis.signalPowerPut >= 75 || (analysis.isPutSignal && analysis.signalScore >= 75)) -> {
+                        !inUptrend && (analysis.confluenceScorePut >= 80 || analysis.signalPowerPut >= 80 || (analysis.isPutSignal && analysis.signalScore >= 80)) -> {
                             val score = Math.max(analysis.confluenceScorePut, analysis.signalPowerPut)
                             Pair(TradeAction.SELL, "🎯 Auto [Confluencia Fuerte ($score%) | ⏱ ${sec}s] -> PUT")
                         }
@@ -439,13 +439,13 @@ class TradingEngine(
                         !inUptrend && analysis.touchesResistance && (analysis.lastCandles.firstOrNull() == CandleType.RED || analysis.isPullbackSniperPut) -> {
                             Pair(TradeAction.SELL, "🎯 MT Combo: Rebote Confirmado en Resistencia -> PUT")
                         }
-                       // 6. Termómetro de Señal / Tendencia Alta Probabilidad >= 75%
-                        !inDowntrend && analysis.isSniperTimingWindow && (analysis.signalPowerCall >= 75 || (analysis.isCallSignal && analysis.signalScore >= 75)) -> {
-                            val score = if (analysis.signalPowerCall >= 75) analysis.signalPowerCall else analysis.signalScore
+                       // 6. Termómetro de Señal / Tendencia Alta Probabilidad >= 80%
+                        !inDowntrend && analysis.isSniperTimingWindow && (analysis.signalPowerCall >= 80 || (analysis.isCallSignal && analysis.signalScore >= 80)) -> {
+                            val score = if (analysis.signalPowerCall >= 80) analysis.signalPowerCall else analysis.signalScore
                            Pair(TradeAction.BUY, "🎯 MT Combo: Tendencia Alta ($score%) -> CALL")
                        }
-                        !inUptrend && analysis.isSniperTimingWindow && (analysis.signalPowerPut >= 75 || (analysis.isPutSignal && analysis.signalScore >= 75)) -> {
-                            val score = if (analysis.signalPowerPut >= 75) analysis.signalPowerPut else analysis.signalScore
+                        !inUptrend && analysis.isSniperTimingWindow && (analysis.signalPowerPut >= 80 || (analysis.isPutSignal && analysis.signalScore >= 80)) -> {
+                            val score = if (analysis.signalPowerPut >= 80) analysis.signalPowerPut else analysis.signalScore
                            Pair(TradeAction.SELL, "🎯 MT Combo: Tendencia Baja ($score%) -> PUT")
                        }
                        else -> Pair(null, "")
