@@ -40,7 +40,8 @@ class TradingEngine(
     var calibrationManager: CalibrationManager? = null,
     val aiClient: AIClient = AIClient(context)
 ) {
-    val agentController = AutonomousAgentController(context, this, riskManager)
+    val chartViewportController = ChartViewportController(context, riskManager)
+    val agentController = AutonomousAgentController(context, this, riskManager, chartViewportController)
 
     var mode: AutoTradeMode = AutoTradeMode.DISABLED
         set(value) {

@@ -36,7 +36,7 @@ class OverlayService : Service() {
 
     private lateinit var windowManager: WindowManager
     private lateinit var canvasView: View
-    private lateinit var drawingView: CustomDrawingView
+    internal lateinit var drawingView: CustomDrawingView
     private lateinit var canvasParams: WindowManager.LayoutParams
     
     private lateinit var menuView: View
@@ -152,6 +152,9 @@ class OverlayService : Service() {
                     }
                 }
                 "OPEN_CHAT" -> openAgentChat()
+                "RECENTER" -> {
+                    tradingEngine.agentController.recenterChart("Comando Remoto")
+                }
             }
         }
     }
@@ -538,6 +541,10 @@ class OverlayService : Service() {
         addItemToSubmenu(R.drawable.ic_lock_open, "RECALCULAR IA", Color.parseColor("#34d399")) {
             tradingEngine.unlockAllLines()
             Toast.makeText(this, "Líneas desbloqueadas → IA recalculando niveles", Toast.LENGTH_SHORT).show()
+        }
+
+        addItemToSubmenu(R.drawable.ic_ai_chip, "✥ ACOMODAR GRÁFICO", Color.parseColor("#c084fc")) {
+            tradingEngine.agentController.recenterChart("Menú IA")
         }
     }
 

@@ -17,7 +17,8 @@ import android.widget.Toast
 class AutonomousAgentController(
     private val context: Context,
     private val tradingEngine: TradingEngine,
-    private val riskManager: RiskManager
+    private val riskManager: RiskManager,
+    val chartViewportController: ChartViewportController? = null
 ) {
     companion object {
         private const val TAG = "AutonomousAgent"
@@ -46,6 +47,7 @@ class AutonomousAgentController(
                     auditFinancialSync()
                     auditEngineHealth()
                     auditStrategyAdaptation()
+                    auditChartViewport()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error en ciclo de auditoría del agente", e)
                 }
@@ -146,5 +148,27 @@ class AutonomousAgentController(
         } else {
             consecutiveStagnantCycles = 0
         }
+    }
+
+    /**
+     * 4. Auto-Acomodado del Viewport del Gráfico:
+     * Si las velas o el precio se han desfasado hacia los bordes, el agente ejecuta
+     * un arrastre táctil suave para mantener el gráfico perfectamente centrado.
+     */
+    private fun auditChartViewport() {
+        if (tradingEngine.mode != AutoTradeMode.AUTONOMOUS) return
+        val viewport = chartViewportController ?: return
+        val analysis = tradingEngine.latestAnalysisResult ?: return
+
+        val dm = context.resources.displayMetrics
+        viewport.checkAndAdjustViewport(analysis, dm.widthPixels, dm.heightPixels)
+    }
+
+    /**
+     * Recentra manualmente el gráfico a petición del usuario, HUD o chat.
+     */
+    fun recenterChart(reason: String = "Petición manual"): Boolean {
+        val dm = context.resources.displayMetrics
+        return chartViewportController?.forceRecenter(dm.widthPixels, dm.heightPixels, reason) ?: false
     }
 }
