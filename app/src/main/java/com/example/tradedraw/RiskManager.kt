@@ -179,11 +179,15 @@ class RiskManager(context: Context? = null) {
     @Volatile
     var unitTradeAmount: Double = 80000.0 // Monto de inversión base en Binomo (Col$80,000)
 
+    @Volatile
+    var currentSubMode: AutonomousSubMode = AutonomousSubMode.YOLO
+
     @Synchronized
     fun getRemainingCooldown(subMode: AutonomousSubMode? = null): Int {
         if (lastTradeTime == 0L) return 0
+        val effectiveSubMode = subMode ?: currentSubMode
         val elapsed = (System.currentTimeMillis() - lastTradeTime) / 1000
-        val requiredLossCooldown = if (subMode == AutonomousSubMode.YOLO) yoloLossCooldownSeconds else lossCooldownSeconds
+        val requiredLossCooldown = if (effectiveSubMode == AutonomousSubMode.YOLO) yoloLossCooldownSeconds else lossCooldownSeconds
         val requiredCooldown = if (currentLossStreak > 0) requiredLossCooldown else cooldownSeconds
         val remaining = requiredCooldown - elapsed
         return if (remaining > 0) remaining.toInt() else 0
@@ -201,14 +205,18 @@ class RiskManager(context: Context? = null) {
             }
         }
         // Si falló el nivel máximo de martingala (MG1 fallido -> pérdidas consecutivas > maxMartingaleLevel),
-        // forzamos pausa de enfriamiento incluso en YOLO para proteger la cuenta contra tilt,
+        // forzamos pausa de enfriamiento breve incluso en YOLO para proteger la cuenta contra tilt,
         // pero en modo continuo/YOLO reducida a 30-45s máximo para no congelar al bot por 120-140s
         if (martingaleEnabled && currentLossStreak > maxMartingaleLevel) {
             val elapsed = (System.currentTimeMillis() - lastTradeTime) / 1000
             val effectiveLossCooldown = if (subMode == AutonomousSubMode.YOLO) yoloLossCooldownSeconds else lossCooldownSeconds
             val remaining = effectiveLossCooldown - elapsed
             if (remaining > 0) {
-                return Pair(false, "🛑 Pausa Anti-Tilt tras fallo MG1 (${remaining}s)")
+                return Pair(false, "Pausa Anti-Tilt tras fallo Martingala (${remaining}s)")
+            } else if (subMode == AutonomousSubMode.YOLO) {
+                // En YOLO: al terminar la pausa breve de 35s, reiniciar automáticamente la racha a M0
+                // para continuar operando de forma 100% autónoma sin requerir interacción táctil
+                currentLossStreak = 0
             }
         }
         // En SUBMODO YOLO: Cooldown controlado tras pérdida de 30-45s máximo para permitir tomar
@@ -218,6 +226,7 @@ class RiskManager(context: Context? = null) {
             if (remaining > 0) {
                 return Pair(false, "Pausa de Cooldown YOLO: ${remaining}s")
             }
+            // En YOLO opera continuamente sin detenerse permanentemente por stop loss de racha
             return Pair(true, "🚀 MODO YOLO: Operativa continua sin límites")
         }
         if (stopLossStreak > 0 && currentLossStreak >= stopLossStreak) {

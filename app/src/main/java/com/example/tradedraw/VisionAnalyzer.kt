@@ -490,22 +490,22 @@ class VisionAnalyzer {
         var isFalseBreakoutCall = false
         var isFalseBreakoutPut = false
         if (lastCandle != null) {
-            val targetSupport = if (supportLinesY.isNotEmpty()) effectiveSupportY else finalSupportY
-            val targetResistance = if (resistanceLinesY.isNotEmpty()) effectiveResistanceY else finalResistanceY
+            val targetSupport = effectiveSupportY
+            val targetResistance = effectiveResistanceY
 
-            // Trampa bajista en Soporte: mecha perfora soporte >= 8px pero cuerpo cierra por encima
-            val penetratesSupport = lastCandle.bottomY >= targetSupport + 8f
+            // Trampa bajista en Soporte: mecha perfora soporte >= 6px pero cuerpo cierra por encima
+            val penetratesSupport = lastCandle.bottomY >= targetSupport + 6f
             val retreatsAboveSupport = lastCandle.bodyBottomY <= targetSupport + 6f
-            val hasRejectionRatio = lastCandle.bottomWickRatio >= 0.35f
+            val hasRejectionRatio = lastCandle.bottomWickRatio >= 0.25f || lastCandle.type == CandleType.GREEN
 
             if (penetratesSupport && retreatsAboveSupport && hasRejectionRatio) {
                 isFalseBreakoutCall = true
             }
 
-            // Trampa alcista en Resistencia: mecha perfora resistencia >= 8px pero cuerpo cierra por debajo
-            val penetratesResistance = lastCandle.topY <= targetResistance - 8f
+            // Trampa alcista en Resistencia: mecha perfora resistencia >= 6px pero cuerpo cierra por debajo
+            val penetratesResistance = lastCandle.topY <= targetResistance - 6f
             val retreatsBelowResistance = lastCandle.bodyTopY >= targetResistance - 6f
-            val hasTopRejectionRatio = lastCandle.topWickRatio >= 0.35f
+            val hasTopRejectionRatio = lastCandle.topWickRatio >= 0.25f || lastCandle.type == CandleType.RED
 
             if (penetratesResistance && retreatsBelowResistance && hasTopRejectionRatio) {
                 isFalseBreakoutPut = true

@@ -649,7 +649,8 @@ class TradingEngine(
 
         val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(mode, autonomousSubMode)
         if (!canTradeStatus && !riskManager.hasPendingTrade && mode == AutoTradeMode.AUTONOMOUS) {
-            return "🛑 $blockReason · Toca [MODO] para reanudar"
+            val requiresManualResume = blockReason.contains("Stop Loss", ignoreCase = true) || blockReason.contains("Take Profit", ignoreCase = true)
+            return if (requiresManualResume) "🛑 $blockReason · Toca [MODO] para reanudar" else "⏳ $blockReason"
         }
 
         if (riskManager.hasPendingTrade) {
