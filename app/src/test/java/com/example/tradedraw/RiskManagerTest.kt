@@ -148,4 +148,46 @@ class RiskManagerTest {
         riskManager.setStats(wins = 8, losses = 2)
         assertEquals("Winrate for 8W-2L should be 80%", 80.0f, riskManager.getWinRate(), 0.01f)
     }
+    @Test
+    fun testSorosCompoundingProgressionAndReset() {
+        riskManager.moneyManagementMode = MoneyManagementMode.SOROS_COMPOUNDING
+        riskManager.baseAmount = 1.0f
+        riskManager.sorosPayoutRate = 0.85f
+        riskManager.sorosCycleTarget = 3
+        riskManager.resetSession()
+
+        // Paso 0: Monto base $1.0
+        assertEquals(1.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+        assertEquals("[Soros S0/3 | $1.0]", riskManager.getMartingaleStatusBadge())
+
+        // 1er Win -> Paso 1 ($1.85)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        assertEquals(1, riskManager.currentSorosStep)
+        assertEquals(1.85f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+        assertEquals("[Soros S1/3 | $1.85]", riskManager.getMartingaleStatusBadge())
+
+        // 2do Win -> Paso 2 ($3.42)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        assertEquals(2, riskManager.currentSorosStep)
+        assertEquals(3.42f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+        assertEquals("[Soros S2/3 | $3.42]", riskManager.getMartingaleStatusBadge())
+
+        // 3er Win -> Completa Ciclo (Target 3) -> Reset a Paso 0 y 1 ciclo completado
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        assertEquals(0, riskManager.currentSorosStep)
+        assertEquals(1, riskManager.completedSorosCycles)
+        assertEquals(1.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+
+        // Pérdida en Paso 1 -> Reset a Paso 0 (Pérdida máxima limitada a $1)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin() // A Paso 1
+        assertEquals(1, riskManager.currentSorosStep)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss() // Pérdida
+        assertEquals(0, riskManager.currentSorosStep)
+        assertEquals(1.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+    }
 }

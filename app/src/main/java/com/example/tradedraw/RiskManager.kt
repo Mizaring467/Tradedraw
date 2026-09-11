@@ -3,6 +3,12 @@ package com.example.tradedraw
 import android.content.Context
 import android.content.SharedPreferences
 
+enum class MoneyManagementMode {
+    MARTINGALE,
+    SOROS_COMPOUNDING,
+    FIXED_AMOUNT
+}
+
 class RiskManager(context: Context? = null) {
 
     private val prefs: SharedPreferences? = try {
@@ -76,6 +82,37 @@ class RiskManager(context: Context? = null) {
             field = value
             prefs?.edit()?.putFloat("base_amount", value)?.apply()
         }
+
+    @Volatile
+    var moneyManagementMode: MoneyManagementMode = try {
+        MoneyManagementMode.valueOf(prefs?.getString("mm_mode", MoneyManagementMode.MARTINGALE.name) ?: MoneyManagementMode.MARTINGALE.name)
+    } catch (e: Exception) {
+        MoneyManagementMode.MARTINGALE
+    }
+        set(value) {
+            field = value
+            prefs?.edit()?.putString("mm_mode", value.name)?.apply()
+        }
+
+    @Volatile
+    var sorosCycleTarget: Int = prefs?.getInt("soros_cycle_target", 4) ?: 4
+        set(value) {
+            field = value
+            prefs?.edit()?.putInt("soros_cycle_target", value)?.apply()
+        }
+
+    @Volatile
+    var sorosPayoutRate: Float = prefs?.getFloat("soros_payout", 0.85f) ?: 0.85f
+        set(value) {
+            field = value
+            prefs?.edit()?.putFloat("soros_payout", value)?.apply()
+        }
+
+    @Volatile
+    var currentSorosStep: Int = 0
+
+    @Volatile
+    var completedSorosCycles: Int = 0
 
     // Estado en vivo de la sesión (Inicia limpio en 0 para cada nueva sesión de trading)
     @Volatile
@@ -234,6 +271,13 @@ class RiskManager(context: Context? = null) {
         currentWins += safeCount
         totalWins += safeCount
         currentLossStreak = 0
+        if (moneyManagementMode == MoneyManagementMode.SOROS_COMPOUNDING) {
+            currentSorosStep += safeCount
+            if (currentSorosStep >= sorosCycleTarget) {
+                completedSorosCycles++
+                currentSorosStep = 0
+            }
+        }
         lastTradeTime = System.currentTimeMillis()
         clearPendingTrade()
     }
@@ -247,6 +291,9 @@ class RiskManager(context: Context? = null) {
         val safeCount = count.coerceAtLeast(1)
         totalLosses += safeCount
         currentLossStreak += safeCount
+        if (moneyManagementMode == MoneyManagementMode.SOROS_COMPOUNDING) {
+            currentSorosStep = 0
+        }
         lastTradeTime = System.currentTimeMillis()
         clearPendingTrade()
     }
@@ -289,7 +336,16 @@ class RiskManager(context: Context? = null) {
 
     @Synchronized
     fun getCurrentInvestmentAmount(): Float {
-        if (!martingaleEnabled || currentLossStreak == 0) return baseAmount
+        if (moneyManagementMode == MoneyManagementMode.SOROS_COMPOUNDING) {
+            var amt = baseAmount
+            for (i in 0 until currentSorosStep) {
+                amt *= (1f + sorosPayoutRate)
+            }
+            return Math.round(amt * 100f) / 100f
+        }
+        if (moneyManagementMode == MoneyManagementMode.FIXED_AMOUNT || !martingaleEnabled || currentLossStreak == 0) {
+            return baseAmount
+        }
         val effectiveLevel = currentLossStreak.coerceAtMost(maxMartingaleLevel)
         var amount = baseAmount
         for (i in 0 until effectiveLevel) {
@@ -300,6 +356,10 @@ class RiskManager(context: Context? = null) {
 
     @Synchronized
     fun getMartingaleStatusBadge(): String {
+        if (moneyManagementMode == MoneyManagementMode.SOROS_COMPOUNDING) {
+            val amt = getCurrentInvestmentAmount()
+            return "[Soros S$currentSorosStep/$sorosCycleTarget | $$amt]"
+        }
         if (!martingaleEnabled) return "[OFF]"
         val level = "M$currentLossStreak"
         val amt = getCurrentInvestmentAmount()

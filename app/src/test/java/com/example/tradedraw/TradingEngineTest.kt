@@ -208,8 +208,8 @@ class TradingEngineTest {
         assertEquals(TradeAction.SELL, action2)
         assertTrue(reason2.contains("Auto [Mecha Rechazo Resistencia"))
 
-        // 3. Vela envolvente en soporte -> CALL
-        val envolventeCall = VisionAnalysisResult(isEngulfingCall = true)
+        // 3. Vela envolvente en soporte -> CALL (requiere ventana sniper)
+        val envolventeCall = VisionAnalysisResult(isEngulfingCall = true, isSniperTimingWindow = true)
         val (action3, reason3) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, envolventeCall)
         assertEquals(TradeAction.BUY, action3)
         assertTrue(reason3.contains("Auto [Vela Envolvente Soporte"))
