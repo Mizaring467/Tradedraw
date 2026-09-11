@@ -1454,7 +1454,7 @@ class OverlayService : Service() {
                 txtStatus.text = "🤖 Operación en curso (${elapsed}s) · Esperando resultado..."
                 txtStatus.setTextColor(Color.parseColor("#38bdf8"))
             } else {
-                val remaining = riskManager.getRemainingCooldown()
+                val remaining = riskManager.getRemainingCooldown(tradingEngine.autonomousSubMode)
                 if (remaining > 0) {
                     txtStatus.text = "⏳ Cooldown: ${remaining}s"
                     txtStatus.setTextColor(Color.parseColor("#fb923c"))
