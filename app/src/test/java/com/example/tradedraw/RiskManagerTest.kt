@@ -190,4 +190,27 @@ class RiskManagerTest {
         assertEquals(0, riskManager.currentSorosStep)
         assertEquals(1.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
     }
+
+    @Test
+    fun testYoloLossCooldown_boundedBetween30And45Seconds() {
+        assertEquals("Default YOLO cooldown must be 35s", 35, riskManager.yoloLossCooldownSeconds)
+
+        riskManager.yoloLossCooldownSeconds = 10
+        assertEquals("YOLO cooldown below 30s must be coerced to 30s", 30, riskManager.yoloLossCooldownSeconds)
+
+        riskManager.yoloLossCooldownSeconds = 100
+        assertEquals("YOLO cooldown above 45s must be coerced to 45s", 45, riskManager.yoloLossCooldownSeconds)
+
+        riskManager.yoloLossCooldownSeconds = 35
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+
+        val remainingYolo = riskManager.getRemainingCooldown(AutonomousSubMode.YOLO)
+        assertTrue("YOLO cooldown must be between 30 and 35 seconds", remainingYolo in 30..35)
+        assertTrue("YOLO cooldown must not freeze for 120-180 seconds", remainingYolo <= 45)
+
+        val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("Debe esperar el cooldown corto en YOLO", canTradeYolo)
+        assertTrue("Razón debe ser cooldown YOLO", reasonYolo.contains("Pausa de Cooldown YOLO"))
+    }
 }

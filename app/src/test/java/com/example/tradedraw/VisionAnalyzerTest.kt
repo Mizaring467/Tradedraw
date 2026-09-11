@@ -396,4 +396,36 @@ class VisionAnalyzerTest {
         assertFalse("No debe marcar zona de soporte en el medio del canal", middle.isNearSupportZone)
         assertFalse("No debe marcar zona de resistencia en el medio del canal", middle.isNearResistanceZone)
     }
+
+    @Test
+    fun testDynamicPolarity_bullishBreakout_updatesDynamicSupportAndResistance() {
+        val cHistorical1 = analyzer.createCandle(CandleType.RED, 100f, 200f, 350f, 220f, 330f)
+        val cHistorical2 = analyzer.createCandle(CandleType.GREEN, 120f, 250f, 400f, 270f, 380f)
+        val cPeak = analyzer.createCandle(CandleType.GREEN, 140f, 140f, 180f, 142f, 146f) // latestPriceY = 144f < 200f
+
+        val resultPeak = analyzer.evaluateCandlePatterns(
+            candleList = listOf(cPeak, cHistorical2, cHistorical1)
+        )
+
+        assertEquals("Soporte dinámico debe ser la resistencia previa rota", 200f, resultPeak.dynamicSupportY, 0.1f)
+        assertEquals("Nueva resistencia debe ser el techo real absoluto", 140f, resultPeak.dynamicResistanceY, 0.1f)
+        assertTrue("Debe detectar que está cerca de la nueva zona de resistencia", resultPeak.isNearResistanceZone)
+        assertTrue("Ratio a resistencia debe ser menor a 0.15", resultPeak.distanceToResistanceRatio < 0.15f)
+    }
+
+    @Test
+    fun testDynamicPolarity_bearishBreakdown_updatesDynamicSupportAndResistance() {
+        val cHistorical1 = analyzer.createCandle(CandleType.GREEN, 100f, 200f, 350f, 220f, 330f)
+        val cHistorical2 = analyzer.createCandle(CandleType.RED, 120f, 250f, 400f, 270f, 380f)
+        val cFloor = analyzer.createCandle(CandleType.RED, 140f, 420f, 460f, 454f, 458f) // latestPriceY = 456f > 400f
+
+        val resultFloor = analyzer.evaluateCandlePatterns(
+            candleList = listOf(cFloor, cHistorical2, cHistorical1)
+        )
+
+        assertEquals("Resistencia dinámica debe ser el soporte previo roto", 400f, resultFloor.dynamicResistanceY, 0.1f)
+        assertEquals("Nuevo soporte debe ser el piso real absoluto", 460f, resultFloor.dynamicSupportY, 0.1f)
+        assertTrue("Debe detectar que está cerca de la nueva zona de soporte", resultFloor.isNearSupportZone)
+        assertTrue("Ratio a soporte debe ser menor a 0.15", resultFloor.distanceToSupportRatio < 0.15f)
+    }
 }
