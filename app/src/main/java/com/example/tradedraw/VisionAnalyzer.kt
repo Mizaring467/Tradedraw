@@ -311,11 +311,11 @@ class VisionAnalyzer {
 
             // Pendiente temporal (precio más reciente vs más antiguo: menor Y = precio más alto)
             val netPriceChange = priceNewest - priceOldest // > 0 significa que el precio cayó hacia mayor Y
-            val minMoveThreshold = chartHeight * 0.025f
+            val minMoveThreshold = (chartHeight * 0.015f).coerceIn(8f, 25f)
 
             when {
-                // Si la micro-tendencia inmediata está estancada con alternancia, clasificar como SIDEWAYS
-                isMicroFlat && microSample.size >= 4 && (microSample.count { it.type == CandleType.GREEN } == microSample.count { it.type == CandleType.RED }) -> TrendDirection.SIDEWAYS
+                // Si la micro-tendencia inmediata está completamente estancada con alternancia y sin desplazamiento neto
+                isMicroFlat && microSample.size >= 4 && (microSample.count { it.type == CandleType.GREEN } == microSample.count { it.type == CandleType.RED }) && Math.abs(netPriceChange) < minMoveThreshold -> TrendDirection.SIDEWAYS
                 // Caída bajista: precio nuevo cayó (mayor Y) con mayoría de rojas o inclinación fuerte
                 netPriceChange > minMoveThreshold && redCount >= greenCount -> TrendDirection.DOWNTREND
                 netPriceChange > minMoveThreshold * 2.0f -> TrendDirection.DOWNTREND
@@ -525,32 +525,34 @@ class VisionAnalyzer {
             val last4 = candleList.take(4)
             val alternatingColors = (last4[0].type != last4[1].type && last4[1].type != last4[2].type && last4[2].type != last4[3].type)
             val microDisplacement = Math.abs(last4.first().bodyTopY - last4.last().bodyTopY)
-            alternatingColors && microDisplacement < (chartHeight * 0.045f)
+            alternatingColors && microDisplacement < (chartHeight * 0.025f)
         } else false
 
         val isSidewaysByCandles = if (recentCandles.size >= 4) {
             val avgBodyHeight = recentCandles.map { it.bodyHeight }.average()
             val dojiCount = recentCandles.count {
-                it.bodyHeight < (chartHeight * 0.025f) || (it.bodyHeight <= it.totalHeight * 0.25f) || it.type == CandleType.DOJI
+                it.type == CandleType.DOJI || it.bodyHeight <= 4f || (it.bodyHeight <= it.totalHeight * 0.10f && it.totalHeight >= 8f)
             }
             val dojiRatio = dojiCount.toFloat() / recentCandles.size
-            avgBodyHeight < (chartHeight * 0.030f) || dojiRatio >= 0.40f || isAlternatingChop
+            avgBodyHeight < 15.0 || dojiRatio >= 0.50f || isAlternatingChop
         } else false
 
         // Filtro Cuantitativo de Consolidación Estrecha (tradingview-quantitative)
-        val isConsolidationTight = if (recentCandles.size >= 4) {
+        val isConsolidationTight = if (recentCandles.size >= 4 && trend == TrendDirection.SIDEWAYS) {
             val sample = recentCandles.take(5)
             val avgBodyHeight = sample.map { it.bodyHeight }.average()
             val highestY = sample.minOf { it.topY }
             val lowestY = sample.maxOf { it.bottomY }
             val rangeHeight = lowestY - highestY
-            val dojiCount = sample.count {
-                it.bodyHeight < (chartHeight * 0.020f) || (it.bodyHeight <= it.totalHeight * 0.20f) || it.type == CandleType.DOJI
-            }
-            avgBodyHeight < (chartHeight * 0.022f) || rangeHeight < (chartHeight * 0.075f) || dojiCount >= 2 || isAlternatingChop
+            avgBodyHeight < 12.0 || rangeHeight < (chartHeight * 0.035f) || isAlternatingChop
         } else false
 
-        val isSideways = isSidewaysByCandles || isConsolidationTight || isAlternatingChop || (trend == TrendDirection.SIDEWAYS && candleList.size >= 4 && Math.abs(callPct - putPct) < 18)
+        // En tendencias direccionales confirmadas (UPTREND o DOWNTREND), el mercado NO es lateral
+        val isSideways = if (trend != TrendDirection.SIDEWAYS) {
+            false
+        } else {
+            isSidewaysByCandles || isConsolidationTight || isAlternatingChop || (candleList.size >= 4 && Math.abs(callPct - putPct) < 18)
+        }
 
         // Confluencia Multi-Factor Cuantitativa (0-100%)
         var confCall = 40

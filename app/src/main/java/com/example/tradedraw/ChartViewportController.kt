@@ -27,7 +27,7 @@ class ChartViewportController(
         internal set
 
     @Volatile
-    var isEnabled: Boolean = false
+    var isEnabled: Boolean = true
 
     private val mainHandler = Handler(Looper.getMainLooper())
 

@@ -1398,21 +1398,26 @@ class OverlayService : Service() {
                 val callPower = analysis.signalPowerCall
                 val putPower = analysis.signalPowerPut
 
-                if (isSideways) {
-                    txtTrendBadge?.text = "📊 Tendencia: LATERAL / RANGO (50/50)"
-                    txtTrendBadge?.setTextColor(Color.parseColor("#facc15"))
-                    txtTrendReason?.text = "Mercado indeciso con velas doji. El agente filtra entradas para proteger capital."
-                    txtPlannedAction?.text = "🎯 Plan: Esperar ruptura limpia de soporte o resistencia con volumen."
-                } else if (trend == TrendDirection.UPTREND) {
+                if (trend == TrendDirection.UPTREND) {
                     txtTrendBadge?.text = "📈 Tendencia: ALCISTA ($callPower% Poder CALL)"
                     txtTrendBadge?.setTextColor(Color.parseColor("#4ade80"))
-                    txtTrendReason?.text = "Máximos y mínimos crecientes sobre medias móviles dinámicas."
-                    txtPlannedAction?.text = "🎯 Plan: Buscar confirmación de rebote en soporte para entrar CALL al segundo :58s."
-                } else {
+                    txtTrendReason?.text = "Máximos y mínimos crecientes con presión compradora clara."
+                    txtPlannedAction?.text = "🎯 Plan: Buscar rebote en soporte o continuación de tendencia para entrar CALL al segundo :58s."
+                } else if (trend == TrendDirection.DOWNTREND) {
                     txtTrendBadge?.text = "📉 Tendencia: BAJISTA ($putPower% Poder PUT)"
                     txtTrendBadge?.setTextColor(Color.parseColor("#f87171"))
-                    txtTrendReason?.text = "Presión de venta dominante con rechazo en resistencias."
-                    txtPlannedAction?.text = "🎯 Plan: Buscar retroceso/pullback a resistencia para entrar PUT al segundo :58s."
+                    txtTrendReason?.text = "Presión de venta dominante con rechazo continuo en resistencias."
+                    txtPlannedAction?.text = "🎯 Plan: Buscar retroceso a resistencia o continuación para entrar PUT al segundo :58s."
+                } else if (isSideways) {
+                    txtTrendBadge?.text = "📊 Tendencia: LATERAL / RANGO (50/50)"
+                    txtTrendBadge?.setTextColor(Color.parseColor("#facc15"))
+                    txtTrendReason?.text = "Mercado indeciso sin dirección clara. El agente filtra entradas para proteger capital."
+                    txtPlannedAction?.text = "🎯 Plan: Esperar ruptura limpia de soporte/resistencia con volumen."
+                } else {
+                    txtTrendBadge?.text = "📊 Tendencia: CONSOLIDACIÓN ($callPower% C / $putPower% P)"
+                    txtTrendBadge?.setTextColor(Color.parseColor("#facc15"))
+                    txtTrendReason?.text = "Mercado oscilando en canal estrecho. Esperando confirmación de ruptura o rebote."
+                    txtPlannedAction?.text = "🎯 Plan: Monitorear extremos del canal S/R."
                 }
             }
 

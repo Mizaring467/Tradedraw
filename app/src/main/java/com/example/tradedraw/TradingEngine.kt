@@ -344,10 +344,10 @@ class TradingEngine(
 
             val sec = analysis.candleSecond
             val isLate = analysis.isLateTimingForbidden
+            val isInstitutionalTrap = analysis.isFalseBreakoutCall || analysis.isFalseBreakoutPut
 
-            // Veto universal de entrada tardía para opciones binarias a 1 minuto
-            // En expiración a 1 min, TODA entrada debe ocurrir en la apertura (:56-:07) para no operar velas agotadas
-            if (isLate) {
+            // Veto universal de entrada tardía para opciones binarias a 1 minuto (salvo trampas institucionales)
+            if (isLate && !isInstitutionalTrap) {
                 return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper (:56-:07)")
             }
 
@@ -371,17 +371,19 @@ class TradingEngine(
                             (analysis.isPullbackSniperPut || analysis.isSniperTimingWindow) ->
                             Pair(TradeAction.SELL, "🎯 Auto [Mecha Rechazo Resistencia | ⏱ ${sec}s] -> PUT")
 
-                        // 3. Patrón Vela Envolvente en S/R (85% confluencia) — solo con dirección clara
-                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isEngulfingCall && !isSideways -> Pair(TradeAction.BUY, "🎯 Auto [Vela Envolvente Soporte | ⏱ ${sec}s] -> CALL")
-                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.isEngulfingPut && !isSideways -> Pair(TradeAction.SELL, "🎯 Auto [Vela Envolvente Resistencia | ⏱ ${sec}s] -> PUT")
+                        // 3. Patrón Vela Envolvente en S/R (85% confluencia) con sniping de entrada
+                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isEngulfingCall &&
+                            (analysis.isPullbackSniperCall || analysis.isSniperTimingWindow) -> Pair(TradeAction.BUY, "🎯 Auto [Vela Envolvente Soporte | ⏱ ${sec}s] -> CALL")
+                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.isEngulfingPut &&
+                            (analysis.isPullbackSniperPut || analysis.isSniperTimingWindow) -> Pair(TradeAction.SELL, "🎯 Auto [Vela Envolvente Resistencia | ⏱ ${sec}s] -> PUT")
 
-                        // 4. Choque / Retest tras Rompimiento (80% confluencia) — estrictamente a favor de tendencia confirmada
-                        inUptrend && !analysis.hasStrongMomentumDown && (analysis.isChoqueCall || analysis.isChoquePullbackCall) -> Pair(TradeAction.BUY, "🎯 Auto [Choque / Pullback Alcista | ⏱ ${sec}s] -> CALL")
-                        inDowntrend && !analysis.hasStrongMomentumUp && (analysis.isChoquePut || analysis.isChoquePullbackPut) -> Pair(TradeAction.SELL, "🎯 Auto [Choque / Pullback Bajista | ⏱ ${sec}s] -> PUT")
+                        // 4. Choque / Retest tras Rompimiento (80% confluencia)
+                        !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.isChoqueCall || analysis.isChoquePullbackCall) -> Pair(TradeAction.BUY, "🎯 Auto [Choque / Pullback Alcista | ⏱ ${sec}s] -> CALL")
+                        !inUptrend && !analysis.hasStrongMomentumUp && (analysis.isChoquePut || analysis.isChoquePullbackPut) -> Pair(TradeAction.SELL, "🎯 Auto [Choque / Pullback Bajista | ⏱ ${sec}s] -> PUT")
 
-                        // 5. Agotamiento de 3 Velas Consecutivas (75% confluencia) — estrictamente a favor de tendencia confirmada
-                        inUptrend && !analysis.hasStrongMomentumDown && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall) -> Pair(TradeAction.BUY, "🎯 Auto [Agotamiento 3 Rojas Alcista | ⏱ ${sec}s] -> CALL")
-                        inDowntrend && !analysis.hasStrongMomentumUp && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut) -> Pair(TradeAction.SELL, "🎯 Auto [Agotamiento 3 Verdes Bajista | ⏱ ${sec}s] -> PUT")
+                        // 5. Agotamiento de 3 Velas Consecutivas (75% confluencia)
+                        !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall) -> Pair(TradeAction.BUY, "🎯 Auto [Agotamiento 3 Rojas Alcista | ⏱ ${sec}s] -> CALL")
+                        !inUptrend && !analysis.hasStrongMomentumUp && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut) -> Pair(TradeAction.SELL, "🎯 Auto [Agotamiento 3 Verdes Bajista | ⏱ ${sec}s] -> PUT")
 
                         // 6. Rebote S/R Clásico con Sniping de Entrada (70% confluencia)
                         !inDowntrend && !analysis.hasStrongMomentumDown && analysis.touchesSupport && analysis.isPullbackSniperCall && !isSideways -> Pair(TradeAction.BUY, "🎯 Auto [Rebote en Soporte | ⏱ ${sec}s] -> CALL")
@@ -753,7 +755,7 @@ class TradingEngine(
             }
         }
 
-        android.util.Log.d("TradingEngine", "executeAutonomousTrade: $action disparado hacia ($x, $y) [Visión detectada: ${visionCoords != null}]")
+        android.util.Log.d("TradingEngine", "executeAutonomousTrade: $action hacia ($x, $y) [Vision:${visionCoords != null}] Motivo: $reasonDescription")
 
         val accessibility = AutoTradeAccessibilityService.instance
         if (accessibility != null) {
