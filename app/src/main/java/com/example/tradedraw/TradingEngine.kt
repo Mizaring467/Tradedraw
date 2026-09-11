@@ -356,9 +356,10 @@ class TradingEngine(
                     // Modo Automático Total: Confluencia Multi-Factor + Sniping de Entrada
                     val inDowntrend = analysis.trend == TrendDirection.DOWNTREND
                     val inUptrend = analysis.trend == TrendDirection.UPTREND
+                    val isSideways = analysis.trend == TrendDirection.SIDEWAYS || analysis.isMarketSideways || analysis.isConsolidationTight
 
                     when {
-                        // 1. Prioridad Máxima: Falso Rompimiento / Trampa Institucional (95% confluencia)
+                        // 1. Prioridad Máxima: Falso Rompimiento / Trampa Institucional en S/R (95% confluencia)
                         !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isFalseBreakoutCall -> Pair(TradeAction.BUY, "🎯 Auto [Trampa en Soporte | ⏱ ${sec}s] -> CALL")
                         !inUptrend && !analysis.hasStrongMomentumUp && analysis.isFalseBreakoutPut -> Pair(TradeAction.SELL, "🎯 Auto [Trampa en Resistencia | ⏱ ${sec}s] -> PUT")
 
@@ -370,30 +371,30 @@ class TradingEngine(
                             (analysis.isPullbackSniperPut || analysis.isSniperTimingWindow) ->
                             Pair(TradeAction.SELL, "🎯 Auto [Mecha Rechazo Resistencia | ⏱ ${sec}s] -> PUT")
 
-                        // 3. Patrón Vela Envolvente en S/R (85% confluencia)
-                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isEngulfingCall -> Pair(TradeAction.BUY, "🎯 Auto [Vela Envolvente Soporte | ⏱ ${sec}s] -> CALL")
-                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.isEngulfingPut -> Pair(TradeAction.SELL, "🎯 Auto [Vela Envolvente Resistencia | ⏱ ${sec}s] -> PUT")
+                        // 3. Patrón Vela Envolvente en S/R (85% confluencia) — solo con dirección clara
+                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isEngulfingCall && !isSideways -> Pair(TradeAction.BUY, "🎯 Auto [Vela Envolvente Soporte | ⏱ ${sec}s] -> CALL")
+                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.isEngulfingPut && !isSideways -> Pair(TradeAction.SELL, "🎯 Auto [Vela Envolvente Resistencia | ⏱ ${sec}s] -> PUT")
 
-                        // 4. Choque / Retest tras Rompimiento (80% confluencia) — solo a favor de tendencia
-                        !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.isChoqueCall || analysis.isChoquePullbackCall) -> Pair(TradeAction.BUY, "🎯 Auto [Choque / Pullback | ⏱ ${sec}s] -> CALL")
-                        !inUptrend && !analysis.hasStrongMomentumUp && (analysis.isChoquePut || analysis.isChoquePullbackPut) -> Pair(TradeAction.SELL, "🎯 Auto [Choque / Pullback | ⏱ ${sec}s] -> PUT")
+                        // 4. Choque / Retest tras Rompimiento (80% confluencia) — estrictamente a favor de tendencia confirmada
+                        inUptrend && !analysis.hasStrongMomentumDown && (analysis.isChoqueCall || analysis.isChoquePullbackCall) -> Pair(TradeAction.BUY, "🎯 Auto [Choque / Pullback Alcista | ⏱ ${sec}s] -> CALL")
+                        inDowntrend && !analysis.hasStrongMomentumUp && (analysis.isChoquePut || analysis.isChoquePullbackPut) -> Pair(TradeAction.SELL, "🎯 Auto [Choque / Pullback Bajista | ⏱ ${sec}s] -> PUT")
 
-                        // 5. Agotamiento de 3 Velas Consecutivas (75% confluencia) — solo a favor de tendencia
-                        !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall) -> Pair(TradeAction.BUY, "🎯 Auto [Agotamiento 3 Rojas | ⏱ ${sec}s] -> CALL")
-                        !inUptrend && !analysis.hasStrongMomentumUp && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut) -> Pair(TradeAction.SELL, "🎯 Auto [Agotamiento 3 Verdes | ⏱ ${sec}s] -> PUT")
+                        // 5. Agotamiento de 3 Velas Consecutivas (75% confluencia) — estrictamente a favor de tendencia confirmada
+                        inUptrend && !analysis.hasStrongMomentumDown && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall) -> Pair(TradeAction.BUY, "🎯 Auto [Agotamiento 3 Rojas Alcista | ⏱ ${sec}s] -> CALL")
+                        inDowntrend && !analysis.hasStrongMomentumUp && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut) -> Pair(TradeAction.SELL, "🎯 Auto [Agotamiento 3 Verdes Bajista | ⏱ ${sec}s] -> PUT")
 
-                        // 6. Rebote S/R Clásico con Sniping de Entrada (70% confluencia) — solo a favor de tendencia
-                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.touchesSupport && analysis.isPullbackSniperCall -> Pair(TradeAction.BUY, "🎯 Auto [Rebote en Soporte | ⏱ ${sec}s] -> CALL")
-                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.touchesResistance && analysis.isPullbackSniperPut -> Pair(TradeAction.SELL, "🎯 Auto [Rebote en Resistencia | ⏱ ${sec}s] -> PUT")
+                        // 6. Rebote S/R Clásico con Sniping de Entrada (70% confluencia)
+                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.touchesSupport && analysis.isPullbackSniperCall && !isSideways -> Pair(TradeAction.BUY, "🎯 Auto [Rebote en Soporte | ⏱ ${sec}s] -> CALL")
+                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.touchesResistance && analysis.isPullbackSniperPut && !isSideways -> Pair(TradeAction.SELL, "🎯 Auto [Rebote en Resistencia | ⏱ ${sec}s] -> PUT")
 
-                        // 7. Impulso y Confluencia Cuantitativa Alta >= 80% — solo a favor de tendencia
-                        !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.confluenceScoreCall >= 80 || analysis.signalPowerCall >= 80 || (analysis.isCallSignal && analysis.signalScore >= 80)) -> {
+                        // 7. Impulso y Confluencia Cuantitativa Alta >= 80% — estrictamente a favor de tendencia confirmada
+                        inUptrend && !analysis.hasStrongMomentumDown && (analysis.confluenceScoreCall >= 80 || analysis.signalPowerCall >= 80 || (analysis.isCallSignal && analysis.signalScore >= 80)) -> {
                             val score = Math.max(analysis.confluenceScoreCall, analysis.signalPowerCall)
-                            Pair(TradeAction.BUY, "🎯 Auto [Confluencia Fuerte ($score%) | ⏱ ${sec}s] -> CALL")
+                            Pair(TradeAction.BUY, "🎯 Auto [Confluencia Fuerte Alcista ($score%) | ⏱ ${sec}s] -> CALL")
                         }
-                        !inUptrend && !analysis.hasStrongMomentumUp && (analysis.confluenceScorePut >= 80 || analysis.signalPowerPut >= 80 || (analysis.isPutSignal && analysis.signalScore >= 80)) -> {
+                        inDowntrend && !analysis.hasStrongMomentumUp && (analysis.confluenceScorePut >= 80 || analysis.signalPowerPut >= 80 || (analysis.isPutSignal && analysis.signalScore >= 80)) -> {
                             val score = Math.max(analysis.confluenceScorePut, analysis.signalPowerPut)
-                            Pair(TradeAction.SELL, "🎯 Auto [Confluencia Fuerte ($score%) | ⏱ ${sec}s] -> PUT")
+                            Pair(TradeAction.SELL, "🎯 Auto [Confluencia Fuerte Bajista ($score%) | ⏱ ${sec}s] -> PUT")
                         }
                         else -> Pair(null, "")
                     }

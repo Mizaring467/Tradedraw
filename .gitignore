@@ -14,4 +14,8 @@
 .cxx
 local.properties
 loops/journal/audits_baseline/
+loops/journal/live/*.png
+loops/journal/live/*.mp4
+trade_buy.jpg
+trade_sell.jpg
 

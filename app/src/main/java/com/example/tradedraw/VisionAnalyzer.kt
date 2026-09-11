@@ -285,6 +285,7 @@ class VisionAnalyzer {
         }
 
         // Tendencia institucional basada en medias móviles de velas recientes (8-12 velas) y pendiente
+        val chartHeight = (endY - startY).coerceAtLeast(100f)
         val trend = if (candleList.size >= 3) {
             val sampleSize = candleList.size.coerceAtMost(10)
             val sample = candleList.take(sampleSize)
@@ -300,19 +301,29 @@ class VisionAnalyzer {
             val redCount = sample.count { it.type == CandleType.RED }
             val greenCount = sample.count { it.type == CandleType.GREEN }
 
+            // Micro-tendencia de las 4 velas más recientes para detectar consolidación plana inmediata
+            val microSample = sample.take(4)
+            val microNewest = if (isOrderedRightToLeft) microSample.first() else microSample.last()
+            val microOldest = if (isOrderedRightToLeft) microSample.last() else microSample.first()
+            val microChange = (if (microNewest.type == CandleType.GREEN) microNewest.bodyTopY else microNewest.bodyBottomY) -
+                              (if (microOldest.type == CandleType.GREEN) microOldest.bodyTopY else microOldest.bodyBottomY)
+            val isMicroFlat = Math.abs(microChange) < (chartHeight * 0.025f)
+
             // Pendiente temporal (precio más reciente vs más antiguo: menor Y = precio más alto)
             val netPriceChange = priceNewest - priceOldest // > 0 significa que el precio cayó hacia mayor Y
-            val minMoveThreshold = (endY - startY) * 0.015f
+            val minMoveThreshold = chartHeight * 0.025f
 
             when {
+                // Si la micro-tendencia inmediata está estancada con alternancia, clasificar como SIDEWAYS
+                isMicroFlat && microSample.size >= 4 && (microSample.count { it.type == CandleType.GREEN } == microSample.count { it.type == CandleType.RED }) -> TrendDirection.SIDEWAYS
                 // Caída bajista: precio nuevo cayó (mayor Y) con mayoría de rojas o inclinación fuerte
                 netPriceChange > minMoveThreshold && redCount >= greenCount -> TrendDirection.DOWNTREND
                 netPriceChange > minMoveThreshold * 2.0f -> TrendDirection.DOWNTREND
                 // Subida alcista: precio nuevo subió (menor Y) con mayoría de verdes o inclinación fuerte
                 netPriceChange < -minMoveThreshold && greenCount >= redCount -> TrendDirection.UPTREND
                 netPriceChange < -minMoveThreshold * 2.0f -> TrendDirection.UPTREND
-                highestX > lowestX && greenCount > redCount -> TrendDirection.UPTREND
-                lowestX > highestX && redCount > greenCount -> TrendDirection.DOWNTREND
+                highestX > lowestX && greenCount > redCount + 1 -> TrendDirection.UPTREND
+                lowestX > highestX && redCount > greenCount + 1 -> TrendDirection.DOWNTREND
                 else -> TrendDirection.SIDEWAYS
             }
         } else {
@@ -506,13 +517,24 @@ class VisionAnalyzer {
         val callPct = ((callScore.toFloat() / totalScore) * 100).toInt().coerceIn(10, 90)
         val putPct = 100 - callPct
 
-        // 7. Filtro Anti-Mercado Lateral (Sideways & Dojis)
+        // 7. Filtro Anti-Mercado Lateral (Sideways, Dojis & Whipsaw Alternante)
         val recentCandles = candleList.take(10)
-        val isSidewaysByCandles = if (recentCandles.size >= 5) {
+
+        // Detección de Chop / Alternancia de Velas (Whipsaw: ej. V-R-V-R)
+        val isAlternatingChop = if (candleList.size >= 4) {
+            val last4 = candleList.take(4)
+            val alternatingColors = (last4[0].type != last4[1].type && last4[1].type != last4[2].type && last4[2].type != last4[3].type)
+            val microDisplacement = Math.abs(last4.first().bodyTopY - last4.last().bodyTopY)
+            alternatingColors && microDisplacement < (chartHeight * 0.045f)
+        } else false
+
+        val isSidewaysByCandles = if (recentCandles.size >= 4) {
             val avgBodyHeight = recentCandles.map { it.bodyHeight }.average()
-            val dojiCount = recentCandles.count { it.bodyHeight < 15f || (it.bodyHeight <= it.totalHeight * 0.20f) || it.type == CandleType.DOJI }
+            val dojiCount = recentCandles.count {
+                it.bodyHeight < (chartHeight * 0.025f) || (it.bodyHeight <= it.totalHeight * 0.25f) || it.type == CandleType.DOJI
+            }
             val dojiRatio = dojiCount.toFloat() / recentCandles.size
-            avgBodyHeight < 15.0 || dojiRatio >= 0.50f
+            avgBodyHeight < (chartHeight * 0.030f) || dojiRatio >= 0.40f || isAlternatingChop
         } else false
 
         // Filtro Cuantitativo de Consolidación Estrecha (tradingview-quantitative)
@@ -522,11 +544,13 @@ class VisionAnalyzer {
             val highestY = sample.minOf { it.topY }
             val lowestY = sample.maxOf { it.bottomY }
             val rangeHeight = lowestY - highestY
-            val dojiCount = sample.count { it.bodyHeight < 12f || (it.bodyHeight <= it.totalHeight * 0.20f) || it.type == CandleType.DOJI }
-            avgBodyHeight < 10.0 || rangeHeight < 28f || dojiCount >= 3
+            val dojiCount = sample.count {
+                it.bodyHeight < (chartHeight * 0.020f) || (it.bodyHeight <= it.totalHeight * 0.20f) || it.type == CandleType.DOJI
+            }
+            avgBodyHeight < (chartHeight * 0.022f) || rangeHeight < (chartHeight * 0.075f) || dojiCount >= 2 || isAlternatingChop
         } else false
 
-        val isSideways = isSidewaysByCandles || (trend == TrendDirection.SIDEWAYS && candleList.size >= 5 && Math.abs(callPct - putPct) < 12)
+        val isSideways = isSidewaysByCandles || isConsolidationTight || isAlternatingChop || (trend == TrendDirection.SIDEWAYS && candleList.size >= 4 && Math.abs(callPct - putPct) < 18)
 
         // Confluencia Multi-Factor Cuantitativa (0-100%)
         var confCall = 40
@@ -566,7 +590,6 @@ class VisionAnalyzer {
         // Métricas de Viewport y desplazamiento de gráfico
         val latestCandleX = candleList.firstOrNull()?.x ?: ((startX + endX) * 0.5f)
         val chartWidth = (endX - startX).coerceAtLeast(10f)
-        val chartHeight = (endY - startY).coerceAtLeast(10f)
         val isChartOffCenterRight = candleList.isNotEmpty() && latestCandleX > (startX + chartWidth * 0.88f)
         val isChartOffCenterLeft = candleList.isNotEmpty() && latestCandleX < (startX + chartWidth * 0.45f)
         val isPriceNearBottom = latestPriceY > (endY - chartHeight * 0.08f)
@@ -929,15 +952,15 @@ class VisionAnalyzer {
                 yMax = (h * 0.96f).toInt().coerceAtMost(h - 1)
             }
         } else {
-            // Vertical: franja inferior exclusiva de los botones de Binomo (evita falsos positivos con el HUD arriba)
-            yMin = (h * 0.87f).toInt().coerceAtLeast(0)
-            yMax = (h * 0.96f).toInt().coerceAtMost(h - 1)
+            // Vertical: franja inferior exclusiva de los botones de Binomo (centrado limpio en el tercio inferior del botón)
+            yMin = (h * 0.89f).toInt().coerceAtLeast(0)
+            yMax = (h * 0.95f).toInt().coerceAtMost(h - 1)
             if (isBuy) {
-                xMin = (w * 0.05f).toInt().coerceAtLeast(0)
-                xMax = (w * 0.45f).toInt().coerceAtMost(w - 1)
+                xMin = (w * 0.08f).toInt().coerceAtLeast(0)
+                xMax = (w * 0.42f).toInt().coerceAtMost(w - 1)
             } else {
-                xMin = (w * 0.55f).toInt().coerceAtLeast(0)
-                xMax = (w * 0.95f).toInt().coerceAtMost(w - 1)
+                xMin = (w * 0.58f).toInt().coerceAtLeast(0)
+                xMax = (w * 0.92f).toInt().coerceAtMost(w - 1)
             }
         }
 
