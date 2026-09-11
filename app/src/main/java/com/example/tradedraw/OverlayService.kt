@@ -1170,14 +1170,16 @@ class OverlayService : Service() {
             return
         }
         mainHandler.post {
+            v.visibility = View.INVISIBLE
             p.flags = p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
             try { windowManager.updateViewLayout(v, p) } catch (e: Exception) {}
-            // Esperar 40ms a que WindowManager aplique el cambio antes de emitir el toque
+            // Esperar 30ms a que WindowManager aplique el cambio antes de emitir el toque
             mainHandler.postDelayed({
                 onBypassed?.invoke()
-            }, 40L)
+            }, 30L)
             mainHandler.postDelayed({
                 p.flags = p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+                v.visibility = View.VISIBLE
                 try { windowManager.updateViewLayout(v, p) } catch (e: Exception) {}
             }, durationMs)
         }
