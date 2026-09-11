@@ -391,12 +391,20 @@ class TradingEngine(
 
                         // 7. Impulso y Confluencia Cuantitativa Alta >= 80% — estrictamente a favor de tendencia confirmada
                         inUptrend && !analysis.hasStrongMomentumDown && (analysis.confluenceScoreCall >= 80 || analysis.signalPowerCall >= 80 || (analysis.isCallSignal && analysis.signalScore >= 80)) -> {
-                            val score = Math.max(analysis.confluenceScoreCall, analysis.signalPowerCall)
-                            Pair(TradeAction.BUY, "🎯 Auto [Confluencia Fuerte Alcista ($score%) | ⏱ ${sec}s] -> CALL")
+                            if (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop) {
+                                Pair(null, "⚠️ Veto: Continuación alcista sin retroceso (Vela en extremo opuesto del rango)")
+                            } else {
+                                val score = Math.max(analysis.confluenceScoreCall, analysis.signalPowerCall)
+                                Pair(TradeAction.BUY, "🎯 Auto [Confluencia Fuerte Alcista ($score%) | ⏱ ${sec}s] -> CALL")
+                            }
                         }
                         inDowntrend && !analysis.hasStrongMomentumUp && (analysis.confluenceScorePut >= 80 || analysis.signalPowerPut >= 80 || (analysis.isPutSignal && analysis.signalScore >= 80)) -> {
-                            val score = Math.max(analysis.confluenceScorePut, analysis.signalPowerPut)
-                            Pair(TradeAction.SELL, "🎯 Auto [Confluencia Fuerte Bajista ($score%) | ⏱ ${sec}s] -> PUT")
+                            if (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom) {
+                                Pair(null, "⚠️ Veto: Continuación bajista sin retroceso (Vela en extremo opuesto del rango)")
+                            } else {
+                                val score = Math.max(analysis.confluenceScorePut, analysis.signalPowerPut)
+                                Pair(TradeAction.SELL, "🎯 Auto [Confluencia Fuerte Bajista ($score%) | ⏱ ${sec}s] -> PUT")
+                            }
                         }
                         else -> Pair(null, "")
                     }
@@ -451,12 +459,20 @@ class TradingEngine(
                         }
                         // 6. Termómetro de Señal / Tendencia Alta Probabilidad >= 80%
                         !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isSniperTimingWindow && (analysis.signalPowerCall >= 80 || (analysis.isCallSignal && analysis.signalScore >= 80)) -> {
-                            val score = if (analysis.signalPowerCall >= 80) analysis.signalPowerCall else analysis.signalScore
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Tendencia Alta ($score%) -> CALL")
+                            if (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop) {
+                                Pair(null, "⚠️ Veto: Continuación alcista sin retroceso (Vela en extremo opuesto del rango)")
+                            } else {
+                                val score = if (analysis.signalPowerCall >= 80) analysis.signalPowerCall else analysis.signalScore
+                                Pair(TradeAction.BUY, "🎯 MT Combo: Tendencia Alta ($score%) -> CALL")
+                            }
                         }
                         !inUptrend && !analysis.hasStrongMomentumUp && analysis.isSniperTimingWindow && (analysis.signalPowerPut >= 80 || (analysis.isPutSignal && analysis.signalScore >= 80)) -> {
-                            val score = if (analysis.signalPowerPut >= 80) analysis.signalPowerPut else analysis.signalScore
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Tendencia Baja ($score%) -> PUT")
+                            if (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom) {
+                                Pair(null, "⚠️ Veto: Continuación bajista sin retroceso (Vela en extremo opuesto del rango)")
+                            } else {
+                                val score = if (analysis.signalPowerPut >= 80) analysis.signalPowerPut else analysis.signalScore
+                                Pair(TradeAction.SELL, "🎯 MT Combo: Tendencia Baja ($score%) -> PUT")
+                            }
                         }
                         else -> Pair(null, "")
                     }
@@ -504,10 +520,20 @@ class TradingEngine(
                 }
                 AutoTradeStrategy.COLOR_TREND -> {
                     when {
-                        analysis.trend == TrendDirection.UPTREND && analysis.lastCandles.firstOrNull() == CandleType.GREEN ->
-                            Pair(TradeAction.BUY, "🎯 Color Trend: Continuación Alcista -> CALL")
-                        analysis.trend == TrendDirection.DOWNTREND && analysis.lastCandles.firstOrNull() == CandleType.RED ->
-                            Pair(TradeAction.SELL, "🎯 Color Trend: Continuación Bajista -> PUT")
+                        analysis.trend == TrendDirection.UPTREND && analysis.lastCandles.firstOrNull() == CandleType.GREEN -> {
+                            if (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop) {
+                                Pair(null, "⚠️ Veto: Continuación alcista sin retroceso (Vela en extremo opuesto del rango)")
+                            } else {
+                                Pair(TradeAction.BUY, "🎯 Color Trend: Continuación Alcista -> CALL")
+                            }
+                        }
+                        analysis.trend == TrendDirection.DOWNTREND && analysis.lastCandles.firstOrNull() == CandleType.RED -> {
+                            if (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom) {
+                                Pair(null, "⚠️ Veto: Continuación bajista sin retroceso (Vela en extremo opuesto del rango)")
+                            } else {
+                                Pair(TradeAction.SELL, "🎯 Color Trend: Continuación Bajista -> PUT")
+                            }
+                        }
                         else -> Pair(null, "")
                     }
                 }
@@ -543,10 +569,20 @@ class TradingEngine(
                 }
                 AutoTradeStrategy.TREND_FOLLOWING -> {
                     when {
-                        analysis.trend == TrendDirection.UPTREND && analysis.lastCandles.firstOrNull() == CandleType.GREEN ->
-                            Pair(TradeAction.BUY, "🎯 Tendencia: Continuación Alcista -> CALL")
-                        analysis.trend == TrendDirection.DOWNTREND && analysis.lastCandles.firstOrNull() == CandleType.RED ->
-                            Pair(TradeAction.SELL, "🎯 Tendencia: Continuación Bajista -> PUT")
+                        analysis.trend == TrendDirection.UPTREND && analysis.lastCandles.firstOrNull() == CandleType.GREEN -> {
+                            if (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop) {
+                                Pair(null, "⚠️ Veto: Continuación alcista sin retroceso (Vela en extremo opuesto del rango)")
+                            } else {
+                                Pair(TradeAction.BUY, "🎯 Tendencia: Continuación Alcista -> CALL")
+                            }
+                        }
+                        analysis.trend == TrendDirection.DOWNTREND && analysis.lastCandles.firstOrNull() == CandleType.RED -> {
+                            if (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom) {
+                                Pair(null, "⚠️ Veto: Continuación bajista sin retroceso (Vela en extremo opuesto del rango)")
+                            } else {
+                                Pair(TradeAction.SELL, "🎯 Tendencia: Continuación Bajista -> PUT")
+                            }
+                        }
                         else -> Pair(null, "")
                     }
                 }
@@ -561,13 +597,45 @@ class TradingEngine(
                 }
             }
 
-            val (action, _) = rawResult
-            // Filtro de Zona Prohibida S/R: Evitar vender directamente contra soporte o comprar contra resistencia
-            if (action == TradeAction.SELL && analysis.touchesSupport && !analysis.isFalseBreakoutPut) {
-                return Pair(null, "⚠️ Venta bloqueada: Precio sobre Soporte (Riesgo de rebote alcista)")
+            val (action, reason) = rawResult
+            if (action == null) return rawResult
+
+            // 1. Filtro de Proximidad S/R Anti-Suicidio:
+            // Si una señal es PUT pero el precio actual está muy cerca del Soporte (< 15% del canal o umbral de soporte), VETAR la orden PUT
+            if (action == TradeAction.SELL && (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.touchesSupport)) {
+                return Pair(null, "⚠️ Veto: Prohibido vender sobre Soporte (Riesgo de Rebote)")
             }
-            if (action == TradeAction.BUY && analysis.touchesResistance && !analysis.isFalseBreakoutCall) {
-                return Pair(null, "⚠️ Compra bloqueada: Precio bajo Resistencia (Riesgo de rebote bajista)")
+            // Si una señal es CALL pero el precio actual está muy cerca de la Resistencia (< 15% del canal), VETAR la orden CALL
+            if (action == TradeAction.BUY && (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.touchesResistance)) {
+                return Pair(null, "⚠️ Veto: Prohibido comprar sobre Resistencia (Riesgo de Rechazo)")
+            }
+
+            // 2. Filtro Anti-Sobreextensión de Racha:
+            // Si la racha consecutiva de velas del mismo color es >= 4, PROHIBIR operaciones de continuación en esa misma dirección
+            val isGreenStreak = analysis.consecutiveCount >= 4 &&
+                (analysis.lastCandles.firstOrNull() == CandleType.GREEN || analysis.streakBadge.contains("V"))
+            val isRedStreak = analysis.consecutiveCount >= 4 &&
+                (analysis.lastCandles.firstOrNull() == CandleType.RED || analysis.streakBadge.contains("R"))
+            if (action == TradeAction.BUY && isGreenStreak) {
+                return Pair(null, "⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso")
+            }
+            if (action == TradeAction.SELL && isRedStreak) {
+                return Pair(null, "⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso")
+            }
+
+            // 3. Exigir Retroceso (Pullback) en Continuación:
+            // Para señales de continuación de tendencia, exigir que la vela actual no esté en el extremo opuesto del rango
+            val isTrendContinuation = strategy == AutoTradeStrategy.TREND_FOLLOWING ||
+                strategy == AutoTradeStrategy.COLOR_TREND ||
+                reason.contains("Continuación") ||
+                reason.contains("Tendencia")
+            if (isTrendContinuation) {
+                if (action == TradeAction.BUY && (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop)) {
+                    return Pair(null, "⚠️ Veto: Continuación alcista sin retroceso (Vela en extremo opuesto del rango)")
+                }
+                if (action == TradeAction.SELL && (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom)) {
+                    return Pair(null, "⚠️ Veto: Continuación bajista sin retroceso (Vela en extremo opuesto del rango)")
+                }
             }
 
             return rawResult
