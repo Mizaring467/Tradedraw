@@ -305,7 +305,7 @@ class TradingEngineTest {
         )
         val (actionSell, reasonSell) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, sellAtSupport)
         assertNull("Venta sobre soporte debe ser bloqueada para evitar rebotes", actionSell)
-        assertTrue("Razón debe advertir precio sobre soporte", reasonSell.contains("Precio sobre Soporte"))
+        assertTrue("Razón debe advertir veto sobre soporte", reasonSell.contains("Prohibido vender sobre Soporte"))
 
         // Compra (BUY) cuando el precio toca directamente la resistencia debe ser bloqueada
         val buyAtResistance = VisionAnalysisResult(
@@ -315,7 +315,95 @@ class TradingEngineTest {
         )
         val (actionBuy, reasonBuy) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, buyAtResistance)
         assertNull("Compra bajo resistencia debe ser bloqueada para evitar rebotes", actionBuy)
-        assertTrue("Razón debe advertir precio bajo resistencia", reasonBuy.contains("Precio bajo Resistencia"))
+        assertTrue("Razón debe advertir veto sobre resistencia", reasonBuy.contains("Prohibido comprar sobre Resistencia"))
+    }
+
+    @Test
+    fun testAntiSuicideSRProximityFilter_vetoByDistanceRatio() {
+        // Canal S/R: Resistencia Y=100, Soporte Y=500. Altura = 400px.
+        // Umbral del 15% del canal = 60px.
+
+        // 1. Señal PUT pero precio actual está a 20px del soporte (Y=480) -> ratio = 20/400 = 0.05 (< 0.15)
+        val putNearSupport = VisionAnalysisResult(
+            trend = TrendDirection.DOWNTREND,
+            isChoquePut = true,
+            currentPriceY = 480f,
+            dynamicResistanceY = 100f,
+            dynamicSupportY = 500f
+        )
+        val (actionPut, reasonPut) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, putNearSupport)
+        assertNull("PUT cerca de soporte debe ser vetado", actionPut)
+        assertEquals("⚠️ Veto: Prohibido vender sobre Soporte (Riesgo de Rebote)", reasonPut)
+
+        // 2. Señal CALL pero precio actual está a 20px de la resistencia (Y=120) -> ratio = 20/400 = 0.05 (< 0.15)
+        val callNearResistance = VisionAnalysisResult(
+            trend = TrendDirection.UPTREND,
+            isChoqueCall = true,
+            currentPriceY = 120f,
+            dynamicResistanceY = 100f,
+            dynamicSupportY = 500f
+        )
+        val (actionCall, reasonCall) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, callNearResistance)
+        assertNull("CALL cerca de resistencia debe ser vetado", actionCall)
+        assertEquals("⚠️ Veto: Prohibido comprar sobre Resistencia (Riesgo de Rechazo)", reasonCall)
+    }
+
+    @Test
+    fun testStreakAntiOverextensionFilter() {
+        // Racha de 4 velas verdes (4V): Prohibir continuación alcista (BUY)
+        val greenStreak4 = VisionAnalysisResult(
+            trend = TrendDirection.UPTREND,
+            consecutiveCount = 4,
+            lastCandles = listOf(CandleType.GREEN, CandleType.GREEN, CandleType.GREEN, CandleType.GREEN),
+            streakBadge = "4V 🟢"
+        )
+        val (actionBuy, reasonBuy) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.COLOR_TREND, greenStreak4)
+        assertNull("Continuación alcista tras 4 velas verdes debe ser vetada", actionBuy)
+        assertEquals("⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso", reasonBuy)
+
+        // Racha de 4 velas rojas (4R): Prohibir continuación bajista (SELL)
+        val redStreak4 = VisionAnalysisResult(
+            trend = TrendDirection.DOWNTREND,
+            consecutiveCount = 4,
+            lastCandles = listOf(CandleType.RED, CandleType.RED, CandleType.RED, CandleType.RED),
+            streakBadge = "4R 🔴"
+        )
+        val (actionSell, reasonSell) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.COLOR_TREND, redStreak4)
+        assertNull("Continuación bajista tras 4 velas rojas debe ser vetada", actionSell)
+        assertEquals("⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso", reasonSell)
+
+        // En cambio, reversión por agotamiento (MT_3_VELAS_AGOTAMIENTO) ante racha roja genera BUY, NO es continuación
+        val exhaustionCall = VisionAnalysisResult(
+            consecutiveCount = 4,
+            lastCandles = listOf(CandleType.RED, CandleType.RED, CandleType.RED, CandleType.RED),
+            streakBadge = "4R 🔴",
+            is3VelasCall = true
+        )
+        val (actionRev, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO, exhaustionCall)
+        assertEquals("Reversión contra racha no debe ser vetada", TradeAction.BUY, actionRev)
+    }
+
+    @Test
+    fun testRequirePullbackInTrendContinuation() {
+        // Continuación alcista (Trend Following) pero precio en extremo superior del gráfico (sin retroceso)
+        val upNearTop = VisionAnalysisResult(
+            trend = TrendDirection.UPTREND,
+            lastCandles = listOf(CandleType.GREEN),
+            isPriceNearTop = true
+        )
+        val (actionUp, reasonUp) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.TREND_FOLLOWING, upNearTop)
+        assertNull("Continuación sin pullback en extremo superior debe ser vetada", actionUp)
+        assertTrue("Razón debe advertir falta de retroceso", reasonUp.contains("sin retroceso"))
+
+        // Continuación bajista (Trend Following) pero precio en extremo inferior del gráfico (sin retroceso)
+        val downNearBottom = VisionAnalysisResult(
+            trend = TrendDirection.DOWNTREND,
+            lastCandles = listOf(CandleType.RED),
+            isPriceNearBottom = true
+        )
+        val (actionDown, reasonDown) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.TREND_FOLLOWING, downNearBottom)
+        assertNull("Continuación sin pullback en extremo inferior debe ser vetada", actionDown)
+        assertTrue("Razón debe advertir falta de retroceso", reasonDown.contains("sin retroceso"))
     }
 }
 

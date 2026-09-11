@@ -88,7 +88,15 @@ data class VisionAnalysisResult(
     val isPriceNearBottom: Boolean = false,
     val isPriceNearTop: Boolean = false,
     val hasStrongMomentumDown: Boolean = false,
-    val hasStrongMomentumUp: Boolean = false
+    val hasStrongMomentumUp: Boolean = false,
+    val distanceToSupportRatio: Float = if (Math.abs(dynamicSupportY - dynamicResistanceY) > 1f) {
+        (Math.abs(currentPriceY - dynamicSupportY) / Math.abs(dynamicSupportY - dynamicResistanceY)).coerceIn(0f, 1f)
+    } else 0.5f,
+    val distanceToResistanceRatio: Float = if (Math.abs(dynamicSupportY - dynamicResistanceY) > 1f) {
+        (Math.abs(currentPriceY - dynamicResistanceY) / Math.abs(dynamicSupportY - dynamicResistanceY)).coerceIn(0f, 1f)
+    } else 0.5f,
+    val isNearSupportZone: Boolean = touchesSupport || distanceToSupportRatio < 0.15f,
+    val isNearResistanceZone: Boolean = touchesResistance || distanceToResistanceRatio < 0.15f
 )
 
 class VisionAnalyzer {
@@ -597,6 +605,13 @@ class VisionAnalyzer {
         val isPriceNearBottom = latestPriceY > (endY - chartHeight * 0.08f)
         val isPriceNearTop = latestPriceY < (startY + chartHeight * 0.08f)
 
+        // Ratios relativos al canal S/R y detección de zonas de proximidad
+        val channelHeight = Math.abs(finalSupportY - finalResistanceY).coerceAtLeast(1f)
+        val distSupportRatio = (Math.abs(latestPriceY - finalSupportY) / channelHeight).coerceIn(0f, 1f)
+        val distResistanceRatio = (Math.abs(latestPriceY - finalResistanceY) / channelHeight).coerceIn(0f, 1f)
+        val isNearSupport = touchesSupport || distSupportRatio < 0.15f || Math.abs(latestPriceY - effectiveSupportY) <= threshold || Math.abs(latestPriceY - finalSupportY) <= threshold
+        val isNearResistance = touchesResistance || distResistanceRatio < 0.15f || Math.abs(latestPriceY - effectiveResistanceY) <= threshold || Math.abs(latestPriceY - finalResistanceY) <= threshold
+
         return VisionAnalysisResult(
             currentPriceY = latestPriceY,
             highestPoint = highPoint,
@@ -648,7 +663,11 @@ class VisionAnalyzer {
             isPriceNearBottom = isPriceNearBottom,
             isPriceNearTop = isPriceNearTop,
             hasStrongMomentumDown = hasStrongMomentumDown,
-            hasStrongMomentumUp = hasStrongMomentumUp
+            hasStrongMomentumUp = hasStrongMomentumUp,
+            distanceToSupportRatio = distSupportRatio,
+            distanceToResistanceRatio = distResistanceRatio,
+            isNearSupportZone = isNearSupport,
+            isNearResistanceZone = isNearResistance
         )
     }
 

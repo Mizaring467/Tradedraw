@@ -362,4 +362,38 @@ class VisionAnalyzerTest {
         assertTrue("El score de confluencia CALL debe penalizarse ante consolidación", result.confluenceScoreCall <= 50)
         assertTrue("El score de confluencia PUT debe penalizarse ante consolidación", result.confluenceScorePut <= 50)
     }
+
+    @Test
+    fun testSRDistanceRatioAndProximityHelpers() {
+        // Canal de 400px: Resistencia Y=100, Soporte Y=500
+        val nearSupport = VisionAnalysisResult(
+            currentPriceY = 480f,
+            dynamicResistanceY = 100f,
+            dynamicSupportY = 500f
+        )
+        assertEquals(0.05f, nearSupport.distanceToSupportRatio, 0.001f)
+        assertEquals(0.95f, nearSupport.distanceToResistanceRatio, 0.001f)
+        assertTrue("Debe detectar zona de soporte cuando ratio < 15%", nearSupport.isNearSupportZone)
+        assertFalse("No debe marcar zona de resistencia", nearSupport.isNearResistanceZone)
+
+        val nearResistance = VisionAnalysisResult(
+            currentPriceY = 120f,
+            dynamicResistanceY = 100f,
+            dynamicSupportY = 500f
+        )
+        assertEquals(0.05f, nearResistance.distanceToResistanceRatio, 0.001f)
+        assertEquals(0.95f, nearResistance.distanceToSupportRatio, 0.001f)
+        assertTrue("Debe detectar zona de resistencia cuando ratio < 15%", nearResistance.isNearResistanceZone)
+        assertFalse("No debe marcar zona de soporte", nearResistance.isNearSupportZone)
+
+        val middle = VisionAnalysisResult(
+            currentPriceY = 300f,
+            dynamicResistanceY = 100f,
+            dynamicSupportY = 500f
+        )
+        assertEquals(0.50f, middle.distanceToSupportRatio, 0.001f)
+        assertEquals(0.50f, middle.distanceToResistanceRatio, 0.001f)
+        assertFalse("No debe marcar zona de soporte en el medio del canal", middle.isNearSupportZone)
+        assertFalse("No debe marcar zona de resistencia en el medio del canal", middle.isNearResistanceZone)
+    }
 }
