@@ -362,8 +362,21 @@ class VisionAnalyzer {
         }
 
         // Nivel de soporte y resistencia efectivos
-        val effectiveSupportY = supportLinesY.minByOrNull { Math.abs(latestPriceY - it) } ?: finalSupportY
-        val effectiveResistanceY = resistanceLinesY.minByOrNull { Math.abs(latestPriceY - it) } ?: finalResistanceY
+        var effectiveSupportY = supportLinesY.minByOrNull { Math.abs(latestPriceY - it) } ?: finalSupportY
+        var effectiveResistanceY = resistanceLinesY.minByOrNull { Math.abs(latestPriceY - it) } ?: finalResistanceY
+
+        // Principio de Polaridad Dinámica S/R:
+        // - Breakout Alcista / ATH: la resistencia previa rota actúa como soporte dinámico,
+        //   y la nueva resistencia se fija en el techo real absoluto de las velas.
+        // - Breakdown Bajista / ATL: el soporte previo roto actúa como resistencia dinámica,
+        //   y el nuevo soporte se fija en el piso real absoluto de las velas.
+        if (candleList.isNotEmpty() && latestPriceY < finalResistanceY) {
+            effectiveSupportY = finalResistanceY
+            effectiveResistanceY = candleList.map { it.topY }.minOrNull() ?: finalResistanceY
+        } else if (candleList.isNotEmpty() && latestPriceY > finalSupportY) {
+            effectiveResistanceY = finalSupportY
+            effectiveSupportY = candleList.map { it.bottomY }.maxOrNull() ?: finalSupportY
+        }
 
         // Proximidad estricta a soportes y resistencias reales (validación de zona institucional)
         val threshold = ((endY - startY) * 0.035f).coerceIn(12f, 28f)
@@ -374,12 +387,10 @@ class VisionAnalyzer {
         val hasBottomRejection = lastCandle != null && lastCandle.bottomWickRatio >= 0.40f
 
         val isNearSupportLevel = supportLinesY.any { Math.abs(latestPriceY - it) <= threshold || (lastCandle != null && Math.abs(lastCandle.bottomY - it) <= threshold) } ||
-                (maxPriceY > Float.MIN_VALUE && (Math.abs(latestPriceY - finalSupportY) <= threshold || (lastCandle != null && Math.abs(lastCandle.bottomY - finalSupportY) <= threshold))) ||
                 Math.abs(latestPriceY - effectiveSupportY) <= threshold ||
                 (lastCandle != null && Math.abs(lastCandle.bottomY - effectiveSupportY) <= threshold)
 
         val isNearResistanceLevel = resistanceLinesY.any { Math.abs(latestPriceY - it) <= threshold || (lastCandle != null && Math.abs(lastCandle.topY - it) <= threshold) } ||
-                (minPriceY < Float.MAX_VALUE && (Math.abs(latestPriceY - finalResistanceY) <= threshold || (lastCandle != null && Math.abs(lastCandle.topY - finalResistanceY) <= threshold))) ||
                 Math.abs(latestPriceY - effectiveResistanceY) <= threshold ||
                 (lastCandle != null && Math.abs(lastCandle.topY - effectiveResistanceY) <= threshold)
 
@@ -605,12 +616,12 @@ class VisionAnalyzer {
         val isPriceNearBottom = latestPriceY > (endY - chartHeight * 0.08f)
         val isPriceNearTop = latestPriceY < (startY + chartHeight * 0.08f)
 
-        // Ratios relativos al canal S/R y detección de zonas de proximidad
-        val channelHeight = Math.abs(finalSupportY - finalResistanceY).coerceAtLeast(1f)
-        val distSupportRatio = (Math.abs(latestPriceY - finalSupportY) / channelHeight).coerceIn(0f, 1f)
-        val distResistanceRatio = (Math.abs(latestPriceY - finalResistanceY) / channelHeight).coerceIn(0f, 1f)
-        val isNearSupport = touchesSupport || distSupportRatio < 0.15f || Math.abs(latestPriceY - effectiveSupportY) <= threshold || Math.abs(latestPriceY - finalSupportY) <= threshold
-        val isNearResistance = touchesResistance || distResistanceRatio < 0.15f || Math.abs(latestPriceY - effectiveResistanceY) <= threshold || Math.abs(latestPriceY - finalResistanceY) <= threshold
+        // Ratios relativos al canal S/R y detección de zonas de proximidad con niveles efectivos actualizados
+        val channelHeight = Math.abs(effectiveSupportY - effectiveResistanceY).coerceAtLeast(1f)
+        val distSupportRatio = (Math.abs(latestPriceY - effectiveSupportY) / channelHeight).coerceIn(0f, 1f)
+        val distResistanceRatio = (Math.abs(latestPriceY - effectiveResistanceY) / channelHeight).coerceIn(0f, 1f)
+        val isNearSupport = touchesSupport || distSupportRatio < 0.15f || Math.abs(latestPriceY - effectiveSupportY) <= threshold
+        val isNearResistance = touchesResistance || distResistanceRatio < 0.15f || Math.abs(latestPriceY - effectiveResistanceY) <= threshold
 
         return VisionAnalysisResult(
             currentPriceY = latestPriceY,
@@ -644,8 +655,8 @@ class VisionAnalyzer {
             is3VelasPut = isExhaustionPut,
             isExhaustion3CandlesCall = isExhaustionCall,
             isExhaustion3CandlesPut = isExhaustionPut,
-            dynamicResistanceY = finalResistanceY,
-            dynamicSupportY = finalSupportY,
+            dynamicResistanceY = effectiveResistanceY,
+            dynamicSupportY = effectiveSupportY,
             greenPixelsDetected = totalGreenPixels,
             redPixelsDetected = totalRedPixels,
             diagnosticSummary = diag,

@@ -21,6 +21,7 @@ class RiskManager(context: Context? = null) {
        const val MAX_PENDING_TRADE_TIMEOUT_SEC = 75L
        const val DEFAULT_COOLDOWN_SECONDS = 10
         const val DEFAULT_LOSS_COOLDOWN_SECONDS = 180
+        const val DEFAULT_YOLO_LOSS_COOLDOWN_SECONDS = 35 // Cooldown en modo continuo/YOLO (30 a 45s max)
         const val DEFAULT_STOP_LOSS_STREAK = 3
         const val DEFAULT_TAKE_PROFIT_WINS = 20 // 20 victorias por bloque (0 = Ilimitado)
         const val DEFAULT_MAX_MARTINGALE_LEVEL = 1
@@ -39,6 +40,13 @@ class RiskManager(context: Context? = null) {
         set(value) {
             field = value
             prefs?.edit()?.putInt("loss_cooldown_sec", value)?.apply()
+        }
+
+    @Volatile
+    var yoloLossCooldownSeconds: Int = prefs?.getInt("yolo_loss_cooldown_sec", DEFAULT_YOLO_LOSS_COOLDOWN_SECONDS) ?: DEFAULT_YOLO_LOSS_COOLDOWN_SECONDS
+        set(value) {
+            field = value.coerceIn(30, 45)
+            prefs?.edit()?.putInt("yolo_loss_cooldown_sec", field)?.apply()
         }
 
     @Volatile
@@ -172,10 +180,11 @@ class RiskManager(context: Context? = null) {
     var unitTradeAmount: Double = 80000.0 // Monto de inversión base en Binomo (Col$80,000)
 
     @Synchronized
-    fun getRemainingCooldown(): Int {
+    fun getRemainingCooldown(subMode: AutonomousSubMode? = null): Int {
         if (lastTradeTime == 0L) return 0
         val elapsed = (System.currentTimeMillis() - lastTradeTime) / 1000
-        val requiredCooldown = if (currentLossStreak > 0) lossCooldownSeconds else cooldownSeconds
+        val requiredLossCooldown = if (subMode == AutonomousSubMode.YOLO) yoloLossCooldownSeconds else lossCooldownSeconds
+        val requiredCooldown = if (currentLossStreak > 0) requiredLossCooldown else cooldownSeconds
         val remaining = requiredCooldown - elapsed
         return if (remaining > 0) remaining.toInt() else 0
     }
@@ -192,16 +201,23 @@ class RiskManager(context: Context? = null) {
             }
         }
         // Si falló el nivel máximo de martingala (MG1 fallido -> pérdidas consecutivas > maxMartingaleLevel),
-        // forzamos pausa de enfriamiento de 120s incluso en YOLO para proteger la cuenta contra tilt
+        // forzamos pausa de enfriamiento incluso en YOLO para proteger la cuenta contra tilt,
+        // pero en modo continuo/YOLO reducida a 30-45s máximo para no congelar al bot por 120-140s
         if (martingaleEnabled && currentLossStreak > maxMartingaleLevel) {
             val elapsed = (System.currentTimeMillis() - lastTradeTime) / 1000
-            val remaining = lossCooldownSeconds - elapsed
+            val effectiveLossCooldown = if (subMode == AutonomousSubMode.YOLO) yoloLossCooldownSeconds else lossCooldownSeconds
+            val remaining = effectiveLossCooldown - elapsed
             if (remaining > 0) {
                 return Pair(false, "🛑 Pausa Anti-Tilt tras fallo MG1 (${remaining}s)")
             }
         }
-        // En SUBMODO YOLO: Sin restricciones de Stop Loss, Take Profit ni pausas de cooldown
+        // En SUBMODO YOLO: Cooldown controlado tras pérdida de 30-45s máximo para permitir tomar
+        // la operación Martingala M1 en la siguiente vela sin perder el impulso del mercado
         if (subMode == AutonomousSubMode.YOLO) {
+            val remaining = getRemainingCooldown(subMode)
+            if (remaining > 0) {
+                return Pair(false, "Pausa de Cooldown YOLO: ${remaining}s")
+            }
             return Pair(true, "🚀 MODO YOLO: Operativa continua sin límites")
         }
         if (stopLossStreak > 0 && currentLossStreak >= stopLossStreak) {
@@ -210,7 +226,7 @@ class RiskManager(context: Context? = null) {
         if (takeProfitWins > 0 && currentWins >= takeProfitWins) {
             return Pair(false, "Take Profit alcanzado ($takeProfitWins victorias)")
         }
-        val remaining = getRemainingCooldown()
+        val remaining = getRemainingCooldown(subMode)
         if (remaining > 0) {
             return Pair(false, "Pausa de Cooldown: ${remaining}s")
         }
