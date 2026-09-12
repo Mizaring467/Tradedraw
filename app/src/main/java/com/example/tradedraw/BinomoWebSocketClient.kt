@@ -236,29 +236,90 @@ class BinomoWebSocketClient(private val context: Context) {
             if (payload.startsWith("{")) {
                 val json = JSONObject(payload)
 
-                // 1. Formato Binomo: {"action":"tick", "data":{"ric":"Z-CRY/IDX", "rate":4238.125}}
+                // 1. Formatos con contenedor "data" (Objetos o Arrays con "assets" o directos)
                 if (json.has("data")) {
                     val dataObj = json.optJSONObject("data")
                     if (dataObj != null) {
-                        if (dataObj.has("rate")) parsedPrice = dataObj.getDouble("rate")
-                        else if (dataObj.has("price")) parsedPrice = dataObj.getDouble("price")
-                        if (dataObj.has("ric")) assetName = dataObj.getString("ric")
+                        val assetsArr = dataObj.optJSONArray("assets")
+                        if (assetsArr != null && assetsArr.length() > 0) {
+                            for (i in 0 until assetsArr.length()) {
+                                val assetObj = assetsArr.optJSONObject(i) ?: continue
+                                val r = if (assetObj.has("rate")) assetObj.optDouble("rate") else if (assetObj.has("price")) assetObj.optDouble("price") else Double.NaN
+                                val ric = assetObj.optString("ric", "")
+                                if (!r.isNaN() && r > 0.0) {
+                                    if (parsedPrice == null || ric.equals(activeAsset, ignoreCase = true)) {
+                                        parsedPrice = r
+                                        if (ric.isNotEmpty()) assetName = ric
+                                        if (ric.equals(activeAsset, ignoreCase = true)) break
+                                    }
+                                }
+                            }
+                        } else {
+                            if (dataObj.has("rate")) parsedPrice = dataObj.getDouble("rate")
+                            else if (dataObj.has("price")) parsedPrice = dataObj.getDouble("price")
+                            if (dataObj.has("ric")) assetName = dataObj.getString("ric")
+                        }
                     } else {
                         val dataArr = json.optJSONArray("data")
                         if (dataArr != null && dataArr.length() > 0) {
-                            val first = dataArr.getJSONObject(0)
-                            if (first.has("rate")) parsedPrice = first.getDouble("rate")
-                            else if (first.has("price")) parsedPrice = first.getDouble("price")
-                            if (first.has("ric")) assetName = first.getString("ric")
+                            for (i in 0 until dataArr.length()) {
+                                val item = dataArr.optJSONObject(i) ?: continue
+                                val assetsArr = item.optJSONArray("assets")
+                                if (assetsArr != null && assetsArr.length() > 0) {
+                                    for (j in 0 until assetsArr.length()) {
+                                        val assetObj = assetsArr.optJSONObject(j) ?: continue
+                                        val r = if (assetObj.has("rate")) assetObj.optDouble("rate") else if (assetObj.has("price")) assetObj.optDouble("price") else Double.NaN
+                                        val ric = assetObj.optString("ric", "")
+                                        if (!r.isNaN() && r > 0.0) {
+                                            if (parsedPrice == null || ric.equals(activeAsset, ignoreCase = true)) {
+                                                parsedPrice = r
+                                                if (ric.isNotEmpty()) assetName = ric
+                                                if (ric.equals(activeAsset, ignoreCase = true)) break
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    val r = if (item.has("rate")) item.optDouble("rate") else if (item.has("price")) item.optDouble("price") else Double.NaN
+                                    val ric = item.optString("ric", "")
+                                    if (!r.isNaN() && r > 0.0) {
+                                        if (parsedPrice == null || ric.equals(activeAsset, ignoreCase = true)) {
+                                            parsedPrice = r
+                                            if (ric.isNotEmpty()) assetName = ric
+                                            if (ric.equals(activeAsset, ignoreCase = true)) break
+                                        }
+                                    }
+                                }
+                                if (parsedPrice != null && assetName.equals(activeAsset, ignoreCase = true)) break
+                            }
                         }
                     }
                 }
 
-                // 2. Formatos directos: {"rate": ...} o {"price": ...}
+                // 2. Formato con "assets" en raíz
+                if (parsedPrice == null && json.has("assets")) {
+                    val assetsArr = json.optJSONArray("assets")
+                    if (assetsArr != null && assetsArr.length() > 0) {
+                        for (i in 0 until assetsArr.length()) {
+                            val assetObj = assetsArr.optJSONObject(i) ?: continue
+                            val r = if (assetObj.has("rate")) assetObj.optDouble("rate") else if (assetObj.has("price")) assetObj.optDouble("price") else Double.NaN
+                            val ric = assetObj.optString("ric", "")
+                            if (!r.isNaN() && r > 0.0) {
+                                if (parsedPrice == null || ric.equals(activeAsset, ignoreCase = true)) {
+                                    parsedPrice = r
+                                    if (ric.isNotEmpty()) assetName = ric
+                                    if (ric.equals(activeAsset, ignoreCase = true)) break
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 3. Formatos directos en la raíz: {"rate": ...} o {"price": ...} o {"close": ...}
                 if (parsedPrice == null) {
                     if (json.has("rate")) parsedPrice = json.getDouble("rate")
                     else if (json.has("price")) parsedPrice = json.getDouble("price")
                     else if (json.has("close")) parsedPrice = json.getDouble("close")
+                    if (json.has("ric")) assetName = json.getString("ric")
                 }
             } else if (payload.startsWith("[")) {
                 val arr = JSONArray(payload)
@@ -266,6 +327,33 @@ class BinomoWebSocketClient(private val context: Context) {
                     val tickObj = arr.optJSONObject(1)
                     if (tickObj != null) {
                         parsedPrice = tickObj.optDouble("rate", tickObj.optDouble("price", 0.0))
+                        if (tickObj.has("ric")) assetName = tickObj.getString("ric")
+                    }
+                }
+            }
+
+            // 4. Extractor Regex de respaldo si parsedPrice sigue en null
+            if (parsedPrice == null || parsedPrice <= 0.0) {
+                // Si el payload contiene el activo activo (ej. Z-CRY/IDX), buscar preferentemente el bloque asociado
+                val activeBlock = Regex("""\{[^{}]*"ric"\s*:\s*"${Regex.escape(activeAsset)}"[^{}]*\}""").find(payload)?.value
+                    ?: Regex("""\{[^{}]*"rate"\s*:\s*[0-9.]+[^{}]*"ric"\s*:\s*"${Regex.escape(activeAsset)}"[^{}]*\}""").find(payload)?.value
+                    ?: payload
+
+                val rateMatch = Regex(""""rate"\s*:\s*([0-9.]+)""").find(activeBlock)
+                val priceMatch = if (rateMatch == null) Regex(""""price"\s*:\s*([0-9.]+)""").find(activeBlock) else null
+                val matchedVal = rateMatch?.groupValues?.getOrNull(1) ?: priceMatch?.groupValues?.getOrNull(1)
+                if (matchedVal != null) {
+                    val p = matchedVal.toDoubleOrNull()
+                    if (p != null && p > 0.0) {
+                        parsedPrice = p
+                    }
+                }
+
+                val ricMatch = Regex(""""ric"\s*:\s*"([^"]+)"""").find(activeBlock)
+                if (ricMatch != null) {
+                    val matchedRic = ricMatch.groupValues[1]
+                    if (matchedRic.isNotEmpty()) {
+                        assetName = matchedRic
                     }
                 }
             }

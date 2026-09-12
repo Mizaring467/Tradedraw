@@ -61,9 +61,25 @@ class BinomoAuthActivity : AppCompatActivity() {
 
                 ws.addEventListener('message', function(ev) {
                     try {
-                        if (typeof ev.data === 'string' && (ev.data.includes('rate') || ev.data.includes('price') || ev.data.includes('tick'))) {
+                        var data = ev.data;
+                        if (data instanceof ArrayBuffer) {
+                            data = new TextDecoder().decode(data);
+                        } else if (typeof Blob !== 'undefined' && data instanceof Blob) {
+                            var reader = new FileReader();
+                            reader.onload = function() {
+                                var text = reader.result;
+                                if (typeof text === 'string' && (text.includes('rate') || text.includes('price') || text.includes('tick') || text.includes('assets') || text.includes('ric'))) {
+                                    if (window.TradeDrawBridge && window.TradeDrawBridge.onTick) {
+                                        window.TradeDrawBridge.onTick(text);
+                                    }
+                                }
+                            };
+                            reader.readAsText(data);
+                            return;
+                        }
+                        if (typeof data === 'string' && (data.includes('rate') || data.includes('price') || data.includes('tick') || data.includes('assets') || data.includes('ric'))) {
                             if (window.TradeDrawBridge && window.TradeDrawBridge.onTick) {
-                                window.TradeDrawBridge.onTick(ev.data);
+                                window.TradeDrawBridge.onTick(data);
                             }
                         }
                     } catch(e) {}
