@@ -920,16 +920,14 @@ class TradingEngine(
         reasonDescription: String
     ) {
         val calibration = calibrationManager
-        val metrics = context.resources.displayMetrics
-        val screenW = metrics.widthPixels.toFloat()
-        val screenH = metrics.heightPixels.toFloat()
+        val (screenW, screenH) = CalibrationManager.getRealScreenDimensions(context)
         val isLand = screenW > screenH
 
         // 1. Prioridad Máxima: Detección visual en tiempo real sobre el frame activo
         val visionCoords = visionAnalyzer.findBrokerButtonCoordinates(bitmap, action == TradeAction.BUY)
 
         // 2. Respaldo: Calibración guardada o fórmulas geométricas precisas
-        val (x, y) = if (visionCoords != null) {
+        val (rawX, rawY) = if (visionCoords != null) {
             visionCoords
         } else if (calibration != null && calibration.isCalibrated()) {
             if (action == TradeAction.BUY) calibration.getBuyCoordinates() else calibration.getSellCoordinates()
@@ -938,10 +936,18 @@ class TradingEngine(
                 if (action == TradeAction.BUY) Pair(screenW * 0.881f, screenH * 0.735f)
                 else Pair(screenW * 0.881f, screenH * 0.844f)
             } else {
-                // Centro exacto del área táctil de los botones en Binomo vertical (89.2% de la pantalla)
-                if (action == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.892f)
-                else Pair(screenW * 0.75f, screenH * 0.892f)
+                // Centro exacto del área táctil de los botones en Binomo vertical (90.3% de la pantalla)
+                if (action == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.903f)
+                else Pair(screenW * 0.75f, screenH * 0.903f)
             }
+        }
+
+        // Sanitización estricta: en modo vertical, nunca permitir clics por encima del 86.5% (fila de Hora / Cantidad)
+        val (x, y) = if (!isLand && rawY < screenH * 0.865f) {
+            android.util.Log.w("TradingEngine", "⚠️ Coordenada Y=$rawY cae sobre selector de Hora/Cantidad (<86.5%). Corrigiendo a botón real (${screenH * 0.903f}).")
+            Pair(rawX, screenH * 0.903f)
+        } else {
+            Pair(rawX, rawY)
         }
 
         android.util.Log.d("TradingEngine", "executeAutonomousTrade: $action hacia ($x, $y) [Vision:${visionCoords != null}] Motivo: $reasonDescription")
@@ -1048,25 +1054,32 @@ class TradingEngine(
             return
         }
 
-        val screenW = context.resources.displayMetrics.widthPixels.toFloat()
-        val screenH = context.resources.displayMetrics.heightPixels.toFloat()
-        val isLand = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val (screenW, screenH) = CalibrationManager.getRealScreenDimensions(context)
+        val isLand = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || screenW > screenH
 
         val calibCoords = if (calibrationManager != null && calibrationManager!!.isCalibrated()) {
             if (action == TradeAction.BUY) calibrationManager!!.getBuyCoordinates()
             else calibrationManager!!.getSellCoordinates()
         } else null
 
-        val (x, y) = if (calibCoords != null) {
+        val (rawX, rawY) = if (calibCoords != null) {
             calibCoords
         } else {
             if (isLand) {
                 if (action == TradeAction.BUY) Pair(screenW * 0.881f, screenH * 0.735f)
                 else Pair(screenW * 0.881f, screenH * 0.844f)
             } else {
-                if (action == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.892f)
-                else Pair(screenW * 0.75f, screenH * 0.892f)
+                if (action == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.903f)
+                else Pair(screenW * 0.75f, screenH * 0.903f)
             }
+        }
+
+        // Sanitización estricta: en modo vertical, nunca permitir clics por encima del 86.5% (fila de Hora / Cantidad)
+        val (x, y) = if (!isLand && rawY < screenH * 0.865f) {
+            Log.w("TradingEngine", "⚠️ Headless: Coordenada Y=$rawY cae sobre selector de Hora/Cantidad (<86.5%). Corrigiendo a botón real (${screenH * 0.903f}).")
+            Pair(rawX, screenH * 0.903f)
+        } else {
+            Pair(rawX, rawY)
         }
 
         val accessibility = AutoTradeAccessibilityService.instance
