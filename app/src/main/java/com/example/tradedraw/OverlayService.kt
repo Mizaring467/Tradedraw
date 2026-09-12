@@ -58,6 +58,8 @@ class OverlayService : Service() {
         private set
     lateinit var tradingEngine: TradingEngine
         private set
+    var binomoWebSocketClient: BinomoWebSocketClient? = null
+        private set
 
     private var hudView: View? = null
     private var hudParams: WindowManager.LayoutParams? = null
@@ -231,6 +233,17 @@ class OverlayService : Service() {
 
         // Iniciar Micro-Servidor HTTP local de ultra-baja latencia para supervisión y pruebas
         httpBridge = TradeDrawHttpBridge(this, 8080).apply { start() }
+
+        // Iniciar Cliente WebSocket nativo para recepción de micro-ticks
+        val wsClient = BinomoWebSocketClient(this)
+        binomoWebSocketClient = wsClient
+        wsClient.onTickListener = { tick ->
+            tradingEngine.onMarketTick(tick)
+            if (isHudVisible) {
+                updateHUDView()
+            }
+        }
+        wsClient.start()
 
         val cmdFilter = IntentFilter("com.example.tradedraw.CMD")
         try {
@@ -1697,6 +1710,8 @@ class OverlayService : Service() {
             unregisterReceiver(overlayCommandReceiver)
         } catch (e: Exception) {}
         screenCaptureManager?.destroy()
+        binomoWebSocketClient?.destroy()
+        binomoWebSocketClient = null
         if (::tradingEngine.isInitialized) {
             tradingEngine.stop()
             tradingEngine.aiClient.destroy()

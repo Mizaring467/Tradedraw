@@ -115,6 +115,16 @@ class TradingEngine(
         currentActiveSignal = null
     }
 
+    var latestMarketTick: MarketTick? = null
+        private set
+
+    /**
+     * Invocado cuando llega un nuevo micro-tick en tiempo real vía WebSocket.
+     */
+    fun onMarketTick(tick: MarketTick) {
+        latestMarketTick = tick
+    }
+
     fun onNewFrame(bitmap: Bitmap) {
         val now = System.currentTimeMillis()
         if (now - lastProcessTime < PROCESS_INTERVAL_MS) return
