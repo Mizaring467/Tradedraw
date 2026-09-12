@@ -1491,10 +1491,21 @@ class OverlayService : Service() {
                 txtPower.setTextColor(if (callPct >= 62) Color.parseColor("#22c55e") else if (putPct >= 62) Color.parseColor("#ef4444") else Color.parseColor("#38bdf8"))
             } else if (isHeadless) {
                 val tick = tradingEngine.latestMarketTick
+                val trend = tradingEngine.syntheticCandleEngine.detectedTrend
                 val vel = tick?.velocity ?: 0f
-                val dirStr = if (vel > 0.0001f) "▲ IMPULSO CALL" else if (vel < -0.0001f) "▼ IMPULSO PUT" else "━ NEUTRO"
-                val color = if (vel > 0.0001f) Color.parseColor("#22c55e") else if (vel < -0.0001f) Color.parseColor("#ef4444") else Color.parseColor("#38bdf8")
-                val priceStr = if (tick != null) String.format(Locale.US, "%.2f", tick.price) else "---"
+                val dirStr = when {
+                    trend == TrendDirection.UPTREND -> "▲ ALCISTA"
+                    trend == TrendDirection.DOWNTREND -> "▼ BAJISTA"
+                    vel > 0.0001f -> "▲ IMPULSO CALL"
+                    vel < -0.0001f -> "▼ IMPULSO PUT"
+                    else -> "━ NEUTRO"
+                }
+                val color = when {
+                    trend == TrendDirection.UPTREND || vel > 0.0001f -> Color.parseColor("#22c55e")
+                    trend == TrendDirection.DOWNTREND || vel < -0.0001f -> Color.parseColor("#ef4444")
+                    else -> Color.parseColor("#38bdf8")
+                }
+                val priceStr = if (tick != null) formatDynamicPrice(tick.price) else "---"
                 txtPower.text = "[ WS Headless: $dirStr ($priceStr) ]"
                 txtPower.setTextColor(color)
             } else {
@@ -1506,7 +1517,7 @@ class OverlayService : Service() {
                 val latestTick = tradingEngine.latestMarketTick
                 val (diagStr, diagColor) = when (wsState) {
                     WebSocketState.CONNECTED -> {
-                        val priceStr = if (latestTick != null) String.format(java.util.Locale.US, "%.2f", latestTick.price) else "..."
+                        val priceStr = if (latestTick != null) formatDynamicPrice(latestTick.price) else "..."
                         Pair("🟢 WS Activo: $priceStr (0ms) | Headless", Color.parseColor("#22c55e"))
                     }
                     WebSocketState.CONNECTING -> {
@@ -1612,17 +1623,17 @@ class OverlayService : Service() {
                 if (trend == TrendDirection.UPTREND) {
                     txtTrendBadge?.text = "📈 Tendencia [WS]: ALCISTA"
                     txtTrendBadge?.setTextColor(Color.parseColor("#4ade80"))
-                    txtTrendReason?.text = "Micro-ticks alcistas en velas sintéticas 1m de Binomo."
+                    txtTrendReason?.text = "Flujo de ticks y velas sintéticas 1m con impulso alcista consistente."
                     txtPlannedAction?.text = "🎯 Plan WS: Preparar entrada CALL al cierre de vela (:58s)."
                 } else if (trend == TrendDirection.DOWNTREND) {
                     txtTrendBadge?.text = "📉 Tendencia [WS]: BAJISTA"
                     txtTrendBadge?.setTextColor(Color.parseColor("#f87171"))
-                    txtTrendReason?.text = "Presión bajista en velas sintéticas 1m de Binomo."
+                    txtTrendReason?.text = "Presión de venta en velas sintéticas 1m con retroceso continuo."
                     txtPlannedAction?.text = "🎯 Plan WS: Preparar entrada PUT al cierre de vela (:58s)."
                 } else {
                     txtTrendBadge?.text = "📊 Tendencia [WS]: LATERAL / CONSOLIDACIÓN"
                     txtTrendBadge?.setTextColor(Color.parseColor("#facc15"))
-                    txtTrendReason?.text = if (sup > 0.0 && res > 0.0) "Soporte: %.2f | Resistencia: %.2f".format(sup, res) else "Calculando rangos cuantitativos S/R..."
+                    txtTrendReason?.text = if (sup > 0.0 && res > 0.0) "Soporte: ${formatDynamicPrice(sup)} | Resistencia: ${formatDynamicPrice(res)}" else "Calculando rangos cuantitativos S/R..."
                     txtPlannedAction?.text = "🎯 Plan WS: Esperar acercamiento a extremos para operar."
                 }
             }

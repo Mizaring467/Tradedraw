@@ -357,16 +357,18 @@ class VisionAnalyzer {
             val minMoveThreshold = (chartHeight * 0.015f).coerceIn(8f, 25f)
 
             when {
+                // Subida alcista contundente: precio neto subió (menor Y) con mayoría de verdes o inclinación fuerte
+                netPriceChange < -minMoveThreshold && greenCount >= redCount -> TrendDirection.UPTREND
+                netPriceChange < -minMoveThreshold * 1.5f -> TrendDirection.UPTREND
+                highestX > lowestX && greenCount > redCount + 1 -> TrendDirection.UPTREND
+
+                // Caída bajista contundente: precio neto cayó (mayor Y) con mayoría de rojas o inclinación fuerte
+                netPriceChange > minMoveThreshold && redCount >= greenCount -> TrendDirection.DOWNTREND
+                netPriceChange > minMoveThreshold * 1.5f -> TrendDirection.DOWNTREND
+                lowestX > highestX && redCount > greenCount + 1 -> TrendDirection.DOWNTREND
+
                 // Si la micro-tendencia inmediata está completamente estancada con alternancia y sin desplazamiento neto
                 isMicroFlat && microSample.size >= 4 && (microSample.count { it.type == CandleType.GREEN } == microSample.count { it.type == CandleType.RED }) && Math.abs(netPriceChange) < minMoveThreshold -> TrendDirection.SIDEWAYS
-                // Caída bajista: precio nuevo cayó (mayor Y) con mayoría de rojas o inclinación fuerte
-                netPriceChange > minMoveThreshold && redCount >= greenCount -> TrendDirection.DOWNTREND
-                netPriceChange > minMoveThreshold * 2.0f -> TrendDirection.DOWNTREND
-                // Subida alcista: precio nuevo subió (menor Y) con mayoría de verdes o inclinación fuerte
-                netPriceChange < -minMoveThreshold && greenCount >= redCount -> TrendDirection.UPTREND
-                netPriceChange < -minMoveThreshold * 2.0f -> TrendDirection.UPTREND
-                highestX > lowestX && greenCount > redCount + 1 -> TrendDirection.UPTREND
-                lowestX > highestX && redCount > greenCount + 1 -> TrendDirection.DOWNTREND
                 else -> TrendDirection.SIDEWAYS
             }
         } else {
