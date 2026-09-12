@@ -162,7 +162,7 @@ class BinomoWebSocketClientTest {
     @Test
     fun testRegexFallbackOnMalformedJson() {
         val malformedPayload = """prefix_corrupt{"unclosed":"rate": 987.6543, "ric": "BTC/USD" trailing"""
-        val (asset, price) = parseTickPayload(malformedPayload)
+        val (asset, price) = parseTickPayload(malformedPayload, activeAsset = "BTC/USD")
 
         assertEquals("BTC/USD", asset)
         assertEquals(987.6543, price!!, 0.0001)
