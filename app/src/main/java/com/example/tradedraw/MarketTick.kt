@@ -24,5 +24,6 @@ enum class WebSocketState {
     CONNECTING,
     CONNECTED,
     RECONNECTING,
-    ERROR
+    ERROR,
+    UNAUTHORIZED
 }

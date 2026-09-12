@@ -1365,28 +1365,64 @@ class OverlayService : Service() {
                 txtPower.setTextColor(Color.parseColor("#94a3b8"))
             }
 
+            val isHeadless = screenCaptureManager == null
+            val wsState = binomoWebSocketClient?.currentState ?: WebSocketState.DISCONNECTED
             val frames = screenCaptureManager?.totalFramesCaptured ?: 0L
-            val diagStr = if (frames == 0L && screenCaptureManager == null) {
-                "⚠️ Visión inactiva (Toca aquí para iniciar)"
+
+            if (isHeadless) {
+                val latestTick = tradingEngine.latestMarketTick
+                val (diagStr, diagColor) = when (wsState) {
+                    WebSocketState.CONNECTED -> {
+                        val priceStr = if (latestTick != null) String.format(java.util.Locale.US, "%.2f", latestTick.price) else "..."
+                        Pair("🟢 WS Activo: $priceStr (0ms) | Headless", Color.parseColor("#22c55e"))
+                    }
+                    WebSocketState.CONNECTING -> {
+                        Pair("🟡 WS: Conectando a Binomo...", Color.parseColor("#facc15"))
+                    }
+                    WebSocketState.UNAUTHORIZED -> {
+                        Pair("🔴 WS 401: Falta Sesión Binomo (Toca para Login)", Color.parseColor("#ef4444"))
+                    }
+                    WebSocketState.RECONNECTING -> {
+                        Pair("🟠 WS: Reconectando...", Color.parseColor("#f97316"))
+                    }
+                    WebSocketState.ERROR -> {
+                        Pair("⚠️ WS Error (Toca para vincular sesión)", Color.parseColor("#ef4444"))
+                    }
+                    WebSocketState.DISCONNECTED -> {
+                        Pair("⚪ WS Desconectado (Toca para configurar)", Color.parseColor("#94a3b8"))
+                    }
+                }
+                txtDiag.text = diagStr
+                txtDiag.setTextColor(diagColor)
             } else {
-                analysis?.diagnosticSummary ?: "Visión: Esperando frame..."
-            }
-            txtDiag.text = "📷 Frames: $frames | $diagStr"
-            if (frames == 0L) {
-                txtDiag.setTextColor(Color.parseColor("#facc15"))
-            } else {
-                txtDiag.setTextColor(Color.parseColor("#94a3b8"))
+                val diagStr = if (frames == 0L) {
+                    "⚠️ Visión: Esperando frame (Toca aquí para reiniciar)"
+                } else {
+                    analysis?.diagnosticSummary ?: "Visión: Procesando frames..."
+                }
+                txtDiag.text = "📷 Frames: $frames | $diagStr"
+                txtDiag.setTextColor(if (frames == 0L) Color.parseColor("#facc15") else Color.parseColor("#94a3b8"))
             }
 
             txtDiag.setOnClickListener {
-                try {
-                    val intent = Intent(this@OverlayService, MainActivity::class.java).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                if (isHeadless && (wsState == WebSocketState.UNAUTHORIZED || wsState == WebSocketState.ERROR || wsState == WebSocketState.DISCONNECTED)) {
+                    try {
+                        val intent = Intent(this@OverlayService, BinomoAuthActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        Log.e("TradeDraw", "Error abriendo BinomoAuthActivity", e)
                     }
-                    startActivity(intent)
-                    Toast.makeText(this@OverlayService, "Toca 'INICIAR OVERLAY' y elige 'Toda la pantalla'", Toast.LENGTH_LONG).show()
-                } catch (e: Exception) {
-                    Log.e("TradeDraw", "Error abriendo MainActivity", e)
+                } else {
+                    try {
+                        val intent = Intent(this@OverlayService, MainActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        }
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        Log.e("TradeDraw", "Error abriendo MainActivity", e)
+                    }
                 }
             }
 

@@ -34,6 +34,13 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".BinomoAuthActivity"
+            android:exported="false"
+            android:label="Vinculación Binomo"
+            android:theme="@style/Theme.TradeDraw"
+            android:windowSoftInputMode="adjustResize" />
+
         <service
             android:name=".OverlayService"
             android:enabled="true"

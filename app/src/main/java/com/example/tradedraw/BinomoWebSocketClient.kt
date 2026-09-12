@@ -33,6 +33,14 @@ class BinomoWebSocketClient(private val context: Context) {
         get() = prefs.getBoolean("ws_client_enabled", true)
         set(value) = prefs.edit().putBoolean("ws_client_enabled", value).apply()
 
+    var authToken: String
+        get() = prefs.getString("ws_auth_token", "") ?: ""
+        set(value) = prefs.edit().putString("ws_auth_token", value.trim()).apply()
+
+    var deviceId: String
+        get() = prefs.getString("ws_device_id", "") ?: ""
+        set(value) = prefs.edit().putString("ws_device_id", value.trim()).apply()
+
     private val client: OkHttpClient = OkHttpClient.Builder()
         .pingInterval(15, TimeUnit.SECONDS)
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -103,11 +111,29 @@ class BinomoWebSocketClient(private val context: Context) {
         updateState(WebSocketState.CONNECTING, "Conectando a $wsUrl")
 
         try {
-            val request = Request.Builder()
-                .url(wsUrl)
+            var targetUrl = wsUrl
+            val token = authToken
+            val devId = deviceId
+
+            if (token.isNotEmpty() && !targetUrl.contains("authtoken=")) {
+                val sep = if (targetUrl.contains("?")) "&" else "?"
+                targetUrl = "$targetUrl${sep}authtoken=$token"
+            }
+
+            val reqBuilder = Request.Builder()
+                .url(targetUrl)
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36")
                 .header("Origin", "https://binomo.com")
-                .build()
+
+            if (token.isNotEmpty()) {
+                reqBuilder.header("authtoken", token)
+                reqBuilder.header("Cookie", "authtoken=$token")
+            }
+            if (devId.isNotEmpty()) {
+                reqBuilder.header("device-id", devId)
+            }
+
+            val request = reqBuilder.build()
 
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(ws: WebSocket, response: Response) {
@@ -141,6 +167,12 @@ class BinomoWebSocketClient(private val context: Context) {
                     isConnecting.set(false)
                     isConnected.set(false)
                     val errorMsg = t.message ?: "Fallo de red"
+                    val is401 = response?.code == 401 || errorMsg.contains("401")
+                    if (is401) {
+                        Log.w(TAG, "Fallo WebSocket 401 Unauthorized: Requiere token de sesión de Binomo")
+                        updateState(WebSocketState.UNAUTHORIZED, "401 Unauthorized: Requiere Token/Login de Binomo")
+                        return
+                    }
                     Log.w(TAG, "Fallo en conexión WebSocket: $errorMsg")
                     updateState(WebSocketState.ERROR, errorMsg)
                     scheduleReconnect()
