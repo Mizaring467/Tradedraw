@@ -44,6 +44,20 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Busca 'TradeDraw' y activa el servicio de accesibilidad", Toast.LENGTH_LONG).show()
         }
 
+        val btnHeadless = findViewById<Button>(R.id.btn_headless)
+        btnHeadless.setOnClickListener {
+            if (checkOverlayPermission()) {
+                val intent = Intent(this, OverlayService::class.java).apply {
+                    putExtra("EXTRA_HEADLESS_MODE", true)
+                }
+                ContextCompat.startForegroundService(this, intent)
+                Toast.makeText(this, "🚀 Modo WebSocket Puro Activo (0% captura de pantalla)", Toast.LENGTH_LONG).show()
+                finish()
+            } else {
+                requestOverlayPermission()
+            }
+        }
+
         boton.setOnClickListener {
             if (checkOverlayPermission()) {
                 startFloatingService()
