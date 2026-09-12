@@ -61,8 +61,14 @@ class SyntheticCandleEngine {
                     }
                     closedCandles.add(prev)
                 }
-                recalculateSupportResistance()
+                recalculateSupportResistance(tick)
                 recalculateTrend()
+            }
+
+            // Inicializar S/R dinámico inmediato si estamos en etapa de arranque (< 3 velas)
+            if (dynamicSupportPrice == 0.0 || dynamicResistancePrice == 0.0 || closedCandles.size < 3) {
+                dynamicResistancePrice = tick.price * 1.0005
+                dynamicSupportPrice = tick.price * 0.9995
             }
 
             // Inicio de nueva vela de 1 minuto
@@ -84,9 +90,15 @@ class SyntheticCandleEngine {
         evaluateSniperOpportunity(tick)
     }
 
-    private fun recalculateSupportResistance() {
+    private fun recalculateSupportResistance(tick: MarketTick? = null) {
         synchronized(closedCandles) {
-            if (closedCandles.size < 3) return
+            if (closedCandles.size < 3) {
+                if (tick != null && tick.price > 0.0) {
+                    dynamicResistancePrice = tick.price * 1.0005
+                    dynamicSupportPrice = tick.price * 0.9995
+                }
+                return
+            }
             val sample = closedCandles.takeLast(30)
             dynamicResistancePrice = sample.maxOf { it.high }
             dynamicSupportPrice = sample.minOf { it.low }
@@ -122,7 +134,29 @@ class SyntheticCandleEngine {
         val distToResistance = ((dynamicResistancePrice - tick.price) / srRange).toFloat().coerceIn(0f, 1f)
 
         synchronized(closedCandles) {
-            if (closedCandles.size < 3) return
+            // Arranque inmediato sin warmup: si hay menos de 3 velas cerradas, operar por micro-impulso instantáneo
+            if (closedCandles.size < 3) {
+                val activeCandle = currentCandle
+                when {
+                    tick.isBullishImpulse -> {
+                        onSignalGenerated?.invoke(TradeAction.BUY, "🚀 Sniper Arranque Rápido [Micro-Impulso Alcista | ⏱ ${sec}s] -> CALL")
+                        return
+                    }
+                    tick.isBearishImpulse -> {
+                        onSignalGenerated?.invoke(TradeAction.SELL, "🚀 Sniper Arranque Rápido [Micro-Impulso Bajista | ⏱ ${sec}s] -> PUT")
+                        return
+                    }
+                    activeCandle != null -> {
+                        if (activeCandle.close >= activeCandle.open) {
+                            onSignalGenerated?.invoke(TradeAction.BUY, "🚀 Sniper Arranque Rápido [Flujo Vela Actual Verde | ⏱ ${sec}s] -> CALL")
+                        } else {
+                            onSignalGenerated?.invoke(TradeAction.SELL, "🚀 Sniper Arranque Rápido [Flujo Vela Actual Roja | ⏱ ${sec}s] -> PUT")
+                        }
+                        return
+                    }
+                }
+                return
+            }
             val prev = closedCandles.last()
 
             // Estrategia 1: MT_REJECTION (Rechazo de mecha contra S/R con confirmación de velocidad)
