@@ -36,7 +36,7 @@
 
         <activity
             android:name=".BinomoAuthActivity"
-            android:exported="false"
+            android:exported="true"
             android:label="Vinculación Binomo"
             android:theme="@style/Theme.TradeDraw"
             android:windowSoftInputMode="adjustResize" />
