@@ -106,12 +106,33 @@ data class VisionAnalysisResult(
         (Math.abs(currentPriceY - dynamicResistanceY) / Math.abs(dynamicSupportY - dynamicResistanceY)).coerceIn(0f, 1f)
     } else 0.5f,
     val isNearSupportZone: Boolean = touchesSupport || distanceToSupportRatio < 0.15f,
-    val isNearResistanceZone: Boolean = touchesResistance || distanceToResistanceRatio < 0.15f
+    val isNearResistanceZone: Boolean = touchesResistance || distanceToResistanceRatio < 0.15f,
+    val tickVelocityY: Float = 0f,
+    val tickVelocityNormalized: Float = 0f,
+    val isBullishImpulse: Boolean = false,
+    val isBearishImpulse: Boolean = false,
+    val isSniperZeroSecondWindow: Boolean = false
 )
 
 class VisionAnalyzer {
 
     private val hsvBuffer = FloatArray(3)
+
+    // Estado para seguimiento de tick velocity y ROI de la punta de la vela
+    private var lastObservedTipY: Float = 0f
+    private var lastObservedTipTimeMs: Long = 0L
+    private var lastCalculatedVelocityY: Float = 0f
+    private var lastCalculatedVelocityNorm: Float = 0f
+
+    /**
+     * Resetea el tracking de velocidad de tick
+     */
+    fun resetTickTracking() {
+        lastObservedTipY = 0f
+        lastObservedTipTimeMs = 0L
+        lastCalculatedVelocityY = 0f
+        lastCalculatedVelocityNorm = 0f
+    }
 
     /**
      * Crea una instancia de CandleData calculando automáticamente proporciones de mechas y alturas.
@@ -258,7 +279,11 @@ class VisionAnalyzer {
         endX: Float = 1000f,
         totalGreenPixels: Int = 0,
         totalRedPixels: Int = 0,
-        isLandscape: Boolean = true
+        isLandscape: Boolean = true,
+        tickVelocityY: Float = 0f,
+        tickVelocityNormalized: Float = 0f,
+        isBullishImpulse: Boolean = false,
+        isBearishImpulse: Boolean = false
     ): VisionAnalysisResult {
         var minPriceY = Float.MAX_VALUE // Menor Y = Mayor precio (Resistencia / Techo)
         var maxPriceY = Float.MIN_VALUE // Mayor Y = Menor precio (Soporte / Piso)
@@ -642,8 +667,9 @@ class VisionAnalyzer {
         // Micro-Sincronización Reloj Sniper Estricto (00:56-00:59 o 00:00-00:05 para timing sniper y pullbacks)
         val candleSecond = ((System.currentTimeMillis() / 1000) % 60).toInt()
         val isSniperTimingWindow = candleSecond in 56..59 || candleSecond in 0..5
+        val isSniperZeroSecondWindow = candleSecond == 59 || candleSecond == 0 || candleSecond == 1
         val isSniperPullbackWindow = candleSecond in 1..5
-        val isLateTimingForbidden = candleSecond in 6..55
+        val isLateTimingForbidden = candleSecond in 2..58
 
         // Retroceso leve (Sniper Pullback) contra vela de señal fuerte previa
         var isPullbackAgainstSignalCall = false
@@ -755,7 +781,12 @@ class VisionAnalyzer {
             distanceToSupportRatio = distSupportRatio,
             distanceToResistanceRatio = distResistanceRatio,
             isNearSupportZone = isNearSupport,
-            isNearResistanceZone = isNearResistance
+            isNearResistanceZone = isNearResistance,
+            tickVelocityY = tickVelocityY,
+            tickVelocityNormalized = tickVelocityNormalized,
+            isBullishImpulse = isBullishImpulse,
+            isBearishImpulse = isBearishImpulse,
+            isSniperZeroSecondWindow = isSniperZeroSecondWindow
         )
     }
 
@@ -973,6 +1004,42 @@ class VisionAnalyzer {
         // Fusión y agrupamiento horizontal para condensar columnas adyacentes de la misma vela
         val clusteredCandles = clusterAndMergeCandleColumns(candleList, minSpacingPx = stepX * 2.5f)
 
+        // Análisis Ultra-Rápido de la Región de Interés (ROI) de la punta de la vela y velocidad de tick
+        val nowMs = System.currentTimeMillis()
+        var currentTipY = 0f
+        if (clusteredCandles.isNotEmpty()) {
+            val latest = clusteredCandles.first()
+            currentTipY = when (latest.type) {
+                CandleType.GREEN -> latest.bodyTopY
+                CandleType.RED -> latest.bodyBottomY
+                CandleType.DOJI -> (latest.bodyTopY + latest.bodyBottomY) * 0.5f
+            }
+        }
+
+        var tickVelocityY = 0f
+        var tickVelocityNorm = 0f
+        if (currentTipY > 0f && lastObservedTipY > 0f && lastObservedTipTimeMs > 0L) {
+            val dtMs = (nowMs - lastObservedTipTimeMs).coerceAtLeast(1L)
+            if (dtMs in 50L..4000L) {
+                // dy = currentTipY - lastObservedTipY (px/sec)
+                // En coordenadas de pantalla: menor Y = sube precio (alcista), mayor Y = baja precio (bajista)
+                val dy = currentTipY - lastObservedTipY
+                tickVelocityY = (dy / (dtMs / 1000f))
+                val chartHeight = (endY - startY).coerceAtLeast(100).toFloat()
+                tickVelocityNorm = (-tickVelocityY / chartHeight).coerceIn(-5f, 5f) // Positivo = Impulso alcista
+            }
+        }
+
+        if (currentTipY > 0f) {
+            lastObservedTipY = currentTipY
+            lastObservedTipTimeMs = nowMs
+            lastCalculatedVelocityY = tickVelocityY
+            lastCalculatedVelocityNorm = tickVelocityNorm
+        }
+
+        val isBullishImpulse = tickVelocityNorm >= 0.05f || tickVelocityY <= -8f
+        val isBearishImpulse = tickVelocityNorm <= -0.05f || tickVelocityY >= 8f
+
         // Evaluar patrones técnicos y estrategias Master Trader con las velas reales discretizadas
         val result = evaluateCandlePatterns(
             candleList = clusteredCandles,
@@ -984,7 +1051,11 @@ class VisionAnalyzer {
             endX = endX.toFloat(),
             totalGreenPixels = totalGreenPixels,
             totalRedPixels = totalRedPixels,
-            isLandscape = isLandscape
+            isLandscape = isLandscape,
+            tickVelocityY = tickVelocityY,
+            tickVelocityNormalized = tickVelocityNorm,
+            isBullishImpulse = isBullishImpulse,
+            isBearishImpulse = isBearishImpulse
         )
 
         // Modo Debug Visual: Guarda captura anotada si está activo

@@ -253,7 +253,11 @@ class TradingEngine(
                     if (aiResult.isSuccess && aiResult.action != null && aiResult.confidence >= aiClient.confidenceThreshold) {
                         if (!riskManager.hasPendingTrade && mode != AutoTradeMode.DISABLED) {
                             val sec = analysis.candleSecond
-                            val isTimingValid = analysis.isSniperTimingWindow || (sec in 55..59 || sec in 0..3)
+                            val isTimingValid = analysis.isSniperZeroSecondWindow || (sec in 59..59 || sec in 0..1)
+                            val isTickVelocityConfirmed = when (aiResult.action) {
+                                TradeAction.BUY -> !analysis.isBearishImpulse || analysis.tickVelocityNormalized >= -0.08f
+                                TradeAction.SELL -> !analysis.isBullishImpulse || analysis.tickVelocityNormalized <= 0.08f
+                            }
                             val isMarketUnfavorable = analysis.isMarketSideways || analysis.isConsolidationTight
                             val inDowntrend = analysis.trend == TrendDirection.DOWNTREND
                             val inUptrend = analysis.trend == TrendDirection.UPTREND
@@ -267,7 +271,9 @@ class TradingEngine(
                             } else if (touchesBarrierConflict) {
                                 android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: Impacto directo contra barrera S/R")
                             } else if (!isTimingValid) {
-                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} pospuesta: fuera de ventana sniper (⏱ ${sec}s)")
+                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} pospuesta: fuera de ventana sniper :00 (:59-:01) (⏱ ${sec}s)")
+                            } else if (!isTickVelocityConfirmed) {
+                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: Velocidad de tick opuesta (velNorm=${analysis.tickVelocityNormalized})")
                             } else if (aiTrendConflict) {
                                 android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: conflicto con tendencia ${analysis.trend}")
                             } else {
@@ -282,9 +288,17 @@ class TradingEngine(
             // 5b. Ejecución de Señal Técnica Local en Tiempo Real
             if (localSignal != null && !riskManager.hasPendingTrade) {
                 val sec = analysis.candleSecond
-                val isTimingValid = analysis.isSniperTimingWindow || (sec in 56..59 || sec in 0..7)
+                val isTimingValid = analysis.isSniperZeroSecondWindow || (sec in 59..59 || sec in 0..1) ||
+                    ((sec in 2..5 || analysis.isSniperPullbackWindow) && (analysis.isPullbackSniperCall || analysis.isPullbackSniperPut || analysis.isPullbackAgainstSignalCall || analysis.isPullbackAgainstSignalPut))
+                val isTickVelocityConfirmed = when (localSignal) {
+                    TradeAction.BUY -> !analysis.isBearishImpulse || analysis.tickVelocityNormalized >= -0.08f
+                    TradeAction.SELL -> !analysis.isBullishImpulse || analysis.tickVelocityNormalized <= 0.08f
+                }
+
                 if (!isTimingValid) {
-                    android.util.Log.d("TradingEngine", "Señal local $localSignal pospuesta: fuera de ventana sniper (⏱ ${sec}s)")
+                    android.util.Log.d("TradingEngine", "Señal local $localSignal pospuesta: fuera de ventana sniper :00 (:59-:01) (⏱ ${sec}s)")
+                } else if (!isTickVelocityConfirmed) {
+                    android.util.Log.d("TradingEngine", "Señal local $localSignal bloqueada por velocidad de tick adversa (velNorm=${analysis.tickVelocityNormalized}, velY=${analysis.tickVelocityY})")
                 } else {
                     val ai = latestAIResult
                     val isAIFresh = (System.currentTimeMillis() - latestAITimestamp) <= 12000L // Máximo 12s de validez para IA
@@ -361,7 +375,7 @@ class TradingEngine(
 
             // Veto universal de entrada tardía para opciones binarias a 1 minuto (salvo trampas institucionales o sniper pullbacks :01-:05)
             if (isLate && !isInstitutionalTrap && !isSniperPullbackTrigger) {
-                return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper (:56-:07)")
+                return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper :00 (:59-:01)")
             }
 
             val isSniperPullbackCallTrigger = (sec in 1..5 || analysis.isSniperPullbackWindow) &&
