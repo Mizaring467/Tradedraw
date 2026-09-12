@@ -41,6 +41,10 @@ class BinomoWebSocketClient(private val context: Context) {
         get() = prefs.getString("ws_device_id", "") ?: ""
         set(value) = prefs.edit().putString("ws_device_id", value.trim()).apply()
 
+    var cookieHeader: String
+        get() = prefs.getString("ws_cookie_header", "") ?: ""
+        set(value) = prefs.edit().putString("ws_cookie_header", value.trim()).apply()
+
     private val client: OkHttpClient = OkHttpClient.Builder()
         .pingInterval(15, TimeUnit.SECONDS)
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -120,14 +124,17 @@ class BinomoWebSocketClient(private val context: Context) {
                 targetUrl = "$targetUrl${sep}authtoken=$token"
             }
 
+            val cookies = if (cookieHeader.isNotEmpty()) cookieHeader else if (token.isNotEmpty()) "authtoken=$token" else ""
             val reqBuilder = Request.Builder()
                 .url(targetUrl)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36")
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36")
                 .header("Origin", "https://binomo.com")
 
+            if (cookies.isNotEmpty()) {
+                reqBuilder.header("Cookie", cookies)
+            }
             if (token.isNotEmpty()) {
                 reqBuilder.header("authtoken", token)
-                reqBuilder.header("Cookie", "authtoken=$token")
             }
             if (devId.isNotEmpty()) {
                 reqBuilder.header("device-id", devId)
@@ -206,10 +213,10 @@ class BinomoWebSocketClient(private val context: Context) {
     }
 
     /**
-     * Procesa y parsea las tramas de texto recibidas por WebSocket.
+     * Procesa y parsea las tramas de texto recibidas por WebSocket o bridge Headless.
      * Soporta múltiples formatos comunes de cotización (JSON de ticks, arrays, socket.io, etc.)
      */
-    private fun processIncomingMessage(rawText: String) {
+    fun processIncomingMessage(rawText: String) {
         try {
             var payload = rawText.trim()
 
@@ -264,6 +271,9 @@ class BinomoWebSocketClient(private val context: Context) {
             }
 
             if (parsedPrice != null && parsedPrice > 0.0) {
+                if (currentState != WebSocketState.CONNECTED) {
+                    updateState(WebSocketState.CONNECTED, "Conexión activa con broker (0ms)")
+                }
                 emitTick(assetName, parsedPrice, nowMs)
             }
         } catch (e: Exception) {

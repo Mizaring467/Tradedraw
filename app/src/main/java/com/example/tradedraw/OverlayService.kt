@@ -20,6 +20,8 @@ import android.view.*
 import android.widget.*
 import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
+import android.graphics.Bitmap
+import android.webkit.*
 import java.util.Locale
 
 /**
@@ -60,6 +62,7 @@ class OverlayService : Service() {
         private set
     var binomoWebSocketClient: BinomoWebSocketClient? = null
         private set
+    private var headlessWebView: WebView? = null
 
     private var hudView: View? = null
     private var hudParams: WindowManager.LayoutParams? = null
@@ -74,6 +77,107 @@ class OverlayService : Service() {
                 agentChatOverlay = AgentChatOverlay(this, tradingEngine)
             }
             agentChatOverlay?.show()
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    fun startHeadlessBrokerEngine() {
+        mainHandler.post {
+            if (headlessWebView != null) {
+                Log.d("TradeDraw", "Headless Broker WebView ya está activo. Recargando...")
+                headlessWebView?.reload()
+                return@post
+            }
+            Log.d("TradeDraw", "Iniciando Headless Broker WebView...")
+            try {
+                val snifferJs = """
+                    (function() {
+                        if (window.__td_headless_hooked) return;
+                        window.__td_headless_hooked = true;
+                        console.log('[HeadlessBroker] Hooking WebSocket...');
+                        var OldWS = window.WebSocket;
+                        window.WebSocket = function(url, protocols) {
+                            console.log('[HL_WS_OPEN] URL=' + url);
+                            try {
+                                if (window.TradeDrawBridge && window.TradeDrawBridge.onWsUrl) {
+                                    window.TradeDrawBridge.onWsUrl(url.toString());
+                                }
+                            } catch(e) {}
+                            var ws = protocols ? new OldWS(url, protocols) : new OldWS(url);
+                            ws.addEventListener('message', function(ev) {
+                                try {
+                                    if (typeof ev.data === 'string' && (ev.data.includes('rate') || ev.data.includes('price') || ev.data.includes('tick'))) {
+                                        if (window.TradeDrawBridge && window.TradeDrawBridge.onTick) {
+                                            window.TradeDrawBridge.onTick(ev.data);
+                                        }
+                                    }
+                                } catch(e) {}
+                            });
+                            return ws;
+                        };
+                        window.WebSocket.prototype = OldWS.prototype;
+                    })();
+                """.trimIndent()
+
+                val wv = WebView(this).apply {
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.databaseEnabled = true
+                    settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+                    addJavascriptInterface(object {
+                        @JavascriptInterface
+                        fun onWsUrl(url: String) {
+                            Log.i("TradeDraw", "🎯 Headless WS URL: $url")
+                            binomoWebSocketClient?.wsUrl = url
+                        }
+
+                        @JavascriptInterface
+                        fun onTick(rawJson: String) {
+                            binomoWebSocketClient?.processIncomingMessage(rawJson)
+                        }
+                    }, "TradeDrawBridge")
+
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onConsoleMessage(cm: ConsoleMessage?): Boolean {
+                            Log.d("HeadlessConsole", "${cm?.message()} (${cm?.sourceId()}:${cm?.lineNumber()})")
+                            return true
+                        }
+                    }
+
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                            super.onPageStarted(view, url, favicon)
+                            view?.evaluateJavascript(snifferJs, null)
+                        }
+
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            view?.evaluateJavascript(snifferJs, null)
+                            Log.d("TradeDraw", "Headless Broker cargó: $url")
+                        }
+                    }
+                }
+
+                val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    WindowManager.LayoutParams.TYPE_PHONE
+                }
+                val lp = WindowManager.LayoutParams(
+                    1, 1,
+                    layoutType,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    PixelFormat.TRANSLUCENT
+                )
+                windowManager.addView(wv, lp)
+                headlessWebView = wv
+                wv.loadUrl("https://binomo.com/es/trading")
+            } catch (e: Exception) {
+                Log.e("TradeDraw", "Error iniciando Headless Broker WebView", e)
+            }
         }
     }
 
@@ -246,6 +350,11 @@ class OverlayService : Service() {
             }
         }
         wsClient.start()
+
+        val wsPrefs = getSharedPreferences("TradeDraw_WSConfig", Context.MODE_PRIVATE)
+        if (wsPrefs.getString("ws_cookie_header", "")?.isNotEmpty() == true || wsPrefs.getString("ws_auth_token", "")?.isNotEmpty() == true) {
+            startHeadlessBrokerEngine()
+        }
 
         val cmdFilter = IntentFilter("com.example.tradedraw.CMD")
         try {
@@ -1352,6 +1461,10 @@ class OverlayService : Service() {
             txtTimer.text = " ⏱️ :%02ds".format(remainingSec)
             txtTimer.setTextColor(if (remainingSec in 0..5 || remainingSec in 28..32) Color.parseColor("#4ade80") else Color.parseColor("#facc15"))
 
+            val isHeadless = screenCaptureManager == null
+            val wsState = binomoWebSocketClient?.currentState ?: WebSocketState.DISCONNECTED
+            val frames = screenCaptureManager?.totalFramesCaptured ?: 0L
+
             // Termómetro de Señal (% CALL vs % PUT)
             if (analysis != null) {
                 val callPct = analysis.signalPowerCall
@@ -1360,14 +1473,18 @@ class OverlayService : Service() {
                 val visualBar = "█".repeat(bars) + "░".repeat(10 - bars)
                 txtPower.text = "[ $callPct% CALL $visualBar $putPct% PUT ]"
                 txtPower.setTextColor(if (callPct >= 62) Color.parseColor("#22c55e") else if (putPct >= 62) Color.parseColor("#ef4444") else Color.parseColor("#38bdf8"))
+            } else if (isHeadless) {
+                val tick = tradingEngine.latestMarketTick
+                val vel = tick?.velocity ?: 0f
+                val dirStr = if (vel > 0.0001f) "▲ IMPULSO CALL" else if (vel < -0.0001f) "▼ IMPULSO PUT" else "━ NEUTRO"
+                val color = if (vel > 0.0001f) Color.parseColor("#22c55e") else if (vel < -0.0001f) Color.parseColor("#ef4444") else Color.parseColor("#38bdf8")
+                val priceStr = if (tick != null) String.format(Locale.US, "%.2f", tick.price) else "---"
+                txtPower.text = "[ WS Headless: $dirStr ($priceStr) ]"
+                txtPower.setTextColor(color)
             } else {
                 txtPower.text = "[ 50% CALL █████░░░░░ 50% PUT ]"
                 txtPower.setTextColor(Color.parseColor("#94a3b8"))
             }
-
-            val isHeadless = screenCaptureManager == null
-            val wsState = binomoWebSocketClient?.currentState ?: WebSocketState.DISCONNECTED
-            val frames = screenCaptureManager?.totalFramesCaptured ?: 0L
 
             if (isHeadless) {
                 val latestTick = tradingEngine.latestMarketTick
@@ -1469,6 +1586,28 @@ class OverlayService : Service() {
                     txtTrendBadge?.setTextColor(Color.parseColor("#facc15"))
                     txtTrendReason?.text = "Mercado oscilando en canal estrecho. Esperando confirmación de ruptura o rebote."
                     txtPlannedAction?.text = "🎯 Plan: Monitorear extremos del canal S/R."
+                }
+            } else if (isHeadless) {
+                val trend = tradingEngine.syntheticCandleEngine.detectedTrend
+                val sup = tradingEngine.syntheticCandleEngine.dynamicSupportPrice
+                val res = tradingEngine.syntheticCandleEngine.dynamicResistancePrice
+                val tick = tradingEngine.latestMarketTick
+
+                if (trend == TrendDirection.UPTREND) {
+                    txtTrendBadge?.text = "📈 Tendencia [WS]: ALCISTA"
+                    txtTrendBadge?.setTextColor(Color.parseColor("#4ade80"))
+                    txtTrendReason?.text = "Micro-ticks alcistas en velas sintéticas 1m de Binomo."
+                    txtPlannedAction?.text = "🎯 Plan WS: Preparar entrada CALL al cierre de vela (:58s)."
+                } else if (trend == TrendDirection.DOWNTREND) {
+                    txtTrendBadge?.text = "📉 Tendencia [WS]: BAJISTA"
+                    txtTrendBadge?.setTextColor(Color.parseColor("#f87171"))
+                    txtTrendReason?.text = "Presión bajista en velas sintéticas 1m de Binomo."
+                    txtPlannedAction?.text = "🎯 Plan WS: Preparar entrada PUT al cierre de vela (:58s)."
+                } else {
+                    txtTrendBadge?.text = "📊 Tendencia [WS]: LATERAL / CONSOLIDACIÓN"
+                    txtTrendBadge?.setTextColor(Color.parseColor("#facc15"))
+                    txtTrendReason?.text = if (sup > 0.0 && res > 0.0) "Soporte: %.2f | Resistencia: %.2f".format(sup, res) else "Calculando rangos cuantitativos S/R..."
+                    txtPlannedAction?.text = "🎯 Plan WS: Esperar acercamiento a extremos para operar."
                 }
             }
 
@@ -1765,6 +1904,13 @@ class OverlayService : Service() {
         agentChatOverlay?.dismiss()
         agentChatOverlay = null
         mainHandler.removeCallbacksAndMessages(null)
+        try {
+            headlessWebView?.let {
+                windowManager.removeView(it)
+                it.destroy()
+            }
+            headlessWebView = null
+        } catch (e: Exception) {}
         try {
             if (::canvasView.isInitialized) windowManager.removeView(canvasView)
             if (::menuView.isInitialized) windowManager.removeView(menuView)
