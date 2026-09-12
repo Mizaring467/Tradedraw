@@ -272,7 +272,7 @@ class TradingEngine(
                                 android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: conflicto con tendencia ${analysis.trend}")
                             } else {
                                 val pct = (aiResult.confidence * 100).toInt()
-                                handleSignal(aiResult.action, analysis, bitmap, "IA ($pct% | ⏱ ${sec}s): ${aiResult.reason}")
+                                handleSignal(aiResult.action, analysis, bitmap, "IA ($pct% | ⏱ ${sec}s): ${aiResult.reason}", aiResult.confidence)
                             }
                         }
                     }
@@ -297,7 +297,18 @@ class TradingEngine(
                     if (!isConflicted) {
                         val aiTag = if (isAIFresh && ai != null && ai.isSuccess && ai.action == localSignal) " + IA Confirmada" else ""
                         val description = if (lastSignalReason.isNotBlank()) "$lastSignalReason$aiTag" else "Estrategia Local (${strategy.name})$aiTag"
-                        handleSignal(localSignal, analysis, bitmap, description)
+                        val localConfidence = when {
+                            analysis.isFalseBreakoutCall || analysis.isFalseBreakoutPut -> 0.95f
+                            analysis.isRejectionCall || analysis.isRejectionPut || analysis.hasBottomRejectionWick || analysis.hasTopRejectionWick -> 0.90f
+                            analysis.isEngulfingCall || analysis.isEngulfingPut -> 0.85f
+                            analysis.isChoqueCall || analysis.isChoquePut || analysis.isChoquePullbackCall || analysis.isChoquePullbackPut -> 0.80f
+                            analysis.is3VelasCall || analysis.is3VelasPut || analysis.isExhaustion3CandlesCall || analysis.isExhaustion3CandlesPut -> 0.75f
+                            localSignal == TradeAction.BUY -> Math.max(analysis.confluenceScoreCall, Math.max(analysis.signalPowerCall, if (analysis.isCallSignal) analysis.signalScore else 50)) / 100f
+                            localSignal == TradeAction.SELL -> Math.max(analysis.confluenceScorePut, Math.max(analysis.signalPowerPut, if (analysis.isPutSignal) analysis.signalScore else 50)) / 100f
+                            else -> 0.80f
+                        }
+                        val finalConfidence = if (isAIFresh && ai != null && ai.isSuccess && ai.action == localSignal) Math.max(localConfidence, ai.confidence) else localConfidence
+                        handleSignal(localSignal, analysis, bitmap, description, finalConfidence)
                     } else {
                         android.util.Log.d("TradingEngine", "Señal local $localSignal omitida por conflicto con análisis reciente de IA (${ai?.action})")
                     }
@@ -345,11 +356,21 @@ class TradingEngine(
             val sec = analysis.candleSecond
             val isLate = analysis.isLateTimingForbidden
             val isInstitutionalTrap = analysis.isFalseBreakoutCall || analysis.isFalseBreakoutPut
+            val isSniperPullbackTrigger = (sec in 1..5 || analysis.isSniperPullbackWindow) &&
+                (analysis.isPullbackAgainstSignalCall || analysis.isPullbackAgainstSignalPut || analysis.isPullbackSniperCall || analysis.isPullbackSniperPut)
 
-            // Veto universal de entrada tardía para opciones binarias a 1 minuto (salvo trampas institucionales)
-            if (isLate && !isInstitutionalTrap) {
+            // Veto universal de entrada tardía para opciones binarias a 1 minuto (salvo trampas institucionales o sniper pullbacks :01-:05)
+            if (isLate && !isInstitutionalTrap && !isSniperPullbackTrigger) {
                 return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper (:56-:07)")
             }
+
+            val isSniperPullbackCallTrigger = (sec in 1..5 || analysis.isSniperPullbackWindow) &&
+                (analysis.isPullbackAgainstSignalCall || (analysis.candleList.size >= 2 && analysis.candleList[1].type == CandleType.GREEN && analysis.candleList[1].bodyHeight >= 15f && analysis.currentPriceY >= analysis.candleList[1].bodyTopY - 3f && analysis.currentPriceY <= analysis.candleList[1].bodyTopY + analysis.candleList[1].bodyHeight * 0.55f)) &&
+                !analysis.isDojiOrLowVolume
+
+            val isSniperPullbackPutTrigger = (sec in 1..5 || analysis.isSniperPullbackWindow) &&
+                (analysis.isPullbackAgainstSignalPut || (analysis.candleList.size >= 2 && analysis.candleList[1].type == CandleType.RED && analysis.candleList[1].bodyHeight >= 15f && analysis.currentPriceY <= analysis.candleList[1].bodyBottomY + 3f && analysis.currentPriceY >= analysis.candleList[1].bodyBottomY - analysis.candleList[1].bodyHeight * 0.55f)) &&
+                !analysis.isDojiOrLowVolume
 
             val rawResult = when (strategy) {
                 AutoTradeStrategy.AUTO_ADAPTIVE -> {
@@ -362,6 +383,18 @@ class TradingEngine(
                         // 1. Prioridad Máxima: Falso Rompimiento / Trampa Institucional en S/R (95% confluencia)
                         !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isFalseBreakoutCall -> Pair(TradeAction.BUY, "🎯 Auto [Trampa en Soporte | ⏱ ${sec}s] -> CALL")
                         !inUptrend && !analysis.hasStrongMomentumUp && analysis.isFalseBreakoutPut -> Pair(TradeAction.SELL, "🎯 Auto [Trampa en Resistencia | ⏱ ${sec}s] -> PUT")
+
+                        // 2. Sniper Pullback Entry Timing (:01s-:05s tras vela de señal fuerte)
+                        !inDowntrend && !analysis.hasStrongMomentumDown && isSniperPullbackCallTrigger ->
+                            Pair(TradeAction.BUY, "🎯 Auto [Sniper Pullback :0${sec}s | Retroceso tras vela fuerte] -> CALL")
+                        !inUptrend && !analysis.hasStrongMomentumUp && isSniperPullbackPutTrigger ->
+                            Pair(TradeAction.SELL, "🎯 Auto [Sniper Pullback :0${sec}s | Retroceso tras vela fuerte] -> PUT")
+
+                        // 3. Rompimiento Válido S/R (>50% cuerpo fuera, mecha opuesta <20%)
+                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isValidBreakoutCall && !analysis.isDojiOrLowVolume ->
+                            Pair(TradeAction.BUY, "🎯 Auto [Rompimiento Válido Resistencia | ⏱ ${sec}s] -> CALL")
+                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.isValidBreakoutPut && !analysis.isDojiOrLowVolume ->
+                            Pair(TradeAction.SELL, "🎯 Auto [Rompimiento Válido Soporte | ⏱ ${sec}s] -> PUT")
 
                         // 2. Mechas de Rechazo y Absorción en S/R con Sniping de Pullback (90% confluencia)
                         !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.isRejectionCall || (analysis.touchesSupport && analysis.hasBottomRejectionWick)) &&
@@ -421,6 +454,20 @@ class TradingEngine(
                         }
                         !inUptrend && !analysis.hasStrongMomentumUp && analysis.isFalseBreakoutPut -> {
                             Pair(TradeAction.SELL, "🎯 MT Combo: Trampa / Falso Rompimiento de Resistencia -> PUT")
+                        }
+                        // 2. Sniper Pullback Entry (:01s-:05s) tras vela de señal fuerte
+                        !inDowntrend && !analysis.hasStrongMomentumDown && isSniperPullbackCallTrigger -> {
+                            Pair(TradeAction.BUY, "🎯 MT Combo: Sniper Pullback (:0${sec}s) tras vela fuerte -> CALL")
+                        }
+                        !inUptrend && !analysis.hasStrongMomentumUp && isSniperPullbackPutTrigger -> {
+                            Pair(TradeAction.SELL, "🎯 MT Combo: Sniper Pullback (:0${sec}s) tras vela fuerte -> PUT")
+                        }
+                        // 3. Rompimiento Válido S/R (>50% cuerpo fuera, mecha opuesta <20%)
+                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isValidBreakoutCall && !analysis.isDojiOrLowVolume -> {
+                            Pair(TradeAction.BUY, "🎯 MT Combo: Rompimiento Válido de Resistencia -> CALL")
+                        }
+                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.isValidBreakoutPut && !analysis.isDojiOrLowVolume -> {
+                            Pair(TradeAction.SELL, "🎯 MT Combo: Rompimiento Válido de Soporte -> PUT")
                         }
                         // 2. Mechas de Rechazo en S/R (Filtradas por tendencia y anti-momentum)
                         !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.isRejectionCall || (analysis.touchesSupport && analysis.hasBottomRejectionWick)) -> {
@@ -502,6 +549,10 @@ class TradingEngine(
                 }
                 AutoTradeStrategy.MT_CHOQUE_PULLBACK -> {
                     when {
+                        isSniperPullbackCallTrigger ->
+                            Pair(TradeAction.BUY, "🎯 MT Choque Pullback: Sniper Pullback (:0${sec}s) -> CALL")
+                        isSniperPullbackPutTrigger ->
+                            Pair(TradeAction.SELL, "🎯 MT Choque Pullback: Sniper Pullback (:0${sec}s) -> PUT")
                         analysis.isChoqueCall || analysis.isChoquePullbackCall ->
                             Pair(TradeAction.BUY, "🎯 MT Choque Pullback: Retest en Soporte -> CALL")
                         analysis.isChoquePut || analysis.isChoquePullbackPut ->
@@ -520,14 +571,16 @@ class TradingEngine(
                 }
                 AutoTradeStrategy.COLOR_TREND -> {
                     when {
-                        analysis.trend == TrendDirection.UPTREND && analysis.lastCandles.firstOrNull() == CandleType.GREEN -> {
+                        analysis.isDojiOrLowVolume ->
+                            Pair(null, "⚠️ Veto: Continuación descalificada por Doji / Micro-rango (Cuerpo < 15px)")
+                        analysis.trend == TrendDirection.UPTREND && (analysis.lastCandles.firstOrNull() == CandleType.GREEN || isSniperPullbackCallTrigger) -> {
                             if (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop) {
                                 Pair(null, "⚠️ Veto: Continuación alcista sin retroceso (Vela en extremo opuesto del rango)")
                             } else {
                                 Pair(TradeAction.BUY, "🎯 Color Trend: Continuación Alcista -> CALL")
                             }
                         }
-                        analysis.trend == TrendDirection.DOWNTREND && analysis.lastCandles.firstOrNull() == CandleType.RED -> {
+                        analysis.trend == TrendDirection.DOWNTREND && (analysis.lastCandles.firstOrNull() == CandleType.RED || isSniperPullbackPutTrigger) -> {
                             if (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom) {
                                 Pair(null, "⚠️ Veto: Continuación bajista sin retroceso (Vela en extremo opuesto del rango)")
                             } else {
@@ -539,6 +592,12 @@ class TradingEngine(
                 }
                 AutoTradeStrategy.STRIKE_BREAKOUT -> {
                     when {
+                        analysis.isValidBreakoutCall ->
+                            Pair(TradeAction.BUY, "🎯 Strike Breakout: Rompimiento Válido de Resistencia (>50% cuerpo, mecha <20%) -> CALL")
+                        analysis.isValidBreakoutPut ->
+                            Pair(TradeAction.SELL, "🎯 Strike Breakout: Rompimiento Válido de Soporte (>50% cuerpo, mecha <20%) -> PUT")
+                        analysis.isFakeoutRiskCall || analysis.isFakeoutRiskPut || analysis.isFakeoutRisk ->
+                            Pair(null, "⚠️ Veto: Riesgo de Falso Rompimiento / Fakeout (Cuerpo <=50% fuera de S/R o mecha opuesta >=20%)")
                         analysis.touchesSupport || analysis.isChoqueCall || analysis.isChoquePullbackCall ->
                             Pair(TradeAction.BUY, "🎯 Strike Breakout: Rebote/Ruptura de Soporte -> CALL")
                         analysis.touchesResistance || analysis.isChoquePut || analysis.isChoquePullbackPut ->
@@ -569,14 +628,16 @@ class TradingEngine(
                 }
                 AutoTradeStrategy.TREND_FOLLOWING -> {
                     when {
-                        analysis.trend == TrendDirection.UPTREND && analysis.lastCandles.firstOrNull() == CandleType.GREEN -> {
+                        analysis.isDojiOrLowVolume ->
+                            Pair(null, "⚠️ Veto: Continuación descalificada por Doji / Micro-rango (Cuerpo < 15px)")
+                        analysis.trend == TrendDirection.UPTREND && (analysis.lastCandles.firstOrNull() == CandleType.GREEN || isSniperPullbackCallTrigger) -> {
                             if (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop) {
                                 Pair(null, "⚠️ Veto: Continuación alcista sin retroceso (Vela en extremo opuesto del rango)")
                             } else {
                                 Pair(TradeAction.BUY, "🎯 Tendencia: Continuación Alcista -> CALL")
                             }
                         }
-                        analysis.trend == TrendDirection.DOWNTREND && analysis.lastCandles.firstOrNull() == CandleType.RED -> {
+                        analysis.trend == TrendDirection.DOWNTREND && (analysis.lastCandles.firstOrNull() == CandleType.RED || isSniperPullbackPutTrigger) -> {
                             if (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom) {
                                 Pair(null, "⚠️ Veto: Continuación bajista sin retroceso (Vela en extremo opuesto del rango)")
                             } else {
@@ -630,6 +691,9 @@ class TradingEngine(
                 reason.contains("Continuación") ||
                 reason.contains("Tendencia")
             if (isTrendContinuation) {
+                if (analysis.isDojiOrLowVolume) {
+                    return Pair(null, "⚠️ Veto: Continuación descalificada por Doji / Micro-rango (Cuerpo < 15px)")
+                }
                 if (action == TradeAction.BUY && (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop)) {
                     return Pair(null, "⚠️ Veto: Continuación alcista sin retroceso (Vela en extremo opuesto del rango)")
                 }
@@ -754,9 +818,15 @@ class TradingEngine(
         action: TradeAction,
         analysis: VisionAnalysisResult,
         bitmap: Bitmap,
-        reasonDescription: String
+        reasonDescription: String,
+        confidence: Float? = null
     ) {
-        val (canTrade, reason) = riskManager.canExecuteTrade(mode, autonomousSubMode)
+        val signalConfidence = confidence ?: when {
+            action == TradeAction.BUY && analysis.signalPowerCall > 0 -> analysis.signalPowerCall / 100f
+            action == TradeAction.SELL && analysis.signalPowerPut > 0 -> analysis.signalPowerPut / 100f
+            else -> 1.0f
+        }
+        val (canTrade, reason) = riskManager.canExecuteTrade(mode, autonomousSubMode, signalConfidence)
         val actionText = if (action == TradeAction.BUY) "COMPRA / CALL (Sube)" else "VENTA / PUT (Baja)"
         val emoji = if (action == TradeAction.BUY) "🟢 ▲" else "🔴 ▼"
 

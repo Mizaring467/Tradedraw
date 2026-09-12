@@ -79,7 +79,17 @@ data class VisionAnalysisResult(
     val isLateTimingForbidden: Boolean = false,
     val isPullbackSniperCall: Boolean = false,
     val isPullbackSniperPut: Boolean = false,
+    val isSniperPullbackWindow: Boolean = false,
+    val isPullbackAgainstSignalCall: Boolean = false,
+    val isPullbackAgainstSignalPut: Boolean = false,
     val isConsolidationTight: Boolean = false,
+    val isDojiOrLowVolume: Boolean = false,
+    val avgBodyHeightLast5: Float = 0f,
+    val isValidBreakoutCall: Boolean = false,
+    val isValidBreakoutPut: Boolean = false,
+    val isFakeoutRiskCall: Boolean = false,
+    val isFakeoutRiskPut: Boolean = false,
+    val isFakeoutRisk: Boolean = isFakeoutRiskCall || isFakeoutRiskPut,
     val confluenceScoreCall: Int = 50,
     val confluenceScorePut: Int = 50,
     val latestCandleX: Float = 0f,
@@ -512,6 +522,38 @@ class VisionAnalyzer {
             }
         }
 
+        // Filtro de Rompimiento Válido vs Riesgo de Fakeout (>50% cuerpo fuera, mecha opuesta <20%)
+        var isValidBreakoutCall = false
+        var isValidBreakoutPut = false
+        var isFakeoutRiskCall = false
+        var isFakeoutRiskPut = false
+        if (lastCandle != null) {
+            // Rompimiento Alcista sobre Resistencia (Y menor = precio mayor)
+            if (lastCandle.topY < effectiveResistanceY) {
+                val bodyAboveRes = (effectiveResistanceY - lastCandle.bodyTopY).coerceAtLeast(0f)
+                val bodyOutsideRatio = bodyAboveRes / lastCandle.bodyHeight.coerceAtLeast(1f)
+                val opposingWick = lastCandle.topWickRatio
+                if (bodyOutsideRatio > 0.50f && opposingWick < 0.20f && lastCandle.type == CandleType.GREEN) {
+                    isValidBreakoutCall = true
+                } else if (lastCandle.topY < effectiveResistanceY - 2f || lastCandle.bodyTopY < effectiveResistanceY) {
+                    isFakeoutRiskPut = true
+                }
+            }
+
+            // Rompimiento Bajista sobre Soporte (Y mayor = precio menor)
+            if (lastCandle.bottomY > effectiveSupportY) {
+                val bodyBelowSup = (lastCandle.bodyBottomY - effectiveSupportY).coerceAtLeast(0f)
+                val bodyOutsideRatio = bodyBelowSup / lastCandle.bodyHeight.coerceAtLeast(1f)
+                val opposingWick = lastCandle.bottomWickRatio
+                if (bodyOutsideRatio > 0.50f && opposingWick < 0.20f && lastCandle.type == CandleType.RED) {
+                    isValidBreakoutPut = true
+                } else if (lastCandle.bottomY > effectiveSupportY + 2f || lastCandle.bodyBottomY > effectiveSupportY) {
+                    isFakeoutRiskCall = true
+                }
+            }
+        }
+        val isFakeoutRisk = isFakeoutRiskCall || isFakeoutRiskPut
+
         // 6. Fuerza de Señal (Termómetro % CALL vs % PUT)
         var callScore = 50
         var putScore = 50
@@ -538,6 +580,11 @@ class VisionAnalyzer {
 
         // 7. Filtro Anti-Mercado Lateral (Sideways, Dojis & Whipsaw Alternante)
         val recentCandles = candleList.take(10)
+        val last5 = candleList.take(5)
+        val avgBodyHeightLast5 = if (last5.isNotEmpty()) last5.map { it.bodyHeight }.average().toFloat() else 0f
+        val currentCandleBody = lastCandle?.bodyHeight ?: 0f
+        // Filtro Anti-Doji y micro-rango: Si cuerpo actual < 15px o promedio de últimas 5 < 15px
+        val isDojiOrLowVolume = (lastCandle != null && currentCandleBody < 15f) || (last5.isNotEmpty() && avgBodyHeightLast5 < 15f)
 
         // Detección de Chop / Alternancia de Velas (Whipsaw: ej. V-R-V-R)
         val isAlternatingChop = if (candleList.size >= 4) {
@@ -592,16 +639,37 @@ class VisionAnalyzer {
         val finalConfCall = confCall.coerceIn(0, 100)
         val finalConfPut = confPut.coerceIn(0, 100)
 
-        // Micro-Sincronización Reloj Sniper Estricto (00:56-00:59 o 00:00-00:02 anticipado 2s por delay físico)
+        // Micro-Sincronización Reloj Sniper Estricto (00:56-00:59 o 00:00-00:05 para timing sniper y pullbacks)
         val candleSecond = ((System.currentTimeMillis() / 1000) % 60).toInt()
-        val isSniperTimingWindow = candleSecond in 56..59 || candleSecond in 0..2
-        val isLateTimingForbidden = candleSecond in 3..55
+        val isSniperTimingWindow = candleSecond in 56..59 || candleSecond in 0..5
+        val isSniperPullbackWindow = candleSecond in 1..5
+        val isLateTimingForbidden = candleSecond in 6..55
+
+        // Retroceso leve (Sniper Pullback) contra vela de señal fuerte previa
+        var isPullbackAgainstSignalCall = false
+        var isPullbackAgainstSignalPut = false
+        if (candleList.size >= 2) {
+            val prev = candleList[1]
+            val isPrevStrongGreen = prev.type == CandleType.GREEN && prev.bodyHeight >= 15f
+            val isPrevStrongRed = prev.type == CandleType.RED && prev.bodyHeight >= 15f
+
+            if (isPrevStrongGreen) {
+                val pullbackDown = latestPriceY >= prev.bodyTopY - 2f && latestPriceY <= prev.bodyTopY + (prev.bodyHeight * 0.50f).coerceAtLeast(10f)
+                if (pullbackDown) isPullbackAgainstSignalCall = true
+            }
+            if (isPrevStrongRed) {
+                val pullbackUp = latestPriceY <= prev.bodyBottomY + 2f && latestPriceY >= prev.bodyBottomY - (prev.bodyHeight * 0.50f).coerceAtLeast(10f)
+                if (pullbackUp) isPullbackAgainstSignalPut = true
+            }
+        }
 
         // Sniping de Mejor Strike (Pullback / Testeo en nivel clave)
         val targetSupport = if (supportLinesY.isNotEmpty()) effectiveSupportY else finalSupportY
         val targetResistance = if (resistanceLinesY.isNotEmpty()) effectiveResistanceY else finalResistanceY
-        val isPullbackSniperCall = (touchesSupport || Math.abs(latestPriceY - targetSupport) <= threshold || (isRejectionCall && Math.abs(latestPriceY - targetSupport) <= threshold * 1.4f)) && !isSideways && !isConsolidationTight
-        val isPullbackSniperPut = (touchesResistance || Math.abs(latestPriceY - targetResistance) <= threshold || (isRejectionPut && Math.abs(latestPriceY - targetResistance) <= threshold * 1.4f)) && !isSideways && !isConsolidationTight
+        val isNearSRSupport = touchesSupport || Math.abs(latestPriceY - targetSupport) <= threshold || (isRejectionCall && Math.abs(latestPriceY - targetSupport) <= threshold * 1.4f)
+        val isNearSRResistance = touchesResistance || Math.abs(latestPriceY - targetResistance) <= threshold || (isRejectionPut && Math.abs(latestPriceY - targetResistance) <= threshold * 1.4f)
+        val isPullbackSniperCall = (isNearSRSupport || (isPullbackAgainstSignalCall && (isSniperPullbackWindow || isSniperTimingWindow))) && !isSideways && !isConsolidationTight
+        val isPullbackSniperPut = (isNearSRResistance || (isPullbackAgainstSignalPut && (isSniperPullbackWindow || isSniperTimingWindow))) && !isSideways && !isConsolidationTight
 
         val gCount = candleTypes.count { it == CandleType.GREEN }
         val rCount = candleTypes.count { it == CandleType.RED }
@@ -665,7 +733,16 @@ class VisionAnalyzer {
             isLateTimingForbidden = isLateTimingForbidden,
             isPullbackSniperCall = isPullbackSniperCall,
             isPullbackSniperPut = isPullbackSniperPut,
+            isSniperPullbackWindow = isSniperPullbackWindow,
+            isPullbackAgainstSignalCall = isPullbackAgainstSignalCall,
+            isPullbackAgainstSignalPut = isPullbackAgainstSignalPut,
             isConsolidationTight = isConsolidationTight,
+            isDojiOrLowVolume = isDojiOrLowVolume,
+            avgBodyHeightLast5 = avgBodyHeightLast5,
+            isValidBreakoutCall = isValidBreakoutCall,
+            isValidBreakoutPut = isValidBreakoutPut,
+            isFakeoutRiskCall = isFakeoutRiskCall,
+            isFakeoutRiskPut = isFakeoutRiskPut,
             confluenceScoreCall = finalConfCall,
             confluenceScorePut = finalConfPut,
             latestCandleX = latestCandleX,

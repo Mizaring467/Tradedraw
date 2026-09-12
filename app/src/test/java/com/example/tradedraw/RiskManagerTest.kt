@@ -213,4 +213,103 @@ class RiskManagerTest {
         assertFalse("Debe esperar el cooldown corto en YOLO", canTradeYolo)
         assertTrue("Razón debe ser cooldown YOLO", reasonYolo.contains("Pausa de Cooldown YOLO"))
     }
+
+    @Test
+    fun testSelectiveMartingaleM1_requiresAPlusSetup() {
+        riskManager.maxMartingaleLevel = 1
+        riskManager.martingaleEnabled = true
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+        riskManager.lastTradeTime = 0L
+
+        // En M0 (racha 0): Cualquier señal válida opera normalmente
+        assertTrue("M0 con 70% debe permitir operar", riskManager.canTrade(0.70f))
+        val (canTradeM0, _) = riskManager.canExecuteTrade(confidence = 0.70f)
+        assertTrue("M0 debe permitir trade", canTradeM0)
+
+        // 1ra Pérdida -> Entra en Martingala Nivel 1 (M1)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+        riskManager.lastTradeTime = 0L // Simular cooldown ya transcurrido
+
+        // En M1 con confianza < 85% (ej. 80%, 84%) -> DEBE BLOQUEARSE (exige setup A+)
+        val (canTrade80, reason80) = riskManager.canExecuteTrade(confidence = 0.80f)
+        assertFalse("M1 con 80% debe bloquearse por no ser A+", canTrade80)
+        assertTrue("Razón debe especificar requisito A+ de M1", reason80.contains("Martingala M1 requiere setup A+"))
+        assertFalse("canTrade(0.80f) debe retornar false en M1", riskManager.canTrade(0.80f))
+        assertFalse("canTrade(0.84f) debe retornar false en M1", riskManager.canTrade(0.84f))
+        assertFalse("canTrade(84f) normalizado debe retornar false en M1", riskManager.canTrade(84f))
+
+        // En M1 con confianza >= 85% (setup A+ / A+ Setup) -> DEBE PERMITIR OPERAR
+        val (canTrade85, reason85) = riskManager.canExecuteTrade(confidence = 0.85f)
+        assertTrue("M1 con 85% es A+ y debe permitirse", canTrade85)
+        assertEquals("Listo para operar", reason85)
+        assertTrue("canTrade(0.85f) debe retornar true en M1", riskManager.canTrade(0.85f))
+        assertTrue("canTrade(0.95f) debe retornar true en M1", riskManager.canTrade(0.95f))
+        assertTrue("canTrade(90f) normalizado debe retornar true en M1", riskManager.canTrade(90f))
+
+        // Si la Martingala está desactivada, el filtro M1 no debe bloquear
+        riskManager.martingaleEnabled = false
+        val (canTradeDisabled, _) = riskManager.canExecuteTrade(confidence = 0.70f)
+        assertTrue("Sin martingala no aplica restricción M1", canTradeDisabled)
+    }
+
+    @Test
+    fun testSelectiveMartingaleM1_inYoloMode() {
+        riskManager.maxMartingaleLevel = 1
+        riskManager.martingaleEnabled = true
+        riskManager.yoloLossCooldownSeconds = 35
+
+        // Pérdida -> M1
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+        // Simular que el cooldown de pérdida YOLO ya transcurrió (40s atrás)
+        riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
+
+        // En YOLO con M1 y confianza 75% -> Bloqueado por filtro selectivo M1
+        val (canTradeYoloLow, reasonYoloLow) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO, confidence = 0.75f)
+        assertFalse("M1 en YOLO con 75% debe ser bloqueado", canTradeYoloLow)
+        assertTrue("Razón debe ser requisito A+ de M1", reasonYoloLow.contains("Martingala M1 requiere setup A+"))
+
+        // En YOLO con M1 y confianza 88% -> Permitido operar
+        val (canTradeYoloHigh, reasonYoloHigh) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO, confidence = 0.88f)
+        assertTrue("M1 en YOLO con 88% debe ser permitido", canTradeYoloHigh)
+        assertTrue("Razón debe confirmar modo YOLO", reasonYoloHigh.contains("MODO YOLO"))
+    }
+
+    @Test
+    fun testYoloAutoResetsLossStreakAfterCooldown() {
+        riskManager.maxMartingaleLevel = 1
+        riskManager.martingaleEnabled = true
+        riskManager.yoloLossCooldownSeconds = 35
+
+        // Trade 1: Pérdida -> M1 (racha = 1)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+
+        // Trade 2 (M1): Pérdida -> Fallo Martingala (racha = 2 > maxMartingaleLevel)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(2, riskManager.currentLossStreak)
+        assertEquals(22.0f, riskManager.getCurrentInvestmentAmount(), 0.01f) // Capped at M1 multiplier (10.0 * 2.2)
+
+        // 1. Durante la pausa anti-tilt (15s transcurridos < 35s):
+        riskManager.lastTradeTime = System.currentTimeMillis() - 15_000L
+        val (canTradeDuring, reasonDuring) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("Debe bloquearse durante la pausa anti-tilt en YOLO", canTradeDuring)
+        assertTrue("Razón debe indicar Pausa Anti-Tilt", reasonDuring.contains("Pausa Anti-Tilt"))
+        assertEquals("La racha se mantiene en 2 durante la pausa", 2, riskManager.currentLossStreak)
+
+        // 2. Al expirar la pausa anti-tilt (40s transcurridos > 35s):
+        riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
+        val (canTradeAfter, reasonAfter) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue("Debe permitir operar tras finalizar el cooldown anti-tilt en YOLO", canTradeAfter)
+        assertTrue("Razón debe indicar modo YOLO continuo", reasonAfter.contains("MODO YOLO"))
+        assertEquals("En YOLO la racha debe reiniciarse automáticamente a 0 (M0)", 0, riskManager.currentLossStreak)
+        assertEquals("El monto de inversión debe reiniciarse al monto base ($10.0)", 10.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+        assertEquals("El badge de martingala debe volver a M0", "[M0 | $10.0]", riskManager.getMartingaleStatusBadge())
+    }
 }
