@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -25,6 +26,26 @@ enum class BrokerProfile {
 
 class CalibrationManager(private val context: Context) {
 
+    companion object {
+        fun getRealScreenDimensions(context: Context): Pair<Float, Float> {
+            val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+            return if (wm != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val bounds = wm.maximumWindowMetrics.bounds
+                    Pair(bounds.width().toFloat(), bounds.height().toFloat())
+                } else {
+                    val dm = DisplayMetrics()
+                    @Suppress("DEPRECATION")
+                    wm.defaultDisplay.getRealMetrics(dm)
+                    Pair(dm.widthPixels.toFloat(), dm.heightPixels.toFloat())
+                }
+            } else {
+                val dm = context.resources.displayMetrics
+                Pair(dm.widthPixels.toFloat(), dm.heightPixels.toFloat())
+            }
+        }
+    }
+
     private val prefs: SharedPreferences = context.getSharedPreferences("TradeDraw_Calibration", Context.MODE_PRIVATE)
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
@@ -39,8 +60,8 @@ class CalibrationManager(private val context: Context) {
     private var calibrationContainerView: View? = null
 
     private fun getOrientationKey(): String {
-        val dm = context.resources.displayMetrics
-        return if (dm.widthPixels > dm.heightPixels) "land" else "port"
+        val (w, h) = getRealScreenDimensions(context)
+        return if (w > h) "land" else "port"
     }
 
     fun isCalibrated(): Boolean {
@@ -48,9 +69,7 @@ class CalibrationManager(private val context: Context) {
     }
 
     fun getBuyCoordinates(): Pair<Float, Float> {
-        val dm = context.resources.displayMetrics
-        val w = dm.widthPixels.toFloat()
-        val h = dm.heightPixels.toFloat()
+        val (w, h) = getRealScreenDimensions(context)
         val isLandscape = w > h
 
         val p = activeProfile.name
@@ -58,7 +77,7 @@ class CalibrationManager(private val context: Context) {
         val x = prefs.getFloat("${p}_${o}_buy_x", -1f)
         val y = prefs.getFloat("${p}_${o}_buy_y", -1f)
         if (x >= 0 && y >= 0) {
-            val isValid = if (isLandscape) (x >= w * 0.80f) else (y >= h * 0.75f)
+            val isValid = if (isLandscape) (x >= w * 0.80f) else (y >= h * 0.865f)
             if (isValid) return Pair(x, y)
         }
 
@@ -71,20 +90,18 @@ class CalibrationManager(private val context: Context) {
                 BrokerProfile.CUSTOM -> Pair(w * 0.881f, h * 0.735f)
             }
         } else {
-            // Vertical (Portrait): Botones abajo
+            // Vertical (Portrait): Botones abajo en franja inferior limpia (90.3% de la pantalla física)
             when (activeProfile) {
-                BrokerProfile.BINOMO -> Pair(w * 0.25f, h * 0.88f)
-                BrokerProfile.QUOTEX -> Pair(w * 0.25f, h * 0.85f)
-                BrokerProfile.POCKET_OPTION -> Pair(w * 0.25f, h * 0.85f)
-                BrokerProfile.CUSTOM -> Pair(w * 0.25f, h * 0.88f)
+                BrokerProfile.BINOMO -> Pair(w * 0.25f, h * 0.903f)
+                BrokerProfile.QUOTEX -> Pair(w * 0.25f, h * 0.88f)
+                BrokerProfile.POCKET_OPTION -> Pair(w * 0.25f, h * 0.88f)
+                BrokerProfile.CUSTOM -> Pair(w * 0.25f, h * 0.903f)
             }
         }
     }
 
     fun getSellCoordinates(): Pair<Float, Float> {
-        val dm = context.resources.displayMetrics
-        val w = dm.widthPixels.toFloat()
-        val h = dm.heightPixels.toFloat()
+        val (w, h) = getRealScreenDimensions(context)
         val isLandscape = w > h
 
         val p = activeProfile.name
@@ -92,7 +109,7 @@ class CalibrationManager(private val context: Context) {
         val x = prefs.getFloat("${p}_${o}_sell_x", -1f)
         val y = prefs.getFloat("${p}_${o}_sell_y", -1f)
         if (x >= 0 && y >= 0) {
-            val isValid = if (isLandscape) (x >= w * 0.80f) else (y >= h * 0.75f)
+            val isValid = if (isLandscape) (x >= w * 0.80f) else (y >= h * 0.865f)
             if (isValid) return Pair(x, y)
         }
 
@@ -105,12 +122,12 @@ class CalibrationManager(private val context: Context) {
                 BrokerProfile.CUSTOM -> Pair(w * 0.881f, h * 0.844f)
             }
         } else {
-            // Vertical (Portrait): Botón BAJA abajo a la derecha
+            // Vertical (Portrait): Botón BAJA abajo a la derecha (90.3% de la pantalla)
             when (activeProfile) {
-                BrokerProfile.BINOMO -> Pair(w * 0.75f, h * 0.88f)
-                BrokerProfile.QUOTEX -> Pair(w * 0.75f, h * 0.85f)
-                BrokerProfile.POCKET_OPTION -> Pair(w * 0.75f, h * 0.85f)
-                BrokerProfile.CUSTOM -> Pair(w * 0.75f, h * 0.88f)
+                BrokerProfile.BINOMO -> Pair(w * 0.75f, h * 0.903f)
+                BrokerProfile.QUOTEX -> Pair(w * 0.75f, h * 0.88f)
+                BrokerProfile.POCKET_OPTION -> Pair(w * 0.75f, h * 0.88f)
+                BrokerProfile.CUSTOM -> Pair(w * 0.75f, h * 0.903f)
             }
         }
     }
@@ -128,6 +145,16 @@ class CalibrationManager(private val context: Context) {
         prefs.edit()
             .putFloat("${activeProfile.name}_${o}_sell_x", x)
             .putFloat("${activeProfile.name}_${o}_sell_y", y)
+            .apply()
+    }
+
+    fun resetCalibrationToDefaults() {
+        val o = getOrientationKey()
+        prefs.edit()
+            .remove("${activeProfile.name}_${o}_buy_x")
+            .remove("${activeProfile.name}_${o}_buy_y")
+            .remove("${activeProfile.name}_${o}_sell_x")
+            .remove("${activeProfile.name}_${o}_sell_y")
             .apply()
     }
 
@@ -168,10 +195,10 @@ class CalibrationManager(private val context: Context) {
         }
 
         setupDrag(buyPin, buyParams, root) { x, y ->
-            saveBuyCoordinates(x + pinSize / 2f, y + pinSize / 2f)
+            saveBuyCoordinates(x, y)
         }
         setupDrag(sellPin, sellParams, root) { x, y ->
-            saveSellCoordinates(x + pinSize / 2f, y + pinSize / 2f)
+            saveSellCoordinates(x, y)
         }
 
         root.addView(buyPin, buyParams)
@@ -189,6 +216,17 @@ class CalibrationManager(private val context: Context) {
             setTextColor(Color.WHITE)
             textSize = 11f
         }
+        val btnReset = Button(context).apply {
+            text = "↺ RESET"
+            textSize = 10f
+            setBackgroundColor(Color.parseColor("#334155"))
+            setTextColor(Color.WHITE)
+            setOnClickListener {
+                resetCalibrationToDefaults()
+                dismissCalibration()
+                startInteractiveCalibration(onFinished)
+            }
+        }
         val btnSave = Button(context).apply {
             text = "✓ LISTO"
             textSize = 11f
@@ -200,6 +238,10 @@ class CalibrationManager(private val context: Context) {
             }
         }
         banner.addView(txtInfo, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val resetParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            marginEnd = 12
+        }
+        banner.addView(btnReset, resetParams)
         banner.addView(btnSave)
 
         val bannerParams = FrameLayout.LayoutParams(
@@ -215,9 +257,12 @@ class CalibrationManager(private val context: Context) {
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            windowParams.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
 
         try {
             windowManager.addView(root, windowParams)
@@ -244,11 +289,19 @@ class CalibrationManager(private val context: Context) {
     }
 
     @SuppressLint("ClickableViewAccessibility")
-    private fun setupDrag(view: View, params: FrameLayout.LayoutParams, root: FrameLayout, onPositionSaved: (Int, Int) -> Unit) {
+    private fun setupDrag(view: View, params: FrameLayout.LayoutParams, root: FrameLayout, onPositionSaved: (Float, Float) -> Unit) {
         var startX = 0f
         var startY = 0f
         var initialMarginX = 0
         var initialMarginY = 0
+
+        fun saveAbsolutePosition() {
+            val loc = IntArray(2)
+            view.getLocationOnScreen(loc)
+            val screenX = loc[0] + view.width / 2f
+            val screenY = loc[1] + view.height / 2f
+            onPositionSaved(screenX, screenY)
+        }
 
         view.setOnTouchListener { v, event ->
             when (event.action) {
@@ -262,10 +315,16 @@ class CalibrationManager(private val context: Context) {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - startX).toInt()
                     val dy = (event.rawY - startY).toInt()
-                    params.leftMargin = (initialMarginX + dx).coerceIn(0, root.width - v.width)
-                    params.topMargin = (initialMarginY + dy).coerceIn(0, root.height - v.height)
+                    val maxW = (root.width - v.width).coerceAtLeast(0)
+                    val maxH = (root.height - v.height).coerceAtLeast(0)
+                    params.leftMargin = if (maxW > 0) (initialMarginX + dx).coerceIn(0, maxW) else (initialMarginX + dx).coerceAtLeast(0)
+                    params.topMargin = if (maxH > 0) (initialMarginY + dy).coerceIn(0, maxH) else (initialMarginY + dy).coerceAtLeast(0)
                     v.layoutParams = params
-                    onPositionSaved(params.leftMargin, params.topMargin)
+                    saveAbsolutePosition()
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    saveAbsolutePosition()
                     true
                 }
                 else -> false
