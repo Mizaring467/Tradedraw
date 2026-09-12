@@ -167,8 +167,6 @@ class OverlayService : Service() {
             return START_NOT_STICKY
         }
 
-        startTradeDrawForeground()
-
         val dataIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent?.getParcelableExtra("EXTRA_MEDIA_PROJECTION_DATA", Intent::class.java)
         } else {
@@ -176,6 +174,7 @@ class OverlayService : Service() {
             intent?.getParcelableExtra("EXTRA_MEDIA_PROJECTION_DATA") as Intent?
         }
         if (dataIntent != null) {
+            startTradeDrawForeground(hasMediaProjection = true)
             try {
                 screenCaptureManager?.destroy()
             } catch (e: Exception) {
@@ -188,6 +187,9 @@ class OverlayService : Service() {
                 tradingEngine.onNewFrame(bitmap)
             }
             Log.d("TradeDraw", "ScreenCaptureManager reiniciado con nuevo token y procesando frames")
+        } else {
+            startTradeDrawForeground(hasMediaProjection = false)
+            Log.d("TradeDraw", "Modo Headless activo (WebSocket puro, 0% consumo de pantalla)")
         }
         return START_STICKY
     }
@@ -1678,7 +1680,7 @@ class OverlayService : Service() {
         }
     }
 
-    private fun startTradeDrawForeground() {
+    private fun startTradeDrawForeground(hasMediaProjection: Boolean = false) {
         val channelId = "trade_draw_main"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(channelId, "TradeDraw Pro", NotificationManager.IMPORTANCE_LOW)
@@ -1688,13 +1690,18 @@ class OverlayService : Service() {
         val closeIntent = Intent(this, OverlayService::class.java).setAction(ACTION_STOP)
         val closePending = PendingIntent.getService(this, 0, closeIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("TradeDraw Pro").setContentText("Interfaz profesional activa.").setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("TradeDraw Pro")
+            .setContentText(if (hasMediaProjection) "Modo Visión IA Activo" else "Modo WebSocket Puro Activo (Sin Grabación)")
+            .setSmallIcon(R.mipmap.ic_launcher)
             .addAction(0, "Cerrar", closePending)
             .setOngoing(true).build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Android 14+ requiere especificar el flag de tipo de servicio para MediaProjection
-            val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            val type = if (hasMediaProjection) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            }
             startForeground(1001, notification, type)
         } else {
             startForeground(1001, notification)

@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.content.res.Configuration
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
@@ -83,12 +84,31 @@ class TradingEngine(
     var onTradeExecutedListener: ((TradeAction, Boolean) -> Unit)? = null
     var onFrameProcessedListener: ((VisionAnalysisResult) -> Unit)? = null
 
+    val syntheticCandleEngine = SyntheticCandleEngine()
+
     init {
         // Conectar callback: cuando el usuario arrastra una línea del bot, bloquearla
         drawingView.onBotShapeDragged = { key ->
             autoDrawEngine.lockLine(key)
             handler.post {
                 Toast.makeText(context, "Línea $key bloqueada [Manual]", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Conectar señales generadas matemáticamente por el motor Headless WebSocket
+        syntheticCandleEngine.onSignalGenerated = { action, reason ->
+            if (mode == AutoTradeMode.AUTONOMOUS) {
+                executeHeadlessTrade(action, reason)
+            } else if (mode == AutoTradeMode.SEMIAUTOMATIC) {
+                currentActiveSignal = ActiveSignal(
+                    action = action,
+                    title = "Señal Sniper WebSocket",
+                    reason = reason,
+                    timestamp = System.currentTimeMillis()
+                )
+                handler.post {
+                    onSignalListener?.invoke(action, reason)
+                }
             }
         }
     }
@@ -123,6 +143,12 @@ class TradingEngine(
      */
     fun onMarketTick(tick: MarketTick) {
         latestMarketTick = tick
+        syntheticCandleEngine.onNewTick(tick)
+
+        // En modo Headless (sin frames de pantalla capturados), resolver trade por tiempo y balance de Binomo
+        if (framesAnalyzedCount == 0L && riskManager.hasPendingTrade) {
+            checkHeadlessTradeResolution(tick)
+        }
     }
 
     fun onNewFrame(bitmap: Bitmap) {
@@ -1008,6 +1034,116 @@ class TradingEngine(
             Log.d("TradingEngine", "Screenshot guardado en: ${file.absolutePath}")
         } catch (e: Exception) {
             Log.e("TradingEngine", "Error guardando screenshot de auditoría", e)
+        }
+    }
+
+    /**
+     * Ejecuta una orden en modo 100% Headless (sin frames ni capturas de pantalla).
+     * Utiliza las cotizaciones puras del WebSocket y pulsa las coordenadas calibradas con Accesibilidad.
+     */
+    fun executeHeadlessTrade(action: TradeAction, reasonDescription: String) {
+        val (canTrade, riskReason) = riskManager.canExecuteTrade(mode, autonomousSubMode, 0.85f)
+        if (!canTrade) {
+            Log.d("TradingEngine", "Headless bloqueado por riesgo: $riskReason")
+            return
+        }
+
+        val screenW = context.resources.displayMetrics.widthPixels.toFloat()
+        val screenH = context.resources.displayMetrics.heightPixels.toFloat()
+        val isLand = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+        val calibCoords = if (calibrationManager != null && calibrationManager!!.isCalibrated()) {
+            if (action == TradeAction.BUY) calibrationManager!!.getBuyCoordinates()
+            else calibrationManager!!.getSellCoordinates()
+        } else null
+
+        val (x, y) = if (calibCoords != null) {
+            calibCoords
+        } else {
+            if (isLand) {
+                if (action == TradeAction.BUY) Pair(screenW * 0.881f, screenH * 0.735f)
+                else Pair(screenW * 0.881f, screenH * 0.844f)
+            } else {
+                if (action == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.892f)
+                else Pair(screenW * 0.75f, screenH * 0.892f)
+            }
+        }
+
+        val accessibility = AutoTradeAccessibilityService.instance
+        if (accessibility != null) {
+            val observed = accessibility.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
+            val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
+            isTradeResolving.set(false)
+            riskManager.recordTradeSent(action, latestMarketTick?.price?.toFloat() ?: 0f, baseBal)
+            accessibility.performClickAt(x, y)
+
+            handler.post {
+                drawingView.triggerClickAnimation(x, y)
+                emitHapticAndAudioFeedback()
+                Toast.makeText(context, "⚡ [HEADLESS WS] BOT OPERÓ: $action ($${riskManager.getCurrentInvestmentAmount()})\n$reasonDescription", Toast.LENGTH_LONG).show()
+                onTradeExecutedListener?.invoke(action, true)
+            }
+        } else {
+            handler.post {
+                Toast.makeText(context, "⚠️ Clic Headless cancelado: Activa Accesibilidad en Ajustes", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun checkHeadlessTradeResolution(tick: MarketTick) {
+        val elapsedSec = (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000
+        val sec = ((tick.timestampMs / 1000L) % 60L).toInt()
+        val isExpired = elapsedSec >= 62 || (elapsedSec >= 52 && sec in 2..8)
+        if (!isExpired) return
+
+        if (!isTradeResolving.compareAndSet(false, true)) return
+
+        val baseBalance = riskManager.pendingTradeBaseBalance
+        val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance()
+            ?: AutoTradeAccessibilityService.latestObservedBalance
+
+        var isWin: Boolean? = null
+        var isTie = false
+        var method = ""
+
+        if (baseBalance > 0.0 && currentBal > 0.0) {
+            val diff = currentBal - baseBalance
+            if (diff > 10.0) {
+                isWin = true
+                method = "SALDO (+) Ganancia acreditada por Binomo: Diff=+$diff COP"
+            } else if (diff < -10.0) {
+                isWin = false
+                method = "SALDO (-) Pérdida debitada por Binomo: Diff=$diff COP"
+            } else if (Math.abs(diff) <= 10.0 && elapsedSec >= 15) {
+                isTie = true
+                method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado)"
+            }
+        } else if (elapsedSec >= 65) {
+            isTie = true
+            method = "TIMEOUT 65s (Sin saldo legible -> Cancelación preventiva)"
+        }
+
+        if (isWin != null || isTie) {
+            val finalWin = isWin ?: false
+            handler.post {
+                if (isTie) {
+                    riskManager.clearPendingTrade()
+                    Toast.makeText(context, "[HEADLESS] ⚪ Empate / Orden cancelada", Toast.LENGTH_SHORT).show()
+                } else if (finalWin) {
+                    riskManager.recordTradeWin()
+                    emitHapticAndAudioFeedback()
+                    Toast.makeText(context, "[HEADLESS] 🎉 GANADA (+1 W) [$method]", Toast.LENGTH_SHORT).show()
+                    onTradeExecutedListener?.invoke(TradeAction.BUY, true)
+                } else {
+                    riskManager.recordTradeLoss()
+                    emitHapticAndAudioFeedback()
+                    Toast.makeText(context, "[HEADLESS] ⚠️ PERDIDA (+1 L) [$method]", Toast.LENGTH_SHORT).show()
+                    onTradeExecutedListener?.invoke(TradeAction.BUY, false)
+                }
+                isTradeResolving.set(false)
+            }
+        } else {
+            isTradeResolving.set(false)
         }
     }
 
