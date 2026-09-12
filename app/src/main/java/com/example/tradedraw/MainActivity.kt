@@ -58,6 +58,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val btnLinkBinomo = findViewById<Button>(R.id.btn_link_binomo)
+        btnLinkBinomo.setOnClickListener {
+            val intent = Intent(this, BinomoAuthActivity::class.java)
+            startActivity(intent)
+        }
+
         boton.setOnClickListener {
             if (checkOverlayPermission()) {
                 startFloatingService()
@@ -70,6 +76,20 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateAccessibilityButtonState()
+        updateBinomoTokenState()
+    }
+
+    private fun updateBinomoTokenState() {
+        val btnLinkBinomo = findViewById<Button>(R.id.btn_link_binomo) ?: return
+        val prefs = getSharedPreferences("TradeDraw_WSConfig", android.content.Context.MODE_PRIVATE)
+        val token = prefs.getString("ws_auth_token", "") ?: ""
+        if (token.isNotEmpty()) {
+            btnLinkBinomo.text = "🔑 Sesión Binomo: VINCULADA ✓"
+            btnLinkBinomo.setTextColor(android.graphics.Color.parseColor("#22c55e"))
+        } else {
+            btnLinkBinomo.text = "🔑 Vincular Cuenta Binomo (Token WebSocket)"
+            btnLinkBinomo.setTextColor(android.graphics.Color.parseColor("#38bdf8"))
+        }
     }
 
     private fun updateAccessibilityButtonState() {
