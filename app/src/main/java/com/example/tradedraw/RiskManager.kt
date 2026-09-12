@@ -17,16 +17,24 @@ class RiskManager(context: Context? = null) {
         null
     }
 
-   companion object {
-       const val MAX_PENDING_TRADE_TIMEOUT_SEC = 75L
-       const val DEFAULT_COOLDOWN_SECONDS = 10
+    companion object {
+        const val MAX_PENDING_TRADE_TIMEOUT_SEC = 75L
+        const val DEFAULT_COOLDOWN_SECONDS = 10
         const val DEFAULT_LOSS_COOLDOWN_SECONDS = 180
         const val DEFAULT_YOLO_LOSS_COOLDOWN_SECONDS = 35 // Cooldown en modo continuo/YOLO (30 a 45s max)
         const val DEFAULT_STOP_LOSS_STREAK = 3
         const val DEFAULT_TAKE_PROFIT_WINS = 20 // 20 victorias por bloque (0 = Ilimitado)
         const val DEFAULT_MAX_MARTINGALE_LEVEL = 1
         const val DEFAULT_MARTINGALE_MULTIPLIER = 2.0f
+        const val SELECTIVE_MARTINGALE_M1_MIN_CONFIDENCE = 0.85f // Umbral A+ para Martingala M1 (85%)
     }
+
+    @Volatile
+    var selectiveM1MinConfidence: Float = prefs?.getFloat("selective_m1_min_confidence", SELECTIVE_MARTINGALE_M1_MIN_CONFIDENCE) ?: SELECTIVE_MARTINGALE_M1_MIN_CONFIDENCE
+        set(value) {
+            field = value
+            prefs?.edit()?.putFloat("selective_m1_min_confidence", value)?.apply()
+        }
 
     @Volatile
     var maxMartingaleLevel: Int = prefs?.getInt("max_martingale", DEFAULT_MAX_MARTINGALE_LEVEL) ?: DEFAULT_MAX_MARTINGALE_LEVEL
@@ -194,7 +202,11 @@ class RiskManager(context: Context? = null) {
     }
 
     @Synchronized
-    fun canExecuteTrade(mode: AutoTradeMode? = null, subMode: AutonomousSubMode? = null): Pair<Boolean, String> {
+    fun canExecuteTrade(
+        mode: AutoTradeMode? = null,
+        subMode: AutonomousSubMode? = null,
+        confidence: Float = 1.0f
+    ): Pair<Boolean, String> {
         if (hasPendingTrade) {
             val elapsed = (System.currentTimeMillis() - pendingTradeStartTime) / 1000
             // Timeout de seguridad: las operaciones de 1m en Binomo duran entre 45s y 75s
@@ -219,6 +231,7 @@ class RiskManager(context: Context? = null) {
                 currentLossStreak = 0
             }
         }
+
         // En SUBMODO YOLO: Cooldown controlado tras pérdida de 30-45s máximo para permitir tomar
         // la operación Martingala M1 en la siguiente vela sin perder el impulso del mercado
         if (subMode == AutonomousSubMode.YOLO) {
@@ -226,9 +239,17 @@ class RiskManager(context: Context? = null) {
             if (remaining > 0) {
                 return Pair(false, "Pausa de Cooldown YOLO: ${remaining}s")
             }
+            // Martingala Selectiva M1: En nivel 1 de Martingala (M1), exigir setup A+ (confianza >= 85%)
+            val normalizedConfidence = if (confidence > 1.0f) confidence / 100f else confidence
+            if (martingaleEnabled && currentLossStreak == 1 && normalizedConfidence < selectiveM1MinConfidence) {
+                val pct = (normalizedConfidence * 100).toInt()
+                val minPct = (selectiveM1MinConfidence * 100).toInt()
+                return Pair(false, "Martingala M1 requiere setup A+ (Confianza $pct% < $minPct%)")
+            }
             // En YOLO opera continuamente sin detenerse permanentemente por stop loss de racha
             return Pair(true, "🚀 MODO YOLO: Operativa continua sin límites")
         }
+
         if (stopLossStreak > 0 && currentLossStreak >= stopLossStreak) {
             return Pair(false, "Stop Loss alcanzado ($stopLossStreak derrotas)")
         }
@@ -239,11 +260,20 @@ class RiskManager(context: Context? = null) {
         if (remaining > 0) {
             return Pair(false, "Pausa de Cooldown: ${remaining}s")
         }
+
+        // Martingala Selectiva M1: En nivel 1 de Martingala (M1), exigir setup A+ (confianza >= 85%)
+        val normalizedConfidence = if (confidence > 1.0f) confidence / 100f else confidence
+        if (martingaleEnabled && currentLossStreak == 1 && normalizedConfidence < selectiveM1MinConfidence) {
+            val pct = (normalizedConfidence * 100).toInt()
+            val minPct = (selectiveM1MinConfidence * 100).toInt()
+            return Pair(false, "Martingala M1 requiere setup A+ (Confianza $pct% < $minPct%)")
+        }
+
         return Pair(true, "Listo para operar")
     }
 
     @Synchronized
-    fun canTrade(): Boolean = canExecuteTrade().first
+    fun canTrade(confidence: Float = 1.0f): Boolean = canExecuteTrade(confidence = confidence).first
 
     /**
      * Reanuda la operativa tras alcanzar Stop Loss o Take Profit sin borrar el historial general (totalWins/totalLosses).
