@@ -242,12 +242,12 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
             TradingTool.TREND_LINE -> canvas.drawLine(shape.startX, shape.startY, shape.endX, shape.endY, paint)
             TradingTool.SUPPORT_LINE -> {
                 canvas.drawLine(0f, shape.startY, width.toFloat(), shape.startY, paint)
-                val label = if (shape.isManuallyLocked) "SOPORTE [Manual]" else if (shape.isBotDrawn) "SOPORTE [IA]" else "SOPORTE"
+                val label = if (shape.isManuallyLocked) "SOPORTE [Manual]" else if (shape.isBotDrawn) "SOPORTE [PRO]" else "SOPORTE"
                 canvas.drawText(label, 25f, shape.startY - 15f, textPaint)
             }
             TradingTool.RESISTANCE_LINE -> {
                 canvas.drawLine(0f, shape.startY, width.toFloat(), shape.startY, paint)
-                val label = if (shape.isManuallyLocked) "RESISTENCIA [Manual]" else if (shape.isBotDrawn) "RESISTENCIA [IA]" else "RESISTENCIA"
+                val label = if (shape.isManuallyLocked) "RESISTENCIA [Manual]" else if (shape.isBotDrawn) "RESISTENCIA [PRO]" else "RESISTENCIA"
                 canvas.drawText(label, 25f, shape.startY - 15f, textPaint)
             }
             TradingTool.RECTANGLE -> canvas.drawRect(Math.min(shape.startX, shape.endX), Math.min(shape.startY, shape.endY), Math.max(shape.startX, shape.endX), Math.max(shape.startY, shape.endY), paint)

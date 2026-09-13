@@ -167,4 +167,43 @@ class SyntheticCandleEngineTest {
         // NO debe comprar en el techo (la continuación alcista sobreextendida debe ser vetada)
         assertNull("NO debe emitir BUY de continuación cuando el mercado está sobreextendido en el techo", lastSignalAction)
     }
+
+    @Test
+    fun testSyntheticEngineChoppinessAndStrictTiming() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 15L
+
+        // 1. Simular velas en micro-rango (< 0.05% de variación total)
+        for (m in 0 until 5) {
+            val baseTime = (now - (5 - m) * 60000L)
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 500.00, timestampMs = baseTime))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 500.12, timestampMs = baseTime + 20000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 499.98, timestampMs = baseTime + 40000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 500.05, timestampMs = baseTime + 59000L))
+        }
+
+        // Ticks alternando sin dirección
+        val ticks = listOf(500.05, 500.10, 500.04, 500.11, 500.05, 500.09, 500.04, 500.10)
+        for ((i, price) in ticks.withIndex()) {
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = price, timestampMs = now + (i * 1000L)))
+        }
+
+        assertTrue("Rango relativo debe ser < 0.05%", engine.isMicroRange(5, 0.05))
+        assertTrue("Ticks deben detectarse como alternantes", engine.isTickAlternatingWithoutDirection(8))
+        assertTrue("Choppiness debe estar activo", engine.isChoppinessDetected())
+
+        var signalEmitted = false
+        engine.onSignalGenerated = { _, _ -> signalEmitted = true }
+
+        // Enviar tick en segundo 00 (:00s) durante choppiness
+        val tickSniper = MarketTick(
+            asset = "CRYPTO_IDX",
+            price = 500.08,
+            timestampMs = now + 60000L, // segundo 00
+            isBullishImpulse = true
+        )
+        engine.onNewTick(tickSniper)
+
+        assertFalse("Señal debe ser suprimida por choppiness", signalEmitted)
+    }
 }

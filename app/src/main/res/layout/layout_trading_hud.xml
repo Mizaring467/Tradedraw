@@ -249,7 +249,7 @@
                 android:layout_marginTop="1dp" />
         </LinearLayout>
 
-        <!-- TARJETA 2: ESTRUCTURA DE MERCADO (Soporte, Resistencia y Tendencia) -->
+        <!-- TARJETA 2: ESTRUCTURA DE MERCADO Y RAZONAMIENTO DEL AGENTE -->
         <LinearLayout
             android:id="@+id/hud_didactic_card"
             android:layout_width="match_parent"
@@ -259,32 +259,60 @@
             android:padding="4dp"
             android:layout_marginBottom="2dp">
 
-            <!-- Insignia de Tendencia -->
-            <TextView
-                android:id="@+id/hud_trend_badge"
-                android:layout_width="wrap_content"
+            <!-- Fila 1: Tendencia y Probabilidad Estimada -->
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="📈 Tendencia: ALCISTA"
-                android:textColor="#4ade80"
-                android:textSize="8.5sp"
-                android:textStyle="bold" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
-            <!-- Niveles S/R y Rango -->
+                <TextView
+                    android:id="@+id/hud_trend_badge"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="📈 Tendencia: ALCISTA"
+                    android:textColor="#4ade80"
+                    android:textSize="8.5sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/hud_prob_badge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Prob: 88%"
+                    android:textColor="#38bdf8"
+                    android:textSize="8sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Fila 2: Patrón Cuantitativo Detectado -->
             <TextView
-                android:id="@+id/hud_trend_reason"
-                android:layout_width="wrap_content"
+                android:id="@+id/hud_detected_pattern"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Soporte: 641.6107 | Resistencia: 642.1242"
+                android:text="🔍 Patrón: Rechazo Mecha en Soporte"
+                android:textColor="#f8fafc"
+                android:textSize="8sp"
+                android:textStyle="bold"
+                android:layout_marginTop="1dp" />
+
+            <!-- Fila 3: Estado del Filtro S/R y Niveles -->
+            <TextView
+                android:id="@+id/hud_sr_filter_badge"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🛡️ Filtro S/R: En Soporte Clave ✓ (S: 641.61 · R: 642.12)"
                 android:textColor="#cbd5e1"
                 android:textSize="7.5sp"
                 android:layout_marginTop="1dp" />
 
-            <!-- Plan Táctico de Acción del Agente -->
+            <!-- Fila 4: Plan de Acción Táctico Inmediato -->
             <TextView
                 android:id="@+id/hud_planned_action"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="🎯 Plan: Preparar entrada CALL al cierre de vela (:58s)."
+                android:text="🎯 Plan: Preparar orden CALL para ventana sniper :59s"
                 android:textColor="#facc15"
                 android:textSize="8sp"
                 android:textStyle="bold"

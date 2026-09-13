@@ -1587,61 +1587,42 @@ class OverlayService : Service() {
                 btnRecalc?.setTextColor(Color.parseColor("#34d399"))
             }
 
-            // Bloque didáctico: Tendencia Explicada y Próximo Movimiento Planeado
+            // Bloque didáctico y Razonamiento Cuantitativo en Vivo
             val txtTrendBadge = v.findViewById<TextView>(R.id.hud_trend_badge)
-            val txtTrendReason = v.findViewById<TextView>(R.id.hud_trend_reason)
+            val txtProbBadge = v.findViewById<TextView>(R.id.hud_prob_badge)
+            val txtDetectedPattern = v.findViewById<TextView>(R.id.hud_detected_pattern)
+            val txtSrFilter = v.findViewById<TextView>(R.id.hud_sr_filter_badge)
             val txtPlannedAction = v.findViewById<TextView>(R.id.hud_planned_action)
 
-            if (analysis != null) {
-                val isSideways = analysis.isMarketSideways
-                val trend = analysis.trend
-                val callPower = analysis.signalPowerCall
-                val putPower = analysis.signalPowerPut
+            val reasoning = tradingEngine.getEngineReasoning()
 
-                if (trend == TrendDirection.UPTREND) {
-                    txtTrendBadge?.text = "📈 Tendencia: ALCISTA ($callPower% Poder CALL)"
+            val trendDir = if (analysis != null) analysis.trend else tradingEngine.syntheticCandleEngine.detectedTrend
+            when (trendDir) {
+                TrendDirection.UPTREND -> {
+                    txtTrendBadge?.text = "📈 Tendencia: ALCISTA"
                     txtTrendBadge?.setTextColor(Color.parseColor("#4ade80"))
-                    txtTrendReason?.text = "Máximos y mínimos crecientes con presión compradora clara."
-                    txtPlannedAction?.text = "🎯 Plan: Buscar rebote en soporte o continuación de tendencia para entrar CALL al segundo :58s."
-                } else if (trend == TrendDirection.DOWNTREND) {
-                    txtTrendBadge?.text = "📉 Tendencia: BAJISTA ($putPower% Poder PUT)"
-                    txtTrendBadge?.setTextColor(Color.parseColor("#f87171"))
-                    txtTrendReason?.text = "Presión de venta dominante con rechazo continuo en resistencias."
-                    txtPlannedAction?.text = "🎯 Plan: Buscar retroceso a resistencia o continuación para entrar PUT al segundo :58s."
-                } else if (isSideways) {
-                    txtTrendBadge?.text = "📊 Tendencia: LATERAL / RANGO (50/50)"
-                    txtTrendBadge?.setTextColor(Color.parseColor("#facc15"))
-                    txtTrendReason?.text = "Mercado indeciso sin dirección clara. El agente filtra entradas para proteger capital."
-                    txtPlannedAction?.text = "🎯 Plan: Esperar ruptura limpia de soporte/resistencia con volumen."
-                } else {
-                    txtTrendBadge?.text = "📊 Tendencia: CONSOLIDACIÓN ($callPower% C / $putPower% P)"
-                    txtTrendBadge?.setTextColor(Color.parseColor("#facc15"))
-                    txtTrendReason?.text = "Mercado oscilando en canal estrecho. Esperando confirmación de ruptura o rebote."
-                    txtPlannedAction?.text = "🎯 Plan: Monitorear extremos del canal S/R."
                 }
-            } else if (isHeadless) {
-                val trend = tradingEngine.syntheticCandleEngine.detectedTrend
-                val sup = tradingEngine.syntheticCandleEngine.dynamicSupportPrice
-                val res = tradingEngine.syntheticCandleEngine.dynamicResistancePrice
-                val tick = tradingEngine.latestMarketTick
-
-                if (trend == TrendDirection.UPTREND) {
-                    txtTrendBadge?.text = "📈 Tendencia [WS]: ALCISTA"
-                    txtTrendBadge?.setTextColor(Color.parseColor("#4ade80"))
-                    txtTrendReason?.text = "Flujo de ticks y velas sintéticas 1m con impulso alcista consistente."
-                    txtPlannedAction?.text = "🎯 Plan WS: Preparar entrada CALL al cierre de vela (:58s)."
-                } else if (trend == TrendDirection.DOWNTREND) {
-                    txtTrendBadge?.text = "📉 Tendencia [WS]: BAJISTA"
+                TrendDirection.DOWNTREND -> {
+                    txtTrendBadge?.text = "📉 Tendencia: BAJISTA"
                     txtTrendBadge?.setTextColor(Color.parseColor("#f87171"))
-                    txtTrendReason?.text = "Presión de venta en velas sintéticas 1m con retroceso continuo."
-                    txtPlannedAction?.text = "🎯 Plan WS: Preparar entrada PUT al cierre de vela (:58s)."
-                } else {
-                    txtTrendBadge?.text = "📊 Tendencia [WS]: LATERAL / CONSOLIDACIÓN"
+                }
+                else -> {
+                    txtTrendBadge?.text = "📊 Tendencia: LATERAL / RANGO"
                     txtTrendBadge?.setTextColor(Color.parseColor("#facc15"))
-                    txtTrendReason?.text = if (sup > 0.0 && res > 0.0) "Soporte: ${formatDynamicPrice(sup)} | Resistencia: ${formatDynamicPrice(res)}" else "Calculando rangos cuantitativos S/R..."
-                    txtPlannedAction?.text = "🎯 Plan WS: Esperar acercamiento a extremos para operar."
                 }
             }
+
+            txtProbBadge?.text = "Prob: ${reasoning.probabilityPct}%"
+            txtProbBadge?.setTextColor(if (reasoning.probabilityPct >= 80) Color.parseColor("#4ade80") else Color.parseColor("#38bdf8"))
+
+            txtDetectedPattern?.text = "🔍 Patrón: ${reasoning.patternName}"
+            txtDetectedPattern?.setTextColor(Color.parseColor("#f8fafc"))
+
+            txtSrFilter?.text = "🛡️ Filtro S/R: ${reasoning.srFilterStatus}"
+            txtSrFilter?.setTextColor(if (reasoning.srFilterStatus.contains("Toque") || reasoning.srFilterStatus.contains("Libre")) Color.parseColor("#4ade80") else Color.parseColor("#cbd5e1"))
+
+            txtPlannedAction?.text = reasoning.actionPlan
+            txtPlannedAction?.setTextColor(if (reasoning.actionPlan.contains("CALL")) Color.parseColor("#4ade80") else if (reasoning.actionPlan.contains("PUT")) Color.parseColor("#f87171") else Color.parseColor("#facc15"))
 
             // Tarjeta de Señal Operativa (Semiautomático / Autónomo)
             val cardSignal = v.findViewById<LinearLayout>(R.id.hud_signal_card)

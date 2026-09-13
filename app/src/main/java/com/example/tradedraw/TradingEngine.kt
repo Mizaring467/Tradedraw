@@ -299,15 +299,20 @@ class TradingEngine(
 
             if (localSignal != null && !riskManager.hasPendingTrade) {
                 val sec = analysis.candleSecond
-                val isTimingValid = analysis.isSniperZeroSecondWindow || (sec in 59..59 || sec in 0..1) ||
-                    ((sec in 2..5 || analysis.isSniperPullbackWindow) && (analysis.isPullbackSniperCall || analysis.isPullbackSniperPut || analysis.isPullbackAgainstSignalCall || analysis.isPullbackAgainstSignalPut))
+                val isTimingVetoed = sec in 15..55 || analysis.isTimingVetoed
+                val isStrictTimingWindow = sec in 58..59 || sec in 0..3 || analysis.isSniperTimingWindow || analysis.isSniperZeroSecondWindow
+                val isChoppy = syntheticCandleEngine.isChoppinessDetected() || analysis.isMicroRangeChoppy
                 val isTickVelocityConfirmed = when (localSignal) {
                     TradeAction.BUY -> !analysis.isBearishImpulse || analysis.tickVelocityNormalized >= -0.08f
                     TradeAction.SELL -> !analysis.isBullishImpulse || analysis.tickVelocityNormalized <= 0.08f
                 }
 
-                if (!isTimingValid) {
-                    android.util.Log.d("TradingEngine", "Señal local $localSignal pospuesta: fuera de ventana sniper :00 (:59-:01) (⏱ ${sec}s)")
+                if (isChoppy) {
+                    android.util.Log.d("TradingEngine", "Señal local $localSignal suprimida por Filtro Anti-Choppy (<0.05% y ticks alternantes)")
+                } else if (isTimingVetoed) {
+                    android.util.Log.d("TradingEngine", "Señal local $localSignal bloqueada por VETO de timing :15-:55 (⏱ ${sec}s)")
+                } else if (!isStrictTimingWindow) {
+                    android.util.Log.d("TradingEngine", "Señal local $localSignal pospuesta: fuera de ventana sniper :00 (:58-:03) (⏱ ${sec}s)")
                 } else if (!isTickVelocityConfirmed) {
                     android.util.Log.d("TradingEngine", "Señal local $localSignal bloqueada por velocidad de tick adversa (velNorm=${analysis.tickVelocityNormalized}, velY=${analysis.tickVelocityY})")
                 } else {
@@ -358,7 +363,13 @@ class TradingEngine(
             hasDrawnLines: Boolean = false,
             syntheticEngine: SyntheticCandleEngine? = null
         ): Pair<TradeAction?, String> {
-            // Tarea 3: Filtro anti-mercado lateral / Dojis
+            // Filtro Anti-Choppy / Micro-Rango Cuantitativo (<0.05% con alternancia de ticks sin dirección clara)
+            val isChoppy = analysis.isMicroRangeChoppy || (syntheticEngine != null && syntheticEngine.isChoppinessDetected())
+            if (isChoppy) {
+                return Pair(null, "⚠️ Veto Anti-Choppy: Micro-rango (<0.05%) con alternancia de ticks sin dirección clara")
+            }
+
+            // Filtro anti-mercado lateral / Dojis / Consolidación estrecha
             if (analysis.isMarketSideways) {
                 return Pair(null, "⚠️ Mercado Lateral / Dojis detectados: Esperando volatilidad")
             }
@@ -367,21 +378,27 @@ class TradingEngine(
             }
 
             val sec = analysis.candleSecond
-            val isLate = analysis.isLateTimingForbidden
+            val isStrictTimingWindow = MarketTickFilters.isStrictTimingWindow(sec) // :58 a :03
+            val isTimingVetoed = MarketTickFilters.isTimingVetoed(sec) || analysis.isTimingVetoed // :15 a :55
             val isInstitutionalTrap = analysis.isFalseBreakoutCall || analysis.isFalseBreakoutPut
-            val isSniperPullbackTrigger = (sec in 1..5 || analysis.isSniperPullbackWindow) &&
+            val isSniperPullbackTrigger = (sec in 1..3 || analysis.isSniperPullbackWindow) &&
                 (analysis.isPullbackAgainstSignalCall || analysis.isPullbackAgainstSignalPut || analysis.isPullbackSniperCall || analysis.isPullbackSniperPut)
 
-            // Veto universal de entrada tardía para opciones binarias a 1 minuto (salvo trampas institucionales o sniper pullbacks :01-:05)
-            if (isLate && !isInstitutionalTrap && !isSniperPullbackTrigger) {
-                return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper :00 (:59-:01)")
+            // Veto universal de entrada tardía (:15 a :55)
+            if (isTimingVetoed && !isInstitutionalTrap) {
+                return Pair(null, "⏳ Veto Timing Estricto (:15-:55): Fuera de ventana sniper :00 (:58-:03) (⏱ ${sec}s)")
             }
 
-            val isSniperPullbackCallTrigger = (sec in 1..5 || analysis.isSniperPullbackWindow) &&
+            // Veto de entrada si está fuera de la ventana estricta :58-:03 (salvo trampas institucionales)
+            if (!isStrictTimingWindow && !isInstitutionalTrap && !isSniperPullbackTrigger) {
+                return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper :00 (:58-:03)")
+            }
+
+            val isSniperPullbackCallTrigger = (sec in 1..3 || analysis.isSniperPullbackWindow) &&
                 (analysis.isPullbackAgainstSignalCall || (analysis.candleList.size >= 2 && analysis.candleList[1].type == CandleType.GREEN && analysis.candleList[1].bodyHeight >= 15f && analysis.currentPriceY >= analysis.candleList[1].bodyTopY - 3f && analysis.currentPriceY <= analysis.candleList[1].bodyTopY + analysis.candleList[1].bodyHeight * 0.55f)) &&
                 !analysis.isDojiOrLowVolume
 
-            val isSniperPullbackPutTrigger = (sec in 1..5 || analysis.isSniperPullbackWindow) &&
+            val isSniperPullbackPutTrigger = (sec in 1..3 || analysis.isSniperPullbackWindow) &&
                 (analysis.isPullbackAgainstSignalPut || (analysis.candleList.size >= 2 && analysis.candleList[1].type == CandleType.RED && analysis.candleList[1].bodyHeight >= 15f && analysis.currentPriceY <= analysis.candleList[1].bodyBottomY + 3f && analysis.currentPriceY >= analysis.candleList[1].bodyBottomY - analysis.candleList[1].bodyHeight * 0.55f)) &&
                 !analysis.isDojiOrLowVolume
 
@@ -646,8 +663,7 @@ class TradingEngine(
                     }
                 }
                 AutoTradeStrategy.AI_REMOTE -> {
-                    // Modo Cuántico Autónomo Local (sin llamadas remotas de red lentas)
-                    evaluateMasterCombo(analysis)
+                    Pair(null, "🧠 IA Remota: Esperando análisis multimodal...")
                 }
                 AutoTradeStrategy.SUPPORT_RESISTANCE -> {
                     when {
@@ -772,6 +788,87 @@ class TradingEngine(
         }
     }
 
+    fun getEngineReasoning(): EngineReasoning {
+        val analysis = latestAnalysisResult
+        val tick = latestMarketTick
+        val wsTrend = syntheticCandleEngine.detectedTrend
+        val sup = syntheticCandleEngine.dynamicSupportPrice
+        val res = syntheticCandleEngine.dynamicResistancePrice
+
+        // 1. Patrón Detectado
+        val pattern = when {
+            analysis?.isFalseBreakoutCall == true || analysis?.isFalseBreakoutPut == true -> "⚡ Trampa Institucional / Fakeout S/R"
+            analysis?.isRejectionCall == true || analysis?.isRejectionPut == true || analysis?.hasBottomRejectionWick == true || analysis?.hasTopRejectionWick == true -> "🕯️ Mecha de Rechazo en Nivel S/R"
+            analysis?.isEngulfingCall == true || analysis?.isEngulfingPut == true -> "⚡ Vela Envolvente de Reversión"
+            analysis?.is3VelasCall == true || analysis?.is3VelasPut == true || analysis?.isExhaustion3CandlesCall == true || analysis?.isExhaustion3CandlesPut == true -> "📉 Agotamiento de 3 Velas Consecutivas"
+            analysis?.isChoqueCall == true || analysis?.isChoquePut == true || analysis?.isChoquePullbackCall == true || analysis?.isChoquePullbackPut == true -> "🎯 Choque con Nivel Roto (Pullback / Retest)"
+            analysis?.isValidBreakoutCall == true || analysis?.isValidBreakoutPut == true -> "💥 Breakout Validado (>50% fuera de nivel)"
+            analysis?.trend == TrendDirection.UPTREND -> "📈 Flujo Continuo Alcista (Higher Highs)"
+            analysis?.trend == TrendDirection.DOWNTREND -> "📉 Flujo Continuo Bajista (Lower Lows)"
+            wsTrend == TrendDirection.UPTREND -> "📈 Micro-Ticks Alcistas en Velas Sintéticas 1m"
+            wsTrend == TrendDirection.DOWNTREND -> "📉 Micro-Ticks Bajistas en Velas Sintéticas 1m"
+            analysis?.isMarketSideways == true -> "📊 Rango Lateral / Dojis de Indecisión"
+            else -> "🔍 Monitoreando Acción del Precio"
+        }
+
+        // 2. Probabilidad Estimada
+        val prob = when {
+            analysis != null -> {
+                val base = if (analysis.trend == TrendDirection.UPTREND) analysis.signalPowerCall else if (analysis.trend == TrendDirection.DOWNTREND) analysis.signalPowerPut else 50
+                val conf = Math.max(analysis.confluenceScoreCall, analysis.confluenceScorePut)
+                Math.max(base, conf).coerceIn(50, 96)
+            }
+            tick != null -> {
+                val vel = Math.abs(tick.velocity)
+                if (vel > 0.0003f) 85 else if (vel > 0.0001f) 72 else 60
+            }
+            else -> 65
+        }
+
+        // 3. Estado del Filtro S/R
+        val srStatus = when {
+            analysis != null -> {
+                if (analysis.touchesSupport) "🟢 Toque Directo en Soporte [CALL Óptimo]"
+                else if (analysis.touchesResistance) "🔴 Toque Directo en Resistencia [PUT Óptimo]"
+                else if (analysis.isNearSupportZone) "🟢 Cerca de Soporte (${(analysis.distanceToSupportRatio * 100).toInt()}% canal)"
+                else if (analysis.isNearResistanceZone) "🔴 Cerca de Resistencia (${(analysis.distanceToResistanceRatio * 100).toInt()}% canal)"
+                else "⚪ Centro del Canal S/R (Neutral)"
+            }
+            sup > 0.0 && res > 0.0 && tick != null -> {
+                val range = (res - sup).coerceAtLeast(0.00001)
+                val distS = ((tick.price - sup) / range).coerceIn(0.0, 1.0)
+                if (distS <= 0.20) "🟢 Cerca de Soporte Cuantitativo (${(distS * 100).toInt()}%)"
+                else if (distS >= 0.80) "🔴 Cerca de Resistencia Cuantitativa (${((1.0 - distS) * 100).toInt()}%)"
+                else "⚪ Rango Central (Dist S: ${(distS * 100).toInt()}%)"
+            }
+            else -> "⚪ Calculando niveles S/R..."
+        }
+
+        // 4. Plan de Acción Táctico
+        val plan = when {
+            riskManager.hasPendingTrade -> {
+                val elapsed = (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000
+                val act = if (riskManager.pendingTradeAction == TradeAction.BUY) "CALL ▲" else "PUT ▼"
+                "⏳ Trade Activo: $act (${elapsed}s transcurridos) · Liquidando en vela :00s"
+            }
+            analysis?.isMarketSideways == true -> {
+                "🛡️ Filtro Anti-Chop: Mercado lateral. Esperando ruptura limpia con volumen para operar."
+            }
+            analysis?.trend == TrendDirection.UPTREND || wsTrend == TrendDirection.UPTREND -> {
+                "🎯 Plan: Buscar retroceso leve a soporte para ejecutar CALL al segundo :58s - :01s."
+            }
+            analysis?.trend == TrendDirection.DOWNTREND || wsTrend == TrendDirection.DOWNTREND -> {
+                "🎯 Plan: Buscar retroceso leve a resistencia para ejecutar PUT al segundo :58s - :01s."
+            }
+            else -> {
+                "🎯 Plan: Esperando confirmación de nivel S/R o impulso direccional de ticks."
+            }
+        }
+
+        val isFavorable = !riskManager.hasPendingTrade && (analysis?.isMarketSideways != true)
+        return EngineReasoning(pattern, prob, srStatus, plan, isFavorable)
+    }
+
     fun getStrategyStatusHint(): String {
         if (AutoTradeAccessibilityService.instance == null && mode == AutoTradeMode.AUTONOMOUS) {
             return "⚠️ Accesibilidad DESACTIVADA (Clics bloqueados en Android)"
@@ -887,6 +984,20 @@ class TradingEngine(
         reasonDescription: String,
         confidence: Float? = null
     ) {
+        val sec = analysis.candleSecond
+        val isTimingVetoed = MarketTickFilters.isTimingVetoed(sec) || analysis.isTimingVetoed
+        val isChoppy = analysis.isMicroRangeChoppy || syntheticCandleEngine.isChoppinessDetected()
+
+        if (isChoppy) {
+            android.util.Log.w("TradingEngine", "⛔ Señal $action VETADA por Filtro Anti-Choppy (<0.05% y ticks alternantes)")
+            return
+        }
+
+        if (isTimingVetoed && !analysis.isFalseBreakoutCall && !analysis.isFalseBreakoutPut) {
+            android.util.Log.w("TradingEngine", "⛔ Señal $action VETADA por Timing Estricto (:15-:55) (⏱ ${sec}s)")
+            return
+        }
+
         // Evaluación por el Motor de Autoaprendizaje Adaptativo de Errores
         val adaptiveDecision = adaptiveLearningEngine.evaluateSignalSuitability(
             candidateAction = action,
@@ -1099,6 +1210,23 @@ class TradingEngine(
      * Utiliza las cotizaciones puras del WebSocket y pulsa las coordenadas calibradas con Accesibilidad.
      */
     fun executeHeadlessTrade(action: TradeAction, reasonDescription: String) {
+        val sec = latestMarketTick?.candleSecond ?: (((System.currentTimeMillis() / 1000L) % 60L).toInt())
+        val isTimingVetoed = MarketTickFilters.isTimingVetoed(sec)
+        val isStrictTimingWindow = MarketTickFilters.isStrictTimingWindow(sec)
+
+        if (isTimingVetoed) {
+            Log.d("TradingEngine", "Headless bloqueado por VETO de timing :15-:55 (⏱ ${sec}s)")
+            return
+        }
+        if (!isStrictTimingWindow) {
+            Log.d("TradingEngine", "Headless bloqueado fuera de ventana estricta :58-:03 (⏱ ${sec}s)")
+            return
+        }
+        if (syntheticCandleEngine.isChoppinessDetected()) {
+            Log.d("TradingEngine", "Headless bloqueado por Filtro Anti-Choppy (<0.05% y ticks alternantes)")
+            return
+        }
+
         val (canTrade, riskReason) = riskManager.canExecuteTrade(mode, autonomousSubMode, 0.85f)
         if (!canTrade) {
             Log.d("TradingEngine", "Headless bloqueado por riesgo: $riskReason")
