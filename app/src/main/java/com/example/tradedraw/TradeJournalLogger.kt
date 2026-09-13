@@ -10,13 +10,16 @@ import java.util.Locale
 
 /**
  * Registrador estructurado de operaciones para TradeDraw (Paso 0 - Profitability Loop).
- * Escribe en formato CSV parseable para auditoría por ADB y backtesting real.
+ * Escribe en formato CSV parseable para auditoría por ADB, análisis cuantitativo y backtesting real.
  */
 object TradeJournalLogger {
     private const val TAG = "TradeJournalLogger"
-    private const val HEADER = "timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,reason\n"
+    private const val HEADER = "timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason\n"
     private val lock = Any()
 
+    /**
+     * Registra una operación cerrada con todas sus características cuantitativas y contextuales.
+     */
     fun logTrade(
         context: Context,
         strategy: String,
@@ -29,7 +32,15 @@ object TradeJournalLogger {
         result: String,
         settledBalance: Number,
         durationSec: Long,
-        reason: String
+        reason: String,
+        trend: String = "SIDEWAYS",
+        distSupportRatio: Float = 0.5f,
+        distResistanceRatio: Float = 0.5f,
+        tickVelocity: Float = 0f,
+        impulse: String = "NEUTRAL",
+        marketRegime: String = "NORMAL",
+        candleSecond: Int = 0,
+        adaptiveStatus: String = "ALLOWED"
     ) {
         try {
             val dir = File(context.getExternalFilesDir(null), "TradeDraw_Audits")
@@ -44,10 +55,10 @@ object TradeJournalLogger {
                     }
                     val now = System.currentTimeMillis()
                     val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(now))
-                    val cleanReason = reason.replace(",", ";").replace("\n", " ").take(120)
+                    val cleanReason = reason.replace(",", ";").replace("\n", " ").take(140)
                     val line = String.format(
                         Locale.US,
-                        "%d,%s,%s,%s,%s,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%d,\"%s\"\n",
+                        "%d,%s,%s,%s,%s,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\"\n",
                         now,
                         isoDate,
                         strategy,
@@ -60,12 +71,20 @@ object TradeJournalLogger {
                         result,
                         settledBalance.toDouble(),
                         durationSec,
+                        trend,
+                        distSupportRatio,
+                        distResistanceRatio,
+                        tickVelocity,
+                        impulse,
+                        marketRegime,
+                        candleSecond,
+                        adaptiveStatus,
                         cleanReason
                     )
                     writer.write(line)
                 }
             }
-            Log.d(TAG, "Trade journal registrado: $action -> $result ($reason)")
+            Log.d(TAG, "Trade journal registrado: $action -> $result ($reason) [Trend=$trend, Sup=$distSupportRatio, Res=$distResistanceRatio, Vel=$tickVelocity]")
         } catch (e: Exception) {
             Log.e(TAG, "Error escribiendo en trade_journal.csv", e)
         }

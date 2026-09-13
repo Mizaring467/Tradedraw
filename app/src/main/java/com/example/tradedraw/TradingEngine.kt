@@ -129,6 +129,14 @@ class TradingEngine(
         val expirySeconds: Int = 30
     )
 
+    data class EngineReasoning(
+        val patternName: String,
+        val probabilityPct: Int,
+        val srFilterStatus: String,
+        val actionPlan: String,
+        val isFavorable: Boolean
+    )
+
     var currentActiveSignal: ActiveSignal? = null
         private set
 
@@ -243,23 +251,31 @@ class TradingEngine(
                     handler.post {
                         pendingTradeHasObservedWin = false
                         pendingTradeRecordedCandleCloseY = 0f
+                        val curTrend = analysis.trend.name
+                        val supDist = analysis.distanceToSupportRatio
+                        val resDist = analysis.distanceToResistanceRatio
+                        val tickVel = analysis.tickVelocityNormalized
+                        val imp = if (analysis.isBullishImpulse) "BULLISH" else if (analysis.isBearishImpulse) "BEARISH" else "NEUTRAL"
+                        val reg = if (analysis.isMarketSideways) "SIDEWAYS" else if (analysis.isConsolidationTight) "TIGHT" else if (analysis.isDojiOrLowVolume) "DOJI" else "TRENDING"
+                        val sec = analysis.candleSecond
+
                         if (isTie) {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "TIE", currentBal, elapsedSec, method)
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "TIE", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "TIE")
                             riskManager.clearPendingTrade()
                             autoDrawEngine.clearTradeEntry()
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
                         } else if (finalWin) {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method)
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN")
                             riskManager.recordTradeWin()
-                            adaptiveLearningEngine.recordTradeOutcome(true)
+                            adaptiveLearningEngine.recordTradeOutcome(true, context)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
                             Toast.makeText(context, "🎉 OPERACIÓN GANADA (+1 W)", Toast.LENGTH_LONG).show()
                             onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
                         } else {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method)
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS")
                             riskManager.recordTradeLoss()
-                            adaptiveLearningEngine.recordTradeOutcome(false)
+                            adaptiveLearningEngine.recordTradeOutcome(false, context)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
                             Toast.makeText(context, "⚠️ OPERACIÓN PERDIDA (+1 L)", Toast.LENGTH_LONG).show()
@@ -277,54 +293,10 @@ class TradingEngine(
         val minSpacingMs = if (riskManager.currentLossStreak > 0) 45000L else 12000L
         val isSpacingCooldown = lastTradeResolutionTime > 0L && timeSinceLastResolution < minSpacingMs
 
-        // 5. Evaluar señal de trading solo si no hay trade abierto, sin cooldown de espaciado y el modo está activo
+        // 5. Evaluar señal de trading puramente local y cuantitativa (0ms latencia, sin llamadas remotas lentas)
         if (!riskManager.hasPendingTrade && !isSpacingCooldown && mode != AutoTradeMode.DISABLED) {
             val localSignal = evaluateStrategySignal(strategy, analysis, supports.isNotEmpty() || resistances.isNotEmpty())
 
-            // 5a. Mantener la IA analizando en segundo plano si está activa (sin bloquear señales locales)
-            if (aiClient.isEnabled && aiClient.apiKey.isNotBlank()) {
-                aiClient.analyzeFrame(bitmap) { aiResult ->
-                    latestAIResult = aiResult
-                    latestAITimestamp = System.currentTimeMillis()
-                    handler.post { onFrameProcessedListener?.invoke(analysis) }
-
-                    // Si la IA emite señal directa con confianza suficiente, ejecutar sincronizada con reloj sniper
-                    if (aiResult.isSuccess && aiResult.action != null && aiResult.confidence >= aiClient.confidenceThreshold) {
-                        if (!riskManager.hasPendingTrade && mode != AutoTradeMode.DISABLED) {
-                            val sec = analysis.candleSecond
-                            val isTimingValid = analysis.isSniperZeroSecondWindow || (sec in 59..59 || sec in 0..1)
-                            val isTickVelocityConfirmed = when (aiResult.action) {
-                                TradeAction.BUY -> !analysis.isBearishImpulse || analysis.tickVelocityNormalized >= -0.08f
-                                TradeAction.SELL -> !analysis.isBullishImpulse || analysis.tickVelocityNormalized <= 0.08f
-                            }
-                            val isMarketUnfavorable = analysis.isMarketSideways || analysis.isConsolidationTight
-                            val inDowntrend = analysis.trend == TrendDirection.DOWNTREND
-                            val inUptrend = analysis.trend == TrendDirection.UPTREND
-                            val touchesBarrierConflict = (aiResult.action == TradeAction.SELL && analysis.touchesSupport && !analysis.isFalseBreakoutPut) ||
-                                                         (aiResult.action == TradeAction.BUY && analysis.touchesResistance && !analysis.isFalseBreakoutCall)
-                            val aiTrendConflict = (aiResult.action == TradeAction.BUY && inDowntrend && !analysis.isFalseBreakoutCall) ||
-                                                  (aiResult.action == TradeAction.SELL && inUptrend && !analysis.isFalseBreakoutPut)
-
-                            if (isMarketUnfavorable) {
-                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: Mercado lateral / consolidación")
-                            } else if (touchesBarrierConflict) {
-                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: Impacto directo contra barrera S/R")
-                            } else if (!isTimingValid) {
-                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} pospuesta: fuera de ventana sniper :00 (:59-:01) (⏱ ${sec}s)")
-                            } else if (!isTickVelocityConfirmed) {
-                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: Velocidad de tick opuesta (velNorm=${analysis.tickVelocityNormalized})")
-                            } else if (aiTrendConflict) {
-                                android.util.Log.d("TradingEngine", "Señal IA ${aiResult.action} bloqueada: conflicto con tendencia ${analysis.trend}")
-                            } else {
-                                val pct = (aiResult.confidence * 100).toInt()
-                                handleSignal(aiResult.action, analysis, bitmap, "IA ($pct% | ⏱ ${sec}s): ${aiResult.reason}", aiResult.confidence)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 5b. Ejecución de Señal Técnica Local en Tiempo Real
             if (localSignal != null && !riskManager.hasPendingTrade) {
                 val sec = analysis.candleSecond
                 val isTimingValid = analysis.isSniperZeroSecondWindow || (sec in 59..59 || sec in 0..1) ||
@@ -339,32 +311,18 @@ class TradingEngine(
                 } else if (!isTickVelocityConfirmed) {
                     android.util.Log.d("TradingEngine", "Señal local $localSignal bloqueada por velocidad de tick adversa (velNorm=${analysis.tickVelocityNormalized}, velY=${analysis.tickVelocityY})")
                 } else {
-                    val ai = latestAIResult
-                    val isAIFresh = (System.currentTimeMillis() - latestAITimestamp) <= 12000L // Máximo 12s de validez para IA
-                    // Filtro inteligente: No operar solo si la IA FRESCA contradice la señal local con certeza >= 70%
-                    val isConflicted = if (isAIFresh && ai != null && ai.isSuccess && ai.confidence >= 0.70f) {
-                        (localSignal == TradeAction.BUY && ai.action == TradeAction.SELL) ||
-                        (localSignal == TradeAction.SELL && ai.action == TradeAction.BUY)
-                    } else false
-
-                    if (!isConflicted) {
-                        val aiTag = if (isAIFresh && ai != null && ai.isSuccess && ai.action == localSignal) " + IA Confirmada" else ""
-                        val description = if (lastSignalReason.isNotBlank()) "$lastSignalReason$aiTag" else "Estrategia Local (${strategy.name})$aiTag"
-                        val localConfidence = when {
-                            analysis.isFalseBreakoutCall || analysis.isFalseBreakoutPut -> 0.95f
-                            analysis.isRejectionCall || analysis.isRejectionPut || analysis.hasBottomRejectionWick || analysis.hasTopRejectionWick -> 0.90f
-                            analysis.isEngulfingCall || analysis.isEngulfingPut -> 0.85f
-                            analysis.isChoqueCall || analysis.isChoquePut || analysis.isChoquePullbackCall || analysis.isChoquePullbackPut -> 0.80f
-                            analysis.is3VelasCall || analysis.is3VelasPut || analysis.isExhaustion3CandlesCall || analysis.isExhaustion3CandlesPut -> 0.75f
-                            localSignal == TradeAction.BUY -> Math.max(analysis.confluenceScoreCall, Math.max(analysis.signalPowerCall, if (analysis.isCallSignal) analysis.signalScore else 50)) / 100f
-                            localSignal == TradeAction.SELL -> Math.max(analysis.confluenceScorePut, Math.max(analysis.signalPowerPut, if (analysis.isPutSignal) analysis.signalScore else 50)) / 100f
-                            else -> 0.80f
-                        }
-                        val finalConfidence = if (isAIFresh && ai != null && ai.isSuccess && ai.action == localSignal) Math.max(localConfidence, ai.confidence) else localConfidence
-                        handleSignal(localSignal, analysis, bitmap, description, finalConfidence)
-                    } else {
-                        android.util.Log.d("TradingEngine", "Señal local $localSignal omitida por conflicto con análisis reciente de IA (${ai?.action})")
+                    val description = if (lastSignalReason.isNotBlank()) lastSignalReason else "Estrategia Local (${strategy.name})"
+                    val localConfidence = when {
+                        analysis.isFalseBreakoutCall || analysis.isFalseBreakoutPut -> 0.95f
+                        analysis.isRejectionCall || analysis.isRejectionPut || analysis.hasBottomRejectionWick || analysis.hasTopRejectionWick -> 0.90f
+                        analysis.isEngulfingCall || analysis.isEngulfingPut -> 0.85f
+                        analysis.isChoqueCall || analysis.isChoquePut || analysis.isChoquePullbackCall || analysis.isChoquePullbackPut -> 0.80f
+                        analysis.is3VelasCall || analysis.is3VelasPut || analysis.isExhaustion3CandlesCall || analysis.isExhaustion3CandlesPut -> 0.75f
+                        localSignal == TradeAction.BUY -> Math.max(analysis.confluenceScoreCall, Math.max(analysis.signalPowerCall, if (analysis.isCallSignal) analysis.signalScore else 50)) / 100f
+                        localSignal == TradeAction.SELL -> Math.max(analysis.confluenceScorePut, Math.max(analysis.signalPowerPut, if (analysis.isPutSignal) analysis.signalScore else 50)) / 100f
+                        else -> 0.80f
                     }
+                    handleSignal(localSignal, analysis, bitmap, description, localConfidence)
                 }
             }
         }
@@ -688,7 +646,8 @@ class TradingEngine(
                     }
                 }
                 AutoTradeStrategy.AI_REMOTE -> {
-                    Pair(null, "🧠 IA Remota: Esperando análisis multimodal...")
+                    // Modo Cuántico Autónomo Local (sin llamadas remotas de red lentas)
+                    evaluateMasterCombo(analysis)
                 }
                 AutoTradeStrategy.SUPPORT_RESISTANCE -> {
                     when {
@@ -751,6 +710,22 @@ class TradingEngine(
             // Si una señal es CALL pero el precio actual está muy cerca de la Resistencia (< 15% del canal), VETAR la orden CALL
             if (action == TradeAction.BUY && (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.touchesResistance)) {
                 return Pair(null, "⚠️ Veto: Prohibido comprar sobre Resistencia (Riesgo de Rechazo)")
+            }
+
+            // Filtro Anti-Continuación por Agotamiento de 3 Velas (c3 < c2 < c1 en S/R):
+            if (action == TradeAction.SELL && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall)) {
+                return Pair(null, "⛔ Veto: Agotamiento 3 Velas Rojas en Soporte detectado. Prohibido vender en suelo")
+            }
+            if (action == TradeAction.BUY && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut)) {
+                return Pair(null, "⛔ Veto: Agotamiento 3 Velas Verdes en Resistencia detectado. Prohibido comprar en techo")
+            }
+
+            // Filtro Anti-Continuación por Mecha de Rechazo (>=45% en S/R):
+            if (action == TradeAction.SELL && (analysis.isRejectionCall || analysis.hasBottomRejectionWick)) {
+                return Pair(null, "⛔ Veto: Mecha de Rechazo Inferior (≥45%) en Soporte. Prohibido vender en suelo")
+            }
+            if (action == TradeAction.BUY && (analysis.isRejectionPut || analysis.hasTopRejectionWick)) {
+                return Pair(null, "⛔ Veto: Mecha de Rechazo Superior (≥45%) en Resistencia. Prohibido comprar en techo")
             }
 
             // 2. Filtro Anti-Sobreextensión de Racha y Ticks:
@@ -1220,13 +1195,13 @@ class TradingEngine(
                     Toast.makeText(context, "[HEADLESS] ⚪ Empate / Orden cancelada", Toast.LENGTH_SHORT).show()
                 } else if (finalWin) {
                     riskManager.recordTradeWin()
-                    adaptiveLearningEngine.recordTradeOutcome(true)
+                    adaptiveLearningEngine.recordTradeOutcome(true, context)
                     emitHapticAndAudioFeedback()
                     Toast.makeText(context, "[HEADLESS] 🎉 GANADA (+1 W) [$method]", Toast.LENGTH_SHORT).show()
                     onTradeExecutedListener?.invoke(TradeAction.BUY, true)
                 } else {
                     riskManager.recordTradeLoss()
-                    adaptiveLearningEngine.recordTradeOutcome(false)
+                    adaptiveLearningEngine.recordTradeOutcome(false, context)
                     emitHapticAndAudioFeedback()
                     Toast.makeText(context, "[HEADLESS] ⚠️ PERDIDA (+1 L) [$method]", Toast.LENGTH_SHORT).show()
                     onTradeExecutedListener?.invoke(TradeAction.BUY, false)

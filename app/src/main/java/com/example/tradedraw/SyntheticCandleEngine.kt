@@ -424,36 +424,36 @@ class SyntheticCandleEngine {
             }
             val prev = closedCandles.last()
 
-            // Estrategia 1: MT_REJECTION (Rechazo de mecha contra S/R con confirmación de velocidad)
-            if (distToSupport <= 0.20f && prev.lowerWickRatio >= 0.30f && !tick.isBearishImpulse && !isBullishOverextended) {
+            // Estrategia 1: MT_REJECTION (Rechazo de mecha >= 45% contra S/R con confirmación de velocidad)
+            if (distToSupport <= 0.22f && prev.lowerWickRatio >= 0.45f && !tick.isBearishImpulse && !isBullishOverextended) {
                 onSignalGenerated?.invoke(TradeAction.BUY, "Rechazo alcista en Soporte (${(distToSupport * 100).toInt()}% dist) + Mecha ${(prev.lowerWickRatio * 100).toInt()}% -> CALL")
                 return
             }
 
-            if (distToResistance <= 0.20f && prev.upperWickRatio >= 0.30f && !tick.isBullishImpulse && !isBearishOverextended) {
+            if (distToResistance <= 0.22f && prev.upperWickRatio >= 0.45f && !tick.isBullishImpulse && !isBearishOverextended) {
                 onSignalGenerated?.invoke(TradeAction.SELL, "Rechazo bajista en Resistencia (${(distToResistance * 100).toInt()}% dist) + Mecha ${(prev.upperWickRatio * 100).toInt()}% -> PUT")
                 return
             }
 
-            // Estrategia 2: MT_3_VELAS_AGOTAMIENTO (3 velas del mismo color reduciendo cuerpo)
+            // Estrategia 2: MT_3_VELAS_AGOTAMIENTO (3 velas del mismo color reduciendo cuerpo c3 < c2 < c1 en S/R)
             if (closedCandles.size >= 3) {
-                val c1 = closedCandles[closedCandles.size - 3]
-                val c2 = closedCandles[closedCandles.size - 2]
-                val c3 = closedCandles[closedCandles.size - 1]
+                val c1 = closedCandles[closedCandles.size - 3] // c1 inicial
+                val c2 = closedCandles[closedCandles.size - 2] // c2 media
+                val c3 = closedCandles[closedCandles.size - 1] // c3 reciente
 
                 val is3RedExhaustion = c1.isRed && c2.isRed && c3.isRed &&
-                        (c1.body >= c2.body && c2.body >= c3.body) && distToSupport <= 0.30f
+                        (c1.body > c2.body && c2.body > c3.body) && distToSupport <= 0.30f
 
                 if (is3RedExhaustion && !tick.isBearishImpulse && !isBullishOverextended) {
-                    onSignalGenerated?.invoke(TradeAction.BUY, "Agotamiento 3 Velas Rojas sobre Soporte -> Reversión CALL")
+                    onSignalGenerated?.invoke(TradeAction.BUY, "Agotamiento 3 Velas Rojas sobre Soporte (c3 < c2 < c1) -> Reversión CALL")
                     return
                 }
 
                 val is3GreenExhaustion = c1.isGreen && c2.isGreen && c3.isGreen &&
-                        (c1.body >= c2.body && c2.body >= c3.body) && distToResistance <= 0.30f
+                        (c1.body > c2.body && c2.body > c3.body) && distToResistance <= 0.30f
 
                 if (is3GreenExhaustion && !tick.isBullishImpulse && !isBearishOverextended) {
-                    onSignalGenerated?.invoke(TradeAction.SELL, "Agotamiento 3 Velas Verdes sobre Resistencia -> Reversión PUT")
+                    onSignalGenerated?.invoke(TradeAction.SELL, "Agotamiento 3 Velas Verdes sobre Resistencia (c3 < c2 < c1) -> Reversión PUT")
                     return
                 }
             }
@@ -479,4 +479,3 @@ class SyntheticCandleEngine {
         }
     }
 }
-

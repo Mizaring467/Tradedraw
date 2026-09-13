@@ -1,6 +1,10 @@
 package com.example.tradedraw
 
+import android.content.Context
 import android.util.Log
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 
 /**
  * Representa la firma contextual de mercado capturada en el milisegundo exacto en que se ejecuta una operación.
@@ -39,10 +43,12 @@ sealed class AdaptiveDecision {
  * 
  * Memoriza las firmas contextuales de operaciones perdedoras, detecta recurrencias de anti-patrones en el mercado
  * y adapta dinámicamente los pesos entre Continuación y Reversión en Soportes/Resistencias para auto-corregir la operativa.
+ * Cuenta con persistencia completa en almacenamiento local de Android.
  */
 class AdaptiveLearningEngine {
 
     private val TAG = "AdaptiveLearningEngine"
+    private val STATE_FILE_NAME = "adaptive_learning_state.json"
 
     // Memoria de firmas perdedoras (anti-patrones)
     private val lossSignatures = ArrayList<TradeContextSignature>(64)
@@ -107,7 +113,7 @@ class AdaptiveLearningEngine {
     /**
      * Procesa la liquidación del trade (Win o Loss) y actualiza los patrones aprendidos.
      */
-    fun recordTradeOutcome(isWin: Boolean) {
+    fun recordTradeOutcome(isWin: Boolean, context: Context? = null) {
         val sig = pendingTradeSignature ?: return
         pendingTradeSignature = null
 
@@ -143,6 +149,10 @@ class AdaptiveLearningEngine {
                     "Acción=${sig.action}, Tendencia=${sig.trend}, DistSup=${sig.distanceToSupportRatio}, " +
                     "DistRes=${sig.distanceToResistanceRatio}, Vel=${sig.tickVelocityNormalized}. " +
                     "ContLosses=$consecutiveContinuationLosses, RevLosses=$consecutiveReversionLosses")
+        }
+
+        if (context != null) {
+            saveState(context)
         }
     }
 
@@ -307,9 +317,112 @@ class AdaptiveLearningEngine {
     }
 
     /**
+     * Guarda el estado completo de firmas y pesos aprendidos en archivo JSON local de la aplicación.
+     */
+    fun saveState(context: Context) {
+        try {
+            val root = JSONObject()
+            root.put("consecutiveContinuationLosses", consecutiveContinuationLosses)
+            root.put("consecutiveReversionLosses", consecutiveReversionLosses)
+            root.put("totalBlockedAntiPatterns", totalBlockedAntiPatterns)
+            root.put("totalInvertedAntiPatterns", totalInvertedAntiPatterns)
+            root.put("reversionBonusWeight", reversionBonusWeight.toDouble())
+            root.put("continuationPenaltyWeight", continuationPenaltyWeight.toDouble())
+
+            val array = JSONArray()
+            synchronized(lossSignatures) {
+                for (sig in lossSignatures) {
+                    val item = JSONObject()
+                    item.put("action", sig.action.name)
+                    item.put("trend", sig.trend.name)
+                    item.put("distSup", sig.distanceToSupportRatio.toDouble())
+                    item.put("distRes", sig.distanceToResistanceRatio.toDouble())
+                    item.put("nearSup", sig.isNearSupportZone)
+                    item.put("nearRes", sig.isNearResistanceZone)
+                    item.put("tickVelNorm", sig.tickVelocityNormalized.toDouble())
+                    item.put("bullishImp", sig.isBullishImpulse)
+                    item.put("bearishImp", sig.isBearishImpulse)
+                    item.put("doji", sig.isDojiOrLowVolume)
+                    item.put("tight", sig.isConsolidationTight)
+                    item.put("sideways", sig.isMarketSideways)
+                    item.put("strat", sig.strategyName)
+                    item.put("sec", sig.candleSecond)
+                    item.put("ts", sig.timestampMs)
+                    item.put("continuation", sig.isContinuationTrade)
+                    item.put("reversion", sig.isReversionTrade)
+                    array.put(item)
+                }
+            }
+            root.put("lossSignatures", array)
+
+            val file = File(context.filesDir, STATE_FILE_NAME)
+            file.writeText(root.toString())
+            Log.d(TAG, "Estado de autoaprendizaje persistido exitosamente (${array.length()} firmas guardadas)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error persistiendo estado de autoaprendizaje", e)
+        }
+    }
+
+    /**
+     * Carga el estado de firmas y pesos aprendidos desde archivo JSON local.
+     */
+    fun loadState(context: Context) {
+        try {
+            val file = File(context.filesDir, STATE_FILE_NAME)
+            if (!file.exists()) return
+
+            val text = file.readText()
+            if (text.isBlank()) return
+
+            val root = JSONObject(text)
+            consecutiveContinuationLosses = root.optInt("consecutiveContinuationLosses", 0)
+            consecutiveReversionLosses = root.optInt("consecutiveReversionLosses", 0)
+            totalBlockedAntiPatterns = root.optInt("totalBlockedAntiPatterns", 0)
+            totalInvertedAntiPatterns = root.optInt("totalInvertedAntiPatterns", 0)
+            reversionBonusWeight = root.optDouble("reversionBonusWeight", 1.0).toFloat()
+            continuationPenaltyWeight = root.optDouble("continuationPenaltyWeight", 1.0).toFloat()
+
+            val array = root.optJSONArray("lossSignatures")
+            if (array != null) {
+                synchronized(lossSignatures) {
+                    lossSignatures.clear()
+                    for (i in 0 until array.length()) {
+                        val item = array.getJSONObject(i)
+                        val action = try { TradeAction.valueOf(item.getString("action")) } catch (e: Exception) { TradeAction.BUY }
+                        val trend = try { TrendDirection.valueOf(item.getString("trend")) } catch (e: Exception) { TrendDirection.SIDEWAYS }
+                        val sig = TradeContextSignature(
+                            action = action,
+                            trend = trend,
+                            distanceToSupportRatio = item.optDouble("distSup", 0.5).toFloat(),
+                            distanceToResistanceRatio = item.optDouble("distRes", 0.5).toFloat(),
+                            isNearSupportZone = item.optBoolean("nearSup", false),
+                            isNearResistanceZone = item.optBoolean("nearRes", false),
+                            tickVelocityNormalized = item.optDouble("tickVelNorm", 0.0).toFloat(),
+                            isBullishImpulse = item.optBoolean("bullishImp", false),
+                            isBearishImpulse = item.optBoolean("bearishImp", false),
+                            isDojiOrLowVolume = item.optBoolean("doji", false),
+                            isConsolidationTight = item.optBoolean("tight", false),
+                            isMarketSideways = item.optBoolean("sideways", false),
+                            strategyName = item.optString("strat", "AUTO_ADAPTIVE"),
+                            candleSecond = item.optInt("sec", 0),
+                            timestampMs = item.optLong("ts", System.currentTimeMillis()),
+                            isContinuationTrade = item.optBoolean("continuation", false),
+                            isReversionTrade = item.optBoolean("reversion", false)
+                        )
+                        lossSignatures.add(sig)
+                    }
+                }
+            }
+            Log.d(TAG, "Estado de autoaprendizaje restaurado: ${lossSignatures.size} firmas de anti-patrones cargadas")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cargando estado de autoaprendizaje", e)
+        }
+    }
+
+    /**
      * Resetea el historial de aprendizaje si el usuario reinicia la sesión.
      */
-    fun reset() {
+    fun reset(context: Context? = null) {
         synchronized(lossSignatures) {
             lossSignatures.clear()
         }
@@ -320,5 +433,8 @@ class AdaptiveLearningEngine {
         continuationPenaltyWeight = 1.0f
         totalBlockedAntiPatterns = 0
         totalInvertedAntiPatterns = 0
+        if (context != null) {
+            saveState(context)
+        }
     }
 }
