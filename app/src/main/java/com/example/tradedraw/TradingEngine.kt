@@ -379,14 +379,14 @@ class TradingEngine(
 
             val sec = analysis.candleSecond
             val isStrictTimingWindow = MarketTickFilters.isStrictTimingWindow(sec) // :58 a :03
-            val isTimingVetoed = MarketTickFilters.isTimingVetoed(sec) || analysis.isTimingVetoed // :15 a :55
+            val isTimingVetoed = MarketTickFilters.isTimingVetoed(sec) // :15 a :55
             val isInstitutionalTrap = analysis.isFalseBreakoutCall || analysis.isFalseBreakoutPut
             val isSniperPullbackTrigger = (sec in 1..3 || analysis.isSniperPullbackWindow) &&
                 (analysis.isPullbackAgainstSignalCall || analysis.isPullbackAgainstSignalPut || analysis.isPullbackSniperCall || analysis.isPullbackSniperPut)
 
             // Veto universal de entrada tardía (:15 a :55)
             if (isTimingVetoed && !isInstitutionalTrap) {
-                return Pair(null, "⏳ Veto Timing Estricto (:15-:55): Fuera de ventana sniper :00 (:58-:03) (⏱ ${sec}s)")
+                return Pair(null, "⏳ Entrada tardía - Veto Timing Estricto (:15-:55): Fuera de ventana sniper :00 (:58-:03) (⏱ ${sec}s)")
             }
 
             // Veto de entrada si está fuera de la ventana estricta :58-:03 (salvo trampas institucionales)
@@ -493,10 +493,10 @@ class TradingEngine(
 
                     when {
                         // 1. Falso Rompimiento / Trampa en S/R
-                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isFalseBreakoutCall -> {
+                        !inDowntrend && analysis.isFalseBreakoutCall -> {
                             Pair(TradeAction.BUY, "🎯 MT Combo: Trampa / Falso Rompimiento de Soporte -> CALL")
                         }
-                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.isFalseBreakoutPut -> {
+                        !inUptrend && analysis.isFalseBreakoutPut -> {
                             Pair(TradeAction.SELL, "🎯 MT Combo: Trampa / Falso Rompimiento de Resistencia -> PUT")
                         }
                         // 1b. Reversión Contra-Tendencia Cuantitativa por Sobreextensión en Zonas Clave
@@ -512,47 +512,47 @@ class TradingEngine(
                             val rsiStr = if (syntheticEngine != null) " (RSI ${syntheticEngine.syntheticTickRsi.toInt()})" else ""
                             Pair(TradeAction.BUY, "🎯 MT Combo: Reversión por Sobreextensión en Soporte$rsiStr -> CALL")
                         }
-                        // 2. Sniper Pullback Entry (:01s-:05s) tras vela de señal fuerte
+                        // 2. Mechas de Rechazo en S/R (Filtradas por tendencia)
+                        !inDowntrend && (analysis.isRejectionCall || (analysis.touchesSupport && analysis.hasBottomRejectionWick)) -> {
+                            Pair(TradeAction.BUY, "🎯 MT Combo: Mecha de Rechazo en Soporte -> CALL")
+                        }
+                        !inUptrend && (analysis.isRejectionPut || (analysis.touchesResistance && analysis.hasTopRejectionWick)) -> {
+                            Pair(TradeAction.SELL, "🎯 MT Combo: Mecha de Rechazo en Resistencia -> PUT")
+                        }
+                        // 3. Patrón Envolvente en S/R
+                        !inDowntrend && analysis.isEngulfingCall -> {
+                            Pair(TradeAction.BUY, "🎯 MT Combo: Vela Envolvente en Soporte -> CALL")
+                        }
+                        !inUptrend && analysis.isEngulfingPut -> {
+                            Pair(TradeAction.SELL, "🎯 MT Combo: Vela Envolvente en Resistencia -> PUT")
+                        }
+                        // 4. Choque / Retest (Breakout + Retest)
+                        !inDowntrend && (analysis.isChoqueCall || analysis.isChoquePullbackCall) -> {
+                            Pair(TradeAction.BUY, "🎯 MT Combo: Choque / Pullback tras Rompimiento -> CALL")
+                        }
+                        !inUptrend && (analysis.isChoquePut || analysis.isChoquePullbackPut) -> {
+                            Pair(TradeAction.SELL, "🎯 MT Combo: Choque / Pullback tras Rompimiento -> PUT")
+                        }
+                        // 5. Agotamiento de 3 Velas
+                        !inDowntrend && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall) -> {
+                            Pair(TradeAction.BUY, "🎯 MT Combo: Agotamiento 3 Velas Rojas -> CALL")
+                        }
+                        !inUptrend && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut) -> {
+                            Pair(TradeAction.SELL, "🎯 MT Combo: Agotamiento 3 Velas Verdes -> PUT")
+                        }
+                        // Sniper Pullback Entry (:01s-:05s) tras vela de señal fuerte
                         !inDowntrend && !analysis.hasStrongMomentumDown && isSniperPullbackCallTrigger -> {
                             Pair(TradeAction.BUY, "🎯 MT Combo: Sniper Pullback (:0${sec}s) tras vela fuerte -> CALL")
                         }
                         !inUptrend && !analysis.hasStrongMomentumUp && isSniperPullbackPutTrigger -> {
                             Pair(TradeAction.SELL, "🎯 MT Combo: Sniper Pullback (:0${sec}s) tras vela fuerte -> PUT")
                         }
-                        // 3. Rompimiento Válido S/R (>50% cuerpo fuera, mecha opuesta <20%)
+                        // Rompimiento Válido S/R (>50% cuerpo fuera, mecha opuesta <20%)
                         !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isValidBreakoutCall && !analysis.isDojiOrLowVolume -> {
                             Pair(TradeAction.BUY, "🎯 MT Combo: Rompimiento Válido de Resistencia -> CALL")
                         }
                         !inUptrend && !analysis.hasStrongMomentumUp && analysis.isValidBreakoutPut && !analysis.isDojiOrLowVolume -> {
                             Pair(TradeAction.SELL, "🎯 MT Combo: Rompimiento Válido de Soporte -> PUT")
-                        }
-                        // 2. Mechas de Rechazo en S/R (Filtradas por tendencia y anti-momentum)
-                        !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.isRejectionCall || (analysis.touchesSupport && analysis.hasBottomRejectionWick)) -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Mecha de Rechazo en Soporte -> CALL")
-                        }
-                        !inUptrend && !analysis.hasStrongMomentumUp && (analysis.isRejectionPut || (analysis.touchesResistance && analysis.hasTopRejectionWick)) -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Mecha de Rechazo en Resistencia -> PUT")
-                        }
-                        // 3. Patrón Envolvente en S/R
-                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isEngulfingCall -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Vela Envolvente en Soporte -> CALL")
-                        }
-                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.isEngulfingPut -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Vela Envolvente en Resistencia -> PUT")
-                        }
-                        // 4. Choque / Retest (Breakout + Retest)
-                        !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.isChoqueCall || analysis.isChoquePullbackCall) -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Choque / Pullback tras Rompimiento -> CALL")
-                        }
-                        !inUptrend && !analysis.hasStrongMomentumUp && (analysis.isChoquePut || analysis.isChoquePullbackPut) -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Choque / Pullback tras Rompimiento -> PUT")
-                        }
-                        // 5. Agotamiento de 3 Velas
-                        !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall) -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Agotamiento 3 Velas Rojas -> CALL")
-                        }
-                        !inUptrend && !analysis.hasStrongMomentumUp && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut) -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Agotamiento 3 Velas Verdes -> PUT")
                         }
                         // Soporte / Resistencia Clásico
                         !inDowntrend && !analysis.hasStrongMomentumDown && analysis.touchesSupport && (analysis.lastCandles.firstOrNull() == CandleType.GREEN || analysis.isPullbackSniperCall) -> {
@@ -718,30 +718,49 @@ class TradingEngine(
             val (action, reason) = rawResult
             if (action == null) return rawResult
 
-            // 1. Filtro de Proximidad S/R Anti-Suicidio:
-            // Si una señal es PUT pero el precio actual está muy cerca del Soporte (< 15% del canal o umbral de soporte), VETAR la orden PUT
-            if (action == TradeAction.SELL && (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.touchesSupport)) {
+            // 1. Filtro de Proximidad S/R Anti-Suicidio Universal:
+            // Prohibido vender sobre Soporte (salvo rompimiento válido bajista o rechazo en resistencia)
+            if (action == TradeAction.SELL && !analysis.isValidBreakoutPut &&
+                !analysis.isRejectionPut && !(analysis.touchesResistance && analysis.hasTopRejectionWick) &&
+                (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.touchesSupport)) {
                 return Pair(null, "⚠️ Veto: Prohibido vender sobre Soporte (Riesgo de Rebote)")
             }
-            // Si una señal es CALL pero el precio actual está muy cerca de la Resistencia (< 15% del canal), VETAR la orden CALL
-            if (action == TradeAction.BUY && (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.touchesResistance)) {
+            // Prohibido comprar sobre Resistencia (salvo rompimiento válido alcista o rechazo en soporte)
+            if (action == TradeAction.BUY && !analysis.isValidBreakoutCall &&
+                !analysis.isRejectionCall && !(analysis.touchesSupport && analysis.hasBottomRejectionWick) &&
+                (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.touchesResistance)) {
                 return Pair(null, "⚠️ Veto: Prohibido comprar sobre Resistencia (Riesgo de Rechazo)")
             }
 
-            // Filtro Anti-Continuación por Agotamiento de 3 Velas (c3 < c2 < c1 en S/R):
-            if (action == TradeAction.SELL && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall)) {
-                return Pair(null, "⛔ Veto: Agotamiento 3 Velas Rojas en Soporte detectado. Prohibido vender en suelo")
-            }
-            if (action == TradeAction.BUY && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut)) {
-                return Pair(null, "⛔ Veto: Agotamiento 3 Velas Verdes en Resistencia detectado. Prohibido comprar en techo")
-            }
+            // 2. Exigir Retroceso (Pullback) en Continuación y Bloquear Sobreextensión / Trampas en S/R para estrategias de tendencia
+            val isTrendContinuation = strategy == AutoTradeStrategy.TREND_FOLLOWING ||
+                strategy == AutoTradeStrategy.COLOR_TREND ||
+                reason.contains("Continuación") ||
+                reason.contains("Tendencia") ||
+                reason.contains("Impulso") ||
+                reason.contains("Confluencia Fuerte")
 
-            // Filtro Anti-Continuación por Mecha de Rechazo (>=45% en S/R):
-            if (action == TradeAction.SELL && (analysis.isRejectionCall || analysis.hasBottomRejectionWick)) {
-                return Pair(null, "⛔ Veto: Mecha de Rechazo Inferior (≥45%) en Soporte. Prohibido vender en suelo")
-            }
-            if (action == TradeAction.BUY && (analysis.isRejectionPut || analysis.hasTopRejectionWick)) {
-                return Pair(null, "⛔ Veto: Mecha de Rechazo Superior (≥45%) en Resistencia. Prohibido comprar en techo")
+            if (isTrendContinuation) {
+
+                // Filtro Anti-Continuación por Agotamiento de 3 Velas (c3 < c2 < c1 en S/R):
+                if (action == TradeAction.SELL && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall)) {
+                    return Pair(null, "⛔ Veto: Agotamiento 3 Velas Rojas en Soporte detectado. Prohibido vender en suelo")
+                }
+                if (action == TradeAction.BUY && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut)) {
+                    return Pair(null, "⛔ Veto: Agotamiento 3 Velas Verdes en Resistencia detectado. Prohibido comprar en techo")
+                }
+
+                // Filtro Anti-Continuación por Mecha de Rechazo (>=45% en S/R):
+                if (action == TradeAction.SELL && (analysis.isRejectionCall || analysis.hasBottomRejectionWick)) {
+                    return Pair(null, "⛔ Veto: Mecha de Rechazo Inferior (≥45%) en Soporte. Prohibido vender en suelo")
+                }
+                if (action == TradeAction.BUY && (analysis.isRejectionPut || analysis.hasTopRejectionWick)) {
+                    return Pair(null, "⛔ Veto: Mecha de Rechazo Superior (≥45%) en Resistencia. Prohibido comprar en techo")
+                }
+
+                if (analysis.isDojiOrLowVolume) {
+                    return Pair(null, "⚠️ Veto: Continuación descalificada por Doji / Micro-rango (Cuerpo < 15px)")
+                }
             }
 
             // 2. Filtro Anti-Sobreextensión de Racha y Ticks:
@@ -755,24 +774,12 @@ class TradingEngine(
             val isWsOversold = syntheticEngine?.isBearishOverextended == true ||
                 (syntheticEngine != null && syntheticEngine.syntheticTickRsi <= 22.0 && syntheticEngine.distanceToSupportRatio <= 0.20f)
 
-            if (action == TradeAction.BUY && isGreenStreak) {
-                return Pair(null, "⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso")
-            }
-            if (action == TradeAction.SELL && isRedStreak) {
-                return Pair(null, "⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso")
-            }
-
-            // 3. Exigir Retroceso (Pullback) en Continuación y Bloquear Sobreextensión Cuantitativa:
-            val isTrendContinuation = strategy == AutoTradeStrategy.TREND_FOLLOWING ||
-                strategy == AutoTradeStrategy.COLOR_TREND ||
-                reason.contains("Continuación") ||
-                reason.contains("Tendencia") ||
-                reason.contains("Impulso") ||
-                reason.contains("Confluencia Fuerte")
-
             if (isTrendContinuation) {
-                if (analysis.isDojiOrLowVolume) {
-                    return Pair(null, "⚠️ Veto: Continuación descalificada por Doji / Micro-rango (Cuerpo < 15px)")
+                if (action == TradeAction.BUY && isGreenStreak) {
+                    return Pair(null, "⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso")
+                }
+                if (action == TradeAction.SELL && isRedStreak) {
+                    return Pair(null, "⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso")
                 }
                 if (action == TradeAction.BUY && (isWsOverbought || analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.12f || analysis.isPriceNearTop)) {
                     val detail = if (syntheticEngine != null && isWsOverbought) " [RSI Ticks: ${syntheticEngine.syntheticTickRsi.toInt()}, Ticks Up: ${syntheticEngine.consecutiveUpTicks}]" else ""

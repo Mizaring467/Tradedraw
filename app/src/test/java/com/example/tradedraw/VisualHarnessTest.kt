@@ -78,7 +78,7 @@ class VisualHarnessTest {
             candleList = candles,
             supportLinesY = listOf(700f),
             isLandscape = true
-        ).copy(trend = TrendDirection.UPTREND, isLateTimingForbidden = false)
+        ).copy(trend = TrendDirection.UPTREND, isLateTimingForbidden = false, candleSecond = 0)
 
         assertTrue(analysis.hasBottomRejectionWick)
         val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(
