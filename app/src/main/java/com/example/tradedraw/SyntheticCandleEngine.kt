@@ -387,16 +387,16 @@ class SyntheticCandleEngine {
                 val activeCandle = currentCandle
                 when {
                     (tick.isBullishImpulse || detectedTrend == TrendDirection.UPTREND) -> {
-                        if (isBullishOverextended || distToResistance <= 0.18f || syntheticTickRsi >= 70.0 || consecutiveUpTicks >= 5) {
-                            Log.d(TAG, "Headless Warmup: Continuación Alcista VETADA por Sobreextensión en Resistencia")
+                        if (isBullishOverextended || distToResistance <= 0.12f) {
+                            Log.d(TAG, "Headless Warmup: Continuación Alcista VETADA por Proximidad a Resistencia (dist <= 12%)")
                         } else {
                             onSignalGenerated?.invoke(TradeAction.BUY, "🚀 Sniper Headless [Flujo Alcista / Ticks | ⏱ ${sec}s] -> CALL")
                             return
                         }
                     }
                     (tick.isBearishImpulse || detectedTrend == TrendDirection.DOWNTREND) -> {
-                        if (isBearishOverextended || distToSupport <= 0.18f || syntheticTickRsi <= 30.0 || consecutiveDownTicks >= 5) {
-                            Log.d(TAG, "Headless Warmup: Continuación Bajista VETADA por Sobreextensión en Soporte")
+                        if (isBearishOverextended || distToSupport <= 0.12f) {
+                            Log.d(TAG, "Headless Warmup: Continuación Bajista VETADA por Proximidad a Soporte (dist <= 12%)")
                         } else {
                             onSignalGenerated?.invoke(TradeAction.SELL, "🚀 Sniper Headless [Flujo Bajista / Ticks | ⏱ ${sec}s] -> PUT")
                             return
@@ -404,14 +404,14 @@ class SyntheticCandleEngine {
                     }
                     activeCandle != null -> {
                         if (activeCandle.close >= activeCandle.open) {
-                            if (isBullishOverextended || distToResistance <= 0.18f || syntheticTickRsi >= 70.0 || consecutiveUpTicks >= 5) {
+                            if (isBullishOverextended || distToResistance <= 0.12f) {
                                 Log.d(TAG, "Headless Warmup: Compra VETADA en techo")
                             } else {
                                 onSignalGenerated?.invoke(TradeAction.BUY, "🚀 Sniper Headless [Flujo Vela Actual Verde | ⏱ ${sec}s] -> CALL")
                                 return
                             }
                         } else {
-                            if (isBearishOverextended || distToSupport <= 0.18f || syntheticTickRsi <= 30.0 || consecutiveDownTicks >= 5) {
+                            if (isBearishOverextended || distToSupport <= 0.12f) {
                                 Log.d(TAG, "Headless Warmup: Venta VETADA en suelo")
                             } else {
                                 onSignalGenerated?.invoke(TradeAction.SELL, "🚀 Sniper Headless [Flujo Vela Actual Roja | ⏱ ${sec}s] -> PUT")
@@ -458,16 +458,16 @@ class SyntheticCandleEngine {
                 }
             }
 
-            // Estrategia 3: Continuación de Tendencia Pura con Filtro Estricto Anti-Sobreextensión
+            // Estrategia 3: Continuación de Tendencia Pura con Filtro Inteligente de Sobreextensión
             if (detectedTrend == TrendDirection.UPTREND && !tick.isBearishImpulse) {
-                if (isBullishOverextended || distToResistance <= 0.18f || syntheticTickRsi >= 70.0 || consecutiveUpTicks >= 5) {
+                if (isBullishOverextended || distToResistance <= 0.12f) {
                     Log.d(TAG, "Continuación Alcista VETADA: Sobreextensión en Resistencia [RSI=${syntheticTickRsi.toInt()}, UpTicks=$consecutiveUpTicks, DistR=${(distToResistance*100).toInt()}%]")
                 } else {
                     onSignalGenerated?.invoke(TradeAction.BUY, "🚀 Continuación de Tendencia Alcista [WS Sniper | ⏱ ${sec}s] -> CALL")
                     return
                 }
             } else if (detectedTrend == TrendDirection.DOWNTREND && !tick.isBullishImpulse) {
-                if (isBearishOverextended || distToSupport <= 0.18f || syntheticTickRsi <= 30.0 || consecutiveDownTicks >= 5) {
+                if (isBearishOverextended || distToSupport <= 0.12f) {
                     Log.d(TAG, "Continuación Bajista VETADA: Sobreextensión en Soporte [RSI=${syntheticTickRsi.toInt()}, DownTicks=$consecutiveDownTicks, DistS=${(distToSupport*100).toInt()}%]")
                 } else {
                     onSignalGenerated?.invoke(TradeAction.SELL, "🚀 Continuación de Tendencia Bajista [WS Sniper | ⏱ ${sec}s] -> PUT")
