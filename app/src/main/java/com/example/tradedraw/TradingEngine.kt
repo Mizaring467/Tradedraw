@@ -55,6 +55,10 @@ class TradingEngine(
         }
 
     var autonomousSubMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE
+        set(value) {
+            field = value
+            syntheticCandleEngine.subMode = value
+        }
     var strategy: AutoTradeStrategy = AutoTradeStrategy.AUTO_ADAPTIVE
     var debugModeEnabled: Boolean = false
 
@@ -152,6 +156,7 @@ class TradingEngine(
      */
     fun onMarketTick(tick: MarketTick) {
         latestMarketTick = tick
+        syntheticCandleEngine.subMode = autonomousSubMode
         syntheticCandleEngine.onNewTick(tick)
 
         // En modo Headless (sin frames de pantalla capturados), resolver trade por tiempo y balance de Binomo
@@ -1006,11 +1011,13 @@ class TradingEngine(
         }
 
         // Evaluación por el Motor de Autoaprendizaje Adaptativo de Errores
+        val isYolo = autonomousSubMode == AutonomousSubMode.YOLO
         val adaptiveDecision = adaptiveLearningEngine.evaluateSignalSuitability(
             candidateAction = action,
             analysis = analysis,
             tick = latestMarketTick,
-            strategyName = strategy.name
+            strategyName = strategy.name,
+            isYoloMode = isYolo
         )
 
         val finalAction: TradeAction
@@ -1218,15 +1225,14 @@ class TradingEngine(
      */
     fun executeHeadlessTrade(action: TradeAction, reasonDescription: String) {
         val sec = latestMarketTick?.candleSecond ?: (((System.currentTimeMillis() / 1000L) % 60L).toInt())
-        val isTimingVetoed = MarketTickFilters.isTimingVetoed(sec)
-        val isStrictTimingWindow = MarketTickFilters.isStrictTimingWindow(sec)
-
-        if (isTimingVetoed) {
-            Log.d("TradingEngine", "Headless bloqueado por VETO de timing :15-:55 (⏱ ${sec}s)")
-            return
+        val isYolo = (autonomousSubMode == AutonomousSubMode.YOLO)
+        val inWindow = if (isYolo) {
+            sec in 55..59 || sec in 0..12
+        } else {
+            sec in 57..59 || sec in 0..4
         }
-        if (!isStrictTimingWindow) {
-            Log.d("TradingEngine", "Headless bloqueado fuera de ventana estricta :58-:03 (⏱ ${sec}s)")
+        if (!inWindow) {
+            Log.d("TradingEngine", "Headless bloqueado fuera de ventana timing (⏱ ${sec}s | YOLO=$isYolo)")
             return
         }
         if (syntheticCandleEngine.isChoppinessDetected()) {
@@ -1236,7 +1242,11 @@ class TradingEngine(
 
         // 1. Espaciado y Cooldown post-resolución
         val timeSinceLastResolution = System.currentTimeMillis() - lastTradeResolutionTime
-        val minSpacingMs = if (riskManager.currentLossStreak > 0) 45000L else 15000L
+        val minSpacingMs = when {
+            isYolo -> 8000L // 8 segundos en YOLO para no trabar la siguiente vela
+            riskManager.currentLossStreak > 0 -> 35000L
+            else -> 12000L
+        }
         if (lastTradeResolutionTime > 0L && timeSinceLastResolution < minSpacingMs) {
             Log.d("TradingEngine", "Headless bloqueado por Cooldown post-resolución (${timeSinceLastResolution / 1000}s < ${minSpacingMs / 1000}s)")
             return
@@ -1246,12 +1256,12 @@ class TradingEngine(
         val distToSupport = syntheticCandleEngine.distanceToSupportRatio
         val distToResistance = syntheticCandleEngine.distanceToResistanceRatio
 
-        if (action == TradeAction.SELL && distToSupport <= 0.12f && !reasonDescription.contains("Rechazo")) {
-            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido vender sobre Soporte (distS <= 12%)")
+        if (action == TradeAction.SELL && distToSupport <= 0.10f && !reasonDescription.contains("Rechazo") && !reasonDescription.contains("Rebote")) {
+            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido vender sobre Soporte (distS <= 10%)")
             return
         }
-        if (action == TradeAction.BUY && distToResistance <= 0.12f && !reasonDescription.contains("Rechazo")) {
-            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido comprar sobre Resistencia (distR <= 12%)")
+        if (action == TradeAction.BUY && distToResistance <= 0.10f && !reasonDescription.contains("Rechazo") && !reasonDescription.contains("Rebote")) {
+            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido comprar sobre Resistencia (distR <= 10%)")
             return
         }
 
@@ -1266,11 +1276,13 @@ class TradingEngine(
             candleSecond = sec
         )
 
+        val isYoloHeadless = autonomousSubMode == AutonomousSubMode.YOLO
         val adaptiveDecision = adaptiveLearningEngine.evaluateSignalSuitability(
             candidateAction = action,
             analysis = effectiveAnalysis,
             tick = latestMarketTick,
-            strategyName = "HEADLESS_WS"
+            strategyName = "HEADLESS_WS",
+            isYoloMode = isYoloHeadless
         )
         val finalAction: TradeAction
         val finalReason: String
