@@ -35,6 +35,33 @@ class SyntheticCandleEngine {
     private var currentCandle: SyntheticCandle? = null
     val closedCandles = ArrayList<SyntheticCandle>(64)
     private val recentTickPrices = ArrayDeque<Double>(120)
+    private var lastTickPrice: Double = 0.0
+
+    // Conteo de ticks sin retroceso
+    var consecutiveUpTicks: Int = 0
+        private set
+    var consecutiveDownTicks: Int = 0
+        private set
+    var lastCompletedUpStreak: Int = 0
+        private set
+    var lastCompletedDownStreak: Int = 0
+        private set
+
+    // RSI sintético de ticks (0.0 a 100.0)
+    var syntheticTickRsi: Double = 50.0
+        private set
+
+    // Proximidad a Soporte/Resistencia dinámicos (0.0 = en el nivel, 1.0 = en el extremo opuesto)
+    var distanceToResistanceRatio: Float = 0.5f
+        private set
+    var distanceToSupportRatio: Float = 0.5f
+        private set
+
+    // Flags cuantitativos de sobreextensión
+    var isBullishOverextended: Boolean = false
+        private set
+    var isBearishOverextended: Boolean = false
+        private set
 
     var dynamicSupportPrice: Double = 0.0
         private set
@@ -52,13 +79,36 @@ class SyntheticCandleEngine {
         val candleMinute = (tick.timestampMs / 60000L) * 60000L
         val active = currentCandle
 
-        // Registrar tick en buffer rodante para análisis instantáneo de momentum y medias
+        // 1. Conteo cuantitativo de ticks sin retroceso
+        if (lastTickPrice > 0.0) {
+            val delta = tick.price - lastTickPrice
+            val epsilon = lastTickPrice * 0.000002
+            if (delta > epsilon) {
+                if (consecutiveDownTicks > 0) {
+                    lastCompletedDownStreak = consecutiveDownTicks
+                }
+                consecutiveUpTicks++
+                consecutiveDownTicks = 0
+            } else if (delta < -epsilon) {
+                if (consecutiveUpTicks > 0) {
+                    lastCompletedUpStreak = consecutiveUpTicks
+                }
+                consecutiveDownTicks++
+                consecutiveUpTicks = 0
+            }
+        }
+        lastTickPrice = tick.price
+
+        // 2. Registrar tick en buffer rodante para análisis instantáneo de momentum y medias
         synchronized(recentTickPrices) {
             if (recentTickPrices.size >= 120) {
                 recentTickPrices.removeFirst()
             }
             recentTickPrices.addLast(tick.price)
         }
+
+        // 3. Calcular RSI sintético de ticks (período de 14 ticks)
+        syntheticTickRsi = calculateTickRsi(14)
 
         if (active == null || active.openTimeMs != candleMinute) {
             // Cierre de la vela anterior si existía
@@ -87,12 +137,69 @@ class SyntheticCandleEngine {
             active.close = tick.price
         }
 
-        // Recalcular S/R y tendencia en cada tick para respuesta inmediata en HUD y estrategia
+        // 4. Recalcular S/R dinámico y ratios de distancia
         recalculateSupportResistance(tick)
+
+        // 5. Evaluar estado cuantitativo de sobreextensión
+        updateOverextensionStatus(tick)
+
+        // 6. Recalcular tendencia en cada tick para respuesta inmediata en HUD y estrategia
         recalculateTrend(tick)
 
-        // Evaluar señales cuantitativas en la ventana sniper (:59s - :01s)
+        // 7. Evaluar señales cuantitativas en la ventana sniper (:59s - :01s)
         evaluateSniperOpportunity(tick)
+    }
+
+    /**
+     * Calcula el RSI sintético de ticks sobre la ventana rodante de ticks.
+     * Rango de salida: 0.0 a 100.0.
+     */
+    fun calculateTickRsi(period: Int = 14): Double {
+        synchronized(recentTickPrices) {
+            val available = recentTickPrices.size - 1
+            if (available < 3) return 50.0
+            val n = Math.min(period, available)
+            val prices = recentTickPrices.takeLast(n + 1)
+            var gains = 0.0
+            var losses = 0.0
+            for (i in 1 until prices.size) {
+                val diff = prices[i] - prices[i - 1]
+                if (diff > 0.0) {
+                    gains += diff
+                } else if (diff < 0.0) {
+                    losses += -diff
+                }
+            }
+            if (losses == 0.0 && gains == 0.0) return 50.0
+            if (losses == 0.0) return 100.0
+            if (gains == 0.0) return 0.0
+            val avgGain = gains / n
+            val avgLoss = losses / n
+            val rs = avgGain / avgLoss
+            return (100.0 - (100.0 / (1.0 + rs))).coerceIn(0.0, 100.0)
+        }
+    }
+
+    private fun updateOverextensionStatus(tick: MarketTick) {
+        val nearRes = distanceToResistanceRatio <= 0.22f || (dynamicResistancePrice > 0.0 && tick.price >= dynamicResistancePrice * 0.9998)
+        val rsiOverbought = syntheticTickRsi >= 70.0
+        val rsiExtremeOverbought = syntheticTickRsi >= 78.0
+        val streakUp = consecutiveUpTicks >= 5 || (lastCompletedUpStreak >= 4 && consecutiveDownTicks <= 2)
+        val extremeStreakUp = consecutiveUpTicks >= 8 || lastCompletedUpStreak >= 8
+
+        isBullishOverextended = (nearRes && (rsiOverbought || streakUp)) ||
+                (rsiExtremeOverbought && distanceToResistanceRatio <= 0.30f) ||
+                extremeStreakUp
+
+        val nearSup = distanceToSupportRatio <= 0.22f || (dynamicSupportPrice > 0.0 && tick.price <= dynamicSupportPrice * 1.0002)
+        val rsiOversold = syntheticTickRsi <= 30.0
+        val rsiExtremeOversold = syntheticTickRsi <= 22.0
+        val streakDown = consecutiveDownTicks >= 5 || (lastCompletedDownStreak >= 4 && consecutiveUpTicks <= 2)
+        val extremeStreakDown = consecutiveDownTicks >= 8 || lastCompletedDownStreak >= 8
+
+        isBearishOverextended = (nearSup && (rsiOversold || streakDown)) ||
+                (rsiExtremeOversold && distanceToSupportRatio <= 0.30f) ||
+                extremeStreakDown
     }
 
     private fun recalculateSupportResistance(tick: MarketTick? = null) {
@@ -139,6 +246,12 @@ class SyntheticCandleEngine {
 
                 dynamicResistancePrice = maxHigh
                 dynamicSupportPrice = minLow
+
+                if (tick != null && tick.price > 0.0) {
+                    val srRange = (maxHigh - minLow).coerceAtLeast(0.00001)
+                    distanceToSupportRatio = ((tick.price - minLow) / srRange).toFloat().coerceIn(0f, 1f)
+                    distanceToResistanceRatio = ((maxHigh - tick.price) / srRange).toFloat().coerceIn(0f, 1f)
+                }
             }
         }
     }
@@ -230,30 +343,81 @@ class SyntheticCandleEngine {
         val isSniperWindow = sec == 59 || sec == 0 || sec == 1
         if (!isSniperWindow) return
 
-        val srRange = (dynamicResistancePrice - dynamicSupportPrice).coerceAtLeast(0.0001)
-        val distToSupport = ((tick.price - dynamicSupportPrice) / srRange).toFloat().coerceIn(0f, 1f)
-        val distToResistance = ((dynamicResistancePrice - tick.price) / srRange).toFloat().coerceIn(0f, 1f)
+        val distToSupport = distanceToSupportRatio
+        val distToResistance = distanceToResistanceRatio
 
         synchronized(closedCandles) {
-            // Arranque inmediato sin warmup: si hay menos de 3 velas cerradas, operar por micro-impulso instantáneo o flujo de vela
+            // ESTRATEGIA PRIORITARIA 0: Reversión Cuantitativa por Sobreextensión en Zonas Clave
+            // Si el mercado se sobreextendió al alza contra la resistencia y muestra desaceleración / micro-rechazo
+            if (isBullishOverextended && distToResistance <= 0.22f) {
+                val hasBearishTurn = tick.isBearishImpulse || tick.velocity <= 0f ||
+                        (closedCandles.isNotEmpty() && closedCandles.last().upperWickRatio >= 0.20f) ||
+                        consecutiveDownTicks >= 1 || (lastCompletedUpStreak >= 4 && consecutiveDownTicks >= 1)
+                if (hasBearishTurn) {
+                    val rsiInt = syntheticTickRsi.toInt()
+                    val upTicks = Math.max(consecutiveUpTicks, lastCompletedUpStreak)
+                    val distPct = (distToResistance * 100).toInt()
+                    onSignalGenerated?.invoke(
+                        TradeAction.SELL,
+                        "🎯 Reversión Anti-Sobreextensión en Resistencia [RSI: $rsiInt | Ticks Up: $upTicks | Dist R: $distPct% | ⏱ ${sec}s] -> PUT"
+                    )
+                    return
+                }
+            }
+
+            // Si el mercado se sobreextendió a la baja contra el soporte y muestra desaceleración / micro-rechazo
+            if (isBearishOverextended && distToSupport <= 0.22f) {
+                val hasBullishTurn = tick.isBullishImpulse || tick.velocity >= 0f ||
+                        (closedCandles.isNotEmpty() && closedCandles.last().lowerWickRatio >= 0.20f) ||
+                        consecutiveUpTicks >= 1 || (lastCompletedDownStreak >= 4 && consecutiveUpTicks >= 1)
+                if (hasBullishTurn) {
+                    val rsiInt = syntheticTickRsi.toInt()
+                    val downTicks = Math.max(consecutiveDownTicks, lastCompletedDownStreak)
+                    val distPct = (distToSupport * 100).toInt()
+                    onSignalGenerated?.invoke(
+                        TradeAction.BUY,
+                        "🎯 Reversión Anti-Sobreextensión en Soporte [RSI: $rsiInt | Ticks Down: $downTicks | Dist S: $distPct% | ⏱ ${sec}s] -> CALL"
+                    )
+                    return
+                }
+            }
+
+            // Arranque inmediato sin warmup: si hay menos de 3 velas cerradas, filtrar sobreextensión para evitar compras en máximos o ventas en mínimos
             if (closedCandles.size < 3) {
                 val activeCandle = currentCandle
                 when {
-                    tick.isBullishImpulse || detectedTrend == TrendDirection.UPTREND -> {
-                        onSignalGenerated?.invoke(TradeAction.BUY, "🚀 Sniper Headless [Flujo Alcista / Ticks | ⏱ ${sec}s] -> CALL")
-                        return
+                    (tick.isBullishImpulse || detectedTrend == TrendDirection.UPTREND) -> {
+                        if (isBullishOverextended || distToResistance <= 0.18f || syntheticTickRsi >= 70.0 || consecutiveUpTicks >= 5) {
+                            Log.d(TAG, "Headless Warmup: Continuación Alcista VETADA por Sobreextensión en Resistencia")
+                        } else {
+                            onSignalGenerated?.invoke(TradeAction.BUY, "🚀 Sniper Headless [Flujo Alcista / Ticks | ⏱ ${sec}s] -> CALL")
+                            return
+                        }
                     }
-                    tick.isBearishImpulse || detectedTrend == TrendDirection.DOWNTREND -> {
-                        onSignalGenerated?.invoke(TradeAction.SELL, "🚀 Sniper Headless [Flujo Bajista / Ticks | ⏱ ${sec}s] -> PUT")
-                        return
+                    (tick.isBearishImpulse || detectedTrend == TrendDirection.DOWNTREND) -> {
+                        if (isBearishOverextended || distToSupport <= 0.18f || syntheticTickRsi <= 30.0 || consecutiveDownTicks >= 5) {
+                            Log.d(TAG, "Headless Warmup: Continuación Bajista VETADA por Sobreextensión en Soporte")
+                        } else {
+                            onSignalGenerated?.invoke(TradeAction.SELL, "🚀 Sniper Headless [Flujo Bajista / Ticks | ⏱ ${sec}s] -> PUT")
+                            return
+                        }
                     }
                     activeCandle != null -> {
                         if (activeCandle.close >= activeCandle.open) {
-                            onSignalGenerated?.invoke(TradeAction.BUY, "🚀 Sniper Headless [Flujo Vela Actual Verde | ⏱ ${sec}s] -> CALL")
+                            if (isBullishOverextended || distToResistance <= 0.18f || syntheticTickRsi >= 70.0 || consecutiveUpTicks >= 5) {
+                                Log.d(TAG, "Headless Warmup: Compra VETADA en techo")
+                            } else {
+                                onSignalGenerated?.invoke(TradeAction.BUY, "🚀 Sniper Headless [Flujo Vela Actual Verde | ⏱ ${sec}s] -> CALL")
+                                return
+                            }
                         } else {
-                            onSignalGenerated?.invoke(TradeAction.SELL, "🚀 Sniper Headless [Flujo Vela Actual Roja | ⏱ ${sec}s] -> PUT")
+                            if (isBearishOverextended || distToSupport <= 0.18f || syntheticTickRsi <= 30.0 || consecutiveDownTicks >= 5) {
+                                Log.d(TAG, "Headless Warmup: Venta VETADA en suelo")
+                            } else {
+                                onSignalGenerated?.invoke(TradeAction.SELL, "🚀 Sniper Headless [Flujo Vela Actual Roja | ⏱ ${sec}s] -> PUT")
+                                return
+                            }
                         }
-                        return
                     }
                 }
                 return
@@ -261,12 +425,12 @@ class SyntheticCandleEngine {
             val prev = closedCandles.last()
 
             // Estrategia 1: MT_REJECTION (Rechazo de mecha contra S/R con confirmación de velocidad)
-            if (distToSupport <= 0.20f && prev.lowerWickRatio >= 0.30f && !tick.isBearishImpulse) {
+            if (distToSupport <= 0.20f && prev.lowerWickRatio >= 0.30f && !tick.isBearishImpulse && !isBullishOverextended) {
                 onSignalGenerated?.invoke(TradeAction.BUY, "Rechazo alcista en Soporte (${(distToSupport * 100).toInt()}% dist) + Mecha ${(prev.lowerWickRatio * 100).toInt()}% -> CALL")
                 return
             }
 
-            if (distToResistance <= 0.20f && prev.upperWickRatio >= 0.30f && !tick.isBullishImpulse) {
+            if (distToResistance <= 0.20f && prev.upperWickRatio >= 0.30f && !tick.isBullishImpulse && !isBearishOverextended) {
                 onSignalGenerated?.invoke(TradeAction.SELL, "Rechazo bajista en Resistencia (${(distToResistance * 100).toInt()}% dist) + Mecha ${(prev.upperWickRatio * 100).toInt()}% -> PUT")
                 return
             }
@@ -280,7 +444,7 @@ class SyntheticCandleEngine {
                 val is3RedExhaustion = c1.isRed && c2.isRed && c3.isRed &&
                         (c1.body >= c2.body && c2.body >= c3.body) && distToSupport <= 0.30f
 
-                if (is3RedExhaustion && !tick.isBearishImpulse) {
+                if (is3RedExhaustion && !tick.isBearishImpulse && !isBullishOverextended) {
                     onSignalGenerated?.invoke(TradeAction.BUY, "Agotamiento 3 Velas Rojas sobre Soporte -> Reversión CALL")
                     return
                 }
@@ -288,19 +452,29 @@ class SyntheticCandleEngine {
                 val is3GreenExhaustion = c1.isGreen && c2.isGreen && c3.isGreen &&
                         (c1.body >= c2.body && c2.body >= c3.body) && distToResistance <= 0.30f
 
-                if (is3GreenExhaustion && !tick.isBullishImpulse) {
+                if (is3GreenExhaustion && !tick.isBullishImpulse && !isBearishOverextended) {
                     onSignalGenerated?.invoke(TradeAction.SELL, "Agotamiento 3 Velas Verdes sobre Resistencia -> Reversión PUT")
                     return
                 }
             }
 
-            // Estrategia 3: Continuación de Tendencia Pura
+            // Estrategia 3: Continuación de Tendencia Pura con Filtro Estricto Anti-Sobreextensión
             if (detectedTrend == TrendDirection.UPTREND && !tick.isBearishImpulse) {
-                onSignalGenerated?.invoke(TradeAction.BUY, "🚀 Continuación de Tendencia Alcista [WS Sniper | ⏱ ${sec}s] -> CALL")
-                return
+                if (isBullishOverextended || distToResistance <= 0.18f || syntheticTickRsi >= 70.0 || consecutiveUpTicks >= 5) {
+                    Log.d(TAG, "Continuación Alcista VETADA: Sobreextensión en Resistencia [RSI=${syntheticTickRsi.toInt()}, UpTicks=$consecutiveUpTicks, DistR=${(distToResistance*100).toInt()}%]")
+                } else {
+                    onSignalGenerated?.invoke(TradeAction.BUY, "🚀 Continuación de Tendencia Alcista [WS Sniper | ⏱ ${sec}s] -> CALL")
+                    return
+                }
             } else if (detectedTrend == TrendDirection.DOWNTREND && !tick.isBullishImpulse) {
-                onSignalGenerated?.invoke(TradeAction.SELL, "🚀 Continuación de Tendencia Bajista [WS Sniper | ⏱ ${sec}s] -> PUT")
-                return
+                if (isBearishOverextended || distToSupport <= 0.18f || syntheticTickRsi <= 30.0 || consecutiveDownTicks >= 5) {
+                    Log.d(TAG, "Continuación Bajista VETADA: Sobreextensión en Soporte [RSI=${syntheticTickRsi.toInt()}, DownTicks=$consecutiveDownTicks, DistS=${(distToSupport*100).toInt()}%]")
+                } else {
+                    onSignalGenerated?.invoke(TradeAction.SELL, "🚀 Continuación de Tendencia Bajista [WS Sniper | ⏱ ${sec}s] -> PUT")
+                    return
+                }
+            } else {
+                // Sin señal cuantitativa clara en este tick
             }
         }
     }

@@ -85,6 +85,7 @@ class TradingEngine(
     var onFrameProcessedListener: ((VisionAnalysisResult) -> Unit)? = null
 
     val syntheticCandleEngine = SyntheticCandleEngine()
+    val adaptiveLearningEngine = AdaptiveLearningEngine()
 
     init {
         // Conectar callback: cuando el usuario arrastra una línea del bot, bloquearla
@@ -250,6 +251,7 @@ class TradingEngine(
                         } else if (finalWin) {
                             TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method)
                             riskManager.recordTradeWin()
+                            adaptiveLearningEngine.recordTradeOutcome(true)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
                             Toast.makeText(context, "🎉 OPERACIÓN GANADA (+1 W)", Toast.LENGTH_LONG).show()
@@ -257,6 +259,7 @@ class TradingEngine(
                         } else {
                             TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method)
                             riskManager.recordTradeLoss()
+                            adaptiveLearningEngine.recordTradeOutcome(false)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
                             Toast.makeText(context, "⚠️ OPERACIÓN PERDIDA (+1 L)", Toast.LENGTH_LONG).show()
@@ -375,7 +378,7 @@ class TradingEngine(
         analysis: VisionAnalysisResult,
         hasDrawnLines: Boolean = false
     ): TradeAction? {
-        val (action, reason) = evaluateStrategySignalWithReason(strategy, analysis, hasDrawnLines)
+        val (action, reason) = evaluateStrategySignalWithReason(strategy, analysis, hasDrawnLines, syntheticCandleEngine)
         lastSignalReason = reason
         return action
     }
@@ -384,16 +387,18 @@ class TradingEngine(
         fun evaluateStrategySignal(
             strategy: AutoTradeStrategy,
             analysis: VisionAnalysisResult,
-            hasDrawnLines: Boolean = false
+            hasDrawnLines: Boolean = false,
+            syntheticEngine: SyntheticCandleEngine? = null
         ): TradeAction? {
-            val (action, _) = evaluateStrategySignalWithReason(strategy, analysis, hasDrawnLines)
+            val (action, _) = evaluateStrategySignalWithReason(strategy, analysis, hasDrawnLines, syntheticEngine)
             return action
         }
 
         fun evaluateStrategySignalWithReason(
             strategy: AutoTradeStrategy,
             analysis: VisionAnalysisResult,
-            hasDrawnLines: Boolean = false
+            hasDrawnLines: Boolean = false,
+            syntheticEngine: SyntheticCandleEngine? = null
         ): Pair<TradeAction?, String> {
             // Tarea 3: Filtro anti-mercado lateral / Dojis
             if (analysis.isMarketSideways) {
@@ -433,6 +438,20 @@ class TradingEngine(
                         // 1. Prioridad Máxima: Falso Rompimiento / Trampa Institucional en S/R (95% confluencia)
                         !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isFalseBreakoutCall -> Pair(TradeAction.BUY, "🎯 Auto [Trampa en Soporte | ⏱ ${sec}s] -> CALL")
                         !inUptrend && !analysis.hasStrongMomentumUp && analysis.isFalseBreakoutPut -> Pair(TradeAction.SELL, "🎯 Auto [Trampa en Resistencia | ⏱ ${sec}s] -> PUT")
+
+                        // 1b. Reversión Contra-Tendencia Cuantitativa por Sobreextensión en Zonas Clave S/R
+                        (analysis.isNearResistanceZone || analysis.touchesResistance || analysis.distanceToResistanceRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.20f)) &&
+                        (syntheticEngine?.isBullishOverextended == true || (syntheticEngine != null && (syntheticEngine.syntheticTickRsi >= 70.0 || syntheticEngine.consecutiveUpTicks >= 5)) || (analysis.consecutiveCount >= 3 && analysis.lastCandles.firstOrNull() == CandleType.GREEN) || analysis.isPriceNearTop) &&
+                        (!analysis.hasStrongMomentumUp && !analysis.isValidBreakoutCall && (analysis.tickVelocityNormalized <= 0.05f || analysis.isBearishImpulse || analysis.hasTopRejectionWick || analysis.isRejectionPut || (syntheticEngine != null && syntheticEngine.consecutiveDownTicks >= 1))) -> {
+                            val rsiStr = if (syntheticEngine != null) " | RSI: ${syntheticEngine.syntheticTickRsi.toInt()}" else ""
+                            Pair(TradeAction.SELL, "🎯 Auto [Reversión por Sobreextensión en Resistencia$rsiStr | ⏱ ${sec}s] -> PUT")
+                        }
+                        (analysis.isNearSupportZone || analysis.touchesSupport || analysis.distanceToSupportRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.20f)) &&
+                        (syntheticEngine?.isBearishOverextended == true || (syntheticEngine != null && (syntheticEngine.syntheticTickRsi <= 30.0 || syntheticEngine.consecutiveDownTicks >= 5)) || (analysis.consecutiveCount >= 3 && analysis.lastCandles.firstOrNull() == CandleType.RED) || analysis.isPriceNearBottom) &&
+                        (!analysis.hasStrongMomentumDown && !analysis.isValidBreakoutPut && (analysis.tickVelocityNormalized >= -0.05f || analysis.isBullishImpulse || analysis.hasBottomRejectionWick || analysis.isRejectionCall || (syntheticEngine != null && syntheticEngine.consecutiveUpTicks >= 1))) -> {
+                            val rsiStr = if (syntheticEngine != null) " | RSI: ${syntheticEngine.syntheticTickRsi.toInt()}" else ""
+                            Pair(TradeAction.BUY, "🎯 Auto [Reversión por Sobreextensión en Soporte$rsiStr | ⏱ ${sec}s] -> CALL")
+                        }
 
                         // 2. Sniper Pullback Entry Timing (:01s-:05s tras vela de señal fuerte)
                         !inDowntrend && !analysis.hasStrongMomentumDown && isSniperPullbackCallTrigger ->
@@ -504,6 +523,19 @@ class TradingEngine(
                         }
                         !inUptrend && !analysis.hasStrongMomentumUp && analysis.isFalseBreakoutPut -> {
                             Pair(TradeAction.SELL, "🎯 MT Combo: Trampa / Falso Rompimiento de Resistencia -> PUT")
+                        }
+                        // 1b. Reversión Contra-Tendencia Cuantitativa por Sobreextensión en Zonas Clave
+                        (analysis.isNearResistanceZone || analysis.touchesResistance || analysis.distanceToResistanceRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.20f)) &&
+                        (syntheticEngine?.isBullishOverextended == true || (syntheticEngine != null && (syntheticEngine.syntheticTickRsi >= 70.0 || syntheticEngine.consecutiveUpTicks >= 5)) || (analysis.consecutiveCount >= 3 && analysis.lastCandles.firstOrNull() == CandleType.GREEN) || analysis.isPriceNearTop) &&
+                        (!analysis.hasStrongMomentumUp && !analysis.isValidBreakoutCall && (analysis.tickVelocityNormalized <= 0.05f || analysis.isBearishImpulse || analysis.hasTopRejectionWick || analysis.isRejectionPut || (syntheticEngine != null && syntheticEngine.consecutiveDownTicks >= 1))) -> {
+                            val rsiStr = if (syntheticEngine != null) " (RSI ${syntheticEngine.syntheticTickRsi.toInt()})" else ""
+                            Pair(TradeAction.SELL, "🎯 MT Combo: Reversión por Sobreextensión en Resistencia$rsiStr -> PUT")
+                        }
+                        (analysis.isNearSupportZone || analysis.touchesSupport || analysis.distanceToSupportRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.20f)) &&
+                        (syntheticEngine?.isBearishOverextended == true || (syntheticEngine != null && (syntheticEngine.syntheticTickRsi <= 30.0 || syntheticEngine.consecutiveDownTicks >= 5)) || (analysis.consecutiveCount >= 3 && analysis.lastCandles.firstOrNull() == CandleType.RED) || analysis.isPriceNearBottom) &&
+                        (!analysis.hasStrongMomentumDown && !analysis.isValidBreakoutPut && (analysis.tickVelocityNormalized >= -0.05f || analysis.isBullishImpulse || analysis.hasBottomRejectionWick || analysis.isRejectionCall || (syntheticEngine != null && syntheticEngine.consecutiveUpTicks >= 1))) -> {
+                            val rsiStr = if (syntheticEngine != null) " (RSI ${syntheticEngine.syntheticTickRsi.toInt()})" else ""
+                            Pair(TradeAction.BUY, "🎯 MT Combo: Reversión por Sobreextensión en Soporte$rsiStr -> CALL")
                         }
                         // 2. Sniper Pullback Entry (:01s-:05s) tras vela de señal fuerte
                         !inDowntrend && !analysis.hasStrongMomentumDown && isSniperPullbackCallTrigger -> {
@@ -721,12 +753,17 @@ class TradingEngine(
                 return Pair(null, "⚠️ Veto: Prohibido comprar sobre Resistencia (Riesgo de Rechazo)")
             }
 
-            // 2. Filtro Anti-Sobreextensión de Racha:
-            // Si la racha consecutiva de velas del mismo color es >= 4, PROHIBIR operaciones de continuación en esa misma dirección
+            // 2. Filtro Anti-Sobreextensión de Racha y Ticks:
             val isGreenStreak = analysis.consecutiveCount >= 4 &&
                 (analysis.lastCandles.firstOrNull() == CandleType.GREEN || analysis.streakBadge.contains("V"))
             val isRedStreak = analysis.consecutiveCount >= 4 &&
                 (analysis.lastCandles.firstOrNull() == CandleType.RED || analysis.streakBadge.contains("R"))
+
+            val isWsOverbought = syntheticEngine?.isBullishOverextended == true ||
+                (syntheticEngine != null && (syntheticEngine.syntheticTickRsi >= 70.0 || syntheticEngine.consecutiveUpTicks >= 5 || syntheticEngine.distanceToResistanceRatio <= 0.18f))
+            val isWsOversold = syntheticEngine?.isBearishOverextended == true ||
+                (syntheticEngine != null && (syntheticEngine.syntheticTickRsi <= 30.0 || syntheticEngine.consecutiveDownTicks >= 5 || syntheticEngine.distanceToSupportRatio <= 0.18f))
+
             if (action == TradeAction.BUY && isGreenStreak) {
                 return Pair(null, "⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso")
             }
@@ -734,21 +771,25 @@ class TradingEngine(
                 return Pair(null, "⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso")
             }
 
-            // 3. Exigir Retroceso (Pullback) en Continuación:
-            // Para señales de continuación de tendencia, exigir que la vela actual no esté en el extremo opuesto del rango
+            // 3. Exigir Retroceso (Pullback) en Continuación y Bloquear Sobreextensión Cuantitativa:
             val isTrendContinuation = strategy == AutoTradeStrategy.TREND_FOLLOWING ||
                 strategy == AutoTradeStrategy.COLOR_TREND ||
                 reason.contains("Continuación") ||
-                reason.contains("Tendencia")
+                reason.contains("Tendencia") ||
+                reason.contains("Impulso") ||
+                reason.contains("Confluencia Fuerte")
+
             if (isTrendContinuation) {
                 if (analysis.isDojiOrLowVolume) {
                     return Pair(null, "⚠️ Veto: Continuación descalificada por Doji / Micro-rango (Cuerpo < 15px)")
                 }
-                if (action == TradeAction.BUY && (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop)) {
-                    return Pair(null, "⚠️ Veto: Continuación alcista sin retroceso (Vela en extremo opuesto del rango)")
+                if (action == TradeAction.BUY && (isWsOverbought || analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop)) {
+                    val detail = if (syntheticEngine != null && isWsOverbought) " [RSI Ticks: ${syntheticEngine.syntheticTickRsi.toInt()}, Ticks Up: ${syntheticEngine.consecutiveUpTicks}]" else ""
+                    return Pair(null, "⚠️ Veto: Continuación alcista sin retroceso$detail (Vela en extremo opuesto del rango)")
                 }
-                if (action == TradeAction.SELL && (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom)) {
-                    return Pair(null, "⚠️ Veto: Continuación bajista sin retroceso (Vela en extremo opuesto del rango)")
+                if (action == TradeAction.SELL && (isWsOversold || analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom)) {
+                    val detail = if (syntheticEngine != null && isWsOversold) " [RSI Ticks: ${syntheticEngine.syntheticTickRsi.toInt()}, Ticks Down: ${syntheticEngine.consecutiveDownTicks}]" else ""
+                    return Pair(null, "⚠️ Veto: Continuación bajista sin retroceso$detail (Vela en extremo opuesto del rango)")
                 }
             }
 
@@ -871,24 +912,57 @@ class TradingEngine(
         reasonDescription: String,
         confidence: Float? = null
     ) {
-        val signalConfidence = confidence ?: when {
-            action == TradeAction.BUY && analysis.signalPowerCall > 0 -> analysis.signalPowerCall / 100f
-            action == TradeAction.SELL && analysis.signalPowerPut > 0 -> analysis.signalPowerPut / 100f
+        // Evaluación por el Motor de Autoaprendizaje Adaptativo de Errores
+        val adaptiveDecision = adaptiveLearningEngine.evaluateSignalSuitability(
+            candidateAction = action,
+            analysis = analysis,
+            tick = latestMarketTick,
+            strategyName = strategy.name
+        )
+
+        val finalAction: TradeAction
+        val finalReason: String
+        val adaptiveModifier: Float
+
+        when (adaptiveDecision) {
+            is AdaptiveDecision.Block -> {
+                android.util.Log.w("TradingEngine", "⛔ Señal $action VETADA por Autoaprendizaje: ${adaptiveDecision.reason}")
+                handler.post {
+                    Toast.makeText(context, "⛔ [Autoaprendizaje] Entrada bloqueada: ${adaptiveDecision.reason}", Toast.LENGTH_SHORT).show()
+                }
+                return
+            }
+            is AdaptiveDecision.Invert -> {
+                finalAction = adaptiveDecision.invertedAction
+                finalReason = "$reasonDescription [🔄 Invertida por Autoaprendizaje: ${adaptiveDecision.reason}]"
+                adaptiveModifier = 1.15f
+            }
+            is AdaptiveDecision.Allow -> {
+                finalAction = adaptiveDecision.action
+                finalReason = reasonDescription
+                adaptiveModifier = adaptiveDecision.confidenceModifier
+            }
+        }
+
+        val baseConfidence = confidence ?: when {
+            finalAction == TradeAction.BUY && analysis.signalPowerCall > 0 -> analysis.signalPowerCall / 100f
+            finalAction == TradeAction.SELL && analysis.signalPowerPut > 0 -> analysis.signalPowerPut / 100f
             else -> 1.0f
         }
+        val signalConfidence = (baseConfidence * adaptiveModifier).coerceIn(0.1f, 1.0f)
         val (canTrade, reason) = riskManager.canExecuteTrade(mode, autonomousSubMode, signalConfidence)
-        val actionText = if (action == TradeAction.BUY) "COMPRA / CALL (Sube)" else "VENTA / PUT (Baja)"
-        val emoji = if (action == TradeAction.BUY) "🟢 ▲" else "🔴 ▼"
+        val actionText = if (finalAction == TradeAction.BUY) "COMPRA / CALL (Sube)" else "VENTA / PUT (Baja)"
+        val emoji = if (finalAction == TradeAction.BUY) "🟢 ▲" else "🔴 ▼"
 
         currentActiveSignal = ActiveSignal(
-            action = action,
+            action = finalAction,
             title = "$emoji $actionText",
-            reason = reasonDescription,
+            reason = finalReason,
             timestamp = System.currentTimeMillis()
         )
 
         handler.post {
-            onSignalListener?.invoke(action, "$actionText · $reasonDescription")
+            onSignalListener?.invoke(finalAction, "$actionText · $finalReason")
             val now = System.currentTimeMillis()
             if (now - lastFeedbackEmitTime >= 3500L && canTrade) {
                 lastFeedbackEmitTime = now
@@ -898,8 +972,8 @@ class TradingEngine(
 
         if (mode == AutoTradeMode.SEMIAUTOMATIC) {
             handler.post {
-                autoDrawEngine.drawTradeEntry(action, analysis.currentPriceY, context.resources.displayMetrics.widthPixels.toFloat())
-                Toast.makeText(context, "🔔 SEÑAL: $actionText\n$reasonDescription", Toast.LENGTH_SHORT).show()
+                autoDrawEngine.drawTradeEntry(finalAction, analysis.currentPriceY, context.resources.displayMetrics.widthPixels.toFloat())
+                Toast.makeText(context, "🔔 SEÑAL: $actionText\n$finalReason", Toast.LENGTH_SHORT).show()
             }
             return
         }
@@ -909,7 +983,9 @@ class TradingEngine(
                 return
             }
 
-            executeAutonomousTrade(action, analysis, bitmap, reasonDescription)
+            // Registrar firma de entrada en el motor adaptativo
+            adaptiveLearningEngine.recordTradeOpened(finalAction, analysis, latestMarketTick, strategy.name)
+            executeAutonomousTrade(finalAction, analysis, bitmap, finalReason)
         }
     }
 
@@ -1144,11 +1220,13 @@ class TradingEngine(
                     Toast.makeText(context, "[HEADLESS] ⚪ Empate / Orden cancelada", Toast.LENGTH_SHORT).show()
                 } else if (finalWin) {
                     riskManager.recordTradeWin()
+                    adaptiveLearningEngine.recordTradeOutcome(true)
                     emitHapticAndAudioFeedback()
                     Toast.makeText(context, "[HEADLESS] 🎉 GANADA (+1 W) [$method]", Toast.LENGTH_SHORT).show()
                     onTradeExecutedListener?.invoke(TradeAction.BUY, true)
                 } else {
                     riskManager.recordTradeLoss()
+                    adaptiveLearningEngine.recordTradeOutcome(false)
                     emitHapticAndAudioFeedback()
                     Toast.makeText(context, "[HEADLESS] ⚠️ PERDIDA (+1 L) [$method]", Toast.LENGTH_SHORT).show()
                     onTradeExecutedListener?.invoke(TradeAction.BUY, false)

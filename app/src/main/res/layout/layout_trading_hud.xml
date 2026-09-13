@@ -5,10 +5,10 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="@drawable/bg_hud_panel"
-    android:padding="4dp"
-    android:elevation="12dp">
+    android:padding="5dp"
+    android:elevation="14dp">
 
-    <!-- LÍNEA 1 DE CABECERA: Modo, Estrategia, Timer, Opacidad y Toggle Minimizar -->
+    <!-- LÍNEA 1 DE CABECERA: Modo, Estrategia, Timer, Opacidad, Chat y Minimizar -->
     <LinearLayout
         android:id="@+id/hud_header_line1"
         android:layout_width="wrap_content"
@@ -20,8 +20,8 @@
             android:id="@+id/hud_mode"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="[OFF]"
-            android:textColor="#94a3b8"
+            android:text="[AUTO]"
+            android:textColor="#22c55e"
             android:textSize="9.5sp"
             android:textStyle="bold"
             android:paddingEnd="3dp" />
@@ -39,7 +39,7 @@
             android:id="@+id/hud_streak_badge"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="· 1D ⚪"
+            android:text="· 1D 🟢"
             android:textColor="#38bdf8"
             android:textSize="9sp"
             android:textStyle="bold"
@@ -53,7 +53,7 @@
             android:textColor="#facc15"
             android:textSize="9.5sp"
             android:textStyle="bold"
-            android:layout_marginStart="6dp" />
+            android:layout_marginStart="5dp" />
 
         <!-- Botón de Opacidad -->
         <TextView
@@ -66,7 +66,7 @@
             android:textStyle="bold"
             android:gravity="center"
             android:background="@drawable/bg_hud_chip"
-            android:layout_marginStart="6dp"
+            android:layout_marginStart="5dp"
             android:paddingHorizontal="3dp"
             android:clickable="true"
             android:focusable="true" />
@@ -76,18 +76,18 @@
             android:id="@+id/hud_btn_chat"
             android:layout_width="wrap_content"
             android:layout_height="18dp"
-            android:text=" 💬 Chat "
+            android:text=" 💬 Agente "
             android:textColor="#a855f7"
             android:textSize="8sp"
             android:textStyle="bold"
             android:gravity="center"
             android:background="@drawable/bg_hud_chip"
-            android:layout_marginStart="4dp"
+            android:layout_marginStart="3dp"
             android:paddingHorizontal="3dp"
             android:clickable="true"
             android:focusable="true" />
 
-        <!-- Botón Minimizar / Desplegar (Colapsado por defecto con ▼) -->
+        <!-- Botón Minimizar / Desplegar -->
         <TextView
             android:id="@+id/hud_btn_collapse"
             android:layout_width="18dp"
@@ -103,7 +103,7 @@
             android:focusable="true" />
     </LinearLayout>
 
-    <!-- BARRA DESLIZANTE PROFESIONAL DE OPACIDAD (SeekBar interactiva) -->
+    <!-- BARRA DESLIZANTE DE OPACIDAD -->
     <LinearLayout
         android:id="@+id/hud_opacity_slider_container"
         android:layout_width="match_parent"
@@ -145,7 +145,7 @@
             android:textStyle="bold" />
     </LinearLayout>
 
-    <!-- LÍNEA 2 DE CABECERA: W/L, Winrate, Martingala y Termómetro (Ultra-compacto) -->
+    <!-- LÍNEA 2 DE CABECERA: W/L, Winrate, Martingala y Termómetro Micro-Ticks -->
     <LinearLayout
         android:id="@+id/hud_header_line2"
         android:layout_width="wrap_content"
@@ -181,150 +181,187 @@
             android:textStyle="bold"
             android:layout_marginStart="2dp" />
 
-        <!-- Termómetro Compacto -->
+        <!-- Termómetro Compacto de Ticks / Flujo -->
         <TextView
             android:id="@+id/hud_power_bar"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="[ 50% CALL ==== 50% PUT ]"
-            android:textColor="#38bdf8"
+            android:text="[ WS Headless: ▲ ALCISTA (641.8674) ]"
+            android:textColor="#22c55e"
             android:textSize="8sp"
             android:textStyle="bold"
-            android:layout_marginStart="6dp" />
+            android:layout_marginStart="5dp" />
     </LinearLayout>
 
-    <!-- CONTENEDOR DETALLADO (Colapsado / Oculto por defecto para no obstruir el gráfico) -->
+    <!-- CONTENEDOR DETALLADO DEL ANÁLISIS DEL AGENTE (Persistente, claro y sin parpadeos) -->
     <LinearLayout
         android:id="@+id/hud_details_container"
-        android:layout_width="wrap_content"
+        android:layout_width="260dp"
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:layout_marginTop="3dp"
-        android:visibility="gone">
+        android:visibility="visible">
 
-        <!-- Estado / Cooldown -->
-        <TextView
-            android:id="@+id/hud_status"
-            android:layout_width="wrap_content"
+        <!-- TARJETA 1: LO QUE VE EL AGENTE (Mercado & Enlace WebSocket 0ms) -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="⚪ En espera"
-            android:textColor="#cbd5e1"
-            android:textSize="8.5sp"
-            android:layout_marginTop="1dp" />
+            android:orientation="vertical"
+            android:background="@drawable/bg_hud_chip"
+            android:padding="4dp"
+            android:layout_marginBottom="2dp">
 
-        <!-- Diagnóstico de Cámara / Visión -->
-        <TextView
-            android:id="@+id/hud_diag"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="📷 Frames: 0 | Visión: OK"
-            android:textColor="#94a3b8"
-            android:textSize="8sp"
-            android:layout_marginTop="1dp" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
-        <!-- BLOQUE DIDÁCTICO: Tendencia Explicada y Próximo Movimiento Planeado -->
+                <TextView
+                    android:id="@+id/hud_diag"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="🟢 WS Activo: 641.8674 (0ms) | Headless"
+                    android:textColor="#22c55e"
+                    android:textSize="8sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/hud_status"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🟢 Operativa Activa"
+                    android:textColor="#38bdf8"
+                    android:textSize="8sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Micro-Velocidad y Flujo de Tick -->
+            <TextView
+                android:id="@+id/hud_tick_velocity"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="⚡ Micro-Velocidad: +0.038 px/s ▲ Impulso Alcista"
+                android:textColor="#4ade80"
+                android:textSize="7.5sp"
+                android:textStyle="bold"
+                android:layout_marginTop="1dp" />
+        </LinearLayout>
+
+        <!-- TARJETA 2: ESTRUCTURA DE MERCADO (Soporte, Resistencia y Tendencia) -->
         <LinearLayout
             android:id="@+id/hud_didactic_card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="@drawable/bg_hud_signal_idle"
-            android:padding="3dp"
-            android:layout_marginTop="2dp">
+            android:padding="4dp"
+            android:layout_marginBottom="2dp">
 
+            <!-- Insignia de Tendencia -->
             <TextView
                 android:id="@+id/hud_trend_badge"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="📈 Tendencia: Lateral / Dojis (50%)"
-                android:textColor="#38bdf8"
+                android:text="📈 Tendencia: ALCISTA"
+                android:textColor="#4ade80"
                 android:textSize="8.5sp"
                 android:textStyle="bold" />
 
+            <!-- Niveles S/R y Rango -->
             <TextView
                 android:id="@+id/hud_trend_reason"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Analizando confluencia de soporte y resistencia..."
-                android:textColor="#94a3b8"
+                android:text="Soporte: 641.6107 | Resistencia: 642.1242"
+                android:textColor="#cbd5e1"
                 android:textSize="7.5sp"
                 android:layout_marginTop="1dp" />
 
+            <!-- Plan Táctico de Acción del Agente -->
             <TextView
                 android:id="@+id/hud_planned_action"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="🎯 Plan: Vigilando confirmación de ruptura o rebote"
+                android:text="🎯 Plan: Preparar entrada CALL al cierre de vela (:58s)."
                 android:textColor="#facc15"
                 android:textSize="8sp"
                 android:textStyle="bold"
                 android:layout_marginTop="2dp" />
         </LinearLayout>
 
-        <!-- Tarjeta de Señal Operativa -->
+        <!-- TARJETA 3: ESTADO DE SEÑAL / TRADE EN CURSO -->
         <LinearLayout
             android:id="@+id/hud_signal_card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:background="@drawable/bg_hud_signal_idle"
-            android:padding="3dp"
-            android:layout_marginTop="2dp">
+            android:background="@drawable/bg_hud_chip"
+            android:padding="4dp"
+            android:layout_marginBottom="2dp">
 
-            <TextView
-                android:id="@+id/hud_signal_title"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="⚪ EN ESPERA DE SEÑAL"
-                android:textColor="#cbd5e1"
-                android:textSize="9sp"
-                android:textStyle="bold" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/hud_signal_title"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="⚪ EN ESPERA DE DISPARO :59s"
+                    android:textColor="#cbd5e1"
+                    android:textSize="8.5sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/hud_signal_countdown"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textColor="#facc15"
+                    android:textSize="8sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+            </LinearLayout>
 
             <TextView
                 android:id="@+id/hud_signal_desc"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Vigilando patrones de acción del precio..."
+                android:text="Filtros activos: Cooldown OK | Racha OK | Momentum Confirmado"
                 android:textColor="#94a3b8"
-                android:textSize="8sp"
-                android:layout_marginTop="1dp" />
-
-            <TextView
-                android:id="@+id/hud_signal_countdown"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text=""
-                android:textColor="#facc15"
-                android:textSize="8.5sp"
-                android:textStyle="bold"
-                android:visibility="gone"
+                android:textSize="7.5sp"
                 android:layout_marginTop="1dp" />
         </LinearLayout>
 
-        <!-- Pista / Estado de la Estrategia -->
+        <!-- Pista de Estrategia -->
         <TextView
             android:id="@+id/hud_hint"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="⚪ En espera"
-            android:textColor="#94a3b8"
-            android:textSize="8sp"
-            android:layout_marginTop="1dp" />
+            android:text="⚪ Estrategia: Auto-Adaptativa"
+            android:textColor="#64748b"
+            android:textSize="7.5sp"
+            android:layout_marginBottom="2dp" />
 
-        <!-- Botones de Acción (+W, +L, ↺ S/R IA) -->
+        <!-- Botones de Acción (+W, +L, ↺ S/R) -->
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginTop="3dp">
+            android:gravity="center_vertical">
 
             <Button
                 android:id="@+id/hud_btn_win"
-                android:layout_width="40dp"
+                android:layout_width="0dp"
                 android:layout_height="22dp"
+                android:layout_weight="1"
                 android:text="+W"
-                android:textSize="8.5sp"
+                android:textSize="8sp"
                 android:textStyle="bold"
                 android:textColor="#ffffff"
                 android:background="@drawable/bg_hud_btn_win"
@@ -332,10 +369,11 @@
 
             <Button
                 android:id="@+id/hud_btn_loss"
-                android:layout_width="40dp"
+                android:layout_width="0dp"
                 android:layout_height="22dp"
+                android:layout_weight="1"
                 android:text="+L"
-                android:textSize="8.5sp"
+                android:textSize="8sp"
                 android:textStyle="bold"
                 android:textColor="#ffffff"
                 android:background="@drawable/bg_hud_btn_loss"
@@ -344,16 +382,16 @@
 
             <Button
                 android:id="@+id/hud_btn_recalc_ai"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="22dp"
-                android:text="↺ S/R"
-                android:textSize="8.5sp"
+                android:layout_weight="1.2"
+                android:text="✓ S/R [Auto]"
+                android:textSize="8sp"
                 android:textStyle="bold"
-                android:textColor="#ffffff"
+                android:textColor="#34d399"
                 android:background="@drawable/bg_hud_btn_recalc"
-                android:layout_marginStart="5dp"
-                android:paddingStart="5dp"
-                android:paddingEnd="5dp" />
+                android:layout_marginStart="3dp"
+                android:padding="0dp" />
         </LinearLayout>
     </LinearLayout>
 

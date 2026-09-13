@@ -405,6 +405,69 @@ class TradingEngineTest {
         assertNull("Continuación sin pullback en extremo inferior debe ser vetada", actionDown)
         assertTrue("Razón debe advertir falta de retroceso", reasonDown.contains("sin retroceso"))
     }
+
+    @Test
+    fun testQuantitativeOverextensionBlocksContinuation() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 10L // minuto 10 exacto
+
+        // Simular 8 ticks alcistas consecutivos hacia resistencia
+        var p = 100.0
+        for (i in 0..15) {
+            p += 0.5
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = p, timestampMs = now + (i * 1000L)))
+        }
+
+        assertTrue("Debe detectar ticks alcistas consecutivos >= 5", engine.consecutiveUpTicks >= 5)
+        assertTrue("RSI sintético debe ser sobrecomprado (> 70)", engine.syntheticTickRsi >= 70.0)
+
+        // Señal de continuación alcista intentando comprar en el techo
+        val trendUpResult = VisionAnalysisResult(
+            trend = TrendDirection.UPTREND,
+            lastCandles = listOf(CandleType.GREEN),
+            distanceToResistanceRatio = 0.10f
+        )
+
+        val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(
+            AutoTradeStrategy.TREND_FOLLOWING,
+            trendUpResult,
+            syntheticEngine = engine
+        )
+
+        assertNull("La continuación alcista sobreextendida debe ser vetada", action)
+        assertTrue("Razón debe advertir sobreextensión", reason.contains("sin retroceso") || reason.contains("sobreextendida"))
+    }
+
+    @Test
+    fun testQuantitativeOverextensionReversalAtResistanceAndSupport() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 10L
+
+        // Alimentar ticks alcistas consecutivos hasta sobrecompra
+        var p = 100.0
+        for (i in 0..15) {
+            p += 0.5
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = p, timestampMs = now + (i * 1000L)))
+        }
+
+        val resAnalysis = VisionAnalysisResult(
+            isNearResistanceZone = true,
+            distanceToResistanceRatio = 0.08f,
+            consecutiveCount = 3,
+            lastCandles = listOf(CandleType.GREEN),
+            tickVelocityNormalized = -0.02f, // Micro-desaceleración / giro bajista
+            candleSecond = 59
+        )
+
+        val (actionPut, reasonPut) = TradingEngine.evaluateStrategySignalWithReason(
+            AutoTradeStrategy.AUTO_ADAPTIVE,
+            resAnalysis,
+            syntheticEngine = engine
+        )
+
+        assertEquals("Debe gatillar reversión PUT contra sobreextensión en Resistencia", TradeAction.SELL, actionPut)
+        assertTrue("Razón debe describir reversión por sobreextensión", reasonPut.contains("Reversión por Sobreextensión en Resistencia"))
+    }
 }
 
 
