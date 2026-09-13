@@ -1234,7 +1234,69 @@ class TradingEngine(
             return
         }
 
-        val (canTrade, riskReason) = riskManager.canExecuteTrade(mode, autonomousSubMode, 0.85f)
+        // 1. Espaciado y Cooldown post-resolución
+        val timeSinceLastResolution = System.currentTimeMillis() - lastTradeResolutionTime
+        val minSpacingMs = if (riskManager.currentLossStreak > 0) 45000L else 15000L
+        if (lastTradeResolutionTime > 0L && timeSinceLastResolution < minSpacingMs) {
+            Log.d("TradingEngine", "Headless bloqueado por Cooldown post-resolución (${timeSinceLastResolution / 1000}s < ${minSpacingMs / 1000}s)")
+            return
+        }
+
+        // 2. Filtro Anti-Suicidio S/R Universal en Headless:
+        val distToSupport = syntheticCandleEngine.distanceToSupportRatio
+        val distToResistance = syntheticCandleEngine.distanceToResistanceRatio
+
+        if (action == TradeAction.SELL && distToSupport <= 0.12f && !reasonDescription.contains("Rechazo")) {
+            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido vender sobre Soporte (distS <= 12%)")
+            return
+        }
+        if (action == TradeAction.BUY && distToResistance <= 0.12f && !reasonDescription.contains("Rechazo")) {
+            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido comprar sobre Resistencia (distR <= 12%)")
+            return
+        }
+
+        // 3. Evaluación por Motor de Autoaprendizaje Adaptativo
+        val effectiveAnalysis = latestAnalysisResult ?: VisionAnalysisResult(
+            trend = syntheticCandleEngine.detectedTrend,
+            distanceToSupportRatio = syntheticCandleEngine.distanceToSupportRatio,
+            distanceToResistanceRatio = syntheticCandleEngine.distanceToResistanceRatio,
+            tickVelocityNormalized = latestMarketTick?.velocity ?: 0f,
+            isBullishImpulse = latestMarketTick?.isBullishImpulse == true,
+            isBearishImpulse = latestMarketTick?.isBearishImpulse == true,
+            candleSecond = sec
+        )
+
+        val adaptiveDecision = adaptiveLearningEngine.evaluateSignalSuitability(
+            candidateAction = action,
+            analysis = effectiveAnalysis,
+            tick = latestMarketTick,
+            strategyName = "HEADLESS_WS"
+        )
+        val finalAction: TradeAction
+        val finalReason: String
+        val adaptiveModifier: Float
+
+        when (adaptiveDecision) {
+            is AdaptiveDecision.Block -> {
+                Log.w("TradingEngine", "⛔ Headless Trade $action VETADO por Autoaprendizaje: ${adaptiveDecision.reason}")
+                handler.post {
+                    Toast.makeText(context, "⛔ [Autoaprendizaje] Entrada bloqueada: ${adaptiveDecision.reason}", Toast.LENGTH_SHORT).show()
+                }
+                return
+            }
+            is AdaptiveDecision.Invert -> {
+                finalAction = adaptiveDecision.invertedAction
+                finalReason = "$reasonDescription [🔄 Invertida por Autoaprendizaje]"
+                adaptiveModifier = 1.15f
+            }
+            is AdaptiveDecision.Allow -> {
+                finalAction = adaptiveDecision.action
+                finalReason = reasonDescription
+                adaptiveModifier = adaptiveDecision.confidenceModifier
+            }
+        }
+
+        val (canTrade, riskReason) = riskManager.canExecuteTrade(mode, autonomousSubMode, 0.85f * adaptiveModifier)
         if (!canTrade) {
             Log.d("TradingEngine", "Headless bloqueado por riesgo: $riskReason")
             return
@@ -1244,7 +1306,7 @@ class TradingEngine(
         val isLand = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || screenW > screenH
 
         val calibCoords = if (calibrationManager != null && calibrationManager!!.isCalibrated()) {
-            if (action == TradeAction.BUY) calibrationManager!!.getBuyCoordinates()
+            if (finalAction == TradeAction.BUY) calibrationManager!!.getBuyCoordinates()
             else calibrationManager!!.getSellCoordinates()
         } else null
 
@@ -1252,17 +1314,17 @@ class TradingEngine(
             calibCoords
         } else {
             if (isLand) {
-                if (action == TradeAction.BUY) Pair(screenW * 0.881f, screenH * 0.735f)
+                if (finalAction == TradeAction.BUY) Pair(screenW * 0.881f, screenH * 0.735f)
                 else Pair(screenW * 0.881f, screenH * 0.844f)
             } else {
-                if (action == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.903f)
+                if (finalAction == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.903f)
                 else Pair(screenW * 0.75f, screenH * 0.903f)
             }
         }
 
         // Sanitización estricta: en modo vertical, nunca permitir clics por encima del 86.5% (fila de Hora / Cantidad)
         val (x, y) = if (!isLand && rawY < screenH * 0.865f) {
-            Log.w("TradingEngine", "⚠️ Headless: Coordenada Y=$rawY cae sobre selector de Hora/Cantidad (<86.5%). Corrigiendo a botón real (${screenH * 0.903f}).")
+            Log.w("TradingEngine", "⚠️ Coordenada Y corregida de $rawY a ${screenH * 0.903f} para no tocar fila de tiempo")
             Pair(rawX, screenH * 0.903f)
         } else {
             Pair(rawX, rawY)
@@ -1273,14 +1335,20 @@ class TradingEngine(
             val observed = accessibility.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
             val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
             isTradeResolving.set(false)
-            riskManager.recordTradeSent(action, latestMarketTick?.price?.toFloat() ?: 0f, baseBal)
+            riskManager.recordTradeSent(finalAction, latestMarketTick?.price?.toFloat() ?: 0f, baseBal)
+            adaptiveLearningEngine.recordTradeOpened(
+                action = finalAction,
+                analysis = effectiveAnalysis,
+                tick = latestMarketTick,
+                strategyName = "HEADLESS_WS"
+            )
             accessibility.performClickAt(x, y)
 
             handler.post {
                 drawingView.triggerClickAnimation(x, y)
                 emitHapticAndAudioFeedback()
-                Toast.makeText(context, "⚡ [HEADLESS WS] BOT OPERÓ: $action ($${riskManager.getCurrentInvestmentAmount()})\n$reasonDescription", Toast.LENGTH_LONG).show()
-                onTradeExecutedListener?.invoke(action, true)
+                Toast.makeText(context, "⚡ [HEADLESS WS] BOT OPERÓ: $finalAction ($${riskManager.getCurrentInvestmentAmount()})\n$finalReason", Toast.LENGTH_LONG).show()
+                onTradeExecutedListener?.invoke(finalAction, true)
             }
         } else {
             handler.post {
@@ -1324,6 +1392,7 @@ class TradingEngine(
 
         if (isWin != null || isTie) {
             val finalWin = isWin ?: false
+            val pendingAction = riskManager.pendingTradeAction ?: TradeAction.BUY
             handler.post {
                 if (isTie) {
                     riskManager.clearPendingTrade()
@@ -1333,14 +1402,15 @@ class TradingEngine(
                     adaptiveLearningEngine.recordTradeOutcome(true, context)
                     emitHapticAndAudioFeedback()
                     Toast.makeText(context, "[HEADLESS] 🎉 GANADA (+1 W) [$method]", Toast.LENGTH_SHORT).show()
-                    onTradeExecutedListener?.invoke(TradeAction.BUY, true)
+                    onTradeExecutedListener?.invoke(pendingAction, true)
                 } else {
                     riskManager.recordTradeLoss()
                     adaptiveLearningEngine.recordTradeOutcome(false, context)
                     emitHapticAndAudioFeedback()
                     Toast.makeText(context, "[HEADLESS] ⚠️ PERDIDA (+1 L) [$method]", Toast.LENGTH_SHORT).show()
-                    onTradeExecutedListener?.invoke(TradeAction.BUY, false)
+                    onTradeExecutedListener?.invoke(pendingAction, false)
                 }
+                lastTradeResolutionTime = System.currentTimeMillis()
                 isTradeResolving.set(false)
             }
         } else {
