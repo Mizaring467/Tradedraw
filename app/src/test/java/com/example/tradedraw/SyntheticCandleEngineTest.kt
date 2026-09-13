@@ -86,13 +86,20 @@ class SyntheticCandleEngineTest {
         val engine = SyntheticCandleEngine()
         val now = 60000L * 10L
 
-        // Inicializar velas base para establecer soporte (100.0) y resistencia (200.0)
-        for (m in 0 until 4) {
+        // Inicializar 3 velas base cerradas para establecer soporte (100.0) y resistencia (200.0)
+        for (m in 0 until 3) {
             val baseTime = (now - (4 - m) * 60000L)
             engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 100.0, timestampMs = baseTime))
             engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 200.0, timestampMs = baseTime + 30000L))
             engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 150.0, timestampMs = baseTime + 58000L))
         }
+
+        // Vela previa (minuto now - 60000L) que intenta testear la resistencia (200.0) y sufre fuerte rechazo institucional
+        val prevCandleBase = now - 60000L
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 180.0, timestampMs = prevCandleBase)) // Open: 180
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 200.0, timestampMs = prevCandleBase + 20000L)) // High: 200
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 178.0, timestampMs = prevCandleBase + 40000L)) // Low: 178
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 184.0, timestampMs = prevCandleBase + 59000L)) // Close: 184 -> UpperWick = 16 / 22 = 72%
 
         var lastSignalAction: TradeAction? = null
         var lastSignalReason: String = ""
@@ -101,18 +108,13 @@ class SyntheticCandleEngineTest {
             lastSignalReason = reason
         }
 
-        // Subir con racha alcista de ticks hasta 198.0 (pegado a la resistencia de 200.0)
-        var p = 180.0
-        for (i in 2..15) {
-            p += 1.2
-            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = p, timestampMs = now + (i * 1000L)))
-        }
-
-        // En el segundo 59 (:59s), llega un micro-giro bajista contra la resistencia
+        // En la vela actual, ticks bajistas confirmando rechazo cerca de la resistencia en segundo 59 (:59s)
         val sniperTime = now + 59000L
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 185.0, timestampMs = sniperTime - 2000L))
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 184.0, timestampMs = sniperTime - 1000L))
         val tickTurn = MarketTick(
             asset = "CRYPTO_IDX",
-            price = p - 0.5,
+            price = 183.0,
             timestampMs = sniperTime,
             velocity = -0.05f,
             isBearishImpulse = true
@@ -120,8 +122,8 @@ class SyntheticCandleEngineTest {
 
         engine.onNewTick(tickTurn)
 
-        assertEquals("Debe gatillar reversión bajista PUT en resistencia sobreextendida", TradeAction.SELL, lastSignalAction)
-        assertTrue("Razón debe contener mención a Reversión Anti-Sobreextensión", lastSignalReason.contains("Reversión Anti-Sobreextensión en Resistencia"))
+        assertEquals("Debe gatillar reversión bajista PUT en rechazo de resistencia", TradeAction.SELL, lastSignalAction)
+        assertTrue("Razón debe contener mención a MT_REJECTION", lastSignalReason.contains("MT_REJECTION"))
     }
 
     @Test
