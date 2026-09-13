@@ -181,8 +181,17 @@ class AdaptiveLearningEngine {
         candidateAction: TradeAction,
         analysis: VisionAnalysisResult,
         tick: MarketTick?,
-        strategyName: String
+        strategyName: String,
+        isYoloMode: Boolean = false
     ): AdaptiveDecision {
+        if (isYoloMode) {
+            return AdaptiveDecision.Allow(
+                action = candidateAction,
+                confidenceModifier = 1.0f,
+                reason = "Modo YOLO activo (Operativa continua)"
+            )
+        }
+
         val inUptrend = analysis.trend == TrendDirection.UPTREND
         val inDowntrend = analysis.trend == TrendDirection.DOWNTREND
         val isContinuation = (candidateAction == TradeAction.BUY && inUptrend) || (candidateAction == TradeAction.SELL && inDowntrend)
