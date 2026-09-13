@@ -419,9 +419,9 @@ class VisionAnalyzer {
         val threshold = ((endY - startY) * 0.035f).coerceIn(12f, 28f)
         val lastCandle = candleList.firstOrNull()
 
-        // 1. Mechas de Rechazo Significativas (Rejection Wicks >= 40% del rango total de la vela)
-        val hasTopRejection = lastCandle != null && lastCandle.topWickRatio >= 0.40f
-        val hasBottomRejection = lastCandle != null && lastCandle.bottomWickRatio >= 0.40f
+        // 1. Mechas de Rechazo Significativas (Rejection Wicks >= 45% del rango total de la vela)
+        val hasTopRejection = lastCandle != null && lastCandle.topWickRatio >= 0.45f
+        val hasBottomRejection = lastCandle != null && lastCandle.bottomWickRatio >= 0.45f
 
         val isNearSupportLevel = supportLinesY.any { Math.abs(latestPriceY - it) <= threshold || (lastCandle != null && Math.abs(lastCandle.bottomY - it) <= threshold) } ||
                 Math.abs(latestPriceY - effectiveSupportY) <= threshold ||
@@ -461,21 +461,25 @@ class VisionAnalyzer {
         var isExhaustionCall = false
         var isExhaustionPut = false
         if (candleList.size >= 3) {
-            val c0 = candleList[0] // Vela más reciente (V3)
-            val c1 = candleList[1] // Vela media (V2)
-            val c2 = candleList[2] // Vela inicial (V1)
+            val c0 = candleList[0] // Vela más reciente (c3)
+            val c1 = candleList[1] // Vela intermedia (c2)
+            val c2 = candleList[2] // Vela inicial (c1)
 
             val allRed = c0.type == CandleType.RED && c1.type == CandleType.RED && c2.type == CandleType.RED
             val allGreen = c0.type == CandleType.GREEN && c1.type == CandleType.GREEN && c2.type == CandleType.GREEN
 
-            val v1 = c2.bodyHeight
-            val v2 = c1.bodyHeight
-            val v3 = c0.bodyHeight
+            val v1 = c2.bodyHeight // c1
+            val v2 = c1.bodyHeight // c2
+            val v3 = c0.bodyHeight // c3
 
-            val decayingBodies = (v1 > v2) && (v2 > v3) && (v3 <= v1 * 0.40f || (v2 <= v1 * 0.70f && v3 <= v2 * 0.60f))
+            // Cuerpos decrecientes: c3 < c2 < c1
+            val decayingBodies = (v1 > v2) && (v2 > v3)
 
-            if (allRed && decayingBodies) isExhaustionCall = true
-            else if (allGreen && decayingBodies) isExhaustionPut = true
+            val isAtSupportZone = isNearSupportLevel || touchesSupport || (effectiveSupportY > 0f && Math.abs(c0.bottomY - effectiveSupportY) <= threshold * 1.5f)
+            val isAtResistanceZone = isNearResistanceLevel || touchesResistance || (effectiveResistanceY > 0f && Math.abs(c0.topY - effectiveResistanceY) <= threshold * 1.5f)
+
+            if (allRed && decayingBodies && isAtSupportZone) isExhaustionCall = true
+            else if (allGreen && decayingBodies && isAtResistanceZone) isExhaustionPut = true
         }
 
         // Detección de Impulso Violento / Momentum Acelerado (Falling Knives / Rocket Pumps)

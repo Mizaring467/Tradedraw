@@ -407,6 +407,51 @@ class TradingEngineTest {
     }
 
     @Test
+    fun testRejectionWick45PercentThreshold() {
+        // Mecha del 40% (inferior al nuevo umbral estricto del 45%): NO debe disparar rechazo
+        val analysis40 = VisionAnalysisResult(
+            hasBottomRejectionWick = false,
+            isRejectionCall = false,
+            isPullbackSniperCall = true
+        )
+        val (act40, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_REJECTION, analysis40)
+        assertNull("Mecha sin alcanzar umbral 45% debe ser ignorada", act40)
+
+        // Mecha del 45%+ confirmada en soporte
+        val analysis45 = VisionAnalysisResult(
+            hasBottomRejectionWick = true,
+            isRejectionCall = true,
+            touchesSupport = true
+        )
+        val (act45, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_REJECTION, analysis45)
+        assertEquals("Mecha >=45% en Soporte debe disparar CALL de reversión", TradeAction.BUY, act45)
+    }
+
+    @Test
+    fun test3CandleExhaustionDecayingBodiesPattern() {
+        // Agotamiento 3 velas rojas decrecientes c3 < c2 < c1 en soporte
+        val exhaustCall = VisionAnalysisResult(
+            is3VelasCall = true,
+            isExhaustion3CandlesCall = true,
+            touchesSupport = true
+        )
+        val (actCall, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO, exhaustCall)
+        assertEquals("Agotamiento en soporte debe disparar CALL en la 4ta vela", TradeAction.BUY, actCall)
+
+        // Intentar continuacion bajista (SELL) ante agotamiento 3 velas rojas debe ser vetado
+        val (vetoSell, reasonVeto) = TradingEngine.evaluateStrategySignalWithReason(
+            AutoTradeStrategy.TREND_FOLLOWING,
+            VisionAnalysisResult(
+                trend = TrendDirection.DOWNTREND,
+                lastCandles = listOf(CandleType.RED),
+                is3VelasCall = true
+            )
+        )
+        assertNull("Continuacion bajista ante agotamiento en soporte debe ser vetada", vetoSell)
+        assertTrue("Razon debe advertir veto por agotamiento", reasonVeto.contains("Agotamiento 3 Velas Rojas"))
+    }
+
+    @Test
     fun testQuantitativeOverextensionBlocksContinuation() {
         val engine = SyntheticCandleEngine()
         val now = 60000L * 10L // minuto 10 exacto
@@ -469,5 +514,4 @@ class TradingEngineTest {
         assertTrue("Razón debe describir reversión por sobreextensión", reasonPut.contains("Reversión por Sobreextensión en Resistencia"))
     }
 }
-
 

@@ -330,6 +330,7 @@ class OverlayService : Service() {
         riskManager.resetSession() // Sesión limpia en 0W / 0L para cada nuevo inicio de TradeDraw
         calibrationManager = CalibrationManager(this)
         tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager)
+        tradingEngine.adaptiveLearningEngine.loadState(this)
 
         // Cargar estrategia guardada previamente (por defecto AUTO_ADAPTIVE)
         val savedStrat = getSharedPreferences("TradeDraw_Config", Context.MODE_PRIVATE)
@@ -1926,6 +1927,7 @@ class OverlayService : Service() {
         binomoWebSocketClient?.destroy()
         binomoWebSocketClient = null
         if (::tradingEngine.isInitialized) {
+            tradingEngine.adaptiveLearningEngine.saveState(this)
             tradingEngine.stop()
             tradingEngine.aiClient.destroy()
         }
