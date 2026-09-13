@@ -1506,7 +1506,9 @@ class OverlayService : Service() {
                     else -> Color.parseColor("#38bdf8")
                 }
                 val priceStr = if (tick != null) formatDynamicPrice(tick.price) else "---"
-                txtPower.text = "[ WS Headless: $dirStr ($priceStr) ]"
+                val assetLabel = binomoWebSocketClient?.activeAsset ?: "Z-CRY/IDX"
+                val friendlyAsset = if (assetLabel.contains("CRY")) "Crypto IDX" else assetLabel
+                txtPower.text = "[ WS ($friendlyAsset): $dirStr ($priceStr) ]"
                 txtPower.setTextColor(color)
             } else {
                 txtPower.text = "[ 50% CALL █████░░░░░ 50% PUT ]"
@@ -1515,10 +1517,12 @@ class OverlayService : Service() {
 
             if (isHeadless) {
                 val latestTick = tradingEngine.latestMarketTick
+                val assetLabel = binomoWebSocketClient?.activeAsset ?: "Z-CRY/IDX"
+                val friendlyAsset = if (assetLabel.contains("CRY")) "Crypto IDX" else assetLabel
                 val (diagStr, diagColor) = when (wsState) {
                     WebSocketState.CONNECTED -> {
                         val priceStr = if (latestTick != null) formatDynamicPrice(latestTick.price) else "..."
-                        Pair("🟢 WS Activo: $priceStr (0ms) | Headless", Color.parseColor("#22c55e"))
+                        Pair("🟢 WS Activo ($friendlyAsset): $priceStr (0ms) | Headless", Color.parseColor("#22c55e"))
                     }
                     WebSocketState.CONNECTING -> {
                         Pair("🟡 WS: Conectando a Binomo...", Color.parseColor("#facc15"))

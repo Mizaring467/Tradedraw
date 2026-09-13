@@ -441,14 +441,14 @@ class TradingEngine(
 
                         // 1b. Reversión Contra-Tendencia Cuantitativa por Sobreextensión en Zonas Clave S/R
                         (analysis.isNearResistanceZone || analysis.touchesResistance || analysis.distanceToResistanceRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.20f)) &&
-                        (syntheticEngine?.isBullishOverextended == true || (syntheticEngine != null && (syntheticEngine.syntheticTickRsi >= 70.0 || syntheticEngine.consecutiveUpTicks >= 5)) || (analysis.consecutiveCount >= 3 && analysis.lastCandles.firstOrNull() == CandleType.GREEN) || analysis.isPriceNearTop) &&
-                        (!analysis.hasStrongMomentumUp && !analysis.isValidBreakoutCall && (analysis.tickVelocityNormalized <= 0.05f || analysis.isBearishImpulse || analysis.hasTopRejectionWick || analysis.isRejectionPut || (syntheticEngine != null && syntheticEngine.consecutiveDownTicks >= 1))) -> {
+                        (syntheticEngine?.isBullishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi >= 78.0 && syntheticEngine.distanceToResistanceRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.GREEN) || analysis.isPriceNearTop) &&
+                        (!analysis.hasStrongMomentumUp && !analysis.isValidBreakoutCall && (analysis.tickVelocityNormalized <= 0.05f || analysis.isBearishImpulse || analysis.hasTopRejectionWick || analysis.isRejectionPut || (syntheticEngine != null && syntheticEngine.consecutiveDownTicks >= 2))) -> {
                             val rsiStr = if (syntheticEngine != null) " | RSI: ${syntheticEngine.syntheticTickRsi.toInt()}" else ""
                             Pair(TradeAction.SELL, "🎯 Auto [Reversión por Sobreextensión en Resistencia$rsiStr | ⏱ ${sec}s] -> PUT")
                         }
                         (analysis.isNearSupportZone || analysis.touchesSupport || analysis.distanceToSupportRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.20f)) &&
-                        (syntheticEngine?.isBearishOverextended == true || (syntheticEngine != null && (syntheticEngine.syntheticTickRsi <= 30.0 || syntheticEngine.consecutiveDownTicks >= 5)) || (analysis.consecutiveCount >= 3 && analysis.lastCandles.firstOrNull() == CandleType.RED) || analysis.isPriceNearBottom) &&
-                        (!analysis.hasStrongMomentumDown && !analysis.isValidBreakoutPut && (analysis.tickVelocityNormalized >= -0.05f || analysis.isBullishImpulse || analysis.hasBottomRejectionWick || analysis.isRejectionCall || (syntheticEngine != null && syntheticEngine.consecutiveUpTicks >= 1))) -> {
+                        (syntheticEngine?.isBearishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi <= 22.0 && syntheticEngine.distanceToSupportRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.RED) || analysis.isPriceNearBottom) &&
+                        (!analysis.hasStrongMomentumDown && !analysis.isValidBreakoutPut && (analysis.tickVelocityNormalized >= -0.05f || analysis.isBullishImpulse || analysis.hasBottomRejectionWick || analysis.isRejectionCall || (syntheticEngine != null && syntheticEngine.consecutiveUpTicks >= 2))) -> {
                             val rsiStr = if (syntheticEngine != null) " | RSI: ${syntheticEngine.syntheticTickRsi.toInt()}" else ""
                             Pair(TradeAction.BUY, "🎯 Auto [Reversión por Sobreextensión en Soporte$rsiStr | ⏱ ${sec}s] -> CALL")
                         }
@@ -526,14 +526,14 @@ class TradingEngine(
                         }
                         // 1b. Reversión Contra-Tendencia Cuantitativa por Sobreextensión en Zonas Clave
                         (analysis.isNearResistanceZone || analysis.touchesResistance || analysis.distanceToResistanceRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.20f)) &&
-                        (syntheticEngine?.isBullishOverextended == true || (syntheticEngine != null && (syntheticEngine.syntheticTickRsi >= 70.0 || syntheticEngine.consecutiveUpTicks >= 5)) || (analysis.consecutiveCount >= 3 && analysis.lastCandles.firstOrNull() == CandleType.GREEN) || analysis.isPriceNearTop) &&
-                        (!analysis.hasStrongMomentumUp && !analysis.isValidBreakoutCall && (analysis.tickVelocityNormalized <= 0.05f || analysis.isBearishImpulse || analysis.hasTopRejectionWick || analysis.isRejectionPut || (syntheticEngine != null && syntheticEngine.consecutiveDownTicks >= 1))) -> {
+                        (syntheticEngine?.isBullishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi >= 78.0 && syntheticEngine.distanceToResistanceRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.GREEN) || analysis.isPriceNearTop) &&
+                        (!analysis.hasStrongMomentumUp && !analysis.isValidBreakoutCall && (analysis.tickVelocityNormalized <= 0.05f || analysis.isBearishImpulse || analysis.hasTopRejectionWick || analysis.isRejectionPut || (syntheticEngine != null && syntheticEngine.consecutiveDownTicks >= 2))) -> {
                             val rsiStr = if (syntheticEngine != null) " (RSI ${syntheticEngine.syntheticTickRsi.toInt()})" else ""
                             Pair(TradeAction.SELL, "🎯 MT Combo: Reversión por Sobreextensión en Resistencia$rsiStr -> PUT")
                         }
                         (analysis.isNearSupportZone || analysis.touchesSupport || analysis.distanceToSupportRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.20f)) &&
-                        (syntheticEngine?.isBearishOverextended == true || (syntheticEngine != null && (syntheticEngine.syntheticTickRsi <= 30.0 || syntheticEngine.consecutiveDownTicks >= 5)) || (analysis.consecutiveCount >= 3 && analysis.lastCandles.firstOrNull() == CandleType.RED) || analysis.isPriceNearBottom) &&
-                        (!analysis.hasStrongMomentumDown && !analysis.isValidBreakoutPut && (analysis.tickVelocityNormalized >= -0.05f || analysis.isBullishImpulse || analysis.hasBottomRejectionWick || analysis.isRejectionCall || (syntheticEngine != null && syntheticEngine.consecutiveUpTicks >= 1))) -> {
+                        (syntheticEngine?.isBearishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi <= 22.0 && syntheticEngine.distanceToSupportRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.RED) || analysis.isPriceNearBottom) &&
+                        (!analysis.hasStrongMomentumDown && !analysis.isValidBreakoutPut && (analysis.tickVelocityNormalized >= -0.05f || analysis.isBullishImpulse || analysis.hasBottomRejectionWick || analysis.isRejectionCall || (syntheticEngine != null && syntheticEngine.consecutiveUpTicks >= 2))) -> {
                             val rsiStr = if (syntheticEngine != null) " (RSI ${syntheticEngine.syntheticTickRsi.toInt()})" else ""
                             Pair(TradeAction.BUY, "🎯 MT Combo: Reversión por Sobreextensión en Soporte$rsiStr -> CALL")
                         }
@@ -760,9 +760,9 @@ class TradingEngine(
                 (analysis.lastCandles.firstOrNull() == CandleType.RED || analysis.streakBadge.contains("R"))
 
             val isWsOverbought = syntheticEngine?.isBullishOverextended == true ||
-                (syntheticEngine != null && (syntheticEngine.syntheticTickRsi >= 70.0 || syntheticEngine.consecutiveUpTicks >= 5 || syntheticEngine.distanceToResistanceRatio <= 0.18f))
+                (syntheticEngine != null && syntheticEngine.syntheticTickRsi >= 78.0 && syntheticEngine.distanceToResistanceRatio <= 0.20f)
             val isWsOversold = syntheticEngine?.isBearishOverextended == true ||
-                (syntheticEngine != null && (syntheticEngine.syntheticTickRsi <= 30.0 || syntheticEngine.consecutiveDownTicks >= 5 || syntheticEngine.distanceToSupportRatio <= 0.18f))
+                (syntheticEngine != null && syntheticEngine.syntheticTickRsi <= 22.0 && syntheticEngine.distanceToSupportRatio <= 0.20f)
 
             if (action == TradeAction.BUY && isGreenStreak) {
                 return Pair(null, "⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso")
@@ -783,11 +783,11 @@ class TradingEngine(
                 if (analysis.isDojiOrLowVolume) {
                     return Pair(null, "⚠️ Veto: Continuación descalificada por Doji / Micro-rango (Cuerpo < 15px)")
                 }
-                if (action == TradeAction.BUY && (isWsOverbought || analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop)) {
+                if (action == TradeAction.BUY && (isWsOverbought || analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.12f || analysis.isPriceNearTop)) {
                     val detail = if (syntheticEngine != null && isWsOverbought) " [RSI Ticks: ${syntheticEngine.syntheticTickRsi.toInt()}, Ticks Up: ${syntheticEngine.consecutiveUpTicks}]" else ""
                     return Pair(null, "⚠️ Veto: Continuación alcista sin retroceso$detail (Vela en extremo opuesto del rango)")
                 }
-                if (action == TradeAction.SELL && (isWsOversold || analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom)) {
+                if (action == TradeAction.SELL && (isWsOversold || analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.12f || analysis.isPriceNearBottom)) {
                     val detail = if (syntheticEngine != null && isWsOversold) " [RSI Ticks: ${syntheticEngine.syntheticTickRsi.toInt()}, Ticks Down: ${syntheticEngine.consecutiveDownTicks}]" else ""
                     return Pair(null, "⚠️ Veto: Continuación bajista sin retroceso$detail (Vela en extremo opuesto del rango)")
                 }
