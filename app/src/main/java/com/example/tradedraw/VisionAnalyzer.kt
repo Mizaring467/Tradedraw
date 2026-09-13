@@ -74,9 +74,11 @@ data class VisionAnalysisResult(
     val isCallSignal: Boolean = false,
     val isPutSignal: Boolean = false,
     val signalScore: Int = 50,
-    val candleSecond: Int = ((System.currentTimeMillis() / 1000) % 60).toInt(),
-    val isSniperTimingWindow: Boolean = false,
+    val candleSecond: Int = 0,
+    val isSniperTimingWindow: Boolean = true,
     val isLateTimingForbidden: Boolean = false,
+    val isTimingVetoed: Boolean = false,
+    val isMicroRangeChoppy: Boolean = false,
     val isPullbackSniperCall: Boolean = false,
     val isPullbackSniperPut: Boolean = false,
     val isSniperPullbackWindow: Boolean = false,
@@ -111,7 +113,7 @@ data class VisionAnalysisResult(
     val tickVelocityNormalized: Float = 0f,
     val isBullishImpulse: Boolean = false,
     val isBearishImpulse: Boolean = false,
-    val isSniperZeroSecondWindow: Boolean = false
+    val isSniperZeroSecondWindow: Boolean = true
 )
 
 class VisionAnalyzer {
@@ -670,12 +672,24 @@ class VisionAnalyzer {
         val finalConfCall = confCall.coerceIn(0, 100)
         val finalConfPut = confPut.coerceIn(0, 100)
 
-        // Micro-Sincronización Reloj Sniper Estricto (00:56-00:59 o 00:00-00:05 para timing sniper y pullbacks)
+        // Micro-Sincronización Reloj Sniper Estricto (:58-:03 ventana permitida, :15-:55 veto)
         val candleSecond = ((System.currentTimeMillis() / 1000) % 60).toInt()
-        val isSniperTimingWindow = candleSecond in 56..59 || candleSecond in 0..5
-        val isSniperZeroSecondWindow = candleSecond == 59 || candleSecond == 0 || candleSecond == 1
-        val isSniperPullbackWindow = candleSecond in 1..5
-        val isLateTimingForbidden = candleSecond in 2..58
+        val isStrictTimingWindow = candleSecond in 58..59 || candleSecond in 0..3
+        val isTimingVetoed = candleSecond in 15..55
+        val isSniperTimingWindow = isStrictTimingWindow
+        val isSniperZeroSecondWindow = isStrictTimingWindow
+        val isSniperPullbackWindow = candleSecond in 1..3
+        val isLateTimingForbidden = isTimingVetoed || !isStrictTimingWindow
+
+        // Detección de Micro-Rango Choppy en Visión (< 0.05% de altura o velas comprimidas alternantes)
+        val isMicroRangeChoppy = if (candleList.size >= 4) {
+            val sample = candleList.take(5)
+            val highestY = sample.minOf { it.topY }
+            val lowestY = sample.maxOf { it.bottomY }
+            val rangeHeight = lowestY - highestY
+            val isSmallRange = rangeHeight < (chartHeight * 0.035f) || avgBodyHeightLast5 < 12.0f
+            isSmallRange && isAlternatingChop
+        } else false
 
         // Retroceso leve (Sniper Pullback) contra vela de señal fuerte previa
         var isPullbackAgainstSignalCall = false
@@ -700,8 +714,8 @@ class VisionAnalyzer {
         val targetResistance = if (resistanceLinesY.isNotEmpty()) effectiveResistanceY else finalResistanceY
         val isNearSRSupport = touchesSupport || Math.abs(latestPriceY - targetSupport) <= threshold || (isRejectionCall && Math.abs(latestPriceY - targetSupport) <= threshold * 1.4f)
         val isNearSRResistance = touchesResistance || Math.abs(latestPriceY - targetResistance) <= threshold || (isRejectionPut && Math.abs(latestPriceY - targetResistance) <= threshold * 1.4f)
-        val isPullbackSniperCall = (isNearSRSupport || (isPullbackAgainstSignalCall && (isSniperPullbackWindow || isSniperTimingWindow))) && !isSideways && !isConsolidationTight
-        val isPullbackSniperPut = (isNearSRResistance || (isPullbackAgainstSignalPut && (isSniperPullbackWindow || isSniperTimingWindow))) && !isSideways && !isConsolidationTight
+        val isPullbackSniperCall = (isNearSRSupport || (isPullbackAgainstSignalCall && (isSniperPullbackWindow || isSniperTimingWindow))) && !isSideways && !isConsolidationTight && !isMicroRangeChoppy
+        val isPullbackSniperPut = (isNearSRResistance || (isPullbackAgainstSignalPut && (isSniperPullbackWindow || isSniperTimingWindow))) && !isSideways && !isConsolidationTight && !isMicroRangeChoppy
 
         val gCount = candleTypes.count { it == CandleType.GREEN }
         val rCount = candleTypes.count { it == CandleType.RED }
@@ -763,6 +777,8 @@ class VisionAnalyzer {
             candleSecond = candleSecond,
             isSniperTimingWindow = isSniperTimingWindow,
             isLateTimingForbidden = isLateTimingForbidden,
+            isTimingVetoed = isTimingVetoed,
+            isMicroRangeChoppy = isMicroRangeChoppy,
             isPullbackSniperCall = isPullbackSniperCall,
             isPullbackSniperPut = isPullbackSniperPut,
             isSniperPullbackWindow = isSniperPullbackWindow,

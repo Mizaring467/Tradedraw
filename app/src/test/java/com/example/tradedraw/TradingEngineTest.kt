@@ -513,5 +513,92 @@ class TradingEngineTest {
         assertEquals("Debe gatillar reversión PUT contra sobreextensión en Resistencia", TradeAction.SELL, actionPut)
         assertTrue("Razón debe describir reversión por sobreextensión", reasonPut.contains("Reversión por Sobreextensión en Resistencia"))
     }
+
+    @Test
+    fun testStrictTimingWindowAndVetoFilters() {
+        // 1. Probar ventana estricta :58 a :03
+        assertTrue("Segundo 58 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(58))
+        assertTrue("Segundo 59 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(59))
+        assertTrue("Segundo 00 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(0))
+        assertTrue("Segundo 01 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(1))
+        assertTrue("Segundo 02 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(2))
+        assertTrue("Segundo 03 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(3))
+        assertFalse("Segundo 04 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(4))
+        assertFalse("Segundo 30 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(30))
+        assertFalse("Segundo 57 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(57))
+
+        // 2. Probar veto estricto :15 a :55
+        assertTrue("Segundo 15 debe estar vetado", MarketTickFilters.isTimingVetoed(15))
+        assertTrue("Segundo 30 debe estar vetado", MarketTickFilters.isTimingVetoed(30))
+        assertTrue("Segundo 55 debe estar vetado", MarketTickFilters.isTimingVetoed(55))
+        assertFalse("Segundo 00 no debe estar vetado", MarketTickFilters.isTimingVetoed(0))
+        assertFalse("Segundo 59 no debe estar vetado", MarketTickFilters.isTimingVetoed(59))
+        assertFalse("Segundo 02 no debe estar vetado", MarketTickFilters.isTimingVetoed(2))
+
+        // 3. Probar evaluación en TradingEngine con segundo vetado (:30s)
+        val vetoAnalysis = VisionAnalysisResult(
+            candleSecond = 30,
+            isRejectionCall = true,
+            touchesSupport = true
+        )
+        val (actionVeto, reasonVeto) = TradingEngine.evaluateStrategySignalWithReason(
+            AutoTradeStrategy.AUTO_ADAPTIVE,
+            vetoAnalysis
+        )
+        assertNull("Operación en segundo :30 debe ser vetada", actionVeto)
+        assertTrue("Razón debe indicar veto de timing :15-:55", reasonVeto.contains("Veto Timing Estricto") || reasonVeto.contains("Entrada tardía"))
+
+        // 4. Probar evaluación en TradingEngine con segundo permitido (:59s)
+        val validAnalysis = VisionAnalysisResult(
+            candleSecond = 59,
+            isRejectionCall = true,
+            touchesSupport = true
+        )
+        val (actionValid, _) = TradingEngine.evaluateStrategySignalWithReason(
+            AutoTradeStrategy.AUTO_ADAPTIVE,
+            validAnalysis
+        )
+        assertEquals("Operación en segundo :59 debe ser permitida", TradeAction.BUY, actionValid)
+    }
+
+    @Test
+    fun testAntiChoppyFilterSuppressesSignalsInMicroRangeWithAlternatingTicks() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 10L
+
+        // Crear 5 velas en micro-rango < 0.05% (precios entre 1000.0 y 1000.30 -> rango 0.03%)
+        for (m in 0 until 5) {
+            val baseTime = (now - (5 - m) * 60000L)
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 1000.10, timestampMs = baseTime))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 1000.30, timestampMs = baseTime + 20000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 1000.00, timestampMs = baseTime + 40000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 1000.15, timestampMs = baseTime + 59000L))
+        }
+
+        // Enviar ticks alternantes (sube, baja, sube, baja)
+        val alternatingPrices = listOf(1000.10, 1000.20, 1000.10, 1000.22, 1000.12, 1000.20, 1000.11, 1000.18)
+        for ((idx, p) in alternatingPrices.withIndex()) {
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = p, timestampMs = now + (idx * 1000L)))
+        }
+
+        assertTrue("Debe detectar micro-rango < 0.05%", engine.isMicroRange(5, 0.05))
+        assertTrue("Debe detectar alternancia de ticks sin dirección clara", engine.isTickAlternatingWithoutDirection(8))
+        assertTrue("Debe activar flag de choppiness", engine.isChoppinessDetected())
+
+        // Evaluar señal en TradingEngine ante mercado choppy: debe ser suprimida
+        val analysis = VisionAnalysisResult(
+            candleSecond = 0,
+            isRejectionCall = true,
+            touchesSupport = true
+        )
+        val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(
+            AutoTradeStrategy.AUTO_ADAPTIVE,
+            analysis,
+            syntheticEngine = engine
+        )
+
+        assertNull("Señal debe ser suprimida por el Filtro Anti-Choppy", action)
+        assertTrue("Razón debe advertir veto por micro-rango / choppiness", reason.contains("Anti-Choppy"))
+    }
 }
 

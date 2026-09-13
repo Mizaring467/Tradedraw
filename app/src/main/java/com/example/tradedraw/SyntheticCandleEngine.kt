@@ -180,6 +180,52 @@ class SyntheticCandleEngine {
         }
     }
 
+    /**
+     * Calcula el rango porcentual entre el máximo y mínimo de las últimas velas.
+     */
+    fun getRecentCandlesRangePercent(sampleCount: Int = 5): Double {
+        synchronized(closedCandles) {
+            val sample = mutableListOf<SyntheticCandle>()
+            sample.addAll(closedCandles.takeLast(sampleCount))
+            currentCandle?.let { sample.add(it) }
+            if (sample.isEmpty()) return 0.0
+            val maxHigh = sample.maxOf { it.high }
+            val minLow = sample.minOf { it.low }
+            val refPrice = sample.first().open
+            if (refPrice <= 0.0) return 0.0
+            return ((maxHigh - minLow) / refPrice) * 100.0
+        }
+    }
+
+    /**
+     * Evalúa si las últimas velas están dentro de un micro-rango (< 0.05%).
+     */
+    fun isMicroRange(sampleCount: Int = 5, maxRangePercent: Double = MarketTickFilters.MAX_CHOPPY_RANGE_PERCENT): Boolean {
+        val rangePct = getRecentCandlesRangePercent(sampleCount)
+        return rangePct in 0.0000001..maxRangePercent
+    }
+
+    /**
+     * Evalúa si los ticks recientes presentan alternancia sin dirección clara.
+     */
+    fun isTickAlternatingWithoutDirection(sampleSize: Int = 10): Boolean {
+        synchronized(recentTickPrices) {
+            if (recentTickPrices.size < 4) return false
+            val prices = recentTickPrices.takeLast(sampleSize).toList()
+            return MarketTickFilters.isTickAlternatingWithoutDirection(prices)
+        }
+    }
+
+    /**
+     * Filtro Anti-Choppy / Micro-Rango Cuantitativo:
+     * Si el rango de las últimas velas es inferior al 0.05% Y los ticks alternan sin dirección clara.
+     */
+    fun isChoppinessDetected(): Boolean {
+        val isMicro = isMicroRange(5, MarketTickFilters.MAX_CHOPPY_RANGE_PERCENT)
+        val isAlternating = isTickAlternatingWithoutDirection(10)
+        return isMicro && isAlternating
+    }
+
     private fun updateOverextensionStatus(tick: MarketTick) {
         val nearRes = distanceToResistanceRatio <= 0.22f || (dynamicResistancePrice > 0.0 && tick.price >= dynamicResistancePrice * 0.9998)
         val rsiOverbought = syntheticTickRsi >= 70.0
@@ -339,9 +385,18 @@ class SyntheticCandleEngine {
     }
 
     private fun evaluateSniperOpportunity(tick: MarketTick) {
-        val sec = ((tick.timestampMs / 1000L) % 60L).toInt()
-        val isSniperWindow = sec == 59 || sec == 0 || sec == 1
-        if (!isSniperWindow) return
+        val sec = tick.candleSecond
+        val isStrictSniperWindow = tick.isStrictTimingWindow // :58 a :03
+        val isTimingVetoed = tick.isTimingVetoed // :15 a :55
+
+        // Veto de timing estricto y ventana :58-:03
+        if (isTimingVetoed || !isStrictSniperWindow) return
+
+        // Filtro Anti-Choppy / Micro-rango (<0.05% con ticks alternantes)
+        if (isChoppinessDetected()) {
+            Log.d(TAG, "Oportunidad Sniper Headless SUPRIMIDA por Filtro Anti-Choppy (<0.05% y ticks alternantes)")
+            return
+        }
 
         val distToSupport = distanceToSupportRatio
         val distToResistance = distanceToResistanceRatio

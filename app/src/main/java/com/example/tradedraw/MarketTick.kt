@@ -17,7 +17,19 @@ data class MarketTick(
     val velocity: Float = 0f,
     val isBullishImpulse: Boolean = false,
     val isBearishImpulse: Boolean = false
-)
+) {
+    /** Segundo actual dentro del ciclo de vela de 60s (0..59) */
+    val candleSecond: Int
+        get() = ((timestampMs / 1000L) % 60L).toInt()
+
+    /** Ventana estricta de entrada al segundo :00 (:58 a :03) */
+    val isStrictTimingWindow: Boolean
+        get() = candleSecond in 58..59 || candleSecond in 0..3
+
+    /** Veto estricto de entrada a mitad de ciclo de vela (:15 a :55) */
+    val isTimingVetoed: Boolean
+        get() = candleSecond in 15..55
+}
 
 enum class WebSocketState {
     DISCONNECTED,
@@ -26,6 +38,90 @@ enum class WebSocketState {
     RECONNECTING,
     ERROR,
     UNAUTHORIZED
+}
+
+/**
+ * Filtro Cuantitativo de Timing Estricto y Detección de Micro-Rango / Choppiness (Binomo 60s).
+ */
+object MarketTickFilters {
+    /** Umbral máximo de rango para clasificar como micro-rango ruidoso / choppy (0.05%) */
+    const val MAX_CHOPPY_RANGE_PERCENT = 0.05 // 0.05%
+
+    /**
+     * Evalúa si el segundo actual está dentro de la ventana estricta (:58 a :03).
+     */
+    fun isStrictTimingWindow(second: Int): Boolean = second in 58..59 || second in 0..3
+
+    /**
+     * Evalúa si el segundo actual cae dentro del veto estricto (:15 a :55).
+     */
+    fun isTimingVetoed(second: Int): Boolean = second in 15..55
+
+    /**
+     * Calcula el rango porcentual de las últimas velas: ((maxHigh - minLow) / refPrice) * 100.
+     * Retorna si el rango es inferior al 0.05%.
+     */
+    fun isMicroRange(highPrices: List<Double>, lowPrices: List<Double>, refPrice: Double): Boolean {
+        if (highPrices.isEmpty() || lowPrices.isEmpty() || refPrice <= 0.0) return false
+        val maxHigh = highPrices.maxOrNull() ?: return false
+        val minLow = lowPrices.minOrNull() ?: return false
+        val rangePct = ((maxHigh - minLow) / refPrice) * 100.0
+        return rangePct < MAX_CHOPPY_RANGE_PERCENT
+    }
+
+    /**
+     * Detecta si la secuencia de ticks recientes está alternando sin dirección clara (whipsaw / ruido lateral).
+     * Evalúa cambios frecuentes de dirección (+/-) y ausencia de desplazamiento direccional sostenido.
+     */
+    fun isTickAlternatingWithoutDirection(recentPrices: List<Double>): Boolean {
+        if (recentPrices.size < 4) return false
+        var directionChanges = 0
+        var prevDirection = 0 // +1: sube, -1: baja, 0: plano
+        var upCount = 0
+        var downCount = 0
+
+        for (i in 1 until recentPrices.size) {
+            val delta = recentPrices[i] - recentPrices[i - 1]
+            val epsilon = recentPrices[i - 1] * 0.000002
+            val currentDirection = when {
+                delta > epsilon -> { upCount++; 1 }
+                delta < -epsilon -> { downCount++; -1 }
+                else -> 0
+            }
+            if (currentDirection != 0 && prevDirection != 0 && currentDirection != prevDirection) {
+                directionChanges++
+            }
+            if (currentDirection != 0) {
+                prevDirection = currentDirection
+            }
+        }
+
+        val totalTransitions = recentPrices.size - 1
+        val alternationRatio = if (totalTransitions > 0) directionChanges.toFloat() / totalTransitions else 0f
+        val firstPrice = recentPrices.first()
+        val netDisplacement = if (firstPrice > 0.0) Math.abs(recentPrices.last() - firstPrice) / firstPrice else 0.0
+
+        // Alternancia de dirección (>= 35% de giros) y desplazamiento neto mínimo (< 0.03%)
+        val hasAlternation = directionChanges >= 2 && alternationRatio >= 0.35f
+        val hasNoClearDirection = Math.abs(upCount - downCount) <= 2 && netDisplacement < 0.0003
+
+        return hasAlternation || (hasNoClearDirection && directionChanges >= 2)
+    }
+
+    /**
+     * Filtro Anti-Choppy / Micro-Rango Cuantitativo:
+     * Si el rango de las últimas velas es inferior al 0.05% Y los ticks alternan sin dirección clara.
+     */
+    fun isChoppyMicroRange(
+        highPrices: List<Double>,
+        lowPrices: List<Double>,
+        refPrice: Double,
+        recentTicks: List<Double>
+    ): Boolean {
+        val microRange = isMicroRange(highPrices, lowPrices, refPrice)
+        val alternating = isTickAlternatingWithoutDirection(recentTicks)
+        return microRange && alternating
+    }
 }
 
 fun formatDynamicPrice(price: Double): String {
