@@ -1234,13 +1234,14 @@ class TradingEngine(
     fun executeHeadlessTrade(action: TradeAction, reasonDescription: String) {
         val sec = latestMarketTick?.candleSecond ?: (((System.currentTimeMillis() / 1000L) % 60L).toInt())
         val isYolo = (autonomousSubMode == AutonomousSubMode.YOLO)
+        // Ventana Sniper Quirúrgica: :58 a :02 en YOLO (4s), :58 a :01 en Conservador (3s)
         val inWindow = if (isYolo) {
-            sec in 55..59 || sec in 0..12
+            sec in 58..59 || sec in 0..2
         } else {
-            sec in 57..59 || sec in 0..4
+            sec in 58..59 || sec in 0..1
         }
         if (!inWindow) {
-            Log.d("TradingEngine", "Headless bloqueado fuera de ventana timing (⏱ ${sec}s | YOLO=$isYolo)")
+            Log.d("TradingEngine", "Headless bloqueado fuera de ventana timing sniper :58-:02 (⏱ ${sec}s | YOLO=$isYolo)")
             return
         }
         if (syntheticCandleEngine.isChoppinessDetected()) {
@@ -1260,16 +1261,16 @@ class TradingEngine(
             return
         }
 
-        // 2. Filtro Anti-Suicidio S/R Universal en Headless:
+        // 2. Filtro Anti-Suicidio S/R Universal en Headless (ESTRICTO SIN EXCEPCIONES):
         val distToSupport = syntheticCandleEngine.distanceToSupportRatio
         val distToResistance = syntheticCandleEngine.distanceToResistanceRatio
 
-        if (action == TradeAction.SELL && distToSupport <= 0.20f && !reasonDescription.contains("Rechazo") && !reasonDescription.contains("Rebote")) {
-            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido vender sobre Soporte (distS <= 20%)")
+        if (action == TradeAction.SELL && distToSupport <= 0.15f) {
+            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido vender sobre Soporte (distS <= 15%)")
             return
         }
-        if (action == TradeAction.BUY && distToResistance <= 0.20f && !reasonDescription.contains("Rechazo") && !reasonDescription.contains("Rebote")) {
-            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido comprar sobre Resistencia (distR <= 20%)")
+        if (action == TradeAction.BUY && distToResistance <= 0.15f) {
+            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido comprar sobre Resistencia (distR <= 15%)")
             return
         }
 
