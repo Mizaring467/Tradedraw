@@ -1374,6 +1374,7 @@ class OverlayService : Service() {
             val txtStats = v.findViewById<TextView>(R.id.hud_stats)
             val txtWinrate = v.findViewById<TextView>(R.id.hud_winrate)
             val txtStatus = v.findViewById<TextView>(R.id.hud_status)
+            val txtTickVelocity = v.findViewById<TextView>(R.id.hud_tick_velocity)
             val txtDiag = v.findViewById<TextView>(R.id.hud_diag)
             val txtHint = v.findViewById<TextView>(R.id.hud_hint)
             val txtStreak = v.findViewById<TextView>(R.id.hud_streak_badge)
@@ -1543,6 +1544,24 @@ class OverlayService : Service() {
                 }
                 txtDiag.text = diagStr
                 txtDiag.setTextColor(diagColor)
+
+                // Actualizar micro-velocidad con decaimiento tras 1.5s de inercia
+                val tick = latestTick
+                if (tick != null) {
+                    val now = System.currentTimeMillis()
+                    val isStale = (now - tick.timestampMs) > 1500L
+                    val vel = if (isStale) 0f else tick.velocity
+                    val velStr = String.format(java.util.Locale.US, "%+.3f px/s", vel)
+                    val impulseStr = when {
+                        isStale -> "━ Neutro"
+                        tick.isBullishImpulse || vel > 0.0001f -> "▲ Impulso Alcista"
+                        tick.isBearishImpulse || vel < -0.0001f -> "▼ Impulso Bajista"
+                        else -> "━ Neutro"
+                    }
+                    txtTickVelocity?.text = "⚡ Micro-Velocidad: $velStr $impulseStr"
+                    txtTickVelocity?.setTextColor(if (vel > 0.0001f) Color.parseColor("#4ade80") else if (vel < -0.0001f) Color.parseColor("#f87171") else Color.parseColor("#94a3b8"))
+                    txtTickVelocity?.visibility = View.VISIBLE
+                }
             } else {
                 val diagStr = if (frames == 0L) {
                     "⚠️ Visión: Esperando frame (Toca aquí para reiniciar)"
