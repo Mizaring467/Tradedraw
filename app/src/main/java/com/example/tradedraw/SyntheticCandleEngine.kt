@@ -548,14 +548,15 @@ class SyntheticCandleEngine {
 
             // 7. ESTRATEGIA MT_RANGE_BOUNCE (Rebote en Rango Lateral / Sideways)
             if (detectedTrend == TrendDirection.SIDEWAYS) {
-                if (distToSupport <= 0.30f && (tick.isBullishImpulse || consecutiveUpTicks >= 1 || !tick.isBearishImpulse)) {
+                val hasHealthyRange = prev.range > 0.0 && (prev.bodyRatio >= 0.12f || prev.range >= 0.0000005)
+                if (hasHealthyRange && distToSupport <= 0.30f && (tick.isBullishImpulse || consecutiveUpTicks >= 1 || !tick.isBearishImpulse)) {
                     onSignalGenerated?.invoke(
                         TradeAction.BUY,
                         "🎯 MT_RANGE: Rebote en Soporte Lateral (Dist S: ${(distToSupport*100).toInt()}% | ⏱ ${sec}s) -> CALL"
                     )
                     return
                 }
-                if (distToResistance <= 0.30f && (tick.isBearishImpulse || consecutiveDownTicks >= 1 || !tick.isBullishImpulse)) {
+                if (hasHealthyRange && distToResistance <= 0.30f && (tick.isBearishImpulse || consecutiveDownTicks >= 1 || !tick.isBullishImpulse)) {
                     onSignalGenerated?.invoke(
                         TradeAction.SELL,
                         "🎯 MT_RANGE: Rechazo en Resistencia Lateral (Dist R: ${(distToResistance*100).toInt()}% | ⏱ ${sec}s) -> PUT"
