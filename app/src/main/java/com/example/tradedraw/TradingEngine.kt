@@ -92,6 +92,9 @@ class TradingEngine(
     val adaptiveLearningEngine = AdaptiveLearningEngine()
 
     init {
+        // Limpiar cualquier figura residual previa del bot (soportes/resistencias automáticas)
+        drawingView.clearBotShapes()
+
         // Conectar callback: cuando el usuario arrastra una línea del bot, bloquearla
         drawingView.onBotShapeDragged = { key ->
             autoDrawEngine.lockLine(key)
@@ -1357,6 +1360,8 @@ class TradingEngine(
 
             handler.post {
                 drawingView.triggerClickAnimation(x, y)
+                // En modo Headless, situar la STRIKE_PRICE_LINE en la altura estimada del gráfico
+                autoDrawEngine.drawTradeEntry(finalAction, y.coerceIn(screenH * 0.35f, screenH * 0.65f), screenW)
                 emitHapticAndAudioFeedback()
                 Toast.makeText(context, "⚡ [HEADLESS WS] BOT OPERÓ: $finalAction ($${riskManager.getCurrentInvestmentAmount()})\n$finalReason", Toast.LENGTH_LONG).show()
                 onTradeExecutedListener?.invoke(finalAction, true)
@@ -1403,6 +1408,7 @@ class TradingEngine(
             val finalWin = isWin ?: false
             val pendingAction = riskManager.pendingTradeAction ?: TradeAction.BUY
             handler.post {
+                autoDrawEngine.clearTradeEntry()
                 if (isTie) {
                     riskManager.clearPendingTrade()
                     Toast.makeText(context, "[HEADLESS] ⚪ Empate / Orden cancelada", Toast.LENGTH_SHORT).show()
