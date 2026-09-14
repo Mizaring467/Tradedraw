@@ -301,11 +301,11 @@ class SyntheticCandleEngine {
                 var maxHigh = allHighs.maxOrNull() ?: 0.0
                 var minLow = allLows.minOrNull() ?: 0.0
 
-                // Si el rango es demasiado estrecho o idéntico, expandir levemente para evitar S == R
-                if (maxHigh <= minLow || (maxHigh - minLow) < (minLow * 0.0001)) {
+                // Solo expandir si no hay rango (ej. un único tick inicial donde maxHigh == minLow)
+                if (maxHigh <= minLow) {
                     val base = if (minLow > 0.0) minLow else (tick?.price ?: 1.0)
-                    maxHigh = base * 1.0004
-                    minLow = base * 0.9996
+                    maxHigh = base + 0.0001
+                    minLow = base - 0.0001
                 }
 
                 dynamicResistancePrice = maxHigh
