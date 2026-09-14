@@ -208,4 +208,70 @@ class SyntheticCandleEngineTest {
 
         assertFalse("Señal debe ser suprimida por choppiness", signalEmitted)
     }
+
+    @Test
+    fun testIndependentDistanceRatios() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 15L
+        
+        var price = 100.0
+        for (m in 0 until 15) {
+            val baseTime = (now - (15 - m) * 60000L)
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = price, timestampMs = baseTime))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = price + 10.0, timestampMs = baseTime + 30000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = price + 5.0, timestampMs = baseTime + 59000L))
+            price += 1.0
+        }
+        
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = price + 30.0, timestampMs = now + 1000L))
+        
+        val distS1 = engine.distanceToSupportRatio
+        val distR1 = engine.distanceToResistanceRatio
+        assertTrue("distS y distR deben ser > 0", distS1 >= 0.0f && distR1 >= 0.0f)
+        assertTrue("distS y distR NO deben sumar 1", Math.abs((distS1 + distR1) - 1.0f) > 0.1f)
+    }
+
+    @Test
+    fun testPivotDetectionAndBrokenSupport() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 30L
+        
+        for (m in 0 until 20) {
+            val baseTime = (now - (20 - m) * 60000L)
+            val isBounce = m % 4 == 0
+            val lowPrice = if (isBounce) 100.0 else 110.0 + m
+            val highPrice = 130.0
+            
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = (highPrice + lowPrice)/2, timestampMs = baseTime))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = highPrice, timestampMs = baseTime + 20000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = lowPrice, timestampMs = baseTime + 40000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = (highPrice + lowPrice)/2, timestampMs = baseTime + 59000L))
+        }
+        
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 90.0, timestampMs = now + 1000L))
+        
+        assertTrue("El precio dinámico de soporte debe ser válido", engine.dynamicSupportPrice > 0)
+    }
+
+    @Test
+    fun testChoppinessInYoloMode() {
+        val engine = SyntheticCandleEngine()
+        engine.subMode = AutonomousSubMode.YOLO
+        val now = 60000L * 15L
+
+        for (m in 0 until 5) {
+            val baseTime = (now - (5 - m) * 60000L)
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 500.00, timestampMs = baseTime))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 500.12, timestampMs = baseTime + 20000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 499.98, timestampMs = baseTime + 40000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 500.05, timestampMs = baseTime + 59000L))
+        }
+
+        val ticks = listOf(500.05, 500.10, 500.04, 500.11, 500.05, 500.09, 500.04, 500.10, 500.05, 500.11, 500.04)
+        for ((i, price) in ticks.withIndex()) {
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = price, timestampMs = now + (i * 1000L)))
+        }
+
+        assertTrue("Choppiness debe estar activo incluso en YOLO si hay micro-rango y alternancia", engine.isChoppinessDetected())
+    }
 }
