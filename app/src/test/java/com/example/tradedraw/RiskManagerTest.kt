@@ -309,7 +309,68 @@ class RiskManagerTest {
         assertTrue("Debe permitir operar tras finalizar el cooldown anti-tilt en YOLO", canTradeAfter)
         assertTrue("Razón debe indicar modo YOLO continuo", reasonAfter.contains("MODO YOLO"))
         assertEquals("En YOLO la racha debe reiniciarse automáticamente a 0 (M0)", 0, riskManager.currentLossStreak)
-        assertEquals("El monto de inversión debe reiniciarse al monto base ($10.0)", 10.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+        assertEquals("El monto de inversiÃ³n debe reiniciarse al monto base ($10.0)", 10.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
         assertEquals("El badge de martingala debe volver a M0", "[M0 | $10.0]", riskManager.getMartingaleStatusBadge())
+    }
+
+    @Test
+    fun testBug1_StopLossIsTerminal() {
+        riskManager.stopLossStreak = 3
+        riskManager.currentLossStreak = 3
+        riskManager.yoloLossCooldownSeconds = 30
+        riskManager.lossCooldownSeconds = 30
+        // Simulate time passed beyond all cooldowns
+        riskManager.lastTradeTime = System.currentTimeMillis() - 100_000L
+
+        val (canTrade, reason) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("Stop loss must be terminal and block trading even in YOLO", canTrade)
+        assertTrue("Reason must be Stop Loss", reason.contains("Stop Loss alcanzado"))
+    }
+
+    @Test
+    fun testBug2_AbsoluteEquityFloorAndSessionLoss() {
+        riskManager.absoluteEquityFloor = 40000000.0
+        riskManager.sessionStartBalance = 50000000.0
+        riskManager.sessionMaxLossRatio = 0.03f // Max loss: 1.5M, so session floor is 48.5M
+        
+        // 1. Below absolute floor
+        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 39000000.0
+        val (canTrade1, reason1) = riskManager.canExecuteTrade()
+        assertFalse("Must block if below absolute floor", canTrade1)
+        assertTrue("Reason must mention Absolute Equity Stop", reason1.contains("Stop Equity Absoluto Alcanzado"))
+
+        // 2. Below session floor
+        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 48000000.0
+        val (canTrade2, reason2) = riskManager.canExecuteTrade()
+        assertFalse("Must block if below session floor", canTrade2)
+        assertTrue("Reason must mention Session Loss", reason2.contains("Stop Loss"))
+    }
+
+    @Test
+    fun testBug3_VoidDoesNotIncrementStreak() {
+        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 50000000.0
+        riskManager.recordTradeSent(TradeAction.BUY, 0f, 50000000.0)
+        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 49920000.0
+        riskManager.recordTradeLoss() // Real loss
+        assertEquals(1, riskManager.currentLossStreak)
+
+        // Void trade (balance doesn't change)
+        riskManager.recordTradeSent(TradeAction.BUY, 0f, 49920000.0)
+        riskManager.recordTradeLoss() // Engine calls loss, but risk manager should intercept as void
+        assertEquals("Streak should not increment for void trade", 1, riskManager.currentLossStreak)
+        assertEquals("Void count should increment", 1, riskManager.consecutiveVoids)
+    }
+
+    @Test
+    fun testBug3_ThreeVoidsCauseHardStop() {
+        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 50000000.0
+        for (i in 1..3) {
+            riskManager.recordTradeSent(TradeAction.BUY, 0f, 50000000.0)
+            riskManager.recordTradeLoss() // Interpreted as void
+        }
+        assertEquals(3, riskManager.consecutiveVoids)
+        val (canTrade, reason) = riskManager.canExecuteTrade()
+        assertFalse("Three void trades must cause a hard stop", canTrade)
+        assertTrue("Reason must mention VOID", reason.contains("VOID"))
     }
 }
