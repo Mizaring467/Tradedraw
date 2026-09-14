@@ -121,17 +121,22 @@ El motor cuenta con las estrategias de acción del precio basadas en la operativ
 
 Tras realizar modificaciones en el código:
 ```bash
-# 1. Comprobar estado de archivos
-git status --short
+# 1. Comprobar estado de archivos y compilar
+./gradlew assembleDebug --no-daemon --no-configuration-cache
 
-# 2. Agregar y commitear con mensaje descriptivo
+# 2. Instalar de inmediato en el dispositivo conectado vía ADB
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+# 3. Agregar y commitear con mensaje descriptivo
 git add -A
 git commit -m "feat/fix: descripción clara del cambio"
 
-# 3. Empujar directamente a main
+# 4. Empujar directamente a main
 git push origin main
 ```
 Luego, verifica en la pestaña de **Actions** del repositorio de GitHub que el build haya concluido en verde (✓) y deja el enlace al artefacto descargable para el usuario.
+
+> ⚡ **Regla Estricta:** Siempre compila e instala el APK de inmediato en el teléfono vía `adb install -r` ante cada cambio, para que el usuario no tenga que instalar manualmente.
 
 ---
 
