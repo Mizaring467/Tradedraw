@@ -18,7 +18,7 @@ class RiskManager(context: Context? = null) {
     }
 
     companion object {
-        const val MAX_PENDING_TRADE_TIMEOUT_SEC = 75L
+        const val MAX_PENDING_TRADE_TIMEOUT_SEC = 85L
         const val DEFAULT_COOLDOWN_SECONDS = 10
         const val DEFAULT_LOSS_COOLDOWN_SECONDS = 180
         const val DEFAULT_YOLO_LOSS_COOLDOWN_SECONDS = 35 // Cooldown en modo continuo/YOLO (30 a 45s max)
@@ -145,10 +145,18 @@ class RiskManager(context: Context? = null) {
     var currentWins: Int = 0
 
     @Volatile
-    var totalWins: Int = 0
+    var totalWins: Int = prefs?.getInt("session_total_wins", 0) ?: 0
+        set(value) {
+            field = value
+            prefs?.edit()?.putInt("session_total_wins", value)?.apply()
+        }
 
     @Volatile
-    var totalLosses: Int = 0
+    var totalLosses: Int = prefs?.getInt("session_total_losses", 0) ?: 0
+        set(value) {
+            field = value
+            prefs?.edit()?.putInt("session_total_losses", value)?.apply()
+        }
 
     @Volatile
     var lastTradeTime: Long = 0L

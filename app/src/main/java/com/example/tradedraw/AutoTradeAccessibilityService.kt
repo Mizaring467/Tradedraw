@@ -183,12 +183,13 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     private fun findBalanceInNode(node: android.view.accessibility.AccessibilityNodeInfo?): Double? {
         if (node == null) return null
         
-        // Descartar nodos situados en la mitad inferior de la pantalla (donde están botones y órdenes activas)
+        // Descartar nodos fuera de la cabecera de saldo superior
         val rect = android.graphics.Rect()
         node.getBoundsInScreen(rect)
         val displayH = resources.displayMetrics.heightPixels
-        if (rect.top > (displayH * 0.35f)) {
-            return null // Saldo de Binomo siempre está en la cabecera superior (top < 35% de la pantalla)
+        val maxTopRatio = if (resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 0.18f else 0.12f
+        if (rect.top > (displayH * maxTopRatio)) {
+            return null // Saldo de Binomo siempre está en la barra superior (top < 12% portrait / 18% landscape)
         }
 
         val text = node.text?.toString() ?: ""
@@ -205,8 +206,9 @@ class AutoTradeAccessibilityService : AccessibilityService() {
 
     private fun parseBalanceString(text: String): Double? {
         val lower = text.lowercase()
-        if (lower.contains("cantidad") || lower.contains("ingreso") || lower.contains("deposito") || lower.contains("depositar")) {
-            return null
+        if (lower.contains("cantidad") || lower.contains("ingreso") || lower.contains("deposito") || lower.contains("depositar") ||
+            lower.contains("crypto") || lower.contains("idx") || lower.contains("otc")) {
+            return null // Descartar botones y banners flotantes de ganancias del activo
         }
         if (!text.contains("$") && !text.contains("€") && !text.contains("£") && !text.contains("Col") && !text.contains("USD")) {
             return null
