@@ -19,3 +19,19 @@ loops/journal/live/*.mp4
 trade_buy.jpg
 trade_sell.jpg
 
+
+# Debugging & captures
+/screen_*.png
+/test_screen*.png
+/mon_*.png
+/comp_*.png
+/live_*.jpg
+/ui_*.xml
+
+# JVM and logs
+/hs_err_pid*.log
+/logcat_*.txt
+/replay_*.log
+
+# Python caches
+__pycache__/
