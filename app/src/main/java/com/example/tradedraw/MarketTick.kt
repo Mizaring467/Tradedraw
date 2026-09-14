@@ -22,9 +22,9 @@ data class MarketTick(
     val candleSecond: Int
         get() = ((timestampMs / 1000L) % 60L).toInt()
 
-    /** Ventana estricta de entrada al segundo :00 (:58 a :03) */
+    /** Ventana estricta de entrada al segundo :00 (:57 a :05) */
     val isStrictTimingWindow: Boolean
-        get() = candleSecond in 58..59 || candleSecond in 0..3
+        get() = candleSecond in 57..59 || candleSecond in 0..5
 
     /** Veto estricto de entrada a mitad de ciclo de vela (:15 a :55) */
     val isTimingVetoed: Boolean
@@ -48,9 +48,9 @@ object MarketTickFilters {
     const val MAX_CHOPPY_RANGE_PERCENT = 0.05 // 0.05%
 
     /**
-     * Evalúa si el segundo actual está dentro de la ventana estricta (:58 a :03).
+     * Evalúa si el segundo actual está dentro de la ventana estricta (:57 a :05).
      */
-    fun isStrictTimingWindow(second: Int): Boolean = second in 58..59 || second in 0..3
+    fun isStrictTimingWindow(second: Int): Boolean = second in 57..59 || second in 0..5
 
     /**
      * Evalúa si el segundo actual cae dentro del veto estricto (:15 a :55).
