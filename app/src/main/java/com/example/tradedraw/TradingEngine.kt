@@ -177,6 +177,7 @@ class TradingEngine(
         // 2. Analizar frame visual con visión HSV (precio actual, velas, tendencia)
         val analysis = visionAnalyzer.analyzeChart(bitmap, supports, resistances, context, debugModeEnabled)
         latestAnalysisResult = analysis
+        syntheticCandleEngine.updateVisionTrend(analysis.trend)
 
         // 3. Auto-dibujar escenario técnico en TradeDraw según la estrategia
         handler.post {
@@ -1254,12 +1255,12 @@ class TradingEngine(
         val distToSupport = syntheticCandleEngine.distanceToSupportRatio
         val distToResistance = syntheticCandleEngine.distanceToResistanceRatio
 
-        if (action == TradeAction.SELL && distToSupport <= 0.10f && !reasonDescription.contains("Rechazo") && !reasonDescription.contains("Rebote")) {
-            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido vender sobre Soporte (distS <= 10%)")
+        if (action == TradeAction.SELL && distToSupport <= 0.20f && !reasonDescription.contains("Rechazo") && !reasonDescription.contains("Rebote")) {
+            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido vender sobre Soporte (distS <= 20%)")
             return
         }
-        if (action == TradeAction.BUY && distToResistance <= 0.10f && !reasonDescription.contains("Rechazo") && !reasonDescription.contains("Rebote")) {
-            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido comprar sobre Resistencia (distR <= 10%)")
+        if (action == TradeAction.BUY && distToResistance <= 0.20f && !reasonDescription.contains("Rechazo") && !reasonDescription.contains("Rebote")) {
+            Log.w("TradingEngine", "⚠️ Headless Veto: Prohibido comprar sobre Resistencia (distR <= 20%)")
             return
         }
 
