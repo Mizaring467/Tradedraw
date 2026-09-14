@@ -212,9 +212,8 @@ class TradingEngine(
                 }
             }
 
-            // Ventana de resolución estricta al EXPIRAR la vela de 1 minuto
-            // Espera a que la vela cierre (:00) y Binomo liquide el trade en pantalla (segundo 2..8 tras al menos 52s, o timeout a los 62s)
-            val isExpired = elapsedSec >= 62 || (elapsedSec >= 52 && analysis.candleSecond in 2..8)
+            // Ventana de resolución estricta al EXPIRAR la vela de 1 minuto (60 segundos + ventana de liquidación del broker)
+            val isExpired = elapsedSec >= 62
             if (isExpired) {
                 var isWin: Boolean? = null
                 var isTie: Boolean = false
@@ -227,23 +226,22 @@ class TradingEngine(
                 if (baseBalance > 0.0 && currentBal > 0.0) {
                     val diff = currentBal - baseBalance
                     if (diff > 10.0) {
-                        // Binomo acreditó las ganancias (+1 W)
+                        // Binomo acreditó las ganancias (+1 W) de forma inmediata
                         isWin = true
-                        method = "SALDO (+) Ganancia acreditada por Binomo: Diff=+$diff COP"
-                    } else if (diff < -10.0) {
-                        // Binomo debitó la inversión sin retorno (+1 L)
+                        method = "SALDO (+) Ganancia acreditada por Binomo: Diff=+$diff COP (${elapsedSec}s)"
+                    } else if (diff < -10.0 && elapsedSec >= 72) {
+                        // Solo confirmar pérdida tras ventana completa de liquidación (72s) para no confundir retrasos del broker
                         isWin = false
-                        method = "SALDO (-) Pérdida debitada por Binomo: Diff=$diff COP"
-                    } else if (Math.abs(diff) <= 10.0 && elapsedSec >= 15) {
-                        // Saldo inalterado: La orden NUNCA fue procesada por Binomo (clic no recibido)
-                        // Cancelar limpiamente sin registrar pérdida ni avanzar Martingala
+                        method = "SALDO (-) Pérdida confirmada tras liquidación: Diff=$diff COP (${elapsedSec}s)"
+                    } else if (Math.abs(diff) <= 10.0 && elapsedSec >= 75) {
+                        // Saldo inalterado tras 75s: La orden NUNCA fue procesada por Binomo (clic no recibido)
                         isTie = true
-                        method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado)"
+                        method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado tras 75s)"
                     }
-                } else if (elapsedSec >= 65) {
-                    // Si no hubo saldo legible tras 65 segundos, cancelar como empate preventivo sin alterar equity
+                } else if (elapsedSec >= 75) {
+                    // Si no hubo saldo legible tras 75 segundos, cancelar como empate preventivo sin alterar equity
                     isTie = true
-                    method = "TIMEOUT 65s (Sin saldo legible -> Cancelación preventiva)"
+                    method = "TIMEOUT 75s (Sin saldo legible -> Cancelación preventiva)"
                 }
 
                 if (isWin != null || isTie) {
@@ -1371,11 +1369,8 @@ class TradingEngine(
 
     private fun checkHeadlessTradeResolution(tick: MarketTick) {
         val elapsedSec = (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000
-        val sec = ((tick.timestampMs / 1000L) % 60L).toInt()
-        val isExpired = elapsedSec >= 62 || (elapsedSec >= 52 && sec in 2..8)
+        val isExpired = elapsedSec >= 62
         if (!isExpired) return
-
-        if (!isTradeResolving.compareAndSet(false, true)) return
 
         val baseBalance = riskManager.pendingTradeBaseBalance
         val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance()
@@ -1389,20 +1384,21 @@ class TradingEngine(
             val diff = currentBal - baseBalance
             if (diff > 10.0) {
                 isWin = true
-                method = "SALDO (+) Ganancia acreditada por Binomo: Diff=+$diff COP"
-            } else if (diff < -10.0) {
+                method = "SALDO (+) Ganancia acreditada por Binomo: Diff=+$diff COP (${elapsedSec}s)"
+            } else if (diff < -10.0 && elapsedSec >= 72) {
                 isWin = false
-                method = "SALDO (-) Pérdida debitada por Binomo: Diff=$diff COP"
-            } else if (Math.abs(diff) <= 10.0 && elapsedSec >= 15) {
+                method = "SALDO (-) Pérdida confirmada tras liquidación: Diff=$diff COP (${elapsedSec}s)"
+            } else if (Math.abs(diff) <= 10.0 && elapsedSec >= 75) {
                 isTie = true
-                method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado)"
+                method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado tras 75s)"
             }
-        } else if (elapsedSec >= 65) {
+        } else if (elapsedSec >= 75) {
             isTie = true
-            method = "TIMEOUT 65s (Sin saldo legible -> Cancelación preventiva)"
+            method = "TIMEOUT 75s (Sin saldo legible -> Cancelación preventiva)"
         }
 
         if (isWin != null || isTie) {
+            if (!isTradeResolving.compareAndSet(false, true)) return
             val finalWin = isWin ?: false
             val pendingAction = riskManager.pendingTradeAction ?: TradeAction.BUY
             handler.post {
