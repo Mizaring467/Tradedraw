@@ -366,48 +366,113 @@ class SyntheticCandleEngine {
         }
     }
 
+    /**
+     * Calcula la pendiente de regresión lineal (OLS) sobre una serie de valores secuenciales.
+     * Retorna la tasa de cambio promedio por periodo (Delta P / elemento).
+     */
+    fun calculateLinearRegressionSlope(values: List<Double>): Double {
+        val n = values.size
+        if (n < 2) return 0.0
+
+        var sumX = 0.0
+        var sumY = 0.0
+        var sumXY = 0.0
+        var sumX2 = 0.0
+
+        for (i in 0 until n) {
+            val x = i.toDouble()
+            val y = values[i]
+            sumX += x
+            sumY += y
+            sumXY += x * y
+            sumX2 += x * x
+        }
+
+        val denominator = (n * sumX2) - (sumX * sumX)
+        if (Math.abs(denominator) < 1e-12) return 0.0
+
+        return ((n * sumXY) - (sumX * sumY)) / denominator
+    }
+
+    /**
+     * Calcula la pendiente de tendencia normalizada por ATR sobre las últimas velas.
+     * Slope normalizado = (Slope OLS / ATR).
+     * Invariante ante escala de precio y volatilidad del activo.
+     */
+    fun calculateNormalizedTrendSlope(sampleCount: Int = 10): Double {
+        synchronized(closedCandles) {
+            val sample = mutableListOf<SyntheticCandle>()
+            sample.addAll(closedCandles.takeLast(sampleCount - 1))
+            currentCandle?.let { sample.add(it) }
+
+            if (sample.size < 2) return 0.0
+
+            val closes = sample.map { it.close }
+            val slope = calculateLinearRegressionSlope(closes)
+            val atr = calculateAtr(14)
+
+            return if (atr > 0.0) slope / atr else 0.0
+        }
+    }
+
+    /**
+     * Recalcula la tendencia de forma 100% autónoma y continua en Headless,
+     * utilizando la pendiente de regresión lineal de mínimos cuadrados normalizada por ATR.
+     * No depende de visionTrend (opcional cuando exista).
+     */
     private fun recalculateTrend() {
         synchronized(closedCandles) {
-            val allCandles = mutableListOf<SyntheticCandle>()
-            allCandles.addAll(closedCandles.takeLast(8))
-            currentCandle?.let { allCandles.add(it) }
+            val sample = mutableListOf<SyntheticCandle>()
+            sample.addAll(closedCandles.takeLast(9))
+            currentCandle?.let { sample.add(it) }
 
-            val vTrend = visionTrend
-
-            // Si hay pocas velas sintéticas en memoria (< 4), priorizar la tendencia visual que analiza 30 velas reales del broker
-            if (allCandles.size < 4) {
-                detectedTrend = vTrend ?: TrendDirection.SIDEWAYS
+            // Si hay pocas velas en memoria (< 3), evaluar ticks recientes con OLS
+            if (sample.size < 3) {
+                synchronized(recentTickPrices) {
+                    if (recentTickPrices.size >= 10) {
+                        val tickList = recentTickPrices.takeLast(30).toList()
+                        val tickSlope = calculateLinearRegressionSlope(tickList)
+                        val tickAtr = calculateAtr(14)
+                        val normTickSlope = if (tickAtr > 0.0) tickSlope / (tickAtr / 60.0) else 0.0
+                        detectedTrend = when {
+                            normTickSlope >= 0.12 -> TrendDirection.UPTREND
+                            normTickSlope <= -0.12 -> TrendDirection.DOWNTREND
+                            else -> visionTrend ?: TrendDirection.SIDEWAYS
+                        }
+                    } else {
+                        detectedTrend = visionTrend ?: TrendDirection.SIDEWAYS
+                    }
+                }
                 return
             }
 
-            val greenCount = allCandles.count { it.isGreen }
-            val redCount = allCandles.count { it.isRed }
-            val firstOpen = allCandles.first().open
-            val latestClose = allCandles.last().close
-            val netDiff = latestClose - firstOpen
-            val refPrice = if (firstOpen > 0.0) firstOpen else 1.0
-            val pctChange = netDiff / refPrice
+            val closes = sample.map { it.close }
+            val slope = calculateLinearRegressionSlope(closes)
+            val atr = calculateAtr(14)
+            val normSlope = if (atr > 0.0) slope / atr else 0.0
+
+            val vTrend = visionTrend
 
             when {
-                // Tendencia Alcista: Mayoría verdes Y avance neto positivo contundente
-                greenCount >= 3 && pctChange > 0.00008 && vTrend != TrendDirection.DOWNTREND -> {
-                    detectedTrend = TrendDirection.UPTREND
+                // Tendencia alcista contundente por pendiente normalizada respecto a ATR
+                normSlope >= 0.12 -> {
+                    if (vTrend == TrendDirection.DOWNTREND && normSlope < 0.20) {
+                        detectedTrend = TrendDirection.SIDEWAYS
+                    } else {
+                        detectedTrend = TrendDirection.UPTREND
+                    }
                 }
-                // Si la visión del broker ve DOWNTREND, solo permitir UPTREND sintético si hay rompimiento mayoritario (>= 5 verdes)
-                greenCount >= 5 && pctChange > 0.00015 -> {
-                    detectedTrend = TrendDirection.UPTREND
-                }
-                // Tendencia Bajista: Mayoría rojas Y retroceso neto negativo contundente
-                redCount >= 3 && pctChange < -0.00008 && vTrend != TrendDirection.UPTREND -> {
-                    detectedTrend = TrendDirection.DOWNTREND
-                }
-                // Si la visión del broker ve UPTREND, solo permitir DOWNTREND sintético si hay rompimiento mayoritario (>= 5 rojas)
-                redCount >= 5 && pctChange < -0.00015 -> {
-                    detectedTrend = TrendDirection.DOWNTREND
+                // Tendencia bajista contundente por pendiente normalizada respecto a ATR
+                normSlope <= -0.12 -> {
+                    if (vTrend == TrendDirection.UPTREND && normSlope > -0.20) {
+                        detectedTrend = TrendDirection.SIDEWAYS
+                    } else {
+                        detectedTrend = TrendDirection.DOWNTREND
+                    }
                 }
                 else -> {
-                    // Si no hay dominancia estadística clara, apoyarse en la visión del gráfico
-                    detectedTrend = vTrend ?: TrendDirection.SIDEWAYS
+                    // En ausencia de pendiente estadística significativa, el mercado está en rango
+                    detectedTrend = TrendDirection.SIDEWAYS
                 }
             }
         }

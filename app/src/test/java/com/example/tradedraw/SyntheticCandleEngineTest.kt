@@ -274,4 +274,179 @@ class SyntheticCandleEngineTest {
 
         assertTrue("Choppiness debe estar activo incluso en YOLO si hay micro-rango y alternancia", engine.isChoppinessDetected())
     }
+
+    @Test
+    fun testSmoothUptrendDetectionLowVolatility() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 10L
+        var price = 641.860
+
+        // Simular 9 velas de baja volatilidad (Crypto IDX) con subida suave < 0.01% total (0.005%)
+        for (m in 0 until 9) {
+            val baseTime = now + (m * 60000L)
+            val open = price
+            val high = price + 0.005
+            val low = price - 0.001
+            val close = price + 0.004
+            
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = open, timestampMs = baseTime))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = high, timestampMs = baseTime + 20000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = low, timestampMs = baseTime + 40000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = close, timestampMs = baseTime + 59000L))
+            price = close
+        }
+
+        // Movimiento total: de 641.860 a ~641.896 (~0.0056% en 9 min)
+        val totalPctMove = (price - 641.860) / 641.860 * 100.0
+        assertTrue("El movimiento total debe ser < 0.01% para probar tendencia suave ($totalPctMove%)", totalPctMove < 0.01)
+        assertNull("visionTrend debe ser null en headless", engine.visionTrend)
+        assertEquals("Debe detectar UPTREND autónomo incluso con subida suave < 0.01%", TrendDirection.UPTREND, engine.detectedTrend)
+    }
+
+    @Test
+    fun testAutonomousTrendWithoutVisionNull() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 10L
+        var price = 100.0
+
+        for (m in 0 until 8) {
+            val baseTime = now + (m * 60000L)
+            engine.onNewTick(MarketTick(asset = "BTCUSDT", price = price, timestampMs = baseTime))
+            engine.onNewTick(MarketTick(asset = "BTCUSDT", price = price + 2.0, timestampMs = baseTime + 30000L))
+            engine.onNewTick(MarketTick(asset = "BTCUSDT", price = price + 1.5, timestampMs = baseTime + 59000L))
+            price += 1.5
+        }
+
+        assertNull("visionTrend debe ser null permanentemente", engine.visionTrend)
+        assertEquals("Debe determinar UPTREND sin depender de visionTrend", TrendDirection.UPTREND, engine.detectedTrend)
+    }
+
+    @Test
+    fun testGenuineSidewaysDetection() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 10L
+        val basePrice = 641.860
+
+        // Velas oscilando en rango horizontal puro sin pendiente
+        for (m in 0 until 9) {
+            val baseTime = now + (m * 60000L)
+            val isEven = m % 2 == 0
+            val open = if (isEven) basePrice - 0.003 else basePrice + 0.003
+            val high = basePrice + 0.006
+            val low = basePrice - 0.006
+            val close = if (isEven) basePrice + 0.002 else basePrice - 0.002
+
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = open, timestampMs = baseTime))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = high, timestampMs = baseTime + 20000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = low, timestampMs = baseTime + 40000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = close, timestampMs = baseTime + 59000L))
+        }
+
+        assertEquals("Serie sin pendiente debe ser SIDEWAYS", TrendDirection.SIDEWAYS, engine.detectedTrend)
+    }
+
+    @Test
+    fun testSmoothDowntrendDetection() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 10L
+        var price = 641.890
+
+        for (m in 0 until 9) {
+            val baseTime = now + (m * 60000L)
+            val open = price
+            val high = price + 0.001
+            val low = price - 0.005
+            val close = price - 0.004
+
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = open, timestampMs = baseTime))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = high, timestampMs = baseTime + 20000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = low, timestampMs = baseTime + 40000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = close, timestampMs = baseTime + 59000L))
+            price = close
+        }
+
+        assertEquals("Debe detectar DOWNTREND con caída suave", TrendDirection.DOWNTREND, engine.detectedTrend)
+    }
+
+    @Test
+    fun testScaleInvarianceOfNormalizedTrend() {
+        val engineBase = SyntheticCandleEngine()
+        val engineScaled = SyntheticCandleEngine()
+        val now = 60000L * 10L
+
+        var pBase = 641.860
+        var pScaled = 6418.60 // Escala x10
+
+        for (m in 0 until 9) {
+            val baseTime = now + (m * 60000L)
+            
+            // Base
+            engineBase.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = pBase, timestampMs = baseTime))
+            engineBase.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = pBase + 0.005, timestampMs = baseTime + 30000L))
+            engineBase.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = pBase + 0.004, timestampMs = baseTime + 59000L))
+            pBase += 0.004
+
+            // Scaled x10
+            engineScaled.onNewTick(MarketTick(asset = "SCALED_IDX", price = pScaled, timestampMs = baseTime))
+            engineScaled.onNewTick(MarketTick(asset = "SCALED_IDX", price = pScaled + 0.050, timestampMs = baseTime + 30000L))
+            engineScaled.onNewTick(MarketTick(asset = "SCALED_IDX", price = pScaled + 0.040, timestampMs = baseTime + 59000L))
+            pScaled += 0.040
+        }
+
+        assertEquals("Base debe ser UPTREND", TrendDirection.UPTREND, engineBase.detectedTrend)
+        assertEquals("Scaled x10 debe ser exactamente igual UPTREND", TrendDirection.UPTREND, engineScaled.detectedTrend)
+        assertEquals("Normalized slope debe ser idéntico independientemente de escala",
+            engineBase.calculateNormalizedTrendSlope(9),
+            engineScaled.calculateNormalizedTrendSlope(9),
+            0.05
+        )
+    }
+
+    @Test
+    fun testJournalReplayTrendChanges() {
+        val engine = SyntheticCandleEngine()
+        var now = 60000L * 100L
+        var price = 640.0
+        val trendHistory = mutableListOf<TrendDirection>()
+
+        // 1. Fase Lateral (10 velas)
+        for (m in 0 until 10) {
+            val isEven = m % 2 == 0
+            val p = if (isEven) 640.05 else 639.95
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = p, timestampMs = now))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = p + 0.05, timestampMs = now + 30000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = p, timestampMs = now + 59000L))
+            trendHistory.add(engine.detectedTrend)
+            now += 60000L
+        }
+
+        // 2. Fase Alcista (10 velas)
+        for (m in 0 until 10) {
+            price += 0.20
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = price, timestampMs = now))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = price + 0.15, timestampMs = now + 30000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = price + 0.10, timestampMs = now + 59000L))
+            trendHistory.add(engine.detectedTrend)
+            now += 60000L
+        }
+
+        // 3. Fase Bajista (10 velas)
+        for (m in 0 until 10) {
+            price -= 0.30
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = price, timestampMs = now))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = price - 0.10, timestampMs = now + 30000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = price - 0.20, timestampMs = now + 59000L))
+            trendHistory.add(engine.detectedTrend)
+            now += 60000L
+        }
+
+        val uniqueTrends = trendHistory.distinct()
+        assertTrue("detectedTrend DEBE cambiar y contener UPTREND, DOWNTREND y SIDEWAYS durante replay",
+            uniqueTrends.contains(TrendDirection.UPTREND) &&
+            uniqueTrends.contains(TrendDirection.DOWNTREND) &&
+            uniqueTrends.contains(TrendDirection.SIDEWAYS)
+        )
+        val trendTransitions = trendHistory.zipWithNext().count { (a, b) -> a != b }
+        assertTrue("Debe registrar al menos 2 transiciones de régimen de mercado ($trendTransitions transiciones)", trendTransitions >= 2)
+    }
 }
