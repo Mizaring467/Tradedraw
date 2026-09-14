@@ -137,16 +137,16 @@ Luego, verifica en la pestaña de **Actions** del repositorio de GitHub que el b
 
 ## ⚡ 8. Automatización y Auditoría del Dispositivo con MCP scrcpy (`android-vision`)
 
-Para interactuar con el dispositivo Android (POCO X6 Pro / `192.168.1.185:5555`) a alta velocidad y bajo consumo de recursos, este proyecto tiene configurado el servidor MCP **`android-vision`** (basado en `mcp-scrcpy-vision` con soporte de `scrcpy-server` v4.1 y `ffmpeg`):
+Para interactuar con el dispositivo Android (POCO X6 Pro / `10.218.252.45:5555` o IP activa asignada por DHCP en `adb devices`) a alta velocidad y bajo consumo de recursos, este proyecto tiene configurado el servidor MCP **`android-vision`** (basado en `mcp-scrcpy-vision` con soporte de `scrcpy-server` v4.1 y `ffmpeg`):
 
 ### Herramientas MCP disponibles (vía `call_mcp_tool`):
 1. **Captura de Pantalla Instantánea:**
    - Herramienta: `android.vision.snapshot`
-   - Parámetros: `{ "serial": "192.168.1.185:5555" }`
+   - Parámetros: `{ "serial": "10.218.252.45:5555" }`
    - *Ventaja:* Retorna la imagen en ~1s sin recalentar la CPU del teléfono con `screencap` repetidos.
 2. **Pulsación / Tap Ultra Rápido:**
    - Herramienta: `android.input.tap`
-   - Parámetros: `{ "x": <coordX>, "y": <coordY>, "serial": "192.168.1.185:5555" }`
+   - Parámetros: `{ "x": <coordX>, "y": <coordY>, "serial": "10.218.252.45:5555" }`
    - *Ventaja:* Inyección de evento directa (< 10 ms vs ~400 ms de `adb shell input tap`).
 3. **Desplazamiento y Gestos:**
    - `android.input.swipe`: `{ "x1": <x1>, "y1": <y1>, "x2": <x2>, "y2": <y2>, "durationMs": <ms> }`

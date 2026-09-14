@@ -851,8 +851,8 @@ class TradingEngine(
             sup > 0.0 && res > 0.0 && tick != null -> {
                 val range = (res - sup).coerceAtLeast(0.00001)
                 val distS = ((tick.price - sup) / range).coerceIn(0.0, 1.0)
-                if (distS <= 0.20) "🟢 Cerca de Soporte Cuantitativo (${(distS * 100).toInt()}%)"
-                else if (distS >= 0.80) "🔴 Cerca de Resistencia Cuantitativa (${((1.0 - distS) * 100).toInt()}%)"
+                if (distS <= 0.30) "🟢 Cerca de Soporte Cuantitativo (${(distS * 100).toInt()}%)"
+                else if (distS >= 0.70) "🔴 Cerca de Resistencia Cuantitativa (${((1.0 - distS) * 100).toInt()}%)"
                 else "⚪ Rango Central (Dist S: ${(distS * 100).toInt()}%)"
             }
             else -> "⚪ Calculando niveles S/R..."
@@ -875,7 +875,13 @@ class TradingEngine(
                 "🎯 Plan: Buscar retroceso leve a resistencia para ejecutar PUT al segundo :58s - :01s."
             }
             else -> {
-                "🎯 Plan: Esperando confirmación de nivel S/R o impulso direccional de ticks."
+                val distS = syntheticCandleEngine.distanceToSupportRatio
+                val distR = syntheticCandleEngine.distanceToResistanceRatio
+                when {
+                    distS <= 0.30f -> "🎯 Plan: Cerca de Soporte (${(distS * 100).toInt()}%). Esperando gatillo CALL al segundo :58s - :03s."
+                    distR <= 0.30f -> "🎯 Plan: Cerca de Resistencia (${(distR * 100).toInt()}%). Esperando gatillo PUT al segundo :58s - :03s."
+                    else -> "🎯 Plan: Esperando confirmación de nivel S/R o impulso direccional de ticks."
+                }
             }
         }
 
@@ -1268,10 +1274,16 @@ class TradingEngine(
         }
 
         // 3. Evaluación por Motor de Autoaprendizaje Adaptativo
+        val distSup = syntheticCandleEngine.distanceToSupportRatio
+        val distRes = syntheticCandleEngine.distanceToResistanceRatio
         val effectiveAnalysis = latestAnalysisResult ?: VisionAnalysisResult(
             trend = syntheticCandleEngine.detectedTrend,
-            distanceToSupportRatio = syntheticCandleEngine.distanceToSupportRatio,
-            distanceToResistanceRatio = syntheticCandleEngine.distanceToResistanceRatio,
+            distanceToSupportRatio = distSup,
+            distanceToResistanceRatio = distRes,
+            touchesSupport = distSup <= 0.15f,
+            touchesResistance = distRes <= 0.15f,
+            isNearSupportZone = distSup <= 0.30f,
+            isNearResistanceZone = distRes <= 0.30f,
             tickVelocityNormalized = latestMarketTick?.velocity ?: 0f,
             isBullishImpulse = latestMarketTick?.isBullishImpulse == true,
             isBearishImpulse = latestMarketTick?.isBearishImpulse == true,
