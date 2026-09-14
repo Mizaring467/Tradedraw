@@ -28,9 +28,6 @@ data class SyntheticCandle(
  * Motor cuantitativo Headless: procesa ticks de WebSocket, construye velas de 1m, calcula
  * soportes/resistencias y evalúa estrategias de trading sin requerir captura de pantalla.
  */
-enum class LevelType { SUPPORT, RESISTANCE, BOTH }
-data class PriceLevel(var price: Double, var touches: Int, var type: LevelType)
-
 class SyntheticCandleEngine {
 
     private val TAG = "SyntheticCandleEngine"

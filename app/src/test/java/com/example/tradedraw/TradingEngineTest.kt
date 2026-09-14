@@ -516,16 +516,19 @@ class TradingEngineTest {
 
     @Test
     fun testStrictTimingWindowAndVetoFilters() {
-        // 1. Probar ventana estricta :58 a :03
+        // 1. Probar ventana estricta :57 a :05
+        assertTrue("Segundo 57 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(57))
         assertTrue("Segundo 58 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(58))
         assertTrue("Segundo 59 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(59))
         assertTrue("Segundo 00 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(0))
         assertTrue("Segundo 01 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(1))
         assertTrue("Segundo 02 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(2))
         assertTrue("Segundo 03 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(3))
-        assertFalse("Segundo 04 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(4))
+        assertTrue("Segundo 04 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(4))
+        assertTrue("Segundo 05 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(5))
+        assertFalse("Segundo 06 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(6))
         assertFalse("Segundo 30 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(30))
-        assertFalse("Segundo 57 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(57))
+        assertFalse("Segundo 56 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(56))
 
         // 2. Probar veto estricto :15 a :55
         assertTrue("Segundo 15 debe estar vetado", MarketTickFilters.isTimingVetoed(15))

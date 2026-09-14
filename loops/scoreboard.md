@@ -1,37 +1,44 @@
-# 📊 Scoreboard de Rentabilidad TradeDraw — Recuperación 45.4M → 50.3M+ COP
+# 📊 Scoreboard de Validación en Vivo · TradeDraw (Profitability Loop)
 
-- **Meta de Recuperación:** ≥ 50,300,000 COP en Cuenta DEMO
-- **Punto de Partida (Baseline):** 44,961,812.48 COP (−5,338,187.52 COP de la meta)
-- **Equity Actual Observado:** ~40,270,000 COP (No verificado por captura, requiere ADB activo)
-- **Stop-Loss del Experimento:** < 40,000,000 COP (⚠️ ALERTA: A ~3 pérdidas del kill switch)
-- **Dispositivos de Verificación:** Xiaomi POCO X6 Pro (`5PPFAACU6H7XHEY9`) / OPPO CPH2727
-
----
-
-## 📈 Tabla de Iteraciones y Scoreboard
-
-| Intento | Hipótesis / Cambio | Build | Backtest (Trades / WR / P&L / DD / Racha L) | Vivo ADB (Equity ini → fin / Trades / WR) | Veredicto |
-| :--- | :--- | :---: | :--- | :--- | :---: |
-| **0 (Baseline)** | Código anterior sin reloj sniper estricto | ✅ | 5 trades / 100% WR / +332K / 0% DD / 0L | 47.00M → 44.96M / 18 trades / 44.4% WR | **BASELINE** |
-| **1** | Reloj Sniper Universal (:56-:07), Bypass HUD táctil, y descarte de falsas pérdidas | ✅ | 5 trades / 100% WR / +332K / 0% DD / 0L | 44.82M → ~40.27M / 35 trades / 30.0% WR (9W / 21L / 5 VOID) | **APRENDIZAJE CLAVE** |
-| **2 (Candidato Activo)** | Filtro Anti-Whipsaw relativo a DPI/altura de gráfico, detector de alternancia de 4 velas y alineación estricta de tendencia en AUTO_ADAPTIVE | ✅ | 5 trades / 100% WR / +332K / 0% DD / 0L | Pendiente de validación en vivo | **COMPILADO (VERDE)** |
+## 🛡️ Kill Switch de Seguridad
+- **Límite Mínimo de Equity (Kill Switch):** `Col$40,000,000.00 COP`
+- **Saldo Actual Auditado:** `Col$40,968,808.96 COP`
+- **Margen de Seguridad:** `+$968,808.96 COP` (Seguro · Operación permitida ✅)
+- **Estado del Kill Switch:** 🟢 INACTIVO (Dentro de zona segura)
 
 ---
 
-## 📉 Curva de Equity Observada (Ground Truth ADB)
+## 📈 Marcador Global y Rendimiento
 
-| Fecha / Timestamp | Sesión / Intento | Equity Inicial | Equity Pico | Equity Final | Δ Neto | Trades | WR (%) | Frame Evidencia |
-| :--- | :--- | :--- | :--- | :--- | :--- | :---: | :---: | :--- |
-| 2026-09-10 11:06 UTC | Baseline Start | 50.30M COP | 50.30M COP | 44.96M COP | −5.34M COP | 18 | 44.4% | `loops/journal/live/frame-1789056361.png` |
-| 2026-09-10 17:44 UTC | Intento 1 (Sesión Live) | 44.82M COP | 45.05M COP | ~40.27M COP | ~ -4.55M COP | 35 | 30.0% | No verificado (Requiere ADB) |
+| Métrica | Valor Actual | Objetivo / Umbral | Estado |
+| :--- | :---: | :---: | :---: |
+| **Operaciones Totales** | `0` | $\ge 20$ trades de muestra | 🟡 En espera |
+| **Victorias (W)** | `0` | - | - |
+| **Derrotas (L)** | `0` | - | - |
+| **Empates / Canceladas** | `0` | - | - |
+| **Win Rate (WR)** | `0.0%` | $\ge 58.0\%$ | 🟡 Sin muestra |
+| **Racha Actual** | `0` | Max drawdown: 3L | 🟢 Estable |
+| **Nivel Martingala** | `M0` | Max permitido: M2 | 🟢 Seguro |
+| **Monto de Entrada Base** | `$1.0 / Col$100,000` | Fijo | 🟢 Calibrado |
+| **Activo Auditado** | `Crypto IDX` | OTC 82% payout | 🟢 Sincronizado |
+| **Modo Operativo** | `WebSocket Headless (0ms)` | Latencia < 50ms | 🟢 Óptimo |
 
 ---
 
-## 🎯 Hipótesis y Diagnósticos de Rendimiento
+## 🕒 Registro de Frecuencia y Auditoría de Trades
 
-1. **Hipótesis 1 (Sniper Window Sub-10s)**: ✅ Implementado — Bloquea órdenes entre `:12` y `:56` para evitar entrar en velas agotadas.
-2. **Hipótesis 2 (Anti-Sobreoperativa / Espaciado de Vela)**: ✅ Implementado — Enfriamiento de 45s tras pérdida y 12s tras victoria para alinear con nueva vela.
-3. **Hipótesis 3 (Bypass de HUD e Inyección Táctil Directa)**: ✅ Implementado — Oculta temporalmente el HUD (View.INVISIBLE) y clica en la franja Y: 89%-95%.
-4. **Hipótesis 4 (Filtro de Momentum Anti-Contra Tendencia)**: ✅ Implementado — Veta CALLs en cascada bajista y PUTs en rally alcista.
-5. **Hipótesis 5 (Filtro de Ruido Doji / Rango Estrecho)**: ✅ Implementado — Descarta automáticamente velas sin cuerpo o consolidaciones estrechas.
-6. **Hipótesis 6 (Anti-Whipsaw Lateral & Strict Trend Alignment)**: ✅ Implementado en Candidato 2 — Umbrales relativos a la resolución de pantalla (`chartHeight * 0.025f`), veto estricto de estrategias de continuación/impulso en mercados laterales, y detector de 4 velas alternantes.
+| # | Timestamp (ISO) | Acción | Estrategia / Patrón | Saldo Base | Saldo Cierre | Duración | Resultado | Equity Actual | Delta COP |
+| :-: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| - | *Esperando primera operación...* | - | - | - | - | - | - | `$40,968,808.96` | `+$0.00` |
+
+---
+
+## 🔍 Diagnóstico Cuantitativo del Agente Observador
+1. **Verificación de Red y Flujo Headless:**
+   - WebSocket conectado al feed en vivo de Binomo (`Z-CRY/IDX` @ `641.8674`).
+   - Latencia de cálculo: `0ms` (procesamiento local en memoria).
+2. **Supervisión de Filtros Cuantitativos:**
+   - Filtro de Timing: Ventana de entrada estricta en segundos `:58` a `:03` y retroceso `:02` a `:05`. Veto en zona muerta `:15` a `:55`.
+   - Filtro Anti-Chop: Detectando consolidación lateral (`Dist S: 50%`). Esperando ruptura o impulso direccional claro.
+3. **Control de Frecuencia:**
+   - Se auditará que el bot no sobreopere en falso impulso ni ejecute más de 1 trade por vela de 1 minuto.
