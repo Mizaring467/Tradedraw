@@ -392,6 +392,8 @@ class AdaptiveLearningEngine {
             continuationPenaltyWeight = root.optDouble("continuationPenaltyWeight", 1.0).toFloat()
 
             val array = root.optJSONArray("lossSignatures")
+            val now = System.currentTimeMillis()
+            val maxTtlMs = 24L * 60L * 60L * 1000L // 24 horas
             if (array != null) {
                 synchronized(lossSignatures) {
                     lossSignatures.clear()
@@ -399,11 +401,23 @@ class AdaptiveLearningEngine {
                         val item = array.getJSONObject(i)
                         val action = try { TradeAction.valueOf(item.getString("action")) } catch (e: Exception) { TradeAction.BUY }
                         val trend = try { TrendDirection.valueOf(item.getString("trend")) } catch (e: Exception) { TrendDirection.SIDEWAYS }
+                        val distSup = item.optDouble("distSup", 0.5).toFloat()
+                        val distRes = item.optDouble("distRes", 0.5).toFloat()
+                        val ts = item.optLong("ts", now)
+
+                        // Purgar firmas genéricas atrapadas en el 50% y firmas expiradas por TTL de 24h
+                        if (Math.abs(distSup - 0.50f) < 0.02f && Math.abs(distRes - 0.50f) < 0.02f) {
+                            continue
+                        }
+                        if (now - ts > maxTtlMs) {
+                            continue
+                        }
+
                         val sig = TradeContextSignature(
                             action = action,
                             trend = trend,
-                            distanceToSupportRatio = item.optDouble("distSup", 0.5).toFloat(),
-                            distanceToResistanceRatio = item.optDouble("distRes", 0.5).toFloat(),
+                            distanceToSupportRatio = distSup,
+                            distanceToResistanceRatio = distRes,
                             isNearSupportZone = item.optBoolean("nearSup", false),
                             isNearResistanceZone = item.optBoolean("nearRes", false),
                             tickVelocityNormalized = item.optDouble("tickVelNorm", 0.0).toFloat(),
@@ -414,7 +428,7 @@ class AdaptiveLearningEngine {
                             isMarketSideways = item.optBoolean("sideways", false),
                             strategyName = item.optString("strat", "AUTO_ADAPTIVE"),
                             candleSecond = item.optInt("sec", 0),
-                            timestampMs = item.optLong("ts", System.currentTimeMillis()),
+                            timestampMs = ts,
                             isContinuationTrade = item.optBoolean("continuation", false),
                             isReversionTrade = item.optBoolean("reversion", false)
                         )
@@ -422,7 +436,7 @@ class AdaptiveLearningEngine {
                     }
                 }
             }
-            Log.d(TAG, "Estado de autoaprendizaje restaurado: ${lossSignatures.size} firmas de anti-patrones cargadas")
+            Log.d(TAG, "Estado de autoaprendizaje restaurado: ${lossSignatures.size} firmas válidas cargadas (purgadas firmas 50% y expiradas)")
         } catch (e: Exception) {
             Log.e(TAG, "Error cargando estado de autoaprendizaje", e)
         }
