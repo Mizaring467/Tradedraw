@@ -1,0 +1,14 @@
+{
+    "invariants": [
+        {
+            "variables": ["distToSupport", "distToResistance"],
+            "sum": 1.0,
+            "description": "distToSupport + distToResistance == 1.0"
+        },
+        {
+            "variables": ["distS", "distR"],
+            "sum": 1.0,
+            "description": "distS + distR == 1.0"
+        }
+    ]
+}
