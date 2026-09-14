@@ -58,6 +58,23 @@ class RiskManager(context: Context? = null) {
         }
 
     @Volatile
+    var sessionMaxLossRatio: Float = prefs?.getFloat("session_max_loss_ratio", 0.03f) ?: 0.03f
+        set(value) {
+            field = value
+            prefs?.edit()?.putFloat("session_max_loss_ratio", value)?.apply()
+        }
+
+    @Volatile
+    var absoluteEquityFloor: Double = prefs?.getFloat("absolute_equity_floor", 40000000f)?.toDouble() ?: 40000000.0
+        set(value) {
+            field = value
+            prefs?.edit()?.putFloat("absolute_equity_floor", value.toFloat())?.apply()
+        }
+
+    @Volatile
+    var consecutiveVoids: Int = 0
+
+    @Volatile
     var stopLossStreak: Int = prefs?.getInt("sl_streak", DEFAULT_STOP_LOSS_STREAK) ?: DEFAULT_STOP_LOSS_STREAK
         set(value) {
             field = value
@@ -215,6 +232,31 @@ class RiskManager(context: Context? = null) {
         subMode: AutonomousSubMode? = null,
         confidence: Float = 1.0f
     ): Pair<Boolean, String> {
+        val currentBal = AutoTradeAccessibilityService.latestObservedBalance
+        if (currentBal > 0.0) {
+            if (currentBal < absoluteEquityFloor) {
+                android.util.Log.e("RiskManager", "CRITICAL STOP: Equity ($currentBal) por debajo del suelo absoluto ($absoluteEquityFloor)")
+                return Pair(false, "Stop Equity Absoluto Alcanzado ($currentBal < $absoluteEquityFloor)")
+            }
+            if (sessionStartBalance > 0.0) {
+                val maxLossAmt = sessionStartBalance * sessionMaxLossRatio
+                val sessionFloor = sessionStartBalance - maxLossAmt
+                if (currentBal < sessionFloor) {
+                    android.util.Log.e("RiskManager", "CRITICAL STOP: Pérdida máxima de sesión alcanzada. Balance actual: $currentBal, Suelo de sesión: $sessionFloor (Max Loss: ${sessionMaxLossRatio*100}%)")
+                    return Pair(false, "Stop Loss Sesion Alcanzado ($currentBal < $sessionFloor)")
+                }
+            }
+        }
+        
+        if (consecutiveVoids >= 3) {
+            android.util.Log.e("RiskManager", "CRITICAL STOP: 3 trades VOID consecutivos. Ejecución no confiable.")
+            return Pair(false, "Parada: 3 trades VOID seguidos (ejecución fallida)")
+        }
+
+        if (stopLossStreak > 0 && currentLossStreak >= stopLossStreak) {
+            return Pair(false, "Stop Loss alcanzado ($stopLossStreak derrotas)")
+        }
+
         if (hasPendingTrade) {
             val elapsed = (System.currentTimeMillis() - pendingTradeStartTime) / 1000
             // Timeout de seguridad: las operaciones de 1m en Binomo duran entre 45s y 75s
@@ -258,9 +300,6 @@ class RiskManager(context: Context? = null) {
             return Pair(true, "🚀 MODO YOLO: Operativa continua sin límites")
         }
 
-        if (stopLossStreak > 0 && currentLossStreak >= stopLossStreak) {
-            return Pair(false, "Stop Loss alcanzado ($stopLossStreak derrotas)")
-        }
         if (takeProfitWins > 0 && currentWins >= takeProfitWins) {
             return Pair(false, "Take Profit alcanzado ($takeProfitWins victorias)")
         }
@@ -325,11 +364,31 @@ class RiskManager(context: Context? = null) {
     }
 
     @Synchronized
+    fun recordTradeVoid(count: Int = 1) {
+        val safeCount = count.coerceAtLeast(1)
+        consecutiveVoids += safeCount
+        lastTradeTime = System.currentTimeMillis()
+        clearPendingTrade()
+    }
+
+    @Synchronized
     fun recordTradeWins(count: Int = 1) {
         if (!hasPendingTrade) {
             android.util.Log.w("RiskManager", "recordTradeWins ignorado: No hay trade pendiente (llamada duplicada bloqueada)")
             return
         }
+        
+        val currentBal = AutoTradeAccessibilityService.latestObservedBalance
+        if (pendingTradeBaseBalance > 0.0 && currentBal > 0.0) {
+            val diff = Math.abs(currentBal - pendingTradeBaseBalance)
+            if (diff <= 10.0) {
+                android.util.Log.w("RiskManager", "Interceptado WIN falso (Diff=$diff). Convirtiendo a VOID.")
+                recordTradeVoid(count)
+                return
+            }
+        }
+
+        consecutiveVoids = 0
         val safeCount = count.coerceAtLeast(1)
         currentWins += safeCount
         totalWins += safeCount
@@ -351,6 +410,18 @@ class RiskManager(context: Context? = null) {
             android.util.Log.w("RiskManager", "recordTradeLosses ignorado: No hay trade pendiente (llamada duplicada bloqueada)")
             return
         }
+        
+        val currentBal = AutoTradeAccessibilityService.latestObservedBalance
+        if (pendingTradeBaseBalance > 0.0 && currentBal > 0.0) {
+            val diff = Math.abs(currentBal - pendingTradeBaseBalance)
+            if (diff <= 10.0) {
+                android.util.Log.w("RiskManager", "Interceptado LOSS falso (Diff=$diff). Convirtiendo a VOID.")
+                recordTradeVoid(count)
+                return
+            }
+        }
+
+        consecutiveVoids = 0
         val safeCount = count.coerceAtLeast(1)
         totalLosses += safeCount
         currentLossStreak += safeCount
@@ -373,6 +444,7 @@ class RiskManager(context: Context? = null) {
         totalLosses = 0
         currentWins = 0
         currentLossStreak = 0
+        consecutiveVoids = 0
     }
 
     @Synchronized
@@ -381,6 +453,7 @@ class RiskManager(context: Context? = null) {
         totalLosses = losses.coerceAtLeast(0)
         currentWins = wins.coerceAtLeast(0)
         currentLossStreak = 0
+        consecutiveVoids = 0
     }
 
     @Synchronized
@@ -435,6 +508,7 @@ class RiskManager(context: Context? = null) {
         currentWins = 0
         totalWins = 0
         totalLosses = 0
+        consecutiveVoids = 0
         lastTradeTime = 0L
         if (startBal > 0.0) sessionStartBalance = startBal
         clearPendingTrade()
