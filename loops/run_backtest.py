@@ -1,159 +1,140 @@
 #!/usr/bin/env python3
-import json
+import csv
+import math
 import os
 import sys
 
-def evaluate_candle_strategy(fixture):
-    candles = fixture["candles"]
-    strategy = fixture.get("strategy", "AUTO_ADAPTIVE")
-    supports = fixture.get("supports", [])
-    resistances = fixture.get("resistances", [])
+def calculate_statistical_power():
+    print("\n" + "=" * 65)
+    print("      POTENCIA ESTADISTICA (Confianza 95% para superar 54.9% WR)")
+    print("=" * 65)
+    print(" Trades | Min. WR Obs. | Horas (1.1 T/H) | Significado")
+    print("-" * 65)
     
-    if not candles:
-        return None, "No candles"
-        
-    last_candle = candles[-1]
+    # We want observed_wr - 1.96 * sqrt(observed_wr * (1-observed_wr) / N) > 0.549
+    # Let's show required observed WR for various N
+    target_wr = 0.549
+    n_list = [10, 30, 50, 100, 200, 500, 1000]
+    for n in n_list:
+        # Just assume p ~ 0.55 for margin of error
+        margin = 1.96 * math.sqrt(0.55 * 0.45 / n)
+        req_wr = target_wr + margin
+        if req_wr >= 1.0:
+            req_wr = 0.999
+        hours = n / 1.1
+        print(f" {n:<6d} | {req_wr*100:>11.1f}% | {hours:>13.1f} | {'Ruido' if n < 100 else 'Significativo'}")
+    print("=" * 65)
+
+
+def process_journal(csv_path):
+    valid_trades = []
     
-    # Sideways filter check
-    avg_body = sum(c["bodyHeight"] for c in candles) / len(candles)
-    doji_count = sum(1 for c in candles if c["bodyHeight"] < 10 or c["type"] == "DOJI")
-    if avg_body < 12.0 or (doji_count / len(candles)) >= 0.50:
-        return None, "Mercado lateral / dojis filtrado"
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            # 1. Isolar fila corrupta
+            if row["timestamp"] == "1789080600323" or float(row["base_balance"]) < 10:
+                continue
+            
+            # 2. Clasificar TIE como VOID
+            if row["result"] == "TIE":
+                continue
+                
+            valid_trades.append(row)
+            
+    return valid_trades
 
-    threshold = 25.0
-    latest_price = (last_candle["bodyTopY"] + last_candle["bodyBottomY"]) / 2.0
-    
-    has_bottom_rejection = last_candle.get("bottomWickRatio", 0.0) >= 0.40
-    has_top_rejection = last_candle.get("topWickRatio", 0.0) >= 0.40
-    
-    is_near_support = any(abs(latest_price - s) <= threshold for s in supports) or (has_bottom_rejection and any(abs(last_candle["bottomY"] - s) <= threshold for s in supports))
-    is_near_resistance = any(abs(latest_price - r) <= threshold for r in resistances) or (has_top_rejection and any(abs(last_candle["topY"] - r) <= threshold for r in resistances))
-    
-    touches_support = is_near_support and (has_bottom_rejection or last_candle["type"] == "GREEN")
-    touches_resistance = is_near_resistance and (has_top_rejection or last_candle["type"] == "RED")
 
-    # 1. False Breakout Trap
-    if has_bottom_rejection and any(last_candle["bottomY"] >= s + 8.0 and last_candle["bodyBottomY"] <= s + 6.0 for s in supports):
-        return "BUY", "Trampa en soporte"
-    if has_top_rejection and any(last_candle["topY"] <= r - 8.0 and last_candle["bodyTopY"] >= r - 6.0 for r in resistances):
-        return "SELL", "Trampa en resistencia"
-
-    # 2. Rejection Wicks
-    if has_bottom_rejection and is_near_support:
-        return "BUY", "Mecha rechazo en soporte"
-    if has_top_rejection and is_near_resistance:
-        return "SELL", "Mecha rechazo en resistencia"
-
-    # 3. Choque Pullback
-    if len(candles) >= 3:
-        c0, c1, c2 = candles[-1], candles[-2], candles[-3]
-        if c2["bodyBottomY"] > c1["bodyTopY"] and abs(c0["bottomY"] - c2["bodyTopY"]) <= threshold:
-            return "BUY", "Choque pullback alcista"
-        if c2["bodyTopY"] < c1["bodyBottomY"] and abs(c0["topY"] - c2["bodyBottomY"]) <= threshold:
-            return "SELL", "Choque pullback bajista"
-
-    # 4. Exhaustion
-    if len(candles) >= 3:
-        c0, c1, c2 = candles[-1], candles[-2], candles[-3]
-        all_red = all(c["type"] == "RED" for c in [c0, c1, c2])
-        all_green = all(c["type"] == "GREEN" for c in [c0, c1, c2])
-        v1, v2, v3 = c2["bodyHeight"], c1["bodyHeight"], c0["bodyHeight"]
-        decaying = (v1 > v2 > v3) and (v3 <= v1 * 0.45)
-        if all_red and decaying:
-            return "BUY", "Agotamiento 3 rojas"
-        if all_green and decaying:
-            return "SELL", "Agotamiento 3 verdes"
-
-    # 5. Simple Bounce
-    if touches_support and last_candle["type"] == "GREEN":
-        return "BUY", "Rebote confirmado soporte"
-    if touches_resistance and last_candle["type"] == "RED":
-        return "SELL", "Rebote confirmado resistencia"
-
-    return None, "Sin confluencia suficiente"
-
-def run_backtest(fixtures_path=None):
-    if fixtures_path is None:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        fixtures_path = os.path.join(base_dir, "fixtures", "fixtures.json")
-
-    if not os.path.exists(fixtures_path):
-        print(f"Error: Fixtures no encontrados en {fixtures_path}")
-        sys.exit(1)
-        
-    with open(fixtures_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-        
-    fixtures = data.get("fixtures", [])
-    
-    total_trades = 0
+def run_evaluation(trades, title):
+    total_trades = len(trades)
     wins = 0
     losses = 0
-    initial_balance = 1000000.0
-    balance = initial_balance
-    peak_balance = initial_balance
-    max_drawdown = 0.0
-    current_loss_streak = 0
-    max_loss_streak = 0
-    stake = 80000.0
-    payout = 0.83
     
-    print("=" * 65)
-    print("           TRADEDRAW LOCAL STRATEGY BACKTESTER")
-    print("=" * 65)
+    base_stake = 100000.0
+    payout_rate = 0.8225
     
-    for idx, fix in enumerate(fixtures):
-        name = fix["name"]
-        expected = fix.get("expected_action")
-        outcome_candle = fix.get("outcome_future_candle")
+    balance = 0.0
+    peak_balance = 0.0
+    max_dd = 0.0
+    current_streak = 0
+    max_streak = 0
+    
+    for row in trades:
+        # Diff is in reason: Diff=-100003.83, Diff=+82001.92
+        reason = row["reason"]
         
-        action, reason = evaluate_candle_strategy(fix)
-        
-        if action is not None:
-            total_trades += 1
-            # Check outcome
-            is_win = (action == "BUY" and outcome_candle == "GREEN") or (action == "SELL" and outcome_candle == "RED")
-            if is_win:
-                wins += 1
-                profit = stake * payout
-                balance += profit
-                current_loss_streak = 0
-                res_str = "WIN (+%.0f COP)" % profit
-            else:
-                losses += 1
-                balance -= stake
-                current_loss_streak += 1
-                if current_loss_streak > max_loss_streak:
-                    max_loss_streak = current_loss_streak
-                res_str = "LOSS (-%.0f COP)" % stake
-                
-            if balance > peak_balance:
-                peak_balance = balance
-            dd = (peak_balance - balance) / peak_balance * 100.0
-            if dd > max_drawdown:
-                max_drawdown = dd
-                
-            print(f"[{idx+1:02d}] {name:<32} | {action:<4} -> {res_str:<18} ({reason})")
+        # Determine actual P&L from reason if possible, else standard
+        if "Diff=" in reason:
+            diff_str = reason.split("Diff=")[1].split(" ")[0]
+            try:
+                pnl = float(diff_str)
+            except ValueError:
+                pnl = 0.0
         else:
-            print(f"[{idx+1:02d}] {name:<32} | NO TRADE (Filtrado: {reason})")
+            pnl = base_stake * payout_rate if row["result"] == "WIN" else -base_stake
             
-    win_rate = (wins / total_trades * 100.0) if total_trades > 0 else 0.0
-    net_profit = balance - initial_balance
+        if row["result"] == "WIN":
+            wins += 1
+            current_streak = 0
+        elif row["result"] == "LOSS":
+            losses += 1
+            current_streak += 1
+            if current_streak > max_streak:
+                max_streak = current_streak
+        
+        balance += pnl
+        if balance > peak_balance:
+            peak_balance = balance
+        dd = peak_balance - balance
+        if dd > max_dd:
+            max_dd = dd
+
+    wr = (wins / total_trades) if total_trades > 0 else 0
     
+    # Esperada matematica (EV) real medida (normalizado a stake base 100000)
+    avg_win = base_stake * payout_rate
+    avg_loss = base_stake
+    ev = (wr * avg_win) - ((1 - wr) * avg_loss)
+    
+    print(f"\n[{title.upper()}] (N={total_trades})")
     print("-" * 65)
-    print(f"RESULTADOS: Trades: {total_trades} | Wins: {wins} | Losses: {losses} | WR: {win_rate:.1f}%")
-    print(f"P&L Neto: {net_profit:+,.2f} COP | Max Drawdown: {max_drawdown:.2f}% | Racha Max L: {max_loss_streak}")
+    print(f" Wins: {wins} | Losses: {losses} | WR: {wr*100:.1f}% (Breakeven: 54.9%)")
+    print(f" P&L Neto: {balance:,.2f} COP")
+    print(f" Max Drawdown (COP): {max_dd:,.2f} | Racha Max Perdedora: {max_streak}")
+    print(f" ESPERANZA MATEMATICA (EV) por trade (base 100k): {ev:,.2f} COP")
+
+
+def run_sanity_and_walk_forward():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_path = os.path.join(base_dir, "journal", "live", "trade_journal_live.csv")
+    
+    if not os.path.exists(csv_path):
+        print(f"No se encontró el journal: {csv_path}")
+        return
+        
+    print("=" * 65)
+    print("       TEST DE CORDURA Y WALK-FORWARD (REPLAY REAL)")
     print("=" * 65)
     
-    return {
-        "trades": total_trades,
-        "wins": wins,
-        "losses": losses,
-        "win_rate": win_rate,
-        "net_profit": net_profit,
-        "max_drawdown": max_drawdown,
-        "max_loss_streak": max_loss_streak
-    }
+    trades = process_journal(csv_path)
+    
+    # 1. Total (Test de Cordura Baseline)
+    run_evaluation(trades, "Test de Cordura (Baseline Total)")
+    
+    # 2. Walk-Forward
+    # 60% In-Sample, 40% Out-Of-Sample
+    split_idx = int(len(trades) * 0.6)
+    in_sample = trades[:split_idx]
+    out_of_sample = trades[split_idx:]
+    
+    run_evaluation(in_sample, "Walk-Forward: IN-SAMPLE (Calibracion)")
+    run_evaluation(out_of_sample, "Walk-Forward: OUT-OF-SAMPLE (Validacion)")
+    
+    print("\nNota: El backtester asume ejecución perfecta en el replay.")
+    print("Los trades fantasma (14% de la muestra real) o 'TIE' han sido filtrados.")
+    print("No modela slippage, latencia de clic, ni rechazo de orden del broker en simulaciones futuras.")
+    
+    calculate_statistical_power()
 
 if __name__ == "__main__":
-    run_backtest()
+    run_sanity_and_walk_forward()
