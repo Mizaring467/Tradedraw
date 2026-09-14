@@ -70,6 +70,13 @@ class SyntheticCandleEngine {
     var detectedTrend: TrendDirection = TrendDirection.SIDEWAYS
         private set
 
+    var visionTrend: TrendDirection? = null
+        private set
+
+    fun updateVisionTrend(trend: TrendDirection) {
+        visionTrend = trend
+    }
+
     var subMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE
 
     var onSignalGenerated: ((TradeAction, String) -> Unit)? = null
@@ -315,81 +322,46 @@ class SyntheticCandleEngine {
     private fun recalculateTrend(tick: MarketTick? = null) {
         synchronized(closedCandles) {
             val allCandles = mutableListOf<SyntheticCandle>()
-            allCandles.addAll(closedCandles.takeLast(6))
+            allCandles.addAll(closedCandles.takeLast(8))
             currentCandle?.let { allCandles.add(it) }
 
-            if (allCandles.size >= 2) {
-                val greenCount = allCandles.count { it.isGreen }
-                val redCount = allCandles.count { it.isRed }
-                val firstOpen = allCandles.first().open
-                val latestClose = allCandles.last().close
-                val netDiff = latestClose - firstOpen
+            val vTrend = visionTrend
 
-                // Rango relativo de movimiento
-                val refPrice = if (firstOpen > 0.0) firstOpen else 1.0
-                val pctChange = netDiff / refPrice
-
-                when {
-                    // Tendencia Alcista Clara: Mayoría verdes o avance neto sustancial
-                    greenCount > redCount && pctChange > -0.00005 -> {
-                        detectedTrend = TrendDirection.UPTREND
-                        return
-                    }
-                    pctChange > 0.0001 -> {
-                        detectedTrend = TrendDirection.UPTREND
-                        return
-                    }
-                    // Tendencia Bajista Clara: Mayoría rojas o retroceso neto sustancial
-                    redCount > greenCount && pctChange < 0.00005 -> {
-                        detectedTrend = TrendDirection.DOWNTREND
-                        return
-                    }
-                    pctChange < -0.0001 -> {
-                        detectedTrend = TrendDirection.DOWNTREND
-                        return
-                    }
-                }
+            // Si hay pocas velas sintéticas en memoria (< 4), priorizar la tendencia visual que analiza 30 velas reales del broker
+            if (allCandles.size < 4) {
+                detectedTrend = vTrend ?: TrendDirection.SIDEWAYS
+                return
             }
 
-            // Análisis por media móvil de ticks recientes
-            synchronized(recentTickPrices) {
-                if (recentTickPrices.size >= 10) {
-                    val prices = recentTickPrices.toList()
-                    val fastSample = prices.takeLast(prices.size / 3)
-                    val slowSample = prices.take(prices.size / 3)
+            val greenCount = allCandles.count { it.isGreen }
+            val redCount = allCandles.count { it.isRed }
+            val firstOpen = allCandles.first().open
+            val latestClose = allCandles.last().close
+            val netDiff = latestClose - firstOpen
+            val refPrice = if (firstOpen > 0.0) firstOpen else 1.0
+            val pctChange = netDiff / refPrice
 
-                    val fastAvg = fastSample.average()
-                    val slowAvg = slowSample.average()
-                    val diff = fastAvg - slowAvg
-                    val base = if (slowAvg > 0.0) slowAvg else 1.0
-                    val relDiff = diff / base
-
-                    detectedTrend = when {
-                        relDiff > 0.00003 -> TrendDirection.UPTREND
-                        relDiff < -0.00003 -> TrendDirection.DOWNTREND
-                        else -> {
-                            val active = currentCandle
-                            if (active != null && active.range > 0.00001) {
-                                if (active.isGreen && active.bodyRatio > 0.35f) TrendDirection.UPTREND
-                                else if (active.isRed && active.bodyRatio > 0.35f) TrendDirection.DOWNTREND
-                                else TrendDirection.SIDEWAYS
-                            } else {
-                                TrendDirection.SIDEWAYS
-                            }
-                        }
-                    }
-                    return
+            when {
+                // Tendencia Alcista: Mayoría verdes Y avance neto positivo contundente
+                greenCount >= 3 && pctChange > 0.00008 && vTrend != TrendDirection.DOWNTREND -> {
+                    detectedTrend = TrendDirection.UPTREND
                 }
-            }
-
-            // Fallback por estado instantáneo del micro-tick
-            val current = currentCandle
-            detectedTrend = when {
-                current != null && current.isGreen && current.close > current.open -> TrendDirection.UPTREND
-                current != null && current.isRed && current.close < current.open -> TrendDirection.DOWNTREND
-                tick?.isBullishImpulse == true -> TrendDirection.UPTREND
-                tick?.isBearishImpulse == true -> TrendDirection.DOWNTREND
-                else -> TrendDirection.SIDEWAYS
+                // Si la visión del broker ve DOWNTREND, solo permitir UPTREND sintético si hay rompimiento mayoritario (>= 5 verdes)
+                greenCount >= 5 && pctChange > 0.00015 -> {
+                    detectedTrend = TrendDirection.UPTREND
+                }
+                // Tendencia Bajista: Mayoría rojas Y retroceso neto negativo contundente
+                redCount >= 3 && pctChange < -0.00008 && vTrend != TrendDirection.UPTREND -> {
+                    detectedTrend = TrendDirection.DOWNTREND
+                }
+                // Si la visión del broker ve UPTREND, solo permitir DOWNTREND sintético si hay rompimiento mayoritario (>= 5 rojas)
+                redCount >= 5 && pctChange < -0.00015 -> {
+                    detectedTrend = TrendDirection.DOWNTREND
+                }
+                else -> {
+                    // Si no hay dominancia estadística clara, apoyarse en la visión del gráfico
+                    detectedTrend = vTrend ?: TrendDirection.SIDEWAYS
+                }
             }
         }
     }
@@ -519,27 +491,29 @@ class SyntheticCandleEngine {
                 if (detectedTrend == TrendDirection.UPTREND) it.isGreen else it.isRed 
             }.size
 
-            // 5. ESTRATEGIA MT_PULLBACK_TREND (Continuación de Tendencia tras Retroceso con Espacio Libre >= 25% a S/R)
+            // 5. ESTRATEGIA MT_PULLBACK_TREND (Continuación de Tendencia tras Retroceso SANO con Espacio Libre >= 25% a S/R)
             if (sameColorStreak < 3) {
                 if (detectedTrend == TrendDirection.UPTREND && !tick.isBearishImpulse && distToResistance >= 0.25f) {
-                    val hadPullback = prev.isRed || prev.lowerWickRatio >= 0.20f || consecutiveDownTicks in 1..2
-                    val turningUp = tick.isBullishImpulse || consecutiveUpTicks >= 1 || tick.velocity > 0f
-                    if (hadPullback && turningUp) {
+                    // Retroceso sano: cuerpo pequeño o mecha de absorción, nunca una vela envolvente bajista masiva
+                    val isHealthyPullback = (prev.isRed && prev.bodyRatio <= 0.45f) || prev.lowerWickRatio >= 0.25f || consecutiveDownTicks in 1..2
+                    val turningUp = (consecutiveUpTicks >= 2 || tick.isBullishImpulse) && tick.velocity > 0f
+                    if (isHealthyPullback && turningUp) {
                         onSignalGenerated?.invoke(
                             TradeAction.BUY,
-                            "🎯 MT_PULLBACK: Continuación Alcista tras Retroceso (Dist R: ${(distToResistance*100).toInt()}% | ⏱ ${sec}s) -> CALL"
+                            "🎯 MT_PULLBACK: Continuación Alcista tras Retroceso Sano (Dist R: ${(distToResistance*100).toInt()}% | ⏱ ${sec}s) -> CALL"
                         )
                         return
                     }
                 }
 
                 if (detectedTrend == TrendDirection.DOWNTREND && !tick.isBullishImpulse && distToSupport >= 0.25f) {
-                    val hadPullback = prev.isGreen || prev.upperWickRatio >= 0.20f || consecutiveUpTicks in 1..2
-                    val turningDown = tick.isBearishImpulse || consecutiveDownTicks >= 1 || tick.velocity < 0f
-                    if (hadPullback && turningDown) {
+                    // Retroceso sano: cuerpo pequeño o mecha de absorción superior, nunca una vela envolvente alcista masiva
+                    val isHealthyPullback = (prev.isGreen && prev.bodyRatio <= 0.45f) || prev.upperWickRatio >= 0.25f || consecutiveUpTicks in 1..2
+                    val turningDown = (consecutiveDownTicks >= 2 || tick.isBearishImpulse) && tick.velocity < 0f
+                    if (isHealthyPullback && turningDown) {
                         onSignalGenerated?.invoke(
                             TradeAction.SELL,
-                            "🎯 MT_PULLBACK: Continuación Bajista tras Retroceso (Dist S: ${(distToSupport*100).toInt()}% | ⏱ ${sec}s) -> PUT"
+                            "🎯 MT_PULLBACK: Continuación Bajista tras Retroceso Sano (Dist S: ${(distToSupport*100).toInt()}% | ⏱ ${sec}s) -> PUT"
                         )
                         return
                     }
