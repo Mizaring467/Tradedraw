@@ -373,4 +373,40 @@ class RiskManagerTest {
         assertFalse("Three void trades must cause a hard stop", canTrade)
         assertTrue("Reason must mention VOID", reason.contains("VOID"))
     }
+
+    @Test
+    fun testRealAccount_AllowsTradingWith36000Cop() {
+        com.example.tradedraw.AutoTradeAccessibilityService.isDemoAccount = false
+        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 36000.0
+        com.example.tradedraw.AutoTradeAccessibilityService.observedOrderAmount = 4000.0
+        riskManager.absoluteEquityFloor = 40000000.0
+        riskManager.sessionStartBalance = 36000.0
+
+        val (canTrade, reason) = riskManager.canExecuteTrade()
+        assertTrue("Real account with 36,000 COP must not be blocked by 40M demo equity floor: $reason", canTrade)
+    }
+
+    @Test
+    fun testRealAccount_BlocksIfBalanceBelowMinBrokerStake() {
+        com.example.tradedraw.AutoTradeAccessibilityService.isDemoAccount = false
+        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 2500.0
+        com.example.tradedraw.AutoTradeAccessibilityService.observedOrderAmount = 4000.0
+        riskManager.sessionStartBalance = 2500.0
+
+        val (canTrade, reason) = riskManager.canExecuteTrade()
+        assertFalse("Must block if balance below 4,000 COP", canTrade)
+        assertTrue("Reason must mention insufficient real balance", reason.contains("Saldo Real Insuficiente"))
+    }
+
+    @Test
+    fun testRealAccount_BlocksIfOrderAmountExceedsBalance() {
+        com.example.tradedraw.AutoTradeAccessibilityService.isDemoAccount = false
+        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 36000.0
+        com.example.tradedraw.AutoTradeAccessibilityService.observedOrderAmount = 100000.0
+        riskManager.sessionStartBalance = 36000.0
+
+        val (canTrade, reason) = riskManager.canExecuteTrade()
+        assertFalse("Must block if order amount in broker exceeds real balance", canTrade)
+        assertTrue("Reason must warn about Cantidad exceeding balance", reason.contains("supera saldo"))
+    }
 }

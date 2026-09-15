@@ -17,6 +17,14 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         var latestObservedBalance: Double = 0.0
             internal set
 
+        @Volatile
+        var isDemoAccount: Boolean = true
+            internal set
+
+        @Volatile
+        var observedOrderAmount: Double = 0.0
+            internal set
+
         var onBalanceUpdatedListener: ((Double) -> Unit)? = null
     }
 
@@ -166,18 +174,63 @@ class AutoTradeAccessibilityService : AccessibilityService() {
      */
     fun readCurrentBalance(): Double? {
         val root = try { rootInActiveWindow } catch (e: Exception) { null }
+        if (root != null) {
+            scanScreenContext(root)
+        }
         val found = if (root != null) findBalanceInNode(root) else null
         if (found != null && found > 0.0) {
-            // Anti-glitch: si el saldo previo era de millones (ej. cuenta demo ~50M),
-            // rechazar saltos repentinos hacia valores de inversión (ej. 20k, 80k) provenientes del gráfico.
-            if (latestObservedBalance > 1_000_000.0 && found < 500_000.0) {
-                Log.w("TradeDraw", "Lectura de balance descartada por glitch (valor: $found vs previo: $latestObservedBalance)")
+            // Anti-glitch: solo en cuenta demo descartamos lecturas < 500k si el saldo previo era de millones.
+            // Si la cuenta es real (isDemoAccount == false) o el usuario cambió de cuenta, se acepta de inmediato.
+            if (isDemoAccount && latestObservedBalance > 1_000_000.0 && found < 500_000.0) {
+                Log.w("TradeDraw", "Lectura de balance descartada por glitch en demo (valor: $found vs previo: $latestObservedBalance)")
                 return latestObservedBalance
+            }
+            if (latestObservedBalance > 1_000_000.0 && found < 500_000.0 && !isDemoAccount) {
+                Log.i("TradeDraw", "Transición Demo -> Real confirmada: $found COP")
             }
             latestObservedBalance = found
             return found
         }
         return if (latestObservedBalance > 0.0) latestObservedBalance else null
+    }
+
+    private fun scanScreenContext(root: android.view.accessibility.AccessibilityNodeInfo?) {
+        if (root == null) return
+        try {
+            traverseScreenContext(root)
+        } catch (e: Exception) {}
+    }
+
+    private fun traverseScreenContext(node: android.view.accessibility.AccessibilityNodeInfo?) {
+        if (node == null) return
+        val text = node.text?.toString() ?: ""
+        if (text.isNotBlank()) {
+            val lower = text.lowercase()
+            if (lower.contains("cuenta real") || lower == "real") {
+                isDemoAccount = false
+            } else if (lower.contains("cuenta demo") || lower == "demo") {
+                isDemoAccount = true
+            }
+
+            if (lower.contains("cantidad")) {
+                val parent = node.parent
+                if (parent != null) {
+                    for (i in 0 until parent.childCount) {
+                        val sib = parent.getChild(i)
+                        val sibText = sib?.text?.toString() ?: ""
+                        if (sibText != text && (sibText.contains("$") || sibText.contains("Col"))) {
+                            val parsed = parseAmountString(sibText)
+                            if (parsed != null && parsed > 0.0) {
+                                observedOrderAmount = parsed
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (i in 0 until node.childCount) {
+            traverseScreenContext(node.getChild(i))
+        }
     }
 
     private fun findBalanceInNode(node: android.view.accessibility.AccessibilityNodeInfo?): Double? {
@@ -194,6 +247,12 @@ class AutoTradeAccessibilityService : AccessibilityService() {
 
         val text = node.text?.toString() ?: ""
         if (text.isNotBlank()) {
+            val lower = text.lowercase()
+            if (lower.contains("cuenta real") || lower == "real") {
+                isDemoAccount = false
+            } else if (lower.contains("cuenta demo") || lower == "demo") {
+                isDemoAccount = true
+            }
             val parsed = parseBalanceString(text)
             if (parsed != null && parsed > 0.0) return parsed
         }
@@ -202,6 +261,30 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             if (childResult != null) return childResult
         }
         return null
+    }
+
+    private fun parseAmountString(text: String): Double? {
+        if (!text.contains("$") && !text.contains("Col") && !text.contains("USD")) return null
+        val clean = text.replace("[^0-9.,]".toRegex(), "")
+        if (clean.isBlank()) return null
+        return try {
+            val standard = if (clean.contains(",") && clean.contains(".")) {
+                if (clean.lastIndexOf(".") > clean.lastIndexOf(",")) {
+                    clean.replace(",", "")
+                } else {
+                    clean.replace(".", "").replace(",", ".")
+                }
+            } else if (clean.contains(",")) {
+                if (clean.length - clean.lastIndexOf(",") == 3) {
+                    clean.replace(",", ".")
+                } else {
+                    clean.replace(",", "")
+                }
+            } else clean
+            standard.toDoubleOrNull()
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun parseBalanceString(text: String): Double? {
