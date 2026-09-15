@@ -412,4 +412,56 @@ class RiskManagerTest {
         assertFalse("Must block if order amount in broker exceeds real balance", canTrade)
         assertTrue("Reason must warn about Cantidad exceeding balance", reason.contains("supera saldo"))
     }
+
+    @Test
+    fun testTrailingProfitLock_SecuresPeakProfitsOnRetracement() {
+        AutoTradeAccessibilityService.isDemoAccount = true
+        riskManager.absoluteEquityFloor = 40000000.0
+        riskManager.minPeakProfitToLock = 80000.0
+        riskManager.trailingProfitRetracementRatio = 0.40f
+
+        // 1. Inicio de sesión en 40.500.000 COP
+        AutoTradeAccessibilityService.latestObservedBalance = 40500000.0
+        val (canTrade1, _) = riskManager.canExecuteTrade()
+        assertTrue("Sesión inicial debe permitir operar", canTrade1)
+        assertEquals(40500000.0, riskManager.sessionStartBalance, 0.01)
+        assertEquals(40500000.0, riskManager.sessionPeakBalance, 0.01)
+
+        // 2. Ganancias consecutivas elevan el saldo a un pico de 40.650.000 COP (+150.000 COP de beneficio)
+        AutoTradeAccessibilityService.latestObservedBalance = 40650000.0
+        val (canTrade2, _) = riskManager.canExecuteTrade()
+        assertTrue("En pico de ganancias debe permitir operar", canTrade2)
+        assertEquals(40650000.0, riskManager.sessionPeakBalance, 0.01)
+
+        // 3. Retroceso: el saldo cae a 40.580.000 COP (retroceso de 70.000 COP = 46.6% del pico > 40% permitido)
+        // Suelo trailing = 40.650.000 - (150.000 * 0.40) = 40.590.000 COP
+        AutoTradeAccessibilityService.latestObservedBalance = 40580000.0
+        val (canTrade3, reason3) = riskManager.canExecuteTrade()
+        assertFalse("Debe bloquearse por Trailing Profit Lock al ceder más del 40% del pico", canTrade3)
+        assertTrue("Razón debe mencionar Trailing Profit Lock", reason3.contains("Trailing Profit Lock"))
+    }
+
+    @Test
+    fun testExtendedLossCooldown_EnforcesThreeMinutePauseAfterTwoLosses() {
+        riskManager.maxMartingaleLevel = 1
+        riskManager.martingaleEnabled = true
+        riskManager.currentSubMode = AutonomousSubMode.CONSERVATIVE
+
+        // 1 derrota -> racha = 1
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+
+        // 2da derrota -> racha = 2 -> en modo conservador debe exigir 180s de enfriamiento extendido
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(2, riskManager.currentLossStreak)
+
+        val remainingCooldown = riskManager.getRemainingCooldown(AutonomousSubMode.CONSERVATIVE)
+        assertTrue("Cooldown tras 2 pérdidas en modo conservador debe ser de 180s", remainingCooldown > 60)
+
+        val (canTrade, reason) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.CONSERVATIVE)
+        assertFalse("Debe bloquearse tras 2 derrotas", canTrade)
+        assertTrue("Razón debe mencionar Pausa Anti-Tilt", reason.contains("Pausa Anti-Tilt"))
+    }
 }
