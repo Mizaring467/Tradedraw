@@ -865,7 +865,7 @@ class TradingEngine(
                 val act = if (riskManager.pendingTradeAction == TradeAction.BUY) "CALL ▲" else "PUT ▼"
                 "⏳ Trade Activo: $act (${elapsed}s transcurridos) · Liquidando en vela :00s"
             }
-            syntheticCandleEngine.isChoppinessDetected() || analysis?.isMarketSideways == true -> {
+            syntheticCandleEngine.cachedChoppiness || analysis?.isMarketSideways == true -> {
                 "🛡️ Filtro Anti-Chop Activo: Consolidación/CHOP elevado. Esperando ruptura limpia con volumen."
             }
             analysis?.trend == TrendDirection.UPTREND || wsTrend == TrendDirection.UPTREND -> {
@@ -885,7 +885,7 @@ class TradingEngine(
             }
         }
 
-        val isFavorable = !riskManager.hasPendingTrade && (analysis?.isMarketSideways != true) && !syntheticCandleEngine.isChoppinessDetected()
+        val isFavorable = !riskManager.hasPendingTrade && (analysis?.isMarketSideways != true) && !syntheticCandleEngine.cachedChoppiness
         return EngineReasoning(pattern, prob, srStatus, plan, isFavorable)
     }
 

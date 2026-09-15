@@ -1251,6 +1251,8 @@ class OverlayService : Service() {
 
         hudView?.let { v ->
             var initX = 0; var initY = 0; var touchX = 0f; var touchY = 0f; var isMove = false
+            // Pre-cachear dimensiones de pantalla — se actualizan en ACTION_DOWN, no en cada frame de drag
+            var cachedScreenW = 0; var cachedScreenH = 0
             v.setOnTouchListener { _, event ->
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
@@ -1259,6 +1261,9 @@ class OverlayService : Service() {
                         touchX = event.rawX
                         touchY = event.rawY
                         isMove = false
+                        val metrics = resources.displayMetrics
+                        cachedScreenW = metrics.widthPixels
+                        cachedScreenH = metrics.heightPixels
                         true
                     }
                     MotionEvent.ACTION_MOVE -> {
@@ -1266,14 +1271,11 @@ class OverlayService : Service() {
                         val dy = (event.rawY - touchY).toInt()
                         if (Math.abs(dx) > 10 || Math.abs(dy) > 10) isMove = true
                         hudParams?.let { p ->
-                            val metrics = resources.displayMetrics
-                            val screenW = metrics.widthPixels
-                            val screenH = metrics.heightPixels
                             val hudW = v.width.takeIf { it > 0 } ?: 400
                             val hudH = v.height.takeIf { it > 0 } ?: 200
                             // Libertad total de movimiento confinado estrictamente a los límites visibles de la pantalla
-                            p.x = (initX + dx).coerceIn(0, screenW - hudW)
-                            p.y = (initY + dy).coerceIn(0, screenH - hudH)
+                            p.x = (initX + dx).coerceIn(0, cachedScreenW - hudW)
+                            p.y = (initY + dy).coerceIn(0, cachedScreenH - hudH)
                             windowManager.updateViewLayout(v, p)
                         }
                         true
@@ -1327,9 +1329,13 @@ class OverlayService : Service() {
     }
 
 
+    /** Timestamp de la última actualización completa del HUD — evita floods desde múltiples call-sites */
+    @Volatile
+    private var lastHudUpdateMs = 0L
+
     private val hudTimerRunnable = object : Runnable {
         override fun run() {
-            if (isHudVisible) updateHUDView()
+            if (isHudVisible) updateHUDView(force = true)
             mainHandler.postDelayed(this, 1000)
         }
     }
@@ -1366,9 +1372,13 @@ class OverlayService : Service() {
         }
     }
 
-    fun updateHUDView() {
+    fun updateHUDView(force: Boolean = false) {
         mainHandler.post {
             val v = hudView ?: return@post
+            // Throttle: ignorar actualizaciones que lleguen < 400ms después de la última (salvo force=true del timer)
+            val now = System.currentTimeMillis()
+            if (!force && now - lastHudUpdateMs < 400L) return@post
+            lastHudUpdateMs = now
             val txtMode = v.findViewById<TextView>(R.id.hud_mode)
             val txtStrat = v.findViewById<TextView>(R.id.hud_strategy)
             val txtStats = v.findViewById<TextView>(R.id.hud_stats)
@@ -1865,6 +1875,8 @@ class OverlayService : Service() {
     @SuppressLint("ClickableViewAccessibility")
     private fun setupMenuMovement(bubble: View) {
         var initialX = 0; var initialY = 0; var initialTouchX = 0f; var initialTouchY = 0f; var isMove = false
+        // Throttle: reposicionar submenú máximo 1 vez cada 80ms para no saturar WindowManager en drag
+        var lastSubmenuReposMs = 0L
         bubble.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> { initialX = menuParams.x; initialY = menuParams.y; initialTouchX = event.rawX; initialTouchY = event.rawY; isMove = false; true }
@@ -1876,7 +1888,10 @@ class OverlayService : Service() {
                     menuParams.x = (initialX + dx).coerceIn(0, dm.widthPixels - 120)
                     menuParams.y = (initialY + dy).coerceIn(0, dm.heightPixels - 120)
                     windowManager.updateViewLayout(menuView, menuParams)
-                    if (::submenuWindowView.isInitialized && submenuWindowView.visibility == View.VISIBLE) {
+                    val now = System.currentTimeMillis()
+                    if (::submenuWindowView.isInitialized && submenuWindowView.visibility == View.VISIBLE
+                            && now - lastSubmenuReposMs >= 80L) {
+                        lastSubmenuReposMs = now
                         positionSubmenuWindow()
                     }
                     true

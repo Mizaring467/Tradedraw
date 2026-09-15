@@ -63,6 +63,15 @@ class SyntheticCandleEngine {
     var isBearishOverextended: Boolean = false
         private set
 
+    /**
+     * Caché del resultado de isChoppinessDetected() — se invalida SOLO al cerrar una nueva vela.
+     * Elimina el recálculo costoso O(n) en cada frame del HUD.
+     */
+    @Volatile
+    var cachedChoppiness: Boolean = false
+        private set
+
+
     var dynamicSupportPrice: Double = 0.0
         private set
     var dynamicResistancePrice: Double = 0.0
@@ -129,6 +138,9 @@ class SyntheticCandleEngine {
                     }
                     closedCandles.add(prev)
                 }
+                // Actualizar caché de choppiness UNA SOLA VEZ al cerrar la vela
+                // (evita O(n) synchronized en cada frame del HUD)
+                cachedChoppiness = isChoppinessDetected()
             }
 
             // Inicio de nueva vela de 1 minuto
