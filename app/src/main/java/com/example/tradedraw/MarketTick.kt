@@ -126,9 +126,9 @@ object MarketTickFilters {
 
 fun formatDynamicPrice(price: Double): String {
     if (price <= 0.0) return "0.00"
-    val raw = String.format(java.util.Locale.US, "%.6f", price).trimEnd('0')
+    val raw = String.format(java.util.Locale.US, "%.8f", price).trimEnd('0')
     val parts = raw.split(".")
     val decimals = if (parts.size > 1) parts[1].length else 0
-    val targetDecimals = decimals.coerceIn(2, 4)
+    val targetDecimals = decimals.coerceIn(2, 6)
     return String.format(java.util.Locale.US, "%.${targetDecimals}f", price)
 }
