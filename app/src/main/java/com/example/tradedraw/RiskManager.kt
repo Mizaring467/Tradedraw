@@ -233,17 +233,45 @@ class RiskManager(context: Context? = null) {
         confidence: Float = 1.0f
     ): Pair<Boolean, String> {
         val currentBal = AutoTradeAccessibilityService.latestObservedBalance
+        val isDemo = AutoTradeAccessibilityService.isDemoAccount && currentBal > 1_000_000.0
         if (currentBal > 0.0) {
-            if (currentBal < absoluteEquityFloor) {
-                android.util.Log.e("RiskManager", "CRITICAL STOP: Equity ($currentBal) por debajo del suelo absoluto ($absoluteEquityFloor)")
-                return Pair(false, "Stop Equity Absoluto Alcanzado ($currentBal < $absoluteEquityFloor)")
+            if (isDemo) {
+                if (currentBal < absoluteEquityFloor) {
+                    android.util.Log.e("RiskManager", "CRITICAL STOP: Equity Demo ($currentBal) por debajo del suelo absoluto ($absoluteEquityFloor)")
+                    return Pair(false, "Stop Equity Absoluto Alcanzado ($currentBal < $absoluteEquityFloor)")
+                }
+            } else {
+                // Cuenta Real: suelo mínimo operativo para Binomo (mínimo ~4,000 COP por orden)
+                val minBrokerStake = 4000.0
+                if (currentBal < minBrokerStake) {
+                    android.util.Log.e("RiskManager", "CRITICAL STOP: Saldo real insuficiente para operar ($currentBal < $minBrokerStake)")
+                    return Pair(false, "Saldo Real Insuficiente (< Col$$minBrokerStake)")
+                }
+
+                // Si la orden configurada en pantalla supera el saldo disponible, avisar claramente
+                val observedStake = AutoTradeAccessibilityService.observedOrderAmount
+                if (observedStake > 0.0 && observedStake > currentBal) {
+                    val stakeInt = observedStake.toInt()
+                    val balInt = currentBal.toInt()
+                    android.util.Log.e("RiskManager", "CRITICAL STOP: Inversión en Binomo ($stakeInt COP) supera saldo real ($balInt COP)")
+                    return Pair(false, "Cantidad ($stakeInt COP) supera saldo ($balInt COP). Ajusta a Col$4,000")
+                }
             }
+
+            if (sessionStartBalance == 0.0) {
+                sessionStartBalance = currentBal
+            }
+
             if (sessionStartBalance > 0.0) {
-                val maxLossAmt = sessionStartBalance * sessionMaxLossRatio
-                val sessionFloor = sessionStartBalance - maxLossAmt
-                if (currentBal < sessionFloor) {
-                    android.util.Log.e("RiskManager", "CRITICAL STOP: Pérdida máxima de sesión alcanzada. Balance actual: $currentBal, Suelo de sesión: $sessionFloor (Max Loss: ${sessionMaxLossRatio*100}%)")
-                    return Pair(false, "Stop Loss Sesion Alcanzado ($currentBal < $sessionFloor)")
+                val isConsistentSession = (isDemo && sessionStartBalance > 1_000_000.0) || (!isDemo && sessionStartBalance <= 1_000_000.0)
+                if (isConsistentSession) {
+                    val minLossAllowance = if (isDemo) 100000.0 else 8000.0
+                    val maxLossAmt = maxOf(sessionStartBalance * sessionMaxLossRatio, minLossAllowance)
+                    val sessionFloor = sessionStartBalance - maxLossAmt
+                    if (currentBal < sessionFloor) {
+                        android.util.Log.e("RiskManager", "CRITICAL STOP: Pérdida máxima de sesión alcanzada. Balance actual: $currentBal, Suelo de sesión: $sessionFloor")
+                        return Pair(false, "Stop Loss Sesion Alcanzado ($currentBal < $sessionFloor)")
+                    }
                 }
             }
         }
