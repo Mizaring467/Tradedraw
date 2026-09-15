@@ -22,12 +22,33 @@ class RiskManager(context: Context? = null) {
         const val DEFAULT_COOLDOWN_SECONDS = 10
         const val DEFAULT_LOSS_COOLDOWN_SECONDS = 180
         const val DEFAULT_YOLO_LOSS_COOLDOWN_SECONDS = 35 // Cooldown en modo continuo/YOLO (30 a 45s max)
+        const val EXTENDED_LOSS_COOLDOWN_SECONDS = 180 // Pausa de 3m tras 2 derrotas consecutivas para salir de rango
         const val DEFAULT_STOP_LOSS_STREAK = 3
         const val DEFAULT_TAKE_PROFIT_WINS = 20 // 20 victorias por bloque (0 = Ilimitado)
         const val DEFAULT_MAX_MARTINGALE_LEVEL = 1
         const val DEFAULT_MARTINGALE_MULTIPLIER = 2.0f
         const val SELECTIVE_MARTINGALE_M1_MIN_CONFIDENCE = 0.85f // Umbral A+ para Martingala M1 (85%)
     }
+
+    @Volatile
+    var sessionPeakBalance: Double = 0.0
+
+    @Volatile
+    var trailingProfitLockTriggered: Boolean = false
+
+    @Volatile
+    var trailingProfitRetracementRatio: Float = prefs?.getFloat("trailing_profit_retrace", 0.40f) ?: 0.40f
+        set(value) {
+            field = value
+            prefs?.edit()?.putFloat("trailing_profit_retrace", value)?.apply()
+        }
+
+    @Volatile
+    var minPeakProfitToLock: Double = prefs?.getFloat("min_peak_profit_lock", 80000f)?.toDouble() ?: 80000.0
+        set(value) {
+            field = value
+            prefs?.edit()?.putFloat("min_peak_profit_lock", value.toFloat())?.apply()
+        }
 
     @Volatile
     var selectiveM1MinConfidence: Float = prefs?.getFloat("selective_m1_min_confidence", SELECTIVE_MARTINGALE_M1_MIN_CONFIDENCE) ?: SELECTIVE_MARTINGALE_M1_MIN_CONFIDENCE
@@ -220,7 +241,11 @@ class RiskManager(context: Context? = null) {
         if (lastTradeTime == 0L) return 0
         val effectiveSubMode = subMode ?: currentSubMode
         val elapsed = (System.currentTimeMillis() - lastTradeTime) / 1000
-        val requiredLossCooldown = if (effectiveSubMode == AutonomousSubMode.YOLO) yoloLossCooldownSeconds else lossCooldownSeconds
+        val requiredLossCooldown = when {
+            effectiveSubMode == AutonomousSubMode.YOLO -> yoloLossCooldownSeconds
+            currentLossStreak >= 2 -> EXTENDED_LOSS_COOLDOWN_SECONDS
+            else -> lossCooldownSeconds
+        }
         val requiredCooldown = if (currentLossStreak > 0) requiredLossCooldown else cooldownSeconds
         val remaining = requiredCooldown - elapsed
         return if (remaining > 0) remaining.toInt() else 0
@@ -260,6 +285,9 @@ class RiskManager(context: Context? = null) {
 
             if (sessionStartBalance == 0.0) {
                 sessionStartBalance = currentBal
+                sessionPeakBalance = currentBal
+            } else if (currentBal > sessionPeakBalance) {
+                sessionPeakBalance = currentBal
             }
 
             if (sessionStartBalance > 0.0) {
@@ -271,6 +299,18 @@ class RiskManager(context: Context? = null) {
                     if (currentBal < sessionFloor) {
                         android.util.Log.e("RiskManager", "CRITICAL STOP: Pérdida máxima de sesión alcanzada. Balance actual: $currentBal, Suelo de sesión: $sessionFloor")
                         return Pair(false, "Stop Loss Sesion Alcanzado ($currentBal < $sessionFloor)")
+                    }
+
+                    // Trailing Profit Lock: Proteger beneficios de la sesión si hubo ganancia pico significativa
+                    val peakProfit = sessionPeakBalance - sessionStartBalance
+                    if (peakProfit >= minPeakProfitToLock) {
+                        val allowedRetracement = peakProfit * trailingProfitRetracementRatio
+                        val trailingFloor = sessionPeakBalance - allowedRetracement
+                        if (currentBal < trailingFloor) {
+                            trailingProfitLockTriggered = true
+                            android.util.Log.w("RiskManager", "TRAILING PROFIT LOCK: Beneficio asegurado. Pico: +${peakProfit.toInt()} COP, Suelo: $trailingFloor")
+                            return Pair(false, "Trailing Profit Lock: Ganancia asegurada (+${peakProfit.toInt()} COP pico)")
+                        }
                     }
                 }
             }
@@ -296,15 +336,15 @@ class RiskManager(context: Context? = null) {
         }
         // Si falló el nivel máximo de martingala (MG1 fallido -> pérdidas consecutivas > maxMartingaleLevel),
         // forzamos pausa de enfriamiento breve incluso en YOLO para proteger la cuenta contra tilt,
-        // pero en modo continuo/YOLO reducida a 30-45s máximo para no congelar al bot por 120-140s
+        // pero con pausa extendida de 180s (3m) si ya van >= 2 derrotas consecutivas
         if (martingaleEnabled && currentLossStreak > maxMartingaleLevel) {
             val elapsed = (System.currentTimeMillis() - lastTradeTime) / 1000
-            val effectiveLossCooldown = if (subMode == AutonomousSubMode.YOLO) yoloLossCooldownSeconds else lossCooldownSeconds
+            val effectiveLossCooldown = if (subMode == AutonomousSubMode.YOLO) yoloLossCooldownSeconds else if (currentLossStreak >= 2) EXTENDED_LOSS_COOLDOWN_SECONDS else lossCooldownSeconds
             val remaining = effectiveLossCooldown - elapsed
             if (remaining > 0) {
                 return Pair(false, "Pausa Anti-Tilt tras fallo Martingala (${remaining}s)")
             } else if (subMode == AutonomousSubMode.YOLO) {
-                // En YOLO: al terminar la pausa breve de 35s, reiniciar automáticamente la racha a M0
+                // En YOLO: al terminar la pausa anti-tilt, reiniciar automáticamente la racha a M0
                 // para continuar operando de forma 100% autónoma sin requerir interacción táctil
                 currentLossStreak = 0
             }
@@ -538,7 +578,14 @@ class RiskManager(context: Context? = null) {
         totalLosses = 0
         consecutiveVoids = 0
         lastTradeTime = 0L
-        if (startBal > 0.0) sessionStartBalance = startBal
+        if (startBal > 0.0) {
+            sessionStartBalance = startBal
+            sessionPeakBalance = startBal
+        } else {
+            sessionStartBalance = 0.0
+            sessionPeakBalance = 0.0
+        }
+        trailingProfitLockTriggered = false
         clearPendingTrade()
     }
 }

@@ -226,13 +226,58 @@ class SyntheticCandleEngine {
     }
 
     /**
+     * Calcula el Choppiness Index (CHOP) sobre una ventana de n velas cerradas.
+     * CHOP = 100 * LOG10( SUM(TrueRange_n) / (MaxHigh_n - MinLow_n) ) / LOG10(n)
+     * Valores >= 61.8 indican mercado en consolidación / rango sucio.
+     * Valores <= 38.2 indican tendencia definida.
+     */
+    fun calculateChoppinessIndex(period: Int = 14): Double {
+        synchronized(closedCandles) {
+            if (closedCandles.size < period) return 50.0
+            val sample = closedCandles.takeLast(period)
+            var sumTr = 0.0
+            for (i in sample.indices) {
+                val current = sample[i]
+                val prevClose = if (i > 0) sample[i - 1].close else current.open
+                val tr = maxOf(
+                    current.high - current.low,
+                    Math.abs(current.high - prevClose),
+                    Math.abs(current.low - prevClose)
+                )
+                sumTr += tr
+            }
+            val maxHigh = sample.maxOf { it.high }
+            val minLow = sample.minOf { it.low }
+            val span = maxHigh - minLow
+            if (span <= 0.0 || sumTr <= 0.0) return 100.0
+            val ratio = sumTr / span
+            if (ratio <= 0.0) return 50.0
+            val chop = 100.0 * (Math.log10(ratio) / Math.log10(period.toDouble()))
+            return chop.coerceIn(0.0, 100.0)
+        }
+    }
+
+    /**
      * Filtro Anti-Choppy / Micro-Rango Cuantitativo:
-     * Detecta micro-rango (< 0.05%) o caída brusca de volatilidad relativa con alternancia de ticks sin dirección.
+     * Detecta condiciones de consolidación, compresión y mercado sucio:
+     * 1. Choppiness Index >= 61.8% (mercado estadísticamente en consolidación/choppiness).
+     * 2. Micro-rango estático (< 0.05%) o colapso de volatilidad respecto al promedio.
+     * 3. Cluster de velas de indecisión / dojis (cuerpo promedio < 28% del rango).
+     * 4. Alternancia errática de ticks sin desplazamiento direccional.
      * Aplica SIEMPRE para proteger el capital en condiciones de ruido estático.
      */
     fun isChoppinessDetected(): Boolean {
         synchronized(closedCandles) {
             if (closedCandles.size < 4) return false
+
+            // 1. Choppiness Index cuantitativo (ventana de 10 a 14 velas)
+            val period = minOf(14, closedCandles.size)
+            if (period >= 8) {
+                val chop = calculateChoppinessIndex(period)
+                if (chop >= 61.8) return true
+            }
+
+            // 2. Micro-rango estático o caída de volatilidad en las últimas 5 velas
             val isStaticMicro = isMicroRange(5, MarketTickFilters.MAX_CHOPPY_RANGE_PERCENT)
             val avgRange = closedCandles.takeLast(20).map { it.range }.average()
             val recent5Max = closedCandles.takeLast(5).maxOf { it.high }
@@ -240,8 +285,18 @@ class SyntheticCandleEngine {
             val recentRange = recent5Max - recent5Min
             val thresholdRatio = 0.40
             val isRelativeDrop = avgRange > 0.0 && recentRange < (avgRange * thresholdRatio)
+
+            // 3. Cluster de Indecisión: velas con cuerpos diminutos / dojis (ruido lateral)
+            val recentSample = closedCandles.takeLast(minOf(5, closedCandles.size))
+            val avgBodyRatio = recentSample.map { it.bodyRatio }.average()
+            val isDojiNoiseCluster = avgBodyRatio < 0.28 && recentRange <= (avgRange * 0.70)
+
+            if (isDojiNoiseCluster) return true
+
+            // 4. Caída relativa de rango combinada con alternancia errática de ticks
             val alternatingTicks = 8
-            return (isStaticMicro || isRelativeDrop) && isTickAlternatingWithoutDirection(alternatingTicks)
+            val isAlternating = isTickAlternatingWithoutDirection(alternatingTicks)
+            return isStaticMicro || (isRelativeDrop && isAlternating)
         }
     }
 
@@ -681,22 +736,28 @@ class SyntheticCandleEngine {
 
             // 7. ESTRATEGIA MT_RANGE_BOUNCE (Rebote en Rango Lateral / Sideways)
             if (detectedTrend == TrendDirection.SIDEWAYS) {
-                val hasHealthyRange = prev.range > 0.0 && (prev.bodyRatio >= 0.12f || prev.range >= 0.0000005)
-                // Rebote en soporte solo válido al inicio del rebote (máximo 1 vela verde previa)
-                if (hasHealthyRange && !isBullishExhausted && consecutiveGreenCandles <= 1 &&
-                    distToSupport <= 0.22f && syntheticTickRsi <= 65.0 && (tick.isBullishImpulse || consecutiveUpTicks >= 1 || !tick.isBearishImpulse)) {
+                val atr = calculateAtr(14)
+                val channelSpan = dynamicResistancePrice - dynamicSupportPrice
+                val hasTradableChannel = atr > 0.0 && channelSpan >= (atr * 1.5)
+
+                // Rebote en soporte: requiere canal operable, mecha de rechazo inferior y empuje alcista activo
+                if (hasTradableChannel && !isBullishExhausted && consecutiveGreenCandles <= 1 &&
+                    distToSupport <= 0.22f && prev.lowerWickRatio >= 0.28f && syntheticTickRsi <= 65.0 &&
+                    (tick.isBullishImpulse || consecutiveUpTicks >= 2) && tick.velocity > 0f) {
                     onSignalGenerated?.invoke(
                         TradeAction.BUY,
-                        "🎯 MT_RANGE: Rebote en Soporte Lateral (Dist S: ${(distToSupport*100).toInt()}% | ⏱ ${sec}s) -> CALL"
+                        "🎯 MT_RANGE: Rebote en Soporte Lateral (Dist S: ${(distToSupport*100).toInt()}% | Mecha: ${(prev.lowerWickRatio*100).toInt()}% | ⏱ ${sec}s) -> CALL"
                     )
                     return
                 }
-                // Rechazo en resistencia solo válido al inicio del rechazo (máximo 1 vela roja previa)
-                if (hasHealthyRange && !isBearishExhausted && consecutiveRedCandles <= 1 &&
-                    distToResistance <= 0.22f && syntheticTickRsi >= 35.0 && (tick.isBearishImpulse || consecutiveDownTicks >= 1 || !tick.isBullishImpulse)) {
+
+                // Rechazo en resistencia: requiere canal operable, mecha de rechazo superior y empuje bajista activo
+                if (hasTradableChannel && !isBearishExhausted && consecutiveRedCandles <= 1 &&
+                    distToResistance <= 0.22f && prev.upperWickRatio >= 0.28f && syntheticTickRsi >= 35.0 &&
+                    (tick.isBearishImpulse || consecutiveDownTicks >= 2) && tick.velocity < 0f) {
                     onSignalGenerated?.invoke(
                         TradeAction.SELL,
-                        "🎯 MT_RANGE: Rechazo en Resistencia Lateral (Dist R: ${(distToResistance*100).toInt()}% | ⏱ ${sec}s) -> PUT"
+                        "🎯 MT_RANGE: Rechazo en Resistencia Lateral (Dist R: ${(distToResistance*100).toInt()}% | Mecha: ${(prev.upperWickRatio*100).toInt()}% | ⏱ ${sec}s) -> PUT"
                     )
                     return
                 }

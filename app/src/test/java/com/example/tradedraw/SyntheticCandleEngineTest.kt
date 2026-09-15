@@ -525,4 +525,56 @@ class SyntheticCandleEngineTest {
             TradeAction.BUY, signalEmittedAction
         )
     }
+
+    @Test
+    fun testChoppinessIndex_IdentifiesConsolidationAndDojiNoise() {
+        val engine = SyntheticCandleEngine()
+        var now = 60000L * 30L
+
+        // 1. Simular 12 velas doji / micro-cuerpo que se solapan completamente en un rango estrecho
+        for (i in 0 until 12) {
+            val baseP = 600.0 + if (i % 2 == 0) 0.05 else -0.05
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = baseP, timestampMs = now))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = baseP + 0.50, timestampMs = now + 20000L)) // High
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = baseP - 0.50, timestampMs = now + 40000L)) // Low
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = baseP + 0.01, timestampMs = now + 59000L)) // Close doji
+            now += 60000L
+        }
+        // Tick en nuevo minuto para cerrar la vela 11
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 600.0, timestampMs = now))
+
+        val chop = engine.calculateChoppinessIndex(10)
+        assertTrue("El índice de Choppiness debe ser alto (>= 58.0) en mercado de dojis solapados: $chop", chop >= 58.0)
+        assertTrue("isChoppinessDetected() debe retornar true en consolidación de dojis", engine.isChoppinessDetected())
+    }
+
+    @Test
+    fun testRangeBounce_RejectsNarrowCompressedChannels() {
+        val engine = SyntheticCandleEngine()
+        var now = 60000L * 25L
+
+        // 1. Crear velas con canal muy comprimido
+        for (i in 0 until 8) {
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 100.0, timestampMs = now))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 100.05, timestampMs = now + 20000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 99.95, timestampMs = now + 40000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 100.01, timestampMs = now + 59000L))
+            now += 60000L
+        }
+
+        var signalEmitted: TradeAction? = null
+        engine.onSignalGenerated = { action, _ -> signalEmitted = action }
+
+        // Tick en segundo :00 intentando rebotar en canal comprimido
+        val tick = MarketTick(
+            asset = "CRYPTO_IDX",
+            price = 99.96,
+            timestampMs = now,
+            isBullishImpulse = true,
+            velocity = 0.02f
+        )
+        engine.onNewTick(tick)
+
+        assertNull("No debe disparar rebote en un canal comprimido no operable", signalEmitted)
+    }
 }
