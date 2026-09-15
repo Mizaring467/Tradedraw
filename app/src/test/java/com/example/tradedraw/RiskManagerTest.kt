@@ -18,6 +18,9 @@ class RiskManagerTest {
         riskManager.takeProfitWins = 5
         riskManager.cooldownSeconds = 10
         riskManager.resetSession()
+        AutoTradeAccessibilityService.isDemoAccount = true
+        AutoTradeAccessibilityService.latestObservedBalance = 0.0
+        AutoTradeAccessibilityService.observedOrderAmount = 0.0
     }
 
     @Test

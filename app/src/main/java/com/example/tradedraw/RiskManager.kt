@@ -233,7 +233,7 @@ class RiskManager(context: Context? = null) {
         confidence: Float = 1.0f
     ): Pair<Boolean, String> {
         val currentBal = AutoTradeAccessibilityService.latestObservedBalance
-        val isDemo = AutoTradeAccessibilityService.isDemoAccount && currentBal > 1_000_000.0
+        val isDemo = currentBal >= 1_000_000.0 || (AutoTradeAccessibilityService.isDemoAccount && currentBal > 500_000.0)
         if (currentBal > 0.0) {
             if (isDemo) {
                 if (currentBal < absoluteEquityFloor) {
