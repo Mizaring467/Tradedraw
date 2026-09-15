@@ -1019,13 +1019,11 @@ class TradingEngine(
         }
 
         // Evaluación por el Motor de Autoaprendizaje Adaptativo de Errores
-        val isYolo = autonomousSubMode == AutonomousSubMode.YOLO
         val adaptiveDecision = adaptiveLearningEngine.evaluateSignalSuitability(
             candidateAction = action,
             analysis = analysis,
             tick = latestMarketTick,
-            strategyName = strategy.name,
-            isYoloMode = isYolo
+            strategyName = strategy.name
         )
 
         val finalAction: TradeAction
@@ -1274,13 +1272,11 @@ class TradingEngine(
             candleSecond = sec
         )
 
-        val isYoloHeadless = autonomousSubMode == AutonomousSubMode.YOLO
         val adaptiveDecision = adaptiveLearningEngine.evaluateSignalSuitability(
             candidateAction = action,
             analysis = effectiveAnalysis,
             tick = latestMarketTick,
-            strategyName = "HEADLESS_WS",
-            isYoloMode = isYoloHeadless
+            strategyName = "HEADLESS_WS"
         )
         val finalAction: TradeAction
         val finalReason: String

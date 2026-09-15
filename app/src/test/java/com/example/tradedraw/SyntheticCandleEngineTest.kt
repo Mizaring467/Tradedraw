@@ -449,4 +449,80 @@ class SyntheticCandleEngineTest {
         val trendTransitions = trendHistory.zipWithNext().count { (a, b) -> a != b }
         assertTrue("Debe registrar al menos 2 transiciones de régimen de mercado ($trendTransitions transiciones)", trendTransitions >= 2)
     }
+
+    @Test
+    fun testAthBreakoutPolarity() {
+        val engine = SyntheticCandleEngine()
+        var now = 60000L * 20L
+
+        // Crear 10 velas en rango 100.0 - 150.0 para fijar pivotes previos
+        for (m in 0 until 10) {
+            val high = 150.0
+            val low = 100.0
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = (high + low) / 2, timestampMs = now))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = high, timestampMs = now + 20000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = low, timestampMs = now + 40000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 125.0, timestampMs = now + 59000L))
+            now += 60000L
+        }
+
+        // Simular breakout a un nuevo ATH en 250.0 (muy por encima de 150.0)
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 250.0, timestampMs = now + 1000L))
+
+        assertTrue("dynamicResistancePrice debe estar SIEMPRE por encima o igual al precio actual en ATH",
+            engine.dynamicResistancePrice >= 250.0
+        )
+        assertEquals("dynamicSupportPrice debe convertirse en el pivote roto (150.0) por polaridad",
+            150.0, engine.dynamicSupportPrice, 0.1
+        )
+        assertTrue("distanceToSupportRatio NO debe ser 0 ni cercano a 0 cuando el precio está 100 unidades sobre el soporte",
+            engine.distanceToSupportRatio > 0.40f
+        )
+    }
+
+    @Test
+    fun testUniversalAntiExhaustionBlocksBuyOnThreeConsecutiveGreenCandles() {
+        val engine = SyntheticCandleEngine()
+        var now = 60000L * 30L
+
+        // 1. Simular 5 velas base normales
+        for (m in 0 until 5) {
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 100.0, timestampMs = now))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 105.0, timestampMs = now + 30000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 102.0, timestampMs = now + 59000L))
+            now += 60000L
+        }
+
+        // 2. Simular 3 velas VERDES consecutivas y sólidas (Agotamiento alcista)
+        for (m in 0 until 3) {
+            val openP = 102.0 + (m * 10.0)
+            val closeP = openP + 8.0
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = openP, timestampMs = now))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = closeP + 1.0, timestampMs = now + 30000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = closeP, timestampMs = now + 59000L))
+            now += 60000L
+        }
+
+        var signalEmittedAction: TradeAction? = null
+        var signalEmittedReason: String = ""
+        engine.onSignalGenerated = { action, reason ->
+            signalEmittedAction = action
+            signalEmittedReason = reason
+        }
+
+        // 3. Enviar tick alcista en segundo 00 (:00s) al inicio de la 4ª vela
+        val tickSniper = MarketTick(
+            asset = "CRYPTO_IDX",
+            price = 132.0,
+            timestampMs = now, // segundo :00
+            velocity = 0.08f,
+            isBullishImpulse = true
+        )
+        engine.onNewTick(tickSniper)
+
+        // NO debe emitir orden BUY de continuación en el techo tras 3 velas verdes consecutivas
+        assertNotEquals("PROHIBIDO comprar (CALL) tras racha de 3 velas verdes consecutivas (Agotamiento)",
+            TradeAction.BUY, signalEmittedAction
+        )
+    }
 }
