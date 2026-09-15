@@ -182,15 +182,9 @@ class AdaptiveLearningEngine {
         analysis: VisionAnalysisResult,
         tick: MarketTick?,
         strategyName: String,
-        isYoloMode: Boolean = false
     ): AdaptiveDecision {
-        if (isYoloMode) {
-            return AdaptiveDecision.Allow(
-                action = candidateAction,
-                confidenceModifier = 1.0f,
-                reason = "Modo YOLO activo (Operativa continua)"
-            )
-        }
+        // En modo YOLO la operativa es continua (no se apaga por límites de sesión),
+        // pero DEBE aplicar el 100% de los filtros de prudencia, vetos de racha y anti-patrones.
 
         val inUptrend = analysis.trend == TrendDirection.UPTREND
         val inDowntrend = analysis.trend == TrendDirection.DOWNTREND
