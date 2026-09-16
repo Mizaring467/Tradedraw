@@ -210,14 +210,11 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         }
         val found = if (root != null) findBalanceInNode(root) else null
         if (found != null && found > 0.0) {
-            // Anti-glitch: solo en cuenta demo descartamos lecturas < 500k si el saldo previo era de millones.
-            // Si la cuenta es real (isDemoAccount == false) o el usuario cambió de cuenta, se acepta de inmediato.
-            if (isDemoAccount && latestObservedBalance > 1_000_000.0 && found < 500_000.0) {
-                Log.w("TradeDraw", "Lectura de balance descartada por glitch en demo (valor: $found vs previo: $latestObservedBalance)")
+            // Anti-glitch: descartamos lecturas < 500k si el saldo previo era de millones (> 1M),
+            // protegiendo contra anomalías de UI (ej. "1.00") tanto en cuenta demo como real.
+            if (latestObservedBalance > 1_000_000.0 && found < 500_000.0) {
+                Log.w("TradeDraw", "Lectura de balance descartada por glitch (valor: $found vs previo: $latestObservedBalance)")
                 return latestObservedBalance
-            }
-            if (latestObservedBalance > 1_000_000.0 && found < 500_000.0 && !isDemoAccount) {
-                Log.i("TradeDraw", "Transición Demo -> Real confirmada: $found COP")
             }
             latestObservedBalance = found
             return found

@@ -497,8 +497,8 @@ class SyntheticCandleEngine {
             // Normalización por ATR independiente:
             val atrNorm = (atr * 2.0).coerceAtLeast(0.0001)
 
-            val rawDistToSupport = Math.max(0.0, currentPrice - dynamicSupportPrice)
-            val rawDistToResistance = Math.max(0.0, dynamicResistancePrice - currentPrice)
+            val rawDistToSupport = Math.abs(currentPrice - dynamicSupportPrice)
+            val rawDistToResistance = Math.abs(dynamicResistancePrice - currentPrice)
 
             distanceToSupportRatio = (rawDistToSupport / atrNorm).toFloat().coerceIn(0f, 1f)
             distanceToResistanceRatio = (rawDistToResistance / atrNorm).toFloat().coerceIn(0f, 1f)
