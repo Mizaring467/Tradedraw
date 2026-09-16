@@ -50,3 +50,17 @@
    - El rendimiento superó el umbral matemático por +7.6 puntos porcentuales.
 3. **Frecuencia Restaurada:**
    - La ampliación de la ventana sniper a `:57-:05` permitió 8 trades en 30 minutos (16 trades/hora), resolviendo la congelación de 1 trade/hora que tenía el bot tras el intento fallido `3b8b2e0`.
+
+---
+
+## 📐 Potencia Estadística Requerida para Operar con Dinero Real
+
+| Muestra (Trades) | WR Mínimo Observado | Horas Est. (1.1 T/H) | Nivel de Confianza (p < 0.05) | Veredicto Operativo |
+| :---: | :---: | :---: | :---: | :---: |
+| 10 | 85.7% | ~9 h | Intervalo amplio [55% - 99%] | Ruido estadístico |
+| 30 | 72.7% | ~27 h | Margen error $\pm 17.8\%$ | Evidencia preliminar |
+| 50 | 68.7% | ~45 h | Margen error $\pm 13.8\%$ | Convicción intermedia |
+| **100** | **64.7%** | **~90 h** | **Significativo (p < 0.05)** | **✅ Apto para Dinero Real** |
+| 200 | 61.8% | ~180 h | Alta precisión $\pm 6.9\%$ | Institucional |
+| 500 | 59.3% | ~450 h | Máxima precisión $\pm 4.4\%$ | Fondos Cuantitativos |
+
