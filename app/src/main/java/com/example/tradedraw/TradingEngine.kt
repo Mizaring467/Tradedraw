@@ -865,7 +865,7 @@ class TradingEngine(
                 val act = if (riskManager.pendingTradeAction == TradeAction.BUY) "CALL ▲" else "PUT ▼"
                 "⏳ Trade Activo: $act (${elapsed}s transcurridos) · Liquidando en vela :00s"
             }
-            syntheticCandleEngine.cachedChoppiness || analysis?.isMarketSideways == true -> {
+            (syntheticCandleEngine.cachedChoppiness && autonomousSubMode != AutonomousSubMode.YOLO) -> {
                 "🛡️ Filtro Anti-Chop Activo: Consolidación/CHOP elevado. Esperando ruptura limpia con volumen."
             }
             analysis?.trend == TrendDirection.UPTREND || wsTrend == TrendDirection.UPTREND -> {
@@ -885,7 +885,7 @@ class TradingEngine(
             }
         }
 
-        val isFavorable = !riskManager.hasPendingTrade && (analysis?.isMarketSideways != true) && !syntheticCandleEngine.cachedChoppiness
+        val isFavorable = !riskManager.hasPendingTrade && (autonomousSubMode == AutonomousSubMode.YOLO || (!syntheticCandleEngine.cachedChoppiness && analysis?.isMarketSideways != true))
         return EngineReasoning(pattern, prob, srStatus, plan, isFavorable)
     }
 
@@ -1238,7 +1238,11 @@ class TradingEngine(
             Log.d("TradingEngine", "Headless bloqueado fuera de ventana timing sniper :57-:05 (⏱ ${sec}s | YOLO=$isYolo)")
             return
         }
-        if (syntheticCandleEngine.isChoppinessDetected()) {
+        val isRejectionOrBounce = reasonDescription.contains("MT_REJECTION") ||
+                reasonDescription.contains("MT_RANGE") ||
+                reasonDescription.contains("MT_3_VELAS") ||
+                reasonDescription.contains("MT_REVERSAL")
+        if (syntheticCandleEngine.isChoppinessDetected() && !isRejectionOrBounce && !isYolo) {
             Log.d("TradingEngine", "Headless bloqueado por Filtro Anti-Choppy (<0.05% y ticks alternantes)")
             return
         }

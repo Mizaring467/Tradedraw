@@ -577,4 +577,128 @@ class SyntheticCandleEngineTest {
 
         assertNull("No debe disparar rebote en un canal comprimido no operable", signalEmitted)
     }
+
+    @Test
+    fun testRejectionAtSupport_ExecutesEvenWithElevatedChoppiness() {
+        val engine = SyntheticCandleEngine()
+        var now = 60000L * 20L
+
+        // 1. Simular 10 velas en rango lateral amplio para fijar soporte en 100.0 y resistencia en 150.0
+        for (m in 0 until 10) {
+            val isEven = m % 2 == 0
+            val openP = if (isEven) 105.0 else 140.0
+            val closeP = if (isEven) 135.0 else 110.0
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = openP, timestampMs = now))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 150.0, timestampMs = now + 20000L)) // High
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 100.0, timestampMs = now + 40000L)) // Low
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = closeP, timestampMs = now + 59000L))
+            now += 60000L
+        }
+
+        // 2. Vela previa testeando soporte 100.0 con fuerte rechazo institucional (mecha inferior 60%)
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 108.0, timestampMs = now)) // Open: 108
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 110.0, timestampMs = now + 20000L)) // High: 110
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 100.0, timestampMs = now + 40000L)) // Low: 100
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 106.0, timestampMs = now + 59000L)) // Close: 106 -> Lower wick: 6 / 10 = 60%
+        now += 60000L
+
+        var signalEmitted: TradeAction? = null
+        var signalReason = ""
+        engine.onSignalGenerated = { action, reason ->
+            signalEmitted = action
+            signalReason = reason
+        }
+
+        // 3. Tick en ventana sniper (:59s) confirmando rebote alcista en soporte
+        val sniperTime = now + 59000L
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 104.0, timestampMs = sniperTime - 2000L))
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 104.5, timestampMs = sniperTime - 1000L))
+        val sniperTick = MarketTick(
+            asset = "CRYPTO_IDX",
+            price = 105.0,
+            timestampMs = sniperTime,
+            velocity = 0.05f,
+            isBullishImpulse = true
+        )
+        engine.onNewTick(sniperTick)
+
+        assertEquals("Debe emitir orden BUY (CALL) por MT_REJECTION en soporte a pesar del contexto de rango",
+            TradeAction.BUY, signalEmitted)
+        assertTrue("Razón debe ser MT_REJECTION", signalReason.contains("MT_REJECTION"))
+    }
+
+    @Test
+    fun testYoloMode_AllowsPermissiveSniperSetups() {
+        val engine = SyntheticCandleEngine()
+        engine.subMode = AutonomousSubMode.YOLO
+        var now = 60000L * 20L
+
+        // 1. Simular velas base para fijar soporte en 100.0 y resistencia en 150.0
+        for (m in 0 until 5) {
+            val baseTime = now - (6 - m) * 60000L
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 100.0, timestampMs = baseTime))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 150.0, timestampMs = baseTime + 25000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 120.0, timestampMs = baseTime + 59000L))
+        }
+
+        // 2. Vela previa con mecha del 35% y distancia al soporte del 24%
+        // (En modo conservador se descartaría por wick < 38% o dist > 22%, pero en YOLO es válida)
+        val prevBase = now - 60000L
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 108.0, timestampMs = prevBase)) // Open
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 120.0, timestampMs = prevBase + 20000L)) // High: 120
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 101.0, timestampMs = prevBase + 40000L)) // Low: 101
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 107.65, timestampMs = prevBase + 59000L)) // Close: 107.65 -> Wick lower: 6.65 / 19 = 35%
+
+        var signalEmitted: TradeAction? = null
+        engine.onSignalGenerated = { action, _ -> signalEmitted = action }
+
+        // 3. Tick en segundo :01s confirmando giro alcista
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 107.0, timestampMs = now))
+        val tickSniper = MarketTick(
+            asset = "CRYPTO_IDX",
+            price = 108.0,
+            timestampMs = now + 1000L, // segundo :01
+            velocity = 0.04f,
+            isBullishImpulse = true
+        )
+        engine.onNewTick(tickSniper)
+
+        assertEquals("En modo YOLO debe aceptar rechazos con mecha >= 32% y dist <= 26%",
+            TradeAction.BUY, signalEmitted)
+    }
+
+    @Test
+    fun testExtremeMicroRange_BlocksAllSignalsEvenInYolo() {
+        val engine = SyntheticCandleEngine()
+        engine.subMode = AutonomousSubMode.YOLO
+        val now = 60000L * 25L
+
+        // Micro-rango absoluto (< 0.05%) con alternancia errática de ticks
+        for (m in 0 until 5) {
+            val baseTime = (now - (5 - m) * 60000L)
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 500.00, timestampMs = baseTime))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 500.05, timestampMs = baseTime + 20000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 499.98, timestampMs = baseTime + 40000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 500.02, timestampMs = baseTime + 59000L))
+        }
+
+        val ticks = listOf(500.02, 500.05, 500.01, 500.06, 500.02, 500.05, 500.01, 500.06, 500.02, 500.05, 500.01)
+        for ((i, price) in ticks.withIndex()) {
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = price, timestampMs = now + (i * 1000L)))
+        }
+
+        var signalEmitted: TradeAction? = null
+        engine.onSignalGenerated = { action, _ -> signalEmitted = action }
+
+        // Tick en segundo 00 (:00s)
+        val tick = MarketTick(
+            asset = "CRYPTO_IDX",
+            price = 500.04,
+            timestampMs = now + 60000L,
+            isBullishImpulse = true
+        )
+        engine.onNewTick(tick)
+
+        assertNull("En micro-rango estático sin spread debe bloquear 100% de señales incluso en YOLO", signalEmitted)
+    }
 }

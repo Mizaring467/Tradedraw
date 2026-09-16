@@ -282,26 +282,36 @@ class SyntheticCandleEngine {
 
     /**
      * Filtro Anti-Choppy / Micro-Rango Cuantitativo:
-     * Detecta condiciones de consolidación, compresión y mercado sucio:
-     * 1. Choppiness Index >= 61.8% (mercado estadísticamente en consolidación/choppiness).
-     * 2. Micro-rango estático (< 0.05%) o colapso de volatilidad respecto al promedio.
-     * 3. Cluster de velas de indecisión / dojis (cuerpo promedio < 28% del rango).
-     * 4. Alternancia errática de ticks sin desplazamiento direccional.
-     * Aplica SIEMPRE para proteger el capital en condiciones de ruido estático.
+     * Detecta condiciones de consolidación extrema, compresión y mercado muerto:
+     * 1. Micro-rango estático real (< 0.05%) con alternancia errática de ticks (mercado congelado/sin spread).
+     * 2. Caída drástica de volatilidad respecto al promedio (< 40% del ATR) combinada con alternancia.
+     * 3. Cluster de Indecisión: dojis solapados con cuerpos diminutos (< 28% o < 15% en YOLO) y CHOP elevado.
+     * En modo YOLO: permite operar setups de rebote en rango / S&R y solo protege contra micro-rango estático sin spread.
      */
     fun isChoppinessDetected(): Boolean {
         synchronized(closedCandles) {
             if (closedCandles.size < 4) return false
 
-            // 1. Choppiness Index cuantitativo (ventana de 10 a 14 velas)
-            val period = minOf(14, closedCandles.size)
-            if (period >= 8) {
-                val chop = calculateChoppinessIndex(period)
-                if (chop >= 61.8) return true
+            val isYolo = (subMode == AutonomousSubMode.YOLO)
+
+            // 1. Micro-rango estático (< 0.05%) con alternancia errática de ticks
+            val isStaticMicro = isMicroRange(5, MarketTickFilters.MAX_CHOPPY_RANGE_PERCENT)
+            val alternatingTicks = if (isYolo) 10 else 8
+            val isAlternating = isTickAlternatingWithoutDirection(alternatingTicks)
+
+            // Colapso de micro-rango real: si hay micro-rango estático con alternancia de ticks, es choppiness indiscutible
+            if (isStaticMicro && isAlternating) return true
+
+            // En modo YOLO: sólo vetar si hay micro-rango estático indiscutible con alternancia o cluster extremo de dojis planos
+            if (isYolo) {
+                val recentSample = closedCandles.takeLast(minOf(5, closedCandles.size))
+                val avgBodyRatio = recentSample.map { it.bodyRatio }.average()
+                val isFlatDojiSpam = avgBodyRatio < 0.15 && isAlternating
+                return isStaticMicro || isFlatDojiSpam
             }
 
-            // 2. Micro-rango estático o caída de volatilidad en las últimas 5 velas
-            val isStaticMicro = isMicroRange(5, MarketTickFilters.MAX_CHOPPY_RANGE_PERCENT)
+            // Modo CONSERVADOR:
+            // 2. Caída relativa drástica de volatilidad combinada con alternancia errática de ticks
             val avgRange = closedCandles.takeLast(20).map { it.range }.average()
             val recent5Max = closedCandles.takeLast(5).maxOf { it.high }
             val recent5Min = closedCandles.takeLast(5).minOf { it.low }
@@ -309,16 +319,16 @@ class SyntheticCandleEngine {
             val thresholdRatio = 0.40
             val isRelativeDrop = avgRange > 0.0 && recentRange < (avgRange * thresholdRatio)
 
-            // 3. Cluster de Indecisión: velas con cuerpos diminutos / dojis (ruido lateral)
+            // 3. Cluster de Indecisión: dojis solapados (cuerpo promedio diminuto < 28% y CHOP elevado >= 58.0 o compresión de rango)
             val recentSample = closedCandles.takeLast(minOf(5, closedCandles.size))
             val avgBodyRatio = recentSample.map { it.bodyRatio }.average()
-            val isDojiNoiseCluster = avgBodyRatio < 0.28 && recentRange <= (avgRange * 0.70)
+            val period = minOf(14, closedCandles.size)
+            val chop = if (period >= 8) calculateChoppinessIndex(period) else 50.0
 
+            val isDojiNoiseCluster = avgBodyRatio < 0.28 && (chop >= 58.0 || (avgRange > 0.0 && recentRange <= avgRange * 0.70))
             if (isDojiNoiseCluster) return true
 
-            // 4. Caída relativa de rango combinada con alternancia errática de ticks
-            val alternatingTicks = 8
-            val isAlternating = isTickAlternatingWithoutDirection(alternatingTicks)
+            // Micro-rango estático absoluto o caída relativa con alternancia
             return isStaticMicro || (isRelativeDrop && isAlternating)
         }
     }
@@ -605,9 +615,20 @@ class SyntheticCandleEngine {
         val inWindow = sec in 57..59 || sec in 0..5
         if (!inWindow) return
 
-        // Filtro Anti-Choppy Universal (aplica SIEMPRE, incluso en YOLO)
-        if (isChoppinessDetected()) {
-            Log.d(TAG, "Oportunidad Sniper Headless suprimida por micro-rango estático sin volumen / choppiness")
+        val isYolo = (subMode == AutonomousSubMode.YOLO)
+        val isChoppy = isChoppinessDetected()
+
+        // En modo Conservador: si hay choppiness (micro-rango estático, dojis solapados o caída con alternancia), suprimir
+        // En modo YOLO: solo suprimir si hay colapso extremo de micro-rango (<0.05% con alternancia)
+        if (!isYolo && isChoppy) {
+            Log.d(TAG, "Oportunidad Sniper Headless suprimida por choppiness/dojis en modo conservador")
+            return
+        }
+
+        val isExtremeMicroCompression = isMicroRange(5, MarketTickFilters.MAX_CHOPPY_RANGE_PERCENT) &&
+                isTickAlternatingWithoutDirection(if (isYolo) 10 else 8)
+        if (isExtremeMicroCompression) {
+            Log.d(TAG, "Oportunidad Sniper Headless suprimida por micro-rango estático (<0.05%) sin volumen ni desplazamiento")
             return
         }
 
@@ -628,8 +649,14 @@ class SyntheticCandleEngine {
             val isBullishExhausted = consecutiveGreenCandles >= 3
             // Prohibido buscar continuación de ventas (PUT) si ya van >= 3 velas rojas consecutivas sin retroceso
             val isBearishExhausted = consecutiveRedCandles >= 3
-            // CALL: Rechazo en Soporte (zona <= 22%) con mecha inferior y sin impulso bajista
-            if (distToSupport <= 0.22f && prev.lowerWickRatio >= 0.38f && prev.bodyRatio <= 0.45f && !tick.isBearishImpulse && syntheticTickRsi <= 75.0) {
+
+            // 1. ESTRATEGIA MT_REJECTION (Rechazo en S/R con Mechas Claras)
+            val supZoneLimit = if (isYolo) 0.26f else 0.22f
+            val wickLimit = if (isYolo) 0.32f else 0.38f
+            val bodyLimit = if (isYolo) 0.52f else 0.45f
+
+            // CALL: Rechazo en Soporte con mecha inferior y sin impulso bajista
+            if (distToSupport <= supZoneLimit && prev.lowerWickRatio >= wickLimit && prev.bodyRatio <= bodyLimit && !tick.isBearishImpulse && syntheticTickRsi <= 75.0) {
                 val wickPct = (prev.lowerWickRatio * 100).toInt()
                 val distPct = (distToSupport * 100).toInt()
                 onSignalGenerated?.invoke(
@@ -639,8 +666,9 @@ class SyntheticCandleEngine {
                 return
             }
 
-            // PUT: Rechazo en Resistencia (zona <= 22%) con mecha superior y sin impulso alcista
-            if (distToResistance <= 0.22f && prev.upperWickRatio >= 0.38f && prev.bodyRatio <= 0.45f && !tick.isBullishImpulse && syntheticTickRsi >= 25.0) {
+            // PUT: Rechazo en Resistencia con mecha superior y sin impulso alcista
+            val resZoneLimit = if (isYolo) 0.26f else 0.22f
+            if (distToResistance <= resZoneLimit && prev.upperWickRatio >= wickLimit && prev.bodyRatio <= bodyLimit && !tick.isBullishImpulse && syntheticTickRsi >= 25.0) {
                 val wickPct = (prev.upperWickRatio * 100).toInt()
                 val distPct = (distToResistance * 100).toInt()
                 onSignalGenerated?.invoke(
@@ -655,30 +683,38 @@ class SyntheticCandleEngine {
             val c2 = closedCandles[closedCandles.size - 2]
             val c3 = closedCandles[closedCandles.size - 1]
 
-            // Agotamiento bajista en soporte: 3 velas rojas con decaimiento estricto C3 <= 55% C1 -> Reversión CALL
+            val agotDecayRatio = if (isYolo) 0.65f else 0.55f
+            val agotDistLimit = if (isYolo) 0.28f else 0.25f
+
+            // Agotamiento bajista en soporte: 3 velas rojas con decaimiento -> Reversión CALL
             val is3RedExhaustion = c1.isRed && c2.isRed && c3.isRed &&
-                    (c1.body > c2.body && c2.body > c3.body) && (c3.body <= c1.body * 0.55f) && distToSupport <= 0.25f
+                    (c1.body > c2.body && c2.body > c3.body) && (c3.body <= c1.body * agotDecayRatio) && distToSupport <= agotDistLimit
             if (is3RedExhaustion && !tick.isBearishImpulse && syntheticTickRsi <= 70.0) {
                 onSignalGenerated?.invoke(
                     TradeAction.BUY,
-                    "🎯 MT_3_VELAS_AGOT: Agotamiento 3 Velas Rojas en Soporte (C3 <= 55% C1 | ⏱ ${sec}s) -> CALL"
+                    "🎯 MT_3_VELAS_AGOT: Agotamiento 3 Velas Rojas en Soporte (C3 <= ${(agotDecayRatio * 100).toInt()}% C1 | ⏱ ${sec}s) -> CALL"
                 )
                 return
             }
 
-            // Agotamiento alcista en resistencia: 3 velas verdes con decaimiento estricto C3 <= 55% C1 -> Reversión PUT
+            // Agotamiento alcista en resistencia: 3 velas verdes con decaimiento -> Reversión PUT
             val is3GreenExhaustion = c1.isGreen && c2.isGreen && c3.isGreen &&
-                    (c1.body > c2.body && c2.body > c3.body) && (c3.body <= c1.body * 0.55f) && distToResistance <= 0.25f
+                    (c1.body > c2.body && c2.body > c3.body) && (c3.body <= c1.body * agotDecayRatio) && distToResistance <= agotDistLimit
             if (is3GreenExhaustion && !tick.isBullishImpulse && syntheticTickRsi >= 30.0) {
                 onSignalGenerated?.invoke(
                     TradeAction.SELL,
-                    "🎯 MT_3_VELAS_AGOT: Agotamiento 3 Velas Verdes en Resistencia (C3 <= 55% C1 | ⏱ ${sec}s) -> PUT"
+                    "🎯 MT_3_VELAS_AGOT: Agotamiento 3 Velas Verdes en Resistencia (C3 <= ${(agotDecayRatio * 100).toInt()}% C1 | ⏱ ${sec}s) -> PUT"
                 )
                 return
             }
 
             // 3. ESTRATEGIA MT_REVERSAL_EXTREMA (Reversión por Sobreextensión en Zonas Clave)
-            if (isBearishOverextended && distToSupport <= 0.22f && (syntheticTickRsi <= 22.0 || consecutiveDownTicks >= 4) && !tick.isBearishImpulse) {
+            val revZoneLimit = if (isYolo) 0.26f else 0.22f
+            val revRsiLow = if (isYolo) 25.0 else 22.0
+            val revRsiHigh = if (isYolo) 75.0 else 78.0
+            val revTicksNeeded = if (isYolo) 3 else 4
+
+            if (isBearishOverextended && distToSupport <= revZoneLimit && (syntheticTickRsi <= revRsiLow || consecutiveDownTicks >= revTicksNeeded) && !tick.isBearishImpulse) {
                 val rsiInt = syntheticTickRsi.toInt()
                 val distPct = (distToSupport * 100).toInt()
                 onSignalGenerated?.invoke(
@@ -688,7 +724,7 @@ class SyntheticCandleEngine {
                 return
             }
 
-            if (isBullishOverextended && distToResistance <= 0.22f && (syntheticTickRsi >= 78.0 || consecutiveUpTicks >= 4) && !tick.isBullishImpulse) {
+            if (isBullishOverextended && distToResistance <= revZoneLimit && (syntheticTickRsi >= revRsiHigh || consecutiveUpTicks >= revTicksNeeded) && !tick.isBullishImpulse) {
                 val rsiInt = syntheticTickRsi.toInt()
                 val distPct = (distToResistance * 100).toInt()
                 onSignalGenerated?.invoke(
@@ -698,11 +734,17 @@ class SyntheticCandleEngine {
                 return
             }
 
+            // Las estrategias de continuación y breakout requieren que el mercado NO esté en choppiness/dojis
+            // (a menos que estemos en modo YOLO donde se permite operar impulso con confirmación de tick)
+            val allowTrendAndBreakouts = isYolo || !isChoppy
+
             // 4. ESTRATEGIA MT_CHOQUE_PULLBACK (Breakout + Retest en primeros segundos :00-:05)
-            if (sec in 0..5) {
+            if (allowTrendAndBreakouts && sec in 0..5) {
+                val breakoutBodyRatio = if (isYolo) 0.42f else 0.50f
+                val breakoutWickRatio = if (isYolo) 0.25f else 0.20f
                 // Breakout alcista solo es válido en etapas tempranas (máximo 2 velas verdes), nunca en racha sobreextendida
                 val isBreakoutBullish = !isBullishExhausted && consecutiveGreenCandles <= 2 &&
-                        prev.isGreen && prev.bodyRatio >= 0.50f && prev.upperWickRatio <= 0.20f && distToSupport in 0.05f..0.30f
+                        prev.isGreen && prev.bodyRatio >= breakoutBodyRatio && prev.upperWickRatio <= breakoutWickRatio && distToSupport in 0.05f..0.32f
                 if (isBreakoutBullish && (tick.isBullishImpulse || consecutiveUpTicks >= 1) && !tick.isBearishImpulse && syntheticTickRsi <= 75.0) {
                     onSignalGenerated?.invoke(
                         TradeAction.BUY,
@@ -713,7 +755,7 @@ class SyntheticCandleEngine {
 
                 // Breakout bajista solo es válido en etapas tempranas (máximo 2 velas rojas), nunca en racha sobreextendida
                 val isBreakoutBearish = !isBearishExhausted && consecutiveRedCandles <= 2 &&
-                        prev.isRed && prev.bodyRatio >= 0.50f && prev.lowerWickRatio <= 0.20f && distToResistance in 0.05f..0.30f
+                        prev.isRed && prev.bodyRatio >= breakoutBodyRatio && prev.lowerWickRatio <= breakoutWickRatio && distToResistance in 0.05f..0.32f
                 if (isBreakoutBearish && (tick.isBearishImpulse || consecutiveDownTicks >= 1) && !tick.isBullishImpulse && syntheticTickRsi >= 25.0) {
                     onSignalGenerated?.invoke(
                         TradeAction.SELL,
@@ -724,10 +766,12 @@ class SyntheticCandleEngine {
             }
 
             // 5. ESTRATEGIA MT_PULLBACK_TREND (Continuación de Tendencia tras Retroceso SANO con Espacio Libre >= 30% a S/R)
-            if (detectedTrend == TrendDirection.UPTREND && !isBullishExhausted && distToResistance >= 0.30f && syntheticTickRsi <= 78.0) {
+            val trendFreeSpace = if (isYolo) 0.22f else 0.30f
+
+            if (allowTrendAndBreakouts && detectedTrend == TrendDirection.UPTREND && !isBullishExhausted && distToResistance >= trendFreeSpace && syntheticTickRsi <= 78.0) {
                 // Retroceso sano: cuerpo rojo contenido o mecha de absorción inferior, nunca en plena racha verde sobreextendida
-                val isHealthyPullback = (prev.isRed && prev.bodyRatio <= 0.45f) || prev.lowerWickRatio >= 0.25f || consecutiveDownTicks in 1..2
-                val turningUp = (consecutiveUpTicks >= 2 || tick.isBullishImpulse) && tick.velocity > 0f
+                val isHealthyPullback = (prev.isRed && prev.bodyRatio <= 0.48f) || prev.lowerWickRatio >= 0.22f || consecutiveDownTicks in 1..2
+                val turningUp = (consecutiveUpTicks >= (if (isYolo) 1 else 2) || tick.isBullishImpulse) && tick.velocity > 0f
                 if (isHealthyPullback && turningUp) {
                     onSignalGenerated?.invoke(
                         TradeAction.BUY,
@@ -737,10 +781,10 @@ class SyntheticCandleEngine {
                 }
             }
 
-            if (detectedTrend == TrendDirection.DOWNTREND && !isBearishExhausted && distToSupport >= 0.30f && syntheticTickRsi >= 22.0) {
+            if (allowTrendAndBreakouts && detectedTrend == TrendDirection.DOWNTREND && !isBearishExhausted && distToSupport >= trendFreeSpace && syntheticTickRsi >= 22.0) {
                 // Retroceso sano: cuerpo verde contenido o mecha de absorción superior, nunca en plena racha roja sobreextendida
-                val isHealthyPullback = (prev.isGreen && prev.bodyRatio <= 0.45f) || prev.upperWickRatio >= 0.25f || consecutiveUpTicks in 1..2
-                val turningDown = (consecutiveDownTicks >= 2 || tick.isBearishImpulse) && tick.velocity < 0f
+                val isHealthyPullback = (prev.isGreen && prev.bodyRatio <= 0.48f) || prev.upperWickRatio >= 0.22f || consecutiveUpTicks in 1..2
+                val turningDown = (consecutiveDownTicks >= (if (isYolo) 1 else 2) || tick.isBearishImpulse) && tick.velocity < 0f
                 if (isHealthyPullback && turningDown) {
                     onSignalGenerated?.invoke(
                         TradeAction.SELL,
@@ -751,8 +795,10 @@ class SyntheticCandleEngine {
             }
 
             // 6. ESTRATEGIA MT_MOMENTUM_TREND (Impulso Direccional Temprano - estrictamente 1 a 2 velas de racha)
-            if (detectedTrend == TrendDirection.UPTREND && !isBullishExhausted && consecutiveGreenCandles in 1..2 &&
-                distToResistance >= 0.30f && prev.isGreen && prev.bodyRatio >= 0.40f && syntheticTickRsi <= 75.0) {
+            val momentumBodyRatio = if (isYolo) 0.32f else 0.40f
+
+            if (allowTrendAndBreakouts && detectedTrend == TrendDirection.UPTREND && !isBullishExhausted && consecutiveGreenCandles in 1..2 &&
+                distToResistance >= trendFreeSpace && prev.isGreen && prev.bodyRatio >= momentumBodyRatio && syntheticTickRsi <= 75.0) {
                 val strongGreenMomentum = (tick.isBullishImpulse || consecutiveUpTicks >= 1 || tick.velocity > 0f) && !tick.isBearishImpulse
                 if (strongGreenMomentum) {
                     onSignalGenerated?.invoke(
@@ -763,8 +809,8 @@ class SyntheticCandleEngine {
                 }
             }
 
-            if (detectedTrend == TrendDirection.DOWNTREND && !isBearishExhausted && consecutiveRedCandles in 1..2 &&
-                distToSupport >= 0.30f && prev.isRed && prev.bodyRatio >= 0.40f && syntheticTickRsi >= 25.0) {
+            if (allowTrendAndBreakouts && detectedTrend == TrendDirection.DOWNTREND && !isBearishExhausted && consecutiveRedCandles in 1..2 &&
+                distToSupport >= trendFreeSpace && prev.isRed && prev.bodyRatio >= momentumBodyRatio && syntheticTickRsi >= 25.0) {
                 val strongRedMomentum = (tick.isBearishImpulse || consecutiveDownTicks >= 1 || tick.velocity < 0f) && !tick.isBullishImpulse
                 if (strongRedMomentum) {
                     onSignalGenerated?.invoke(
@@ -779,12 +825,16 @@ class SyntheticCandleEngine {
             if (detectedTrend == TrendDirection.SIDEWAYS) {
                 val atr = calculateAtr(14)
                 val channelSpan = dynamicResistancePrice - dynamicSupportPrice
-                val hasTradableChannel = atr > 0.0 && channelSpan >= (atr * 1.5)
+                val minSpanMultiplier = if (isYolo) 1.2 else 1.5
+                val hasTradableChannel = atr > 0.0 && channelSpan >= (atr * minSpanMultiplier)
+
+                val rangeWickRatio = if (isYolo) 0.22f else 0.28f
+                val rangeDistLimit = if (isYolo) 0.25f else 0.22f
 
                 // Rebote en soporte: requiere canal operable, mecha de rechazo inferior y empuje alcista activo
                 if (hasTradableChannel && !isBullishExhausted && consecutiveGreenCandles <= 1 &&
-                    distToSupport <= 0.22f && prev.lowerWickRatio >= 0.28f && syntheticTickRsi <= 65.0 &&
-                    (tick.isBullishImpulse || consecutiveUpTicks >= 2) && tick.velocity > 0f) {
+                    distToSupport <= rangeDistLimit && prev.lowerWickRatio >= rangeWickRatio && syntheticTickRsi <= 65.0 &&
+                    (tick.isBullishImpulse || consecutiveUpTicks >= (if (isYolo) 1 else 2)) && tick.velocity > 0f) {
                     onSignalGenerated?.invoke(
                         TradeAction.BUY,
                         "🎯 MT_RANGE: Rebote en Soporte Lateral (Dist S: ${(distToSupport*100).toInt()}% | Mecha: ${(prev.lowerWickRatio*100).toInt()}% | ⏱ ${sec}s) -> CALL"
@@ -794,8 +844,8 @@ class SyntheticCandleEngine {
 
                 // Rechazo en resistencia: requiere canal operable, mecha de rechazo superior y empuje bajista activo
                 if (hasTradableChannel && !isBearishExhausted && consecutiveRedCandles <= 1 &&
-                    distToResistance <= 0.22f && prev.upperWickRatio >= 0.28f && syntheticTickRsi >= 35.0 &&
-                    (tick.isBearishImpulse || consecutiveDownTicks >= 2) && tick.velocity < 0f) {
+                    distToResistance <= rangeDistLimit && prev.upperWickRatio >= rangeWickRatio && syntheticTickRsi >= 35.0 &&
+                    (tick.isBearishImpulse || consecutiveDownTicks >= (if (isYolo) 1 else 2)) && tick.velocity < 0f) {
                     onSignalGenerated?.invoke(
                         TradeAction.SELL,
                         "🎯 MT_RANGE: Rechazo en Resistencia Lateral (Dist R: ${(distToResistance*100).toInt()}% | Mecha: ${(prev.upperWickRatio*100).toInt()}% | ⏱ ${sec}s) -> PUT"
