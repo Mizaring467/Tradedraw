@@ -417,8 +417,16 @@ class SyntheticCandleEngine {
                     }
                 }
 
-                // Incluir extremos de todas las velas cerradas
-                for (i in candles.indices) {
+                // Incluir extremos absolutos del bloque para garantizar niveles marco
+                val maxHigh = candles.maxOfOrNull { it.high }
+                val minLow = candles.minOfOrNull { it.low }
+                if (maxHigh != null) cachedPivotHighs.add(maxHigh)
+                if (minLow != null) cachedPivotLows.add(minLow)
+
+                // Incluir extremos de velas cerradas históricas (excluyendo la vela previa inmediata candles.last()
+                // para no distorsionar el cálculo de espacio libre hacia S/R cuando el precio está despegando)
+                val candleCountToSample = if (candles.size > 1) candles.size - 1 else candles.size
+                for (i in 0 until candleCountToSample) {
                     val c = candles[i]
                     cachedPivotHighs.add(c.high)
                     cachedPivotLows.add(c.low)
@@ -651,9 +659,9 @@ class SyntheticCandleEngine {
             val isBearishExhausted = consecutiveRedCandles >= 3
 
             // 1. ESTRATEGIA MT_REJECTION (Rechazo en S/R con Mechas Claras)
-            val supZoneLimit = if (isYolo) 0.26f else 0.22f
-            val wickLimit = if (isYolo) 0.32f else 0.38f
-            val bodyLimit = if (isYolo) 0.52f else 0.45f
+            val supZoneLimit = if (isYolo) 0.28f else 0.24f
+            val wickLimit = if (isYolo) 0.30f else 0.38f
+            val bodyLimit = if (isYolo) 0.54f else 0.45f
 
             // CALL: Rechazo en Soporte con mecha inferior y sin impulso bajista
             if (distToSupport <= supZoneLimit && prev.lowerWickRatio >= wickLimit && prev.bodyRatio <= bodyLimit && !tick.isBearishImpulse && syntheticTickRsi <= 75.0) {
@@ -667,13 +675,46 @@ class SyntheticCandleEngine {
             }
 
             // PUT: Rechazo en Resistencia con mecha superior y sin impulso alcista
-            val resZoneLimit = if (isYolo) 0.26f else 0.22f
+            val resZoneLimit = if (isYolo) 0.28f else 0.24f
             if (distToResistance <= resZoneLimit && prev.upperWickRatio >= wickLimit && prev.bodyRatio <= bodyLimit && !tick.isBullishImpulse && syntheticTickRsi >= 25.0) {
                 val wickPct = (prev.upperWickRatio * 100).toInt()
                 val distPct = (distToResistance * 100).toInt()
                 onSignalGenerated?.invoke(
                     TradeAction.SELL,
                     "🎯 MT_REJECTION: Rechazo en Resistencia (Mecha: $wickPct% | Dist R: $distPct% | ⏱ ${sec}s) -> PUT"
+                )
+                return
+            }
+
+            // 1b. ESTRATEGIA MT_CONFIRM_BOUNCE (Rebote Confirmado en S/R · 2da Vela de Giro)
+            val confirmDistLimit = if (isYolo) 0.34f else 0.28f
+            val confirmFreeSpace = if (isYolo) 0.32f else 0.38f
+            val cAnte = if (closedCandles.size >= 2) closedCandles[closedCandles.size - 2] else null
+            val cAnteLower = cAnte?.lowerWickRatio ?: 0f
+            val cAnteUpper = cAnte?.upperWickRatio ?: 0f
+
+            // CALL: Confirmación de rebote alcista (vela previa verde tras testeo de soporte, despegue con espacio libre a resistencia)
+            val isBounceCallSetup = prev.isGreen && consecutiveGreenCandles == 1 &&
+                    distToSupport in 0.04f..confirmDistLimit && distToResistance >= confirmFreeSpace &&
+                    (cAnteLower >= 0.18f || prev.lowerWickRatio >= 0.18f || cAnte?.isRed == true)
+            if (isBounceCallSetup && (tick.isBullishImpulse || consecutiveUpTicks >= 1 || tick.velocity > 0f) && !tick.isBearishImpulse && syntheticTickRsi <= 72.0) {
+                val distPct = (distToSupport * 100).toInt()
+                onSignalGenerated?.invoke(
+                    TradeAction.BUY,
+                    "🎯 MT_CONFIRM_BOUNCE: Rebote Confirmado en Soporte (2da Vela Giro | Dist S: $distPct% | ⏱ ${sec}s) -> CALL"
+                )
+                return
+            }
+
+            // PUT: Confirmación de rechazo bajista (vela previa roja tras testeo de resistencia, despegue con espacio libre a soporte)
+            val isBouncePutSetup = prev.isRed && consecutiveRedCandles == 1 &&
+                    distToResistance in 0.04f..confirmDistLimit && distToSupport >= confirmFreeSpace &&
+                    (cAnteUpper >= 0.18f || prev.upperWickRatio >= 0.18f || cAnte?.isGreen == true)
+            if (isBouncePutSetup && (tick.isBearishImpulse || consecutiveDownTicks >= 1 || tick.velocity < 0f) && !tick.isBullishImpulse && syntheticTickRsi >= 28.0) {
+                val distPct = (distToResistance * 100).toInt()
+                onSignalGenerated?.invoke(
+                    TradeAction.SELL,
+                    "🎯 MT_CONFIRM_BOUNCE: Rechazo Confirmado en Resistencia (2da Vela Giro | Dist R: $distPct% | ⏱ ${sec}s) -> PUT"
                 )
                 return
             }

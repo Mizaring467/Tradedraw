@@ -1587,15 +1587,22 @@ class OverlayService : Service() {
                 txtDiag.text = diagStr
                 txtDiag.setTextColor(diagColor)
 
-                // Actualizar micro-velocidad con decaimiento tras 1.5s de inercia
+                // Actualizar micro-velocidad con decaimiento suave (ventana de 3.2s alineada con paquetes WebSocket)
                 val tick = latestTick
                 if (tick != null) {
-                    val now = System.currentTimeMillis()
-                    val isStale = (now - tick.timestampMs) > 1500L
-                    val vel = if (isStale) 0f else tick.velocity
+                    val currentTimeMs = System.currentTimeMillis()
+                    val ageMs = currentTimeMs - tick.timestampMs
+                    val isStale = ageMs > 3200L
+                    val rawVel = if (Math.abs(tick.smoothedVelocity) > 0.00001f) tick.smoothedVelocity else tick.velocity
+                    val decayFactor = when {
+                        isStale -> 0f
+                        ageMs > 1800L -> 0.5f // Inercia suave entre 1.8s y 3.2s
+                        else -> 1.0f
+                    }
+                    val vel = rawVel * decayFactor
                     val velStr = String.format(java.util.Locale.US, "%+.3f px/s", vel)
                     val impulseStr = when {
-                        isStale -> "━ Neutro"
+                        isStale || Math.abs(vel) <= 0.0001f -> "━ Neutro"
                         tick.isBullishImpulse || vel > 0.0001f -> "▲ Impulso Alcista"
                         tick.isBearishImpulse || vel < -0.0001f -> "▼ Impulso Bajista"
                         else -> "━ Neutro"
