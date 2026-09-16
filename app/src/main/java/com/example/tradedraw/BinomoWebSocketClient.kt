@@ -403,7 +403,7 @@ class BinomoWebSocketClient(private val context: Context) {
             recentTicks.addLast(tick)
         }
 
-        mainHandler.post {
+        workerHandler.post {
             onTickListener?.invoke(tick)
         }
     }
