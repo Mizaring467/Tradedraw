@@ -71,6 +71,15 @@ class SyntheticCandleEngine {
     var cachedChoppiness: Boolean = false
         private set
 
+    // Caché de S/R y pivotes para evitar allocations y recálculos O(n) por tick
+    private val cachedPivotHighs = ArrayList<Double>(80)
+    private val cachedPivotLows = ArrayList<Double>(80)
+    private var cachedHighestPivotHigh: Double? = null
+    private var cachedLowestPivotLow: Double? = null
+    private var cachedAtr: Double = 0.0001
+    @Volatile
+    private var pivotsCacheDirty: Boolean = true
+    private var lastTrendCalcTime: Long = 0L
 
     var dynamicSupportPrice: Double = 0.0
         private set
@@ -138,9 +147,11 @@ class SyntheticCandleEngine {
                     }
                     closedCandles.add(prev)
                 }
-                // Actualizar caché de choppiness UNA SOLA VEZ al cerrar la vela
-                // (evita O(n) synchronized en cada frame del HUD)
+                // Actualizar caché de choppiness y marcar pivotes sucios UNA SOLA VEZ al cerrar la vela
+                // (evita O(n) synchronized y recálculo de fractales en cada tick del motor)
                 cachedChoppiness = isChoppinessDetected()
+                pivotsCacheDirty = true
+                lastTrendCalcTime = 0L
             }
 
             // Inicio de nueva vela de 1 minuto
@@ -173,18 +184,18 @@ class SyntheticCandleEngine {
 
     /**
      * Calcula el RSI sintético de ticks sobre la ventana rodante de ticks.
-     * Rango de salida: 0.0 a 100.0.
+     * Rango de salida: 0.0 a 100.0. Zero-allocation para no generar presión en GC.
      */
     fun calculateTickRsi(period: Int = 14): Double {
         synchronized(recentTickPrices) {
-            val available = recentTickPrices.size - 1
-            if (available < 3) return 50.0
-            val n = Math.min(period, available)
-            val prices = recentTickPrices.takeLast(n + 1)
+            val total = recentTickPrices.size
+            if (total < 4) return 50.0
+            val n = Math.min(period, total - 1)
+            val startIdx = total - 1 - n
             var gains = 0.0
             var losses = 0.0
-            for (i in 1 until prices.size) {
-                val diff = prices[i] - prices[i - 1]
+            for (i in startIdx until total - 1) {
+                val diff = recentTickPrices[i + 1] - recentTickPrices[i]
                 if (diff > 0.0) {
                     gains += diff
                 } else if (diff < 0.0) {
@@ -367,70 +378,87 @@ class SyntheticCandleEngine {
 
     /**
      * Recalcula Soporte y Resistencia independientes basados en fractales/pivotes reales normalizados por ATR.
-     * Elimina el acoplamiento artificial donde distToSupport + distToResistance == 1.0.
+     * Utiliza caché de pivotes y ATR para eliminar allocations por tick y garantizar máxima fluidez.
      */
     private fun recalculateSupportResistance(tick: MarketTick? = null) {
+        val currentPrice = tick?.price ?: currentCandle?.close ?: lastTickPrice
+        if (currentPrice <= 0.0) return
+
         synchronized(closedCandles) {
-            val currentPrice = tick?.price ?: currentCandle?.close ?: lastTickPrice
-            if (currentPrice <= 0.0) return
+            if (pivotsCacheDirty || cachedPivotHighs.isEmpty()) {
+                cachedAtr = calculateAtr(14)
+                cachedPivotHighs.clear()
+                cachedPivotLows.clear()
+                val candles = closedCandles.takeLast(40)
 
-            val atr = calculateAtr(14)
-            val candles = closedCandles.takeLast(40)
+                // Detección de fractales/pivotes locales (mínimo 3 velas: c[i-1], c[i], c[i+1])
+                if (candles.size >= 3) {
+                    for (i in 1 until candles.size - 1) {
+                        val prev = candles[i - 1]
+                        val curr = candles[i]
+                        val next = candles[i + 1]
 
-            val pivotHighs = mutableListOf<Double>()
-            val pivotLows = mutableListOf<Double>()
-
-            // Detección de fractales/pivotes locales (mínimo 3 velas: c[i-1], c[i], c[i+1])
-            if (candles.size >= 3) {
-                for (i in 1 until candles.size - 1) {
-                    val prev = candles[i - 1]
-                    val curr = candles[i]
-                    val next = candles[i + 1]
-
-                    if (curr.high >= prev.high && curr.high >= next.high) {
-                        pivotHighs.add(curr.high)
+                        if (curr.high >= prev.high && curr.high >= next.high) {
+                            cachedPivotHighs.add(curr.high)
+                        }
+                        if (curr.low <= prev.low && curr.low <= next.low) {
+                            cachedPivotLows.add(curr.low)
+                        }
                     }
-                    if (curr.low <= prev.low && curr.low <= next.low) {
-                        pivotLows.add(curr.low)
+                }
+
+                // Incluir extremos de todas las velas cerradas
+                for (i in candles.indices) {
+                    val c = candles[i]
+                    cachedPivotHighs.add(c.high)
+                    cachedPivotLows.add(c.low)
+                }
+
+                if (cachedPivotHighs.isEmpty() || cachedPivotLows.isEmpty()) {
+                    synchronized(recentTickPrices) {
+                        if (recentTickPrices.isNotEmpty()) {
+                            val maxP = recentTickPrices.maxOrNull() ?: currentPrice
+                            val minP = recentTickPrices.minOrNull() ?: currentPrice
+                            cachedPivotHighs.add(maxP)
+                            cachedPivotLows.add(minP)
+                        } else {
+                            cachedPivotHighs.add(currentPrice + cachedAtr)
+                            cachedPivotLows.add(currentPrice - cachedAtr)
+                        }
                     }
+                }
+
+                cachedHighestPivotHigh = cachedPivotHighs.maxOrNull()
+                cachedLowestPivotLow = cachedPivotLows.minOrNull()
+                pivotsCacheDirty = false
+            }
+
+            val atr = cachedAtr
+            var minResAbove = Double.MAX_VALUE
+            var maxSupBelow = Double.MIN_VALUE
+
+            for (i in 0 until cachedPivotHighs.size) {
+                val p = cachedPivotHighs[i]
+                if (p > currentPrice && p < minResAbove) {
+                    minResAbove = p
+                }
+            }
+            for (i in 0 until cachedPivotLows.size) {
+                val p = cachedPivotLows[i]
+                if (p < currentPrice && p > maxSupBelow) {
+                    maxSupBelow = p
                 }
             }
 
-            // Incluir extremos de todas las velas cerradas
-            candles.forEach { c ->
-                pivotHighs.add(c.high)
-                pivotLows.add(c.low)
-            }
-
-            if (pivotHighs.isEmpty() || pivotLows.isEmpty()) {
-                synchronized(recentTickPrices) {
-                    if (recentTickPrices.isNotEmpty()) {
-                        pivotHighs.add(recentTickPrices.maxOrNull() ?: currentPrice)
-                        pivotLows.add(recentTickPrices.minOrNull() ?: currentPrice)
-                    } else {
-                        pivotHighs.add(currentPrice + atr)
-                        pivotLows.add(currentPrice - atr)
-                    }
-                }
-            }
-
-            // Resistencia independiente: pivote alto más cercano por encima del precio actual
-            val resistancesAbove = pivotHighs.filter { it > currentPrice }
-            val highestPivotHigh = pivotHighs.maxOrNull()
-
-            // Soporte independiente: pivote bajo más cercano por debajo del precio actual
-            val supportsBelow = pivotLows.filter { it < currentPrice }
-            val lowestPivotLow = pivotLows.minOrNull()
-
-            if (resistancesAbove.isNotEmpty()) {
-                dynamicResistancePrice = resistancesAbove.min()
+            if (minResAbove != Double.MAX_VALUE) {
+                dynamicResistancePrice = minResAbove
             } else {
                 // Breakout alcista / nuevo ATH: la resistencia está proyectada por encima del precio actual
                 dynamicResistancePrice = currentPrice + (atr * 1.5).coerceAtLeast(0.0001)
             }
 
-            if (supportsBelow.isNotEmpty()) {
-                dynamicSupportPrice = supportsBelow.max()
+            if (maxSupBelow != Double.MIN_VALUE) {
+                dynamicSupportPrice = maxSupBelow
             } else {
                 // Breakdown bajista / nuevo ATL: el soporte está proyectado por debajo del precio actual
                 dynamicSupportPrice = currentPrice - (atr * 1.5).coerceAtLeast(0.0001)
@@ -438,12 +466,14 @@ class SyntheticCandleEngine {
 
             // Principio de Polaridad Dinámica Cuantitativa:
             // Si el precio superó el máximo pivote previo (Breakout Alcista), ese pivote roto actúa como nuevo soporte dinámico
-            if (highestPivotHigh != null && currentPrice >= highestPivotHigh && highestPivotHigh > dynamicSupportPrice) {
-                dynamicSupportPrice = highestPivotHigh
+            val highPivot = cachedHighestPivotHigh
+            val lowPivot = cachedLowestPivotLow
+            if (highPivot != null && currentPrice >= highPivot && highPivot > dynamicSupportPrice) {
+                dynamicSupportPrice = highPivot
             }
             // Si el precio perforó el mínimo pivote previo (Breakdown Bajista), ese pivote roto actúa como nueva resistencia dinámica
-            if (lowestPivotLow != null && currentPrice <= lowestPivotLow && lowestPivotLow < dynamicResistancePrice) {
-                dynamicResistancePrice = lowestPivotLow
+            if (lowPivot != null && currentPrice <= lowPivot && lowPivot < dynamicResistancePrice) {
+                dynamicResistancePrice = lowPivot
             }
 
             // Normalización por ATR independiente:
@@ -506,12 +536,11 @@ class SyntheticCandleEngine {
         }
     }
 
-    /**
-     * Recalcula la tendencia de forma 100% autónoma y continua en Headless,
-     * utilizando la pendiente de regresión lineal de mínimos cuadrados normalizada por ATR.
-     * No depende de visionTrend (opcional cuando exista).
-     */
-    private fun recalculateTrend() {
+    private fun recalculateTrend(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastTrendCalcTime < 1000L) return
+        lastTrendCalcTime = now
+
         synchronized(closedCandles) {
             val sample = mutableListOf<SyntheticCandle>()
             sample.addAll(closedCandles.takeLast(9))
