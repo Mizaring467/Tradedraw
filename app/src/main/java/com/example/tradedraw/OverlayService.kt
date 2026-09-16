@@ -362,9 +362,7 @@ class OverlayService : Service() {
         binomoWebSocketClient = wsClient
         wsClient.onTickListener = { tick ->
             tradingEngine.onMarketTick(tick)
-            if (isHudVisible) {
-                updateHUDView()
-            }
+            // HUD se actualiza via onFrameProcessedListener del tradingEngine — no duplicar aquí
         }
         wsClient.start()
 
@@ -1329,9 +1327,17 @@ class OverlayService : Service() {
     }
 
 
-    /** Timestamp de la última actualización completa del HUD — evita floods desde múltiples call-sites */
+    /** Timestamp de la última actualización completa del HUD */
     @Volatile
     private var lastHudUpdateMs = 0L
+
+    /**
+     * Flag atómico: evita encolar múltiples mainHandler.post() simultáneos desde los listeners
+     * de ticks del WebSocket (4-10 llamadas/seg). Solo se encola UN post a la vez.
+     * Esto es crítico para la fluidez del overlay — el flood de posts vacíos en la cola
+     * del hilo UI es la causa real de la lentitud al arrastrar.
+     */
+    private val hudUpdatePending = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private val hudTimerRunnable = object : Runnable {
         override fun run() {
@@ -1373,12 +1379,16 @@ class OverlayService : Service() {
     }
 
     fun updateHUDView(force: Boolean = false) {
+        // Si no es forzado (timer), respetar throttle de 400ms
+        val now = System.currentTimeMillis()
+        if (!force && now - lastHudUpdateMs < 400L) return
+        // Solo encolar UN post a la vez — si ya hay uno pendiente, descartar silenciosamente
+        // Esto elimina el flood de mensajes en la cola del hilo UI causado por los listeners de ticks
+        if (!hudUpdatePending.compareAndSet(false, true)) return
         mainHandler.post {
+            hudUpdatePending.set(false)   // Liberar el flag ANTES de renderizar
+            lastHudUpdateMs = System.currentTimeMillis()
             val v = hudView ?: return@post
-            // Throttle: ignorar actualizaciones que lleguen < 400ms después de la última (salvo force=true del timer)
-            val now = System.currentTimeMillis()
-            if (!force && now - lastHudUpdateMs < 400L) return@post
-            lastHudUpdateMs = now
             val txtMode = v.findViewById<TextView>(R.id.hud_mode)
             val txtStrat = v.findViewById<TextView>(R.id.hud_strategy)
             val txtStats = v.findViewById<TextView>(R.id.hud_stats)
