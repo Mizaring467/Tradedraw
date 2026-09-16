@@ -2,8 +2,7 @@ package com.example.tradedraw
 
 import org.json.JSONArray
 import org.json.JSONObject
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.*
 import org.junit.Test
 
 class BinomoWebSocketClientTest {
@@ -166,5 +165,16 @@ class BinomoWebSocketClientTest {
 
         assertEquals("BTC/USD", asset)
         assertEquals(987.6543, price!!, 0.0001)
+    }
+
+    @Test
+    fun testMarketTickSmoothedVelocityRetention() {
+        val now = System.currentTimeMillis()
+        val tick1 = MarketTick("Z-CRY/IDX", 640.0, now, velocity = 0.05f, smoothedVelocity = 0.05f)
+        val tick2 = MarketTick("Z-CRY/IDX", 640.0, now + 1000L, velocity = 0.0f, smoothedVelocity = 0.0275f)
+
+        assertEquals(0.05f, tick1.smoothedVelocity, 0.001f)
+        assertEquals(0.0275f, tick2.smoothedVelocity, 0.001f)
+        assertTrue("La velocidad suavizada debe retener inercia positiva a pesar de tick plano", tick2.smoothedVelocity > 0f)
     }
 }

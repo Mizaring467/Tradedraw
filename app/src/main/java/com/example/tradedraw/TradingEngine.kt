@@ -1241,7 +1241,8 @@ class TradingEngine(
         val isRejectionOrBounce = reasonDescription.contains("MT_REJECTION") ||
                 reasonDescription.contains("MT_RANGE") ||
                 reasonDescription.contains("MT_3_VELAS") ||
-                reasonDescription.contains("MT_REVERSAL")
+                reasonDescription.contains("MT_REVERSAL") ||
+                reasonDescription.contains("MT_CONFIRM")
         if (syntheticCandleEngine.isChoppinessDetected() && !isRejectionOrBounce && !isYolo) {
             Log.d("TradingEngine", "Headless bloqueado por Filtro Anti-Choppy (<0.05% y ticks alternantes)")
             return

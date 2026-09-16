@@ -701,4 +701,49 @@ class SyntheticCandleEngineTest {
 
         assertNull("En micro-rango estático sin spread debe bloquear 100% de señales incluso en YOLO", signalEmitted)
     }
+
+    @Test
+    fun testConfirmBounceSignal_TriggersCallOnSecondCandleAfterSupportRejection() {
+        val engine = SyntheticCandleEngine()
+        engine.subMode = AutonomousSubMode.YOLO
+        val now = 60000L * 30L
+
+        // 1. Establecer canal S/R: soporte en 100.0 y resistencia pivote alta en 200.0 con velas rojas bajistas
+        for (m in 0 until 4) {
+            val baseTime = (now - (5 - m) * 60000L)
+            val highP = if (m == 2) 200.0 else 160.0
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 150.0, timestampMs = baseTime)) // Open 150
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = highP, timestampMs = baseTime + 20000L)) // High
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 100.0, timestampMs = baseTime + 40000L)) // Low 100
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 105.0, timestampMs = baseTime + 59000L)) // Close 105 (roja)
+        }
+
+        // 2. Vela previa (hace 1 minuto): cerró VERDE rebotando en el soporte con mecha del 22% (< 30% de Rejection)
+        val prevBase = now - 60000L
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 104.0, timestampMs = prevBase)) // Open: 104
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 101.0, timestampMs = prevBase + 15000L)) // Low: 101 (soporte)
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 115.0, timestampMs = prevBase + 45000L)) // High: 115
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 114.0, timestampMs = prevBase + 59000L)) // Close: 114 (verde, mecha lower: 3/14 = 21.4%)
+
+        var signalEmitted: TradeAction? = null
+        var signalReason: String? = null
+        engine.onSignalGenerated = { action, reason ->
+            signalEmitted = action
+            signalReason = reason
+        }
+
+        // 3. Tick sniper en segundo :01s confirmando despegue alcista (segunda vela de giro)
+        val tick = MarketTick(
+            asset = "CRYPTO_IDX",
+            price = 114.5,
+            timestampMs = now + 1000L, // segundo :01
+            velocity = 0.05f,
+            isBullishImpulse = true,
+            smoothedVelocity = 0.05f
+        )
+        engine.onNewTick(tick)
+
+        assertEquals("Debe emitir señal de COMPRA (CALL) en segunda vela de rebote confirmado", TradeAction.BUY, signalEmitted)
+        assertTrue("El motivo debe indicar MT_CONFIRM_BOUNCE", signalReason?.contains("MT_CONFIRM_BOUNCE") == true)
+    }
 }

@@ -16,7 +16,8 @@ data class MarketTick(
     val timestampMs: Long = System.currentTimeMillis(),
     val velocity: Float = 0f,
     val isBullishImpulse: Boolean = false,
-    val isBearishImpulse: Boolean = false
+    val isBearishImpulse: Boolean = false,
+    val smoothedVelocity: Float = velocity
 ) {
     /** Segundo actual dentro del ciclo de vela de 60s (0..59) */
     val candleSecond: Int

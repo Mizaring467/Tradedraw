@@ -69,6 +69,7 @@ class BinomoWebSocketClient(private val context: Context) {
     // Tracking de micro-velocidad de ticks
     private var lastPrice: Double = 0.0
     private var lastPriceTimeMs: Long = 0L
+    private var smoothedVelocity: Float = 0f
     private val recentTicks = ArrayDeque<MarketTick>(16)
 
     var latestTick: MarketTick? = null
@@ -375,13 +376,26 @@ class BinomoWebSocketClient(private val context: Context) {
         var isBearish = false
 
         if (lastPrice > 0.0 && lastPriceTimeMs > 0L) {
-            val dtSec = ((timestampMs - lastPriceTimeMs).coerceAtLeast(10L)) / 1000f
+            val dtMs = (timestampMs - lastPriceTimeMs).coerceAtLeast(10L)
+            val dtSec = dtMs / 1000f
             val dp = (price - lastPrice)
             velocity = (dp / dtSec).toFloat()
 
-            // Umbrales de micro-impulso instantáneo
-            if (velocity > 0.0005f) isBullish = true
-            else if (velocity < -0.0005f) isBearish = true
+            // Si el tiempo transcurrido es grande (>3.5s), reiniciar la inercia previa
+            if (dtMs > 3500L) {
+                smoothedVelocity = velocity
+            } else {
+                // Filtro EMA de velocidad suavizada para evitar que colapse a 0 en ticks planos momentáneos
+                val alpha = 0.45f
+                smoothedVelocity = (alpha * velocity) + ((1f - alpha) * smoothedVelocity)
+            }
+
+            // Umbrales de micro-impulso: evalúa tanto el impulso instantáneo como la velocidad suavizada
+            val effectiveVel = if (Math.abs(velocity) > 0.0001f) velocity else smoothedVelocity
+            if (effectiveVel > 0.0003f) isBullish = true
+            else if (effectiveVel < -0.0003f) isBearish = true
+        } else {
+            smoothedVelocity = 0f
         }
 
         lastPrice = price
@@ -393,7 +407,8 @@ class BinomoWebSocketClient(private val context: Context) {
             timestampMs = timestampMs,
             velocity = velocity,
             isBullishImpulse = isBullish,
-            isBearishImpulse = isBearish
+            isBearishImpulse = isBearish,
+            smoothedVelocity = smoothedVelocity
         )
 
         latestTick = tick
