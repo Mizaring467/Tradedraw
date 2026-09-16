@@ -54,10 +54,15 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         }
     }
 
+    private var lastBalanceScanTime = 0L
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        Log.d("TradeDraw", "AutoTradeAccessibilityService connected")
+        Log.i("TradeDraw", "AutoTradeAccessibilityService connected")
+        try {
+            OverlayService.instance?.updateHUDView(true)
+        } catch (e: Exception) {}
 
         val filter = android.content.IntentFilter().apply {
             addAction("com.example.tradedraw.TAP")
@@ -75,16 +80,26 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         }
     }
 
+    override fun onRebind(intent: android.content.Intent?) {
+        super.onRebind(intent)
+        instance = this
+        Log.i("TradeDraw", "AutoTradeAccessibilityService rebinded exitosamente")
+        try {
+            OverlayService.instance?.updateHUDView(true)
+        } catch (e: Exception) {}
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
-            event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
-            val packageName = event.packageName?.toString()
-            if (packageName != null && packageName != "com.example.tradedraw" && packageName != "com.android.systemui") {
-                BrokerDetector.currentPackageName = packageName
-            }
+        val packageName = event.packageName?.toString()
+        if (packageName != null && packageName != "com.example.tradedraw" && packageName != "com.android.systemui") {
+            BrokerDetector.currentPackageName = packageName
+        }
 
-            // Escaneo pasivo continuo de saldo en cada cambio visual
+        // Throttle escaneo pasivo de saldo: máximo 1 vez cada 5s para proteger búfer Binder
+        val now = System.currentTimeMillis()
+        if (now - lastBalanceScanTime >= 5000L) {
+            lastBalanceScanTime = now
             try {
                 val sourceNode = event.source
                 val bal = if (sourceNode != null) findBalanceInNode(sourceNode) else null
@@ -108,7 +123,21 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         try {
             unregisterReceiver(commandReceiver)
         } catch (e: Exception) {}
-        return super.onUnbind(intent)
+        Log.w("TradeDraw", "AutoTradeAccessibilityService unbinded, returning true to allow rebind")
+        try {
+            OverlayService.instance?.updateHUDView(true)
+        } catch (e: Exception) {}
+        return true
+    }
+
+    override fun onDestroy() {
+        if (instance == this) {
+            instance = null
+        }
+        try {
+            unregisterReceiver(commandReceiver)
+        } catch (e: Exception) {}
+        super.onDestroy()
     }
 
     /**
