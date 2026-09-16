@@ -133,14 +133,16 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         val stroke = GestureDescription.StrokeDescription(path, 0, 80)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
 
+        val startTime = System.currentTimeMillis()
         dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
-                Log.d("TradeDraw", "Click at ($x, $y) completed")
+                val latency = System.currentTimeMillis() - startTime
+                Log.i("TradeDraw", "⚡ Gesto táctil en ($x, $y) despachado en ${latency}ms")
                 onGestureClickListener?.invoke(x, y)
             }
 
             override fun onCancelled(gestureDescription: GestureDescription?) {
-                Log.w("TradeDraw", "Click at ($x, $y) cancelled by system")
+                Log.w("TradeDraw", "⚠️ Click en ($x, $y) cancelado por el sistema Android")
             }
         }, null)
     }
