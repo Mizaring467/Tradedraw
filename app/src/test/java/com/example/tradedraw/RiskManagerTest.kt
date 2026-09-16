@@ -283,7 +283,7 @@ class RiskManagerTest {
     }
 
     @Test
-    fun testYoloAutoResetsLossStreakAfterCooldown() {
+    fun testYoloPreservesLossStreakAfterCooldown() {
         riskManager.maxMartingaleLevel = 1
         riskManager.martingaleEnabled = true
         riskManager.yoloLossCooldownSeconds = 35
@@ -311,9 +311,76 @@ class RiskManagerTest {
         val (canTradeAfter, reasonAfter) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
         assertTrue("Debe permitir operar tras finalizar el cooldown anti-tilt en YOLO", canTradeAfter)
         assertTrue("Razón debe indicar modo YOLO continuo", reasonAfter.contains("MODO YOLO"))
-        assertEquals("En YOLO la racha debe reiniciarse automáticamente a 0 (M0)", 0, riskManager.currentLossStreak)
-        assertEquals("El monto de inversiÃ³n debe reiniciarse al monto base ($10.0)", 10.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
-        assertEquals("El badge de martingala debe volver a M0", "[M0 | $10.0]", riskManager.getMartingaleStatusBadge())
+        assertEquals("En YOLO la racha NO debe reiniciarse para permitir que Stop Loss sea alcanzable", 2, riskManager.currentLossStreak)
+        assertEquals("El monto se mantiene acotado en M1 ($22.0)", 22.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+    }
+
+    @Test
+    fun testFix1_canTradeReturnsFalseWhenLossStreakReachesStopLossInYolo() {
+        riskManager.stopLossStreak = 3
+        riskManager.maxMartingaleLevel = 1
+        riskManager.martingaleEnabled = true
+        riskManager.yoloLossCooldownSeconds = 35
+
+        // Trade 1: Pérdida -> racha 1 (M1)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+        riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
+
+        // Trade 2: Pérdida -> racha 2 (Fallo Martingala)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(2, riskManager.currentLossStreak)
+        riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
+
+        // Verificar que con racha 2 tras cooldown puede operar y la racha se preserva en 2
+        val (canTradeAt2, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue("Con racha 2 y stopLoss 3 puede operar tras anti-tilt", canTradeAt2)
+        assertEquals("La racha perdedora se preserva en 2", 2, riskManager.currentLossStreak)
+
+        // Trade 3: Pérdida -> racha 3 (Alcanza Stop Loss = 3)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(3, riskManager.currentLossStreak)
+        riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
+
+        // canTrade() DEBE devolver false
+        assertFalse("canTrade() debe devolver false al alcanzar stopLossStreak en YOLO", riskManager.canTrade())
+        val (canTrade, reason) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("canExecuteTrade debe bloquear por Stop Loss en YOLO", canTrade)
+        assertTrue("Razón debe mencionar Stop Loss alcanzado", reason.contains("Stop Loss alcanzado"))
+    }
+
+    @Test
+    fun testFix2_recordTradeVoidIncrementsConsecutiveVoidsAndStopsAtThree() {
+        riskManager.cooldownSeconds = 0
+        assertEquals(0, riskManager.consecutiveVoids)
+        assertTrue(riskManager.canTrade())
+
+        // 1er VOID
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeVoid()
+        assertEquals(1, riskManager.consecutiveVoids)
+        assertFalse("Pending trade debe limpiarse tras VOID", riskManager.hasPendingTrade)
+        assertTrue("Con 1 VOID aún puede operar", riskManager.canTrade())
+
+        // 2do VOID
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeVoid()
+        assertEquals(2, riskManager.consecutiveVoids)
+        assertTrue("Con 2 VOIDs aún puede operar", riskManager.canTrade())
+
+        // 3er VOID consecutivo -> Parada crítica
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeVoid()
+        assertEquals(3, riskManager.consecutiveVoids)
+
+        // canTrade() y canExecuteTrade() deben devolver false
+        assertFalse("canTrade() debe devolver false tras 3 VOIDs consecutivos", riskManager.canTrade())
+        val (canTrade, reason) = riskManager.canExecuteTrade()
+        assertFalse("canExecuteTrade debe ser false tras 3 VOIDs", canTrade)
+        assertTrue("Razón debe mencionar 3 trades VOID", reason.contains("3 trades VOID seguidos"))
     }
 
     @Test
@@ -463,5 +530,26 @@ class RiskManagerTest {
         val (canTrade, reason) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.CONSERVATIVE)
         assertFalse("Debe bloquearse tras 2 derrotas", canTrade)
         assertTrue("Razón debe mencionar Pausa Anti-Tilt", reason.contains("Pausa Anti-Tilt"))
+    }
+
+    @Test
+    fun testPendingTradeConfidence_PersistsAndResetsCorrectly() {
+        assertEquals("Initial pendingTradeConfidence should be 0.0f", 0.0f, riskManager.pendingTradeConfidence, 0.001f)
+
+        // Persistencia al abrir trade con recordTradeSent
+        riskManager.recordTradeSent(TradeAction.BUY, entryPriceY = 250f, baseBalance = 50000.0, confidence = 0.88f)
+        assertEquals("Confidence should be persisted on recordTradeSent", 0.88f, riskManager.pendingTradeConfidence, 0.001f)
+
+        // Reseteo al limpiar trade pendiente con clearPendingTrade
+        riskManager.clearPendingTrade()
+        assertEquals("Confidence should be reset on clearPendingTrade", 0.0f, riskManager.pendingTradeConfidence, 0.001f)
+
+        // Persistencia mediante notifyTradePlaced
+        riskManager.notifyTradePlaced(TradeAction.SELL, entryPriceY = 150f, baseBalance = 45000.0, confidence = 0.92f)
+        assertEquals("Confidence should be persisted on notifyTradePlaced", 0.92f, riskManager.pendingTradeConfidence, 0.001f)
+
+        // Reseteo al liquidar trade (recordTradeLoss limpia pending trade)
+        riskManager.recordTradeLoss()
+        assertEquals("Confidence should be reset after trade resolution", 0.0f, riskManager.pendingTradeConfidence, 0.001f)
     }
 }

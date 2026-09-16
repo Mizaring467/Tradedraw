@@ -201,6 +201,7 @@ class TradingEngine(
             val exitY = analysis.currentPriceY
             val action = riskManager.pendingTradeAction
             val baseBalance = riskManager.pendingTradeBaseBalance
+            val pendingConfidence = riskManager.pendingTradeConfidence
 
             // Capturar el precio de cierre en la ventana de expiración (:58 - :02) tras al menos 40s de trade
             if (elapsedSec >= 40 && (analysis.candleSecond in 0..2 || analysis.candleSecond in 58..59)) {
@@ -229,7 +230,7 @@ class TradingEngine(
                 // 1. Verificación por Saldo Real Inmutable de Binomo
                 if (baseBalance > 0.0 && currentBal > 0.0) {
                     val diff = currentBal - baseBalance
-                    if (diff > 10.0) {
+                    if (diff > 10.0 && diff <= baseBalance * 0.5) {
                         // Binomo acreditó las ganancias (+1 W) de forma inmediata
                         isWin = true
                         method = "SALDO (+) Ganancia acreditada por Binomo: Diff=+$diff COP (${elapsedSec}s)"
@@ -267,12 +268,12 @@ class TradingEngine(
                         val sec = analysis.candleSecond
 
                         if (isTie) {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "TIE", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "TIE")
-                            riskManager.clearPendingTrade()
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "TIE", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "TIE")
+                            riskManager.recordTradeVoid()
                             autoDrawEngine.clearTradeEntry()
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
                         } else if (finalWin) {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN")
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN")
                             riskManager.recordTradeWin()
                             adaptiveLearningEngine.recordTradeOutcome(true, context)
                             autoDrawEngine.clearTradeEntry()
@@ -280,7 +281,7 @@ class TradingEngine(
                             Toast.makeText(context, "🎉 OPERACIÓN GANADA (+1 W)", Toast.LENGTH_LONG).show()
                             onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
                         } else {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS")
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS")
                             riskManager.recordTradeLoss()
                             adaptiveLearningEngine.recordTradeOutcome(false, context)
                             autoDrawEngine.clearTradeEntry()
@@ -422,13 +423,13 @@ class TradingEngine(
                         !inUptrend && !analysis.hasStrongMomentumUp && analysis.isFalseBreakoutPut -> Pair(TradeAction.SELL, "🎯 Auto [Trampa en Resistencia | ⏱ ${sec}s] -> PUT")
 
                         // 1b. Reversión Contra-Tendencia Cuantitativa por Sobreextensión en Zonas Clave S/R
-                        (analysis.isNearResistanceZone || analysis.touchesResistance || analysis.distanceToResistanceRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.20f)) &&
+                        !inUptrend && (analysis.isNearResistanceZone || analysis.touchesResistance || analysis.distanceToResistanceRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.20f)) &&
                         (syntheticEngine?.isBullishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi >= 78.0 && syntheticEngine.distanceToResistanceRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.GREEN) || analysis.isPriceNearTop) &&
                         (!analysis.hasStrongMomentumUp && !analysis.isValidBreakoutCall && (analysis.tickVelocityNormalized <= 0.05f || analysis.isBearishImpulse || analysis.hasTopRejectionWick || analysis.isRejectionPut || (syntheticEngine != null && syntheticEngine.consecutiveDownTicks >= 2))) -> {
                             val rsiStr = if (syntheticEngine != null) " | RSI: ${syntheticEngine.syntheticTickRsi.toInt()}" else ""
                             Pair(TradeAction.SELL, "🎯 Auto [Reversión por Sobreextensión en Resistencia$rsiStr | ⏱ ${sec}s] -> PUT")
                         }
-                        (analysis.isNearSupportZone || analysis.touchesSupport || analysis.distanceToSupportRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.20f)) &&
+                        !inDowntrend && (analysis.isNearSupportZone || analysis.touchesSupport || analysis.distanceToSupportRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.20f)) &&
                         (syntheticEngine?.isBearishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi <= 22.0 && syntheticEngine.distanceToSupportRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.RED) || analysis.isPriceNearBottom) &&
                         (!analysis.hasStrongMomentumDown && !analysis.isValidBreakoutPut && (analysis.tickVelocityNormalized >= -0.05f || analysis.isBullishImpulse || analysis.hasBottomRejectionWick || analysis.isRejectionCall || (syntheticEngine != null && syntheticEngine.consecutiveUpTicks >= 2))) -> {
                             val rsiStr = if (syntheticEngine != null) " | RSI: ${syntheticEngine.syntheticTickRsi.toInt()}" else ""
@@ -507,13 +508,13 @@ class TradingEngine(
                             Pair(TradeAction.SELL, "🎯 MT Combo: Trampa / Falso Rompimiento de Resistencia -> PUT")
                         }
                         // 1b. Reversión Contra-Tendencia Cuantitativa por Sobreextensión en Zonas Clave
-                        (analysis.isNearResistanceZone || analysis.touchesResistance || analysis.distanceToResistanceRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.20f)) &&
+                        !inUptrend && (analysis.isNearResistanceZone || analysis.touchesResistance || analysis.distanceToResistanceRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.20f)) &&
                         (syntheticEngine?.isBullishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi >= 78.0 && syntheticEngine.distanceToResistanceRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.GREEN) || analysis.isPriceNearTop) &&
                         (!analysis.hasStrongMomentumUp && !analysis.isValidBreakoutCall && (analysis.tickVelocityNormalized <= 0.05f || analysis.isBearishImpulse || analysis.hasTopRejectionWick || analysis.isRejectionPut || (syntheticEngine != null && syntheticEngine.consecutiveDownTicks >= 2))) -> {
                             val rsiStr = if (syntheticEngine != null) " (RSI ${syntheticEngine.syntheticTickRsi.toInt()})" else ""
                             Pair(TradeAction.SELL, "🎯 MT Combo: Reversión por Sobreextensión en Resistencia$rsiStr -> PUT")
                         }
-                        (analysis.isNearSupportZone || analysis.touchesSupport || analysis.distanceToSupportRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.20f)) &&
+                        !inDowntrend && (analysis.isNearSupportZone || analysis.touchesSupport || analysis.distanceToSupportRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.20f)) &&
                         (syntheticEngine?.isBearishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi <= 22.0 && syntheticEngine.distanceToSupportRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.RED) || analysis.isPriceNearBottom) &&
                         (!analysis.hasStrongMomentumDown && !analysis.isValidBreakoutPut && (analysis.tickVelocityNormalized >= -0.05f || analysis.isBullishImpulse || analysis.hasBottomRejectionWick || analysis.isRejectionCall || (syntheticEngine != null && syntheticEngine.consecutiveUpTicks >= 2))) -> {
                             val rsiStr = if (syntheticEngine != null) " (RSI ${syntheticEngine.syntheticTickRsi.toInt()})" else ""
@@ -1091,7 +1092,7 @@ class TradingEngine(
 
             // Registrar firma de entrada en el motor adaptativo
             adaptiveLearningEngine.recordTradeOpened(finalAction, analysis, latestMarketTick, strategy.name)
-            executeAutonomousTrade(finalAction, analysis, bitmap, finalReason)
+            executeAutonomousTrade(finalAction, analysis, bitmap, finalReason, signalConfidence)
         }
     }
 
@@ -1099,7 +1100,8 @@ class TradingEngine(
         action: TradeAction,
         analysis: VisionAnalysisResult,
         bitmap: Bitmap,
-        reasonDescription: String
+        reasonDescription: String,
+        confidence: Float = 0.0f
     ) {
         val calibration = calibrationManager
         val (screenW, screenH) = CalibrationManager.getRealScreenDimensions(context)
@@ -1139,7 +1141,7 @@ class TradingEngine(
             val observed = accessibility.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
             val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
             isTradeResolving.set(false)
-            riskManager.recordTradeSent(action, analysis.currentPriceY, baseBal)
+            riskManager.recordTradeSent(action, analysis.currentPriceY, baseBal, confidence)
             // Despacho táctil único e inequívoco (sin repeticiones artificiales)
             accessibility.performClickAt(x, y)
 
@@ -1307,7 +1309,8 @@ class TradingEngine(
             }
         }
 
-        val (canTrade, riskReason) = riskManager.canExecuteTrade(mode, autonomousSubMode, 0.85f * adaptiveModifier)
+        val headlessConfidence = (0.85f * adaptiveModifier).coerceIn(0.1f, 1.0f)
+        val (canTrade, riskReason) = riskManager.canExecuteTrade(mode, autonomousSubMode, headlessConfidence)
         if (!canTrade) {
             Log.d("TradingEngine", "Headless bloqueado por riesgo: $riskReason")
             return
@@ -1346,7 +1349,7 @@ class TradingEngine(
             val observed = accessibility.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
             val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
             isTradeResolving.set(false)
-            riskManager.recordTradeSent(finalAction, latestMarketTick?.price?.toFloat() ?: 0f, baseBal)
+            riskManager.recordTradeSent(finalAction, latestMarketTick?.price?.toFloat() ?: 0f, baseBal, headlessConfidence)
             adaptiveLearningEngine.recordTradeOpened(
                 action = finalAction,
                 analysis = effectiveAnalysis,

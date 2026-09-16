@@ -86,7 +86,7 @@ class RiskManager(context: Context? = null) {
         }
 
     @Volatile
-    var absoluteEquityFloor: Double = prefs?.getFloat("absolute_equity_floor", 40000000f)?.toDouble() ?: 40000000.0
+    var absoluteEquityFloor: Double = prefs?.getFloat("absolute_equity_floor", 20000000f)?.toDouble() ?: 20000000.0
         set(value) {
             field = value
             prefs?.edit()?.putFloat("absolute_equity_floor", value.toFloat())?.apply()
@@ -228,6 +228,10 @@ class RiskManager(context: Context? = null) {
         internal set
 
     @Volatile
+    var pendingTradeConfidence: Float = 0.0f
+        internal set
+
+    @Volatile
     var sessionStartBalance: Double = 0.0
 
     @Volatile
@@ -262,8 +266,8 @@ class RiskManager(context: Context? = null) {
         if (currentBal > 0.0) {
             if (isDemo) {
                 if (currentBal < absoluteEquityFloor) {
-                    android.util.Log.e("RiskManager", "CRITICAL STOP: Equity Demo ($currentBal) por debajo del suelo absoluto ($absoluteEquityFloor)")
-                    return Pair(false, "Stop Equity Absoluto Alcanzado ($currentBal < $absoluteEquityFloor)")
+                    android.util.Log.e("RiskManager", "CRITICAL STOP: Equity Demo () por debajo del suelo absoluto ()")
+                    return Pair(false, "Stop Equity Absoluto Alcanzado ( < )")
                 }
             } else {
                 // Cuenta Real: suelo mínimo operativo para Binomo (mínimo ~4,000 COP por orden)
@@ -343,10 +347,6 @@ class RiskManager(context: Context? = null) {
             val remaining = effectiveLossCooldown - elapsed
             if (remaining > 0) {
                 return Pair(false, "Pausa Anti-Tilt tras fallo Martingala (${remaining}s)")
-            } else if (subMode == AutonomousSubMode.YOLO) {
-                // En YOLO: al terminar la pausa anti-tilt, reiniciar automáticamente la racha a M0
-                // para continuar operando de forma 100% autónoma sin requerir interacción táctil
-                currentLossStreak = 0
             }
         }
 
@@ -407,7 +407,7 @@ class RiskManager(context: Context? = null) {
     }
 
     @Synchronized
-    fun recordTradeSent(action: TradeAction, entryPriceY: Float = 0f, baseBalance: Double = 0.0) {
+    fun recordTradeSent(action: TradeAction, entryPriceY: Float = 0f, baseBalance: Double = 0.0, confidence: Float = 0.0f) {
         val now = System.currentTimeMillis()
         lastTradeTime = now
         hasPendingTrade = true
@@ -415,11 +415,12 @@ class RiskManager(context: Context? = null) {
         pendingTradeStartTime = now
         pendingTradeEntryPriceY = entryPriceY
         pendingTradeBaseBalance = baseBalance
+        pendingTradeConfidence = confidence
     }
 
     @Synchronized
-    fun notifyTradePlaced(action: TradeAction, entryPriceY: Float = 0f, baseBalance: Double = 0.0) {
-        recordTradeSent(action, entryPriceY, baseBalance)
+    fun notifyTradePlaced(action: TradeAction, entryPriceY: Float = 0f, baseBalance: Double = 0.0, confidence: Float = 0.0f) {
+        recordTradeSent(action, entryPriceY, baseBalance, confidence)
     }
 
     @Synchronized
@@ -429,6 +430,7 @@ class RiskManager(context: Context? = null) {
         pendingTradeStartTime = 0L
         pendingTradeEntryPriceY = 0f
         pendingTradeBaseBalance = 0.0
+        pendingTradeConfidence = 0.0f
     }
 
     @Synchronized
