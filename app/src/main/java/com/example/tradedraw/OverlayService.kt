@@ -21,7 +21,6 @@ import android.widget.*
 import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
 import android.graphics.Bitmap
-import android.webkit.*
 import java.util.Locale
 
 /**
@@ -51,7 +50,12 @@ class OverlayService : Service() {
     
     private lateinit var templateManager: TemplateManager
 
-    private var screenCaptureManager: ScreenCaptureManager? = null
+    // ponytail: ScreenCaptureManager queda DESHABILITADO por decisión de producto (la grabación de
+    // pantalla agota la batería y ralentiza el teléfono). No se instancia ni se pide MediaProjection.
+    // Techo: la clase y su test siguen en el proyecto sin uso alguno.
+    // Mejora: borrar ScreenCaptureManager.kt, ScreenCaptureManagerTest.kt y el parámetro
+    // `hasMediaProjection` de startTradeDrawForeground cuando se confirme que la visión no volverá.
+    // Ver el comentario ponytail: de ScreenCaptureManager.kt (cabecera de la clase).
     var httpBridge: TradeDrawHttpBridge? = null
         private set
     lateinit var riskManager: RiskManager
@@ -62,7 +66,6 @@ class OverlayService : Service() {
         private set
     var binomoWebSocketClient: BinomoWebSocketClient? = null
         private set
-    private var headlessWebView: WebView? = null
 
     private var hudView: View? = null
     private var hudParams: WindowManager.LayoutParams? = null
@@ -80,123 +83,6 @@ class OverlayService : Service() {
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
-    fun startHeadlessBrokerEngine() {
-        mainHandler.post {
-            if (headlessWebView != null) {
-                Log.d("TradeDraw", "Headless Broker WebView ya está activo. Recargando...")
-                headlessWebView?.reload()
-                return@post
-            }
-            Log.d("TradeDraw", "Iniciando Headless Broker WebView...")
-            try {
-                val snifferJs = """
-                    (function() {
-                        if (window.__td_headless_hooked) return;
-                        window.__td_headless_hooked = true;
-                        console.log('[HeadlessBroker] Hooking WebSocket...');
-                        var OldWS = window.WebSocket;
-                        window.WebSocket = function(url, protocols) {
-                            console.log('[HL_WS_OPEN] URL=' + url);
-                            try {
-                                if (window.TradeDrawBridge && window.TradeDrawBridge.onWsUrl) {
-                                    window.TradeDrawBridge.onWsUrl(url.toString());
-                                }
-                            } catch(e) {}
-                            var ws = protocols ? new OldWS(url, protocols) : new OldWS(url);
-                            ws.addEventListener('message', function(ev) {
-                                try {
-                                    var data = ev.data;
-                                    if (data instanceof ArrayBuffer) {
-                                        data = new TextDecoder('utf-8').decode(data);
-                                    } else if (typeof Blob !== 'undefined' && data instanceof Blob) {
-                                        var reader = new FileReader();
-                                        reader.onload = function() {
-                                            var text = reader.result;
-                                            if (typeof text === 'string' && (text.includes('rate') || text.includes('price') || text.includes('tick') || text.includes('assets') || text.includes('ric') || text.includes('quote'))) {
-                                                if (window.TradeDrawBridge && window.TradeDrawBridge.onTick) {
-                                                    window.TradeDrawBridge.onTick(text);
-                                                }
-                                            }
-                                        };
-                                        reader.readAsText(data);
-                                        return;
-                                    }
-                                    if (typeof data === 'string' && (data.includes('rate') || data.includes('price') || data.includes('tick') || data.includes('assets') || data.includes('ric') || data.includes('quote'))) {
-                                        if (window.TradeDrawBridge && window.TradeDrawBridge.onTick) {
-                                            window.TradeDrawBridge.onTick(data);
-                                        }
-                                    }
-                                } catch(e) {}
-                            });
-                            return ws;
-                        };
-                        window.WebSocket.prototype = OldWS.prototype;
-                    })();
-                """.trimIndent()
-
-                val wv = WebView(this).apply {
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.databaseEnabled = true
-                    settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
-
-                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-
-                    addJavascriptInterface(object {
-                        @JavascriptInterface
-                        fun onWsUrl(url: String) {
-                            Log.i("TradeDraw", "🎯 Headless WS URL: $url")
-                            binomoWebSocketClient?.wsUrl = url
-                        }
-
-                        @JavascriptInterface
-                        fun onTick(rawJson: String) {
-                            binomoWebSocketClient?.processIncomingMessage(rawJson)
-                        }
-                    }, "TradeDrawBridge")
-
-                    webChromeClient = object : WebChromeClient() {
-                        override fun onConsoleMessage(cm: ConsoleMessage?): Boolean {
-                            Log.d("HeadlessConsole", "${cm?.message()} (${cm?.sourceId()}:${cm?.lineNumber()})")
-                            return true
-                        }
-                    }
-
-                    webViewClient = object : WebViewClient() {
-                        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                            super.onPageStarted(view, url, favicon)
-                            view?.evaluateJavascript(snifferJs, null)
-                        }
-
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            super.onPageFinished(view, url)
-                            view?.evaluateJavascript(snifferJs, null)
-                            Log.d("TradeDraw", "Headless Broker cargó: $url")
-                        }
-                    }
-                }
-
-                val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                } else {
-                    WindowManager.LayoutParams.TYPE_PHONE
-                }
-                val lp = WindowManager.LayoutParams(
-                    1, 1,
-                    layoutType,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                    PixelFormat.TRANSLUCENT
-                )
-                windowManager.addView(wv, lp)
-                headlessWebView = wv
-                wv.loadUrl("https://binomo.com/es/trading")
-            } catch (e: Exception) {
-                Log.e("TradeDraw", "Error iniciando Headless Broker WebView", e)
-            }
-        }
-    }
-
     private var isMenuExpanded = false
     private var isDrawingMode = false
     private var currentActiveCategory: Int = -1
@@ -204,7 +90,7 @@ class OverlayService : Service() {
 
     private val accessibilityCheckRunnable = object : Runnable {
         override fun run() {
-            if (AutoTradeAccessibilityService.instance == null) {
+            if (AutoTradeAccessibilityService.instance == null && !AutoTradeAccessibilityService.isAccessibilityPermissionGranted(this@OverlayService)) {
                 Log.w("TradeDraw", "AutoTradeAccessibilityService desconectado. Notificando HUD.")
                 mainHandler.post { updateHUDView() }
             }
@@ -232,17 +118,14 @@ class OverlayService : Service() {
                 "DEB" -> showDebugDialog()
                 "HUD" -> toggleHUDVisibility()
                 "TEST" -> {
-                    val frame = screenCaptureManager?.latestFrame
-                    val visionCoords = if (frame != null) tradingEngine.visionAnalyzer.findBrokerButtonCoordinates(frame, true) else null
-                    val (bx, by) = visionCoords ?: calibrationManager.getBuyCoordinates()
-                    Log.d("TradeDraw", "TEST SUBE hacia ($bx, $by) [Visión=${visionCoords != null}]")
+                    // Sin visión: solo coordenadas calibradas para el clic de prueba.
+                    val (bx, by) = calibrationManager.getBuyCoordinates()
+                    Log.d("TradeDraw", "TEST SUBE hacia ($bx, $by)")
                     AutoTradeAccessibilityService.instance?.performClickAt(bx, by)
                 }
                 "TEST_SELL" -> {
-                    val frame = screenCaptureManager?.latestFrame
-                    val visionCoords = if (frame != null) tradingEngine.visionAnalyzer.findBrokerButtonCoordinates(frame, false) else null
-                    val (sx, sy) = visionCoords ?: calibrationManager.getSellCoordinates()
-                    Log.d("TradeDraw", "TEST BAJA hacia ($sx, $sy) [Visión=${visionCoords != null}]")
+                    val (sx, sy) = calibrationManager.getSellCoordinates()
+                    Log.d("TradeDraw", "TEST BAJA hacia ($sx, $sy)")
                     AutoTradeAccessibilityService.instance?.performClickAt(sx, sy)
                 }
                 "CLEAR_BOT" -> drawingView.clearBotShapes()
@@ -293,24 +176,14 @@ class OverlayService : Service() {
             @Suppress("DEPRECATION")
             intent?.getParcelableExtra("EXTRA_MEDIA_PROJECTION_DATA") as Intent?
         }
+        // Modo WebSocket Puro SIEMPRE activo: la captura de pantalla está deshabilitada por decisión
+        // de producto (consume batería del teléfono muy rápido y lo ralentiza). Aunque llegue un
+        // dataIntent de MediaProjection, se ignora y nunca se arranca ScreenCaptureManager.
+        startTradeDrawForeground(hasMediaProjection = false)
         if (dataIntent != null) {
-            startTradeDrawForeground(hasMediaProjection = true)
-            try {
-                screenCaptureManager?.destroy()
-            } catch (e: Exception) {
-                Log.e("TradeDraw", "Error reciclando ScreenCaptureManager previo", e)
-            }
-            val scm = ScreenCaptureManager(this, dataIntent)
-            screenCaptureManager = scm
-            scm.startCapture { bitmap ->
-                httpBridge?.latestFrame = bitmap
-                tradingEngine.onNewFrame(bitmap)
-            }
-            Log.d("TradeDraw", "ScreenCaptureManager reiniciado con nuevo token y procesando frames")
-        } else {
-            startTradeDrawForeground(hasMediaProjection = false)
-            Log.d("TradeDraw", "Modo Headless activo (WebSocket puro, 0% consumo de pantalla)")
+            Log.w("TradeDraw", "DataIntent de MediaProjection recibido pero IGNORADO (captura deshabilitada por batería)")
         }
+        Log.d("TradeDraw", "Modo Headless activo (WebSocket puro, 0% consumo de pantalla)")
         return START_STICKY
     }
 
@@ -364,12 +237,14 @@ class OverlayService : Service() {
             tradingEngine.onMarketTick(tick)
             // HUD se actualiza via onFrameProcessedListener del tradingEngine — no duplicar aquí
         }
+        // Guard de frescura fail-closed: el motor veta toda operación si el feed WS no está vivo.
+        tradingEngine.feedFreshnessProvider = { wsClient.isFeedFresh() }
+        // Guarda de precio congelado: el feed puede estar fresco (ticks llegando a ritmo
+        // normal) y aun así el emisor no mover el precio (índice sintético pegado, p. ej.
+        // Z-CRY/IDX con rango relativo ~5e-10). Sin esto el bot decide CALL/PUT sobre una
+        // línea plana, que equivale a lanzar una moneda.
+        tradingEngine.priceFrozenProvider = { wsClient.isPriceFrozen() }
         wsClient.start()
-
-        val wsPrefs = getSharedPreferences("TradeDraw_WSConfig", Context.MODE_PRIVATE)
-        if (wsPrefs.getString("ws_cookie_header", "")?.isNotEmpty() == true || wsPrefs.getString("ws_auth_token", "")?.isNotEmpty() == true) {
-            startHeadlessBrokerEngine()
-        }
 
         val cmdFilter = IntentFilter("com.example.tradedraw.CMD")
         try {
@@ -388,7 +263,7 @@ class OverlayService : Service() {
         if (::drawingView.isInitialized) {
             drawingView.clearBotShapes()
         }
-        screenCaptureManager?.refreshVirtualDisplay()
+        // Sin VirtualDisplay que refrescar: la captura está deshabilitada.
         mainHandler.postDelayed({
             // 1. Redimensionar el lienzo flotante para cubrir la pantalla completa en la nueva orientación
             if (::canvasParams.isInitialized && ::canvasView.isInitialized) {
@@ -916,14 +791,9 @@ class OverlayService : Service() {
     private fun setTradingMode(newMode: AutoTradeMode) {
         tradingEngine.mode = newMode
         if (newMode != AutoTradeMode.DISABLED) {
-            if (screenCaptureManager != null) {
-                screenCaptureManager?.startCapture { bitmap ->
-                    tradingEngine.onNewFrame(bitmap)
-                }
-                Toast.makeText(this, "Modo: ${newMode.name}", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Sin permisos de captura. Reinicia TradeDraw.", Toast.LENGTH_LONG).show()
-            }
+            // Sin captura de pantalla: el feed WebSocket ya está activo y alimenta al motor.
+            // No se arranca ScreenCaptureManager ni se solicita MediaProjection.
+            Toast.makeText(this, "Modo: ${newMode.name} (WebSocket puro)", Toast.LENGTH_SHORT).show()
         } else {
             tradingEngine.stop()
             Toast.makeText(this, "Trading detenido", Toast.LENGTH_SHORT).show()
@@ -1434,7 +1304,7 @@ class OverlayService : Service() {
             detailsContainer?.visibility = if (isHudCollapsed) View.GONE else View.VISIBLE
             v.alpha = hudAlpha
 
-            val isAccessConnected = AutoTradeAccessibilityService.instance != null
+            val isAccessConnected = AutoTradeAccessibilityService.instance != null || AutoTradeAccessibilityService.isAccessibilityPermissionGranted(this)
             val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(tradingEngine.mode, tradingEngine.autonomousSubMode)
 
             when (tradingEngine.mode) {
@@ -1472,7 +1342,7 @@ class OverlayService : Service() {
             }
 
             txtMode.setOnClickListener {
-                if (AutoTradeAccessibilityService.instance == null) {
+                if (!isAccessConnected) {
                     try {
                         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -1521,9 +1391,10 @@ class OverlayService : Service() {
             txtTimer.text = " ⏱️ :%02ds".format(remainingSec)
             txtTimer.setTextColor(if (remainingSec in 0..5 || remainingSec in 28..32) Color.parseColor("#4ade80") else Color.parseColor("#facc15"))
 
-            val isHeadless = screenCaptureManager == null
+            // Modo WebSocket Puro permanente: nunca hay captura de pantalla (decisión de producto, batería).
+            val isHeadless = true
             val wsState = binomoWebSocketClient?.currentState ?: WebSocketState.DISCONNECTED
-            val frames = screenCaptureManager?.totalFramesCaptured ?: 0L
+            val frames = 0L
 
             // Termómetro de Señal (% CALL vs % PUT)
             if (analysis != null) {
@@ -2016,7 +1887,7 @@ class OverlayService : Service() {
         try {
             unregisterReceiver(overlayCommandReceiver)
         } catch (e: Exception) {}
-        screenCaptureManager?.destroy()
+        // Sin ScreenCaptureManager que destruir: la captura está deshabilitada.
         binomoWebSocketClient?.destroy()
         binomoWebSocketClient = null
         if (::tradingEngine.isInitialized) {
@@ -2030,13 +1901,6 @@ class OverlayService : Service() {
         agentChatOverlay?.dismiss()
         agentChatOverlay = null
         mainHandler.removeCallbacksAndMessages(null)
-        try {
-            headlessWebView?.let {
-                windowManager.removeView(it)
-                it.destroy()
-            }
-            headlessWebView = null
-        } catch (e: Exception) {}
         try {
             if (::canvasView.isInitialized) windowManager.removeView(canvasView)
             if (::menuView.isInitialized) windowManager.removeView(menuView)

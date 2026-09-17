@@ -25,6 +25,18 @@ import java.nio.ByteBuffer
  * - Fast ROI (100ms / ~10 FPS): Sub-región activa derecha para tracking ultra rápido de punta de vela y tick de precio.
  * - Full Frame (1000ms / ~1 FPS): Fotograma completo para análisis global de soportes, resistencias y patrones técnicos.
  * - Compatibilidad total con Landscape (horizontal) y Portrait (vertical).
+ *
+ * ponytail: CLASE DESHABILITADA por decisión de producto. La captura de pantalla agota la batería
+ * del teléfono muy rápido y lo ralentiza, así que el modo "WebSocket Puro" (WebSocket + SyntheticCandleEngine)
+ * es el único modo de operación: nada en el flujo de decisión ni de ejecución vuelve a instanciar esta clase
+ * ni a solicitar MediaProjection (ver OverlayService.onStartCommand y MainActivity.startFloatingService).
+ *
+ * Techo: la clase y su test siguen en el proyecto sin uso alguno (486 líneas huérfanas).
+ *
+ * Mejora: cuando se confirme que la visión no vuelve, borrar ScreenCaptureManager.kt,
+ * ScreenCaptureManagerTest.kt y el parámetro `hasMediaProjection` de startTradeDrawForeground.
+ * El permiso FOREGROUND_SERVICE_MEDIA_PROJECTION, el `mediaProjection` del foregroundServiceType,
+ * el campo `screenCaptureManager` de OverlayService y su `destroy()` no-op ya fueron eliminados.
  */
 class ScreenCaptureManager(private val context: Context, private val intent: Intent) {
 

@@ -33,6 +33,28 @@ class RiskManagerTest {
         assertEquals("Initial investment should be baseAmount", 10.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
     }
 
+    /**
+     * Regresión del doble registro observado en el journal (00:44:03 y 00:44:04, mismo balance y resultado).
+     *
+     * Causa raíz: la liquidación headless reintenta en CADA tick mientras `hasPendingTrade` siga vivo
+     * (no se limpia hasta que el `handler.post` corre en el hilo principal). `canExecuteTrade` limpia el
+     * pendiente a los MAX_PENDING_TRADE_TIMEOUT_SEC (85s), lo que abre una ventana ZOMBIE de 10s entre
+     * 75s y 85s: el pendiente ya está limpiado (o la ruta de visión liquidó), pero la resolución headless
+     * vuelve a evaluar el MISMO trade y escribe una segunda fila idéntica con 1s de diferencia.
+     */
+    @Test
+    fun testClearPendingTrade_onRiskCheck_expiresAtTimeout() {
+        riskManager.recordTradeSent(TradeAction.BUY, entryPriceY = 250f, baseBalance = 50000.0)
+        assertTrue("Debe haber trade pendiente", riskManager.hasPendingTrade)
+
+        // Envejecemos el pendiente más allá del timeout de seguridad (85s)
+        riskManager.pendingTradeStartTime = System.currentTimeMillis() - 86_000L
+        riskManager.canExecuteTrade(AutoTradeMode.AUTONOMOUS, AutonomousSubMode.YOLO, 0.9f)
+
+        assertFalse("Pasado el timeout el pendiente debe limpiarse", riskManager.hasPendingTrade)
+        assertEquals("El timestamp del pendiente debe resetearse", 0L, riskManager.pendingTradeStartTime)
+    }
+
     @Test
     fun testTradePendingBlocksDuplicateExecution() {
         riskManager.recordTradeSent(TradeAction.BUY, entryPriceY = 250f, baseBalance = 50000.0)

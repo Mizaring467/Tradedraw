@@ -5,7 +5,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.media.projection.MediaProjectionManager
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -14,7 +13,6 @@ import androidx.core.content.ContextCompat
 import com.example.tradedraw.R
 
 class MainActivity : AppCompatActivity() {
-    private val REQUEST_MEDIA_PROJECTION = 100
     private lateinit var btnAccessibility: Button
     private lateinit var btnStop: Button
 
@@ -93,7 +91,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateAccessibilityButtonState() {
-        val isConnected = AutoTradeAccessibilityService.instance != null
+        val isConnected = AutoTradeAccessibilityService.instance != null || AutoTradeAccessibilityService.isAccessibilityPermissionGranted(this)
         if (isConnected) {
             btnAccessibility.text = "Accesibilidad: ACTIVA ✓"
             btnAccessibility.setBackgroundColor(android.graphics.Color.parseColor("#15803d"))
@@ -123,18 +121,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startFloatingService() {
-        // En Android 14, avisar al usuario para que elija 'Toda la pantalla'
-        Toast.makeText(this, "⚠️ Importante: Elige 'Toda la pantalla' al solicitar permiso", Toast.LENGTH_LONG).show()
-        val mediaProjectionManager = getSystemService(android.content.Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        startActivityForResult(mediaProjectionManager.createScreenCaptureIntent(), REQUEST_MEDIA_PROJECTION)
+        // Modo WebSocket Puro: NO se solicita MediaProjection (la grabación de pantalla agota
+        // la batería del teléfono y lo ralentiza). Se arranca el overlay directamente.
+        launchService(null)
     }
 
-    private fun launchService(data: Intent) {
-        val intent = Intent(this, OverlayService::class.java).apply {
-            putExtra("EXTRA_MEDIA_PROJECTION_DATA", data)
-        }
+    private fun launchService(data: Intent?) {
+        val intent = Intent(this, OverlayService::class.java)
+        if (data != null) intent.putExtra("EXTRA_MEDIA_PROJECTION_DATA", data)
         ContextCompat.startForegroundService(this, intent)
-        Toast.makeText(this, "Overlay iniciado con Visión IA activa", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Overlay iniciado en Modo WebSocket Puro (sin grabación)", Toast.LENGTH_SHORT).show()
     }
 
     @Deprecated("Deprecated in Java")
@@ -146,12 +142,6 @@ class MainActivity : AppCompatActivity() {
                 startFloatingService()
             } else {
                 Toast.makeText(this, "Permiso overlay denegado", Toast.LENGTH_SHORT).show()
-            }
-        } else if (requestCode == REQUEST_MEDIA_PROJECTION) {
-            if (resultCode == RESULT_OK && data != null) {
-                launchService(data)
-            } else {
-                Toast.makeText(this, "Captura no concedida. Vuelve a tocar 'Iniciar Overlay' y elige 'Toda la pantalla'.", Toast.LENGTH_LONG).show()
             }
         }
     }

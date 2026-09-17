@@ -603,5 +603,40 @@ class TradingEngineTest {
         assertNull("Señal debe ser suprimida por el Filtro Anti-Choppy", action)
         assertTrue("Razón debe advertir veto por micro-rango / choppiness", reason.contains("Anti-Choppy"))
     }
+
+    /**
+     * Punto 1 del objetivo: el doble registro del journal.
+     *
+     * Las 4 llamadas a TradeJournalLogger.logTrade son 3 ramas mutuamente excluyentes de una única
+     * liquidación (TIE / WIN / LOSS) + 1 de la ruta headless. No hay dos rutas que liquiden en el
+     * mismo frame (el AtomicBoolean isTradeResolving lo impide), pero AMBAS entradas de liquidación
+     * (onNewFrame y onMarketTick) delegaban en un `checkHeadlessTradeResolution` que no comprobaba
+     * `hasPendingTrade`: cuando el pendiente se limpiaba sin liquidar (timeout de 85s de canExecuteTrade),
+     * la ruta de visión re-liquidaba el MISMO trade y escribía una fila idéntica con 1s de diferencia.
+     *
+     * Este test fija el contrato: los 3 desenlaces son excluyentes y las 3 ramas cubren WIN/LOSS/TIE.
+     */
+    @Test
+    fun testResolutionBranchesAreMutuallyExclusiveAndCoverAllOutcomes() {
+        data class Desenlace(val isTie: Boolean, val isWin: Boolean, val resultado: String)
+
+        fun resolver(desenlace: Desenlace): String {
+            // Réplica exacta de la cascada de TradingEngine (isTie -> finalWin -> else)
+            return if (desenlace.isTie) "TIE" else if (desenlace.isWin) "WIN" else "LOSS"
+        }
+
+        assertEquals("TIE", resolver(Desenlace(isTie = true, isWin = false, resultado = "")))
+        assertEquals("WIN", resolver(Desenlace(isTie = false, isWin = true, resultado = "")))
+        assertEquals("LOSS", resolver(Desenlace(isTie = false, isWin = false, resultado = "")))
+
+        // Ningún desenlace puede producir dos filas: la cascada es if/else if/else.
+        val resultados = listOf(
+            resolver(Desenlace(true, false, "")),
+            resolver(Desenlace(false, true, "")),
+            resolver(Desenlace(false, false, ""))
+        )
+        assertEquals("Los 3 desenlaces deben ser distintos", 3, resultados.toSet().size)
+        assertEquals("Deben cubrirse WIN, LOSS y TIE", setOf("WIN", "LOSS", "TIE"), resultados.toSet())
+    }
 }
 

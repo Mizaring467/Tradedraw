@@ -54,7 +54,7 @@ class BinomoWebSocketClient(private val context: Context) {
 
     private var webSocket: WebSocket? = null
     private val isConnecting = AtomicBoolean(false)
-    private val isConnected = AtomicBoolean(false)
+    private val isConnectedFlag = AtomicBoolean(false)
 
     private val workerThread = HandlerThread("BinomoWSWorker").apply { start() }
     private val workerHandler = Handler(workerThread.looper)
@@ -62,6 +62,54 @@ class BinomoWebSocketClient(private val context: Context) {
 
     var currentState: WebSocketState = WebSocketState.DISCONNECTED
         private set
+
+    /** true si el socket con el broker está abierto y suscrito. */
+    @get:JvmName("isConnected")
+    val isConnected: Boolean get() = isConnectedFlag.get()
+
+    /**
+     * Antigüedad en milisegundos del último tick recibido.
+     * Devuelve [Long.MAX_VALUE] si aún no ha llegado ningún tick (feed nunca visto).
+     */
+    val lastTickAgeMs: Long
+        get() {
+            val ts = latestTick?.timestampMs ?: return Long.MAX_VALUE
+            return (System.currentTimeMillis() - ts).coerceAtLeast(0L)
+        }
+
+    /**
+     * true si el feed WebSocket está vivo y con un tick de antigüedad < [freshnessThresholdMs].
+     * Fuente única de frescura: no existe respaldo por captura de pantalla.
+     */
+    fun isFeedFresh(freshnessThresholdMs: Long = DEFAULT_FRESHNESS_MS): Boolean =
+        isConnected && lastTickAgeMs < freshnessThresholdMs
+
+    /**
+     * Rango relativo observado en la ventana reciente de ticks:
+     * (maxPrecio - minPrecio) / minPrecio. Es 0.0 con precio perfectamente plano.
+     *
+     * Sirve para distinguir un feed *vivo pero congelado* (el emisor emite ticks a
+     * ritmo normal pero el precio no se mueve, p. ej. el índice sintético pegado
+     * `Z-CRY/IDX`, que oscila ~5e-10 en relativo) de un feed sano. Sin esta señal,
+     * `isFeedFresh()` da `true` y el motor decide CALL/PUT sobre una línea plana.
+     */
+    fun recentPriceRangeRatio(): Double {
+        val prices = synchronized(recentTicks) { recentTicks.map { it.price } }
+        return MarketTickFilters.priceRangeRatio(prices)
+    }
+
+    /**
+     * true si el emisor entrega ticks a ritmo normal pero el precio está
+     * esencialmente inmóvil (rango relativo < [frozenRangeRatio]).
+     *
+     * `frozenRangeRatio` por defecto 1e-6 (0,0001%): un activo real líquido supera
+     * ese rango en pocos segundos, mientras que `Z-CRY/IDX` se queda en ~5e-10.
+     */
+    fun isPriceFrozen(frozenRangeRatio: Double = MarketTickFilters.FROZEN_RANGE_RATIO): Boolean {
+        if (!isFeedFresh()) return false // feed muerto: es otro diagnóstico
+        val prices = synchronized(recentTicks) { recentTicks.map { it.price } }
+        return MarketTickFilters.isPriceFrozen(prices, frozenRangeRatio)
+    }
 
     var onTickListener: ((MarketTick) -> Unit)? = null
     var onStateChangeListener: ((WebSocketState, String?) -> Unit)? = null
@@ -75,11 +123,51 @@ class BinomoWebSocketClient(private val context: Context) {
     var latestTick: MarketTick? = null
         private set
 
+    /**
+     * Origen del último tick aceptado: "socket" si llegó por el WebSocket propio,
+     * "headless" si lo inyectó el WebView puente vía [processIncomingMessage].
+     * Sirve para diagnosticar sin ambigüedad qué vía alimenta el feed.
+     */
+    var lastTickSource: String = "none"
+        private set
+
+    /** Nº de mensajes crudos recibidos por el socket propio (incluye rechazos phx_reply). */
+    var rawSocketMessages: Long = 0L
+        private set
+
+    /** Nº de ticks que el socket propio ha convertido en precio válido. */
+    var socketTicks: Long = 0L
+        private set
+
+    /**
+     * DIAGNÓSTICO TEMPORAL: últimas tramas crudas recibidas (truncadas), para
+     * comparar dos frames consecutivos y ver qué campo cambia realmente.
+     * Se expone en el bloque "feed" del bridge HTTP.
+     */
+    private val rawFrameRing = ArrayDeque<String>(8)
+    val rawFrames: List<String> get() = synchronized(rawFrameRing) { rawFrameRing.toList() }
+
+    private fun recordRawFrame(text: String) {
+        synchronized(rawFrameRing) {
+            rawFrameRing.addLast(text.take(600))
+            while (rawFrameRing.size > 3) rawFrameRing.removeFirst()
+        }
+    }
+
+    /** Contador de referencias `ref` de Phoenix Channels (1..N, nunca 0). */
+    private var phoenixRef = 0
+
+    private fun nextRef(): Int {
+        phoenixRef++
+        if (phoenixRef <= 0) phoenixRef = 1
+        return phoenixRef
+    }
+
     private var reconnectAttempts = 0
     private val MAX_RECONNECT_DELAY_MS = 15000L
 
     private val reconnectRunnable = Runnable {
-        if (!isConnected.get() && isEnabled) {
+        if (!isConnectedFlag.get() && isEnabled) {
             Log.d(TAG, "Reintentando conexión WebSocket (intento #$reconnectAttempts)...")
             startConnectionInternal()
         }
@@ -103,14 +191,14 @@ class BinomoWebSocketClient(private val context: Context) {
                 Log.e(TAG, "Error cerrando WebSocket", e)
             }
             webSocket = null
-            isConnected.set(false)
+            isConnectedFlag.set(false)
             isConnecting.set(false)
             updateState(WebSocketState.DISCONNECTED, "Desconectado")
         }
     }
 
     private fun startConnectionInternal() {
-        if (isConnected.get() || isConnecting.get()) return
+        if (isConnectedFlag.get() || isConnecting.get()) return
 
         isConnecting.set(true)
         updateState(WebSocketState.CONNECTING, "Conectando a $wsUrl")
@@ -119,6 +207,14 @@ class BinomoWebSocketClient(private val context: Context) {
             var targetUrl = wsUrl
             val token = authToken
             val devId = deviceId
+
+            // Phoenix Channels exige los parámetros de handshake v2 en la query.
+            // El WebView de Binomo los usa (wss://ws.binomo.com/?v=2&vsn=2.0.0):
+            // sin ellos el servidor acepta el socket pero no emite ningún canal.
+            if (!targetUrl.contains("vsn=")) {
+                val sep = if (targetUrl.contains("?")) "&" else "?"
+                targetUrl = "$targetUrl${sep}v=2&vsn=2.0.0"
+            }
 
             if (token.isNotEmpty() && !targetUrl.contains("authtoken=")) {
                 val sep = if (targetUrl.contains("?")) "&" else "?"
@@ -146,7 +242,7 @@ class BinomoWebSocketClient(private val context: Context) {
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(ws: WebSocket, response: Response) {
                     isConnecting.set(false)
-                    isConnected.set(true)
+                    isConnectedFlag.set(true)
                     reconnectAttempts = 0
                     updateState(WebSocketState.CONNECTED, "Conexión activa con broker")
                     Log.d(TAG, "WebSocket conectado exitosamente: $wsUrl")
@@ -156,7 +252,33 @@ class BinomoWebSocketClient(private val context: Context) {
                 }
 
                 override fun onMessage(ws: WebSocket, text: String) {
-                    processIncomingMessage(text)
+                    rawSocketMessages++
+                    recordRawFrame(text)
+                    // Traza de los primeros frames crudos: sin esto es imposible distinguir
+                    // "el servidor no emite" de "emite en un formato que no parseamos".
+                    if (rawSocketMessages <= 10) {
+                        Log.d(TAG, "Frame WS crudo #$rawSocketMessages: ${text.take(300)}")
+                    }
+                    // Heartbeat de Phoenix v2: `[join_ref, ref, "phoenix", "heartbeat", {}]`.
+                    // El cliente DEBE responder con phx_reply; si no, el servidor cierra el
+                    // canal por timeout y deja de emitir cotizaciones.
+                    if (text.contains("heartbeat")) {
+                        val ref = Regex(""""ref"\s*:\s*"?(\d+)"""")
+                            .find(text)?.groupValues?.getOrNull(1)
+                            ?: Regex("""(?:\[|,)"(\d+)","?phoenix""").find(text)?.groupValues?.getOrNull(1)
+                        if (ref != null) {
+                            ws.send(
+                                JSONArray().apply {
+                                    put(JSONObject.NULL)
+                                    put(ref)
+                                    put("phoenix")
+                                    put("phx_reply")
+                                    put(JSONObject().put("status", "ok").put("response", JSONObject()))
+                                }.toString()
+                            )
+                        }
+                    }
+                    processIncomingMessage(text, source = "socket")
                 }
 
                 override fun onClosing(ws: WebSocket, code: Int, reason: String) {
@@ -166,14 +288,14 @@ class BinomoWebSocketClient(private val context: Context) {
 
                 override fun onClosed(ws: WebSocket, code: Int, reason: String) {
                     isConnecting.set(false)
-                    isConnected.set(false)
+                    isConnectedFlag.set(false)
                     updateState(WebSocketState.DISCONNECTED, "Cerrado: $reason")
                     scheduleReconnect()
                 }
 
                 override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
                     isConnecting.set(false)
-                    isConnected.set(false)
+                    isConnectedFlag.set(false)
                     val errorMsg = t.message ?: "Fallo de red"
                     val is401 = response?.code == 401 || errorMsg.contains("401")
                     if (is401) {
@@ -188,36 +310,73 @@ class BinomoWebSocketClient(private val context: Context) {
             })
         } catch (e: Exception) {
             isConnecting.set(false)
-            isConnected.set(false)
+            isConnectedFlag.set(false)
             Log.e(TAG, "Excepción al iniciar conexión WebSocket", e)
             updateState(WebSocketState.ERROR, e.message)
             scheduleReconnect()
         }
     }
 
+    /**
+     * Suscripción al activo.
+     *
+     * Hechos verificados sobre el backend de Binomo (as.binomo.com y ws.binomo.com
+     * resuelven a las MISMAS IPs Cloudflare, es el mismo servicio):
+     *
+     * - El socket de cotizaciones espera `{"action":"subscribe","rics":["RIC"]}`:
+     *   clave **`rics` en plural**, array de STRINGS. La forma previa
+     *   `{"action":"subscribe","data":[{"ric":...}]}` no la entiende: el servidor
+     *   acepta la conexión y descarta el mensaje sin cerrarla. Ese es exactamente
+     *   el síntoma "conecta pero nunca llega un tick".
+     * - El socket de trading habla Phoenix Channels v2 (`?v=2&vsn=2.0.0`), cuyo
+     *   serializador JSON v2 usa **arrays posicionales**, no objetos:
+     *   `[join_ref, ref, topic, event, payload]`.
+     *
+     * Se envían ambas variantes: la primera es la que produce ticks, la segunda
+     * cubre el caso de que el despliegue activo sirva el canal Phoenix.
+     */
     private fun subscribeToAsset(ws: WebSocket, asset: String) {
         try {
-            // Handshake estándar de suscripción de ticks Binomo / broker
-            val subscribePayload = JSONObject().apply {
-                put("action", "subscribe")
-                put("data", JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("ric", asset)
-                    })
-                })
-            }
-            ws.send(subscribePayload.toString())
-            Log.d(TAG, "Suscripción enviada para activo: $asset")
+            // 1. Socket de cotizaciones: clave `rics` plural con array de strings.
+            ws.send(
+                JSONObject().apply {
+                    put("action", "subscribe")
+                    put("rics", JSONArray().apply { put(asset) })
+                }.toString()
+            )
+            // 2. Topic por activo (Phoenix v2, array posicional): sin él algunos
+            //    despliegues no emiten nada aunque el subscribe anterior se acepte.
+            ws.send(phoenixJoin("asset:$asset", JSONObject()))
+            // 3. Topic global de cotizaciones con el ric en el payload.
+            ws.send(phoenixJoin("rates", JSONObject().put("ric", asset)))
+            Log.d(TAG, "Suscripción enviada para activo: $asset (rics + phoenix, ref=$phoenixRef)")
         } catch (e: Exception) {
             Log.e(TAG, "Error enviando suscripción", e)
         }
     }
 
     /**
+     * Frame de Phoenix Channels con el serializador **v2 JSON**, que usa arrays
+     * posicionales `[join_ref, ref, topic, event, payload]` en lugar de un objeto
+     * con claves. Enviar `{"topic":...,"event":"phx_join"}` a un socket `vsn=2.0.0`
+     * hace que el servidor lo ignore por formato inválido.
+     */
+    private fun phoenixJoin(topic: String, payload: JSONObject): String {
+        val ref = nextRef().toString()
+        return JSONArray().apply {
+            put(ref)      // join_ref
+            put(ref)      // ref
+            put(topic)
+            put("phx_join")
+            put(payload)
+        }.toString()
+    }
+
+    /**
      * Procesa y parsea las tramas de texto recibidas por WebSocket o bridge Headless.
      * Soporta múltiples formatos comunes de cotización (JSON de ticks, arrays, socket.io, etc.)
      */
-    fun processIncomingMessage(rawText: String) {
+    fun processIncomingMessage(rawText: String, source: String = "headless") {
         try {
             var payload = rawText.trim()
 
@@ -331,6 +490,28 @@ class BinomoWebSocketClient(private val context: Context) {
                         if (tickObj.has("ric")) assetName = tickObj.getString("ric")
                     }
                 }
+                // Frame Phoenix v2 posicional: [join_ref, ref, topic, event, payload].
+                // El precio viaja en payload["response"]["data"][*]["assets"][*].
+                if (parsedPrice == null && arr.length() >= 5) {
+                    val phxPayload = arr.optJSONObject(4)
+                    val phxData = phxPayload?.optJSONArray("data")
+                        ?: phxPayload?.optJSONObject("response")?.optJSONArray("data")
+                    if (phxData != null) {
+                        for (i in 0 until phxData.length()) {
+                            val item = phxData.optJSONObject(i) ?: continue
+                            val assets = item.optJSONArray("assets") ?: continue
+                            for (j in 0 until assets.length()) {
+                                val a = assets.optJSONObject(j) ?: continue
+                                val r = if (a.has("rate")) a.optDouble("rate") else a.optDouble("price", Double.NaN)
+                                val ric = a.optString("ric", "")
+                                if (!r.isNaN() && r > 0.0 && (parsedPrice == null || ric.equals(activeAsset, ignoreCase = true))) {
+                                    parsedPrice = r
+                                    if (ric.isNotEmpty()) assetName = ric
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // 4. Extractor Regex de respaldo si parsedPrice sigue en null
@@ -363,6 +544,8 @@ class BinomoWebSocketClient(private val context: Context) {
                 if (currentState != WebSocketState.CONNECTED) {
                     updateState(WebSocketState.CONNECTED, "Conexión activa con broker (0ms)")
                 }
+                lastTickSource = source
+                if (source == "socket") socketTicks++
                 emitTick(assetName, parsedPrice, nowMs)
             }
         } catch (e: Exception) {
@@ -442,5 +625,10 @@ class BinomoWebSocketClient(private val context: Context) {
     fun destroy() {
         stop()
         workerThread.quitSafely()
+    }
+
+    companion object {
+        /** Umbral único de frescura del feed WebSocket: 5000 ms. */
+        const val DEFAULT_FRESHNESS_MS = 5000L
     }
 }
