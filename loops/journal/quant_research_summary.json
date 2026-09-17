@@ -1,0 +1,159 @@
+{
+  "timestamp": "2026-09-16T17:44:52.089067",
+  "payout_ratio": 0.83,
+  "breakeven_winrate": 0.5464480874316939,
+  "empirical_journal_baseline": {
+    "path": "loops/journal/live/trade_journal_live.csv",
+    "total_records": 35,
+    "resolved": 30,
+    "wins": 9,
+    "losses": 21,
+    "ties": 5,
+    "winrate": 0.3,
+    "ev": -0.45099999999999996,
+    "z_stat": -2.7114282903101037,
+    "p_val": 0.9966502984889457,
+    "by_action": {
+      "BUY": {
+        "n": 10,
+        "wins": 5,
+        "winrate": 0.5
+      },
+      "SELL": {
+        "n": 20,
+        "wins": 4,
+        "winrate": 0.2
+      }
+    }
+  },
+  "empirical_journal_device_all": {
+    "path": "loops/journal/trade_journal_device_all.csv",
+    "total_records": 212,
+    "resolved": 195,
+    "wins": 81,
+    "losses": 114,
+    "ties": 17,
+    "winrate": 0.4153846153846154,
+    "ev": -0.23984615384615376,
+    "z_stat": -3.6763006247579786,
+    "p_val": 0.9998816796798594,
+    "by_action": {
+      "BUY": {
+        "n": 79,
+        "wins": 37,
+        "winrate": 0.46835443037974683
+      },
+      "SELL": {
+        "n": 116,
+        "wins": 44,
+        "winrate": 0.3793103448275862
+      }
+    }
+  },
+  "adaptive_state": {
+    "consecutiveContinuationLosses": 4,
+    "consecutiveReversionLosses": 0,
+    "totalBlockedAntiPatterns": 7,
+    "totalInvertedAntiPatterns": 2558,
+    "reversionBonusWeight": 2.200000047683716,
+    "continuationPenaltyWeight": 0.20000000298023224,
+    "total_signatures": 41
+  },
+  "reversion_sr_confluence": {
+    "trades": 12,
+    "winrate": 0.9166666666666666,
+    "ev": 0.6774999999999999,
+    "sharpe_trade": 1.2824747782818735,
+    "annualized_sharpe": 157.070440738979,
+    "z_stat": 2.576089078382003,
+    "p_value": 0.004996244979159937,
+    "max_loss_streak": 1,
+    "max_drawdown_pct": 2.0000000000000018,
+    "kelly": 0.8162650602409639
+  },
+  "reversion_naive": {
+    "trades": 352,
+    "winrate": 0.19602272727272727,
+    "ev": -0.641278409090909
+  },
+  "continuation_with_space": {
+    "trades": 338,
+    "winrate": 0.834319526627219,
+    "ev": 0.5268047337278107,
+    "sharpe_trade": 0.7731313997431077,
+    "z_stat": 10.630874046713052,
+    "p_value": 1.0704823240297828e-26,
+    "max_loss_streak": 3,
+    "max_drawdown_pct": 4.389365826640834
+  },
+  "continuation_naive": {
+    "trades": 352,
+    "winrate": 0.8039772727272727,
+    "ev": 0.47127840909090907
+  },
+  "welch_test": {
+    "t_stat": 0.9602145623790729,
+    "p_value": 0.35539004297861
+  },
+  "walk_forward_oos": {
+    "folds": [
+      {
+        "fold": 1,
+        "params": {
+          "z": 2.0,
+          "tfi": 0.3
+        },
+        "n_trades": 3,
+        "reversion_winrate": 1.0,
+        "continuation_winrate": 0.75,
+        "reversion_ev": 0.83
+      },
+      {
+        "fold": 2,
+        "params": {
+          "z": 1.5,
+          "tfi": 0.2
+        },
+        "n_trades": 2,
+        "reversion_winrate": 1.0,
+        "continuation_winrate": 0.945054945054945,
+        "reversion_ev": 0.83
+      },
+      {
+        "fold": 3,
+        "params": {
+          "z": 1.5,
+          "tfi": 0.2
+        },
+        "n_trades": 6,
+        "reversion_winrate": 1.0,
+        "continuation_winrate": 0.9442934782608695,
+        "reversion_ev": 0.83
+      },
+      {
+        "fold": 4,
+        "params": {
+          "z": 1.5,
+          "tfi": 0.2
+        },
+        "n_trades": 9,
+        "reversion_winrate": 0.4444444444444444,
+        "continuation_winrate": 0.9089430894308943,
+        "reversion_ev": -0.18666666666666665
+      },
+      {
+        "fold": 5,
+        "params": {
+          "z": 1.75,
+          "tfi": 0.25
+        },
+        "n_trades": 7,
+        "reversion_winrate": 0.5714285714285714,
+        "continuation_winrate": 0.9542857142857143,
+        "reversion_ev": 0.04571428571428572
+      }
+    ],
+    "avg_oos_reversion_winrate": 0.8031746031746032,
+    "avg_oos_reversion_ev": 0.4698095238095238
+  }
+}

@@ -1664,7 +1664,14 @@ class OverlayService : Service() {
 
             val reasoning = tradingEngine.getEngineReasoning()
 
-            val trendDir = if (analysis != null) analysis.trend else tradingEngine.syntheticCandleEngine.detectedTrend
+            val wsTrend = tradingEngine.syntheticCandleEngine.detectedTrend
+            val trendDir = if (analysis != null && analysis.trend != TrendDirection.SIDEWAYS) {
+                analysis.trend
+            } else if (wsTrend != TrendDirection.SIDEWAYS) {
+                wsTrend
+            } else {
+                analysis?.trend ?: TrendDirection.SIDEWAYS
+            }
             when (trendDir) {
                 TrendDirection.UPTREND -> {
                     txtTrendBadge?.text = "📈 Tendencia: ALCISTA"
