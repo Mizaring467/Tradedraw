@@ -50,6 +50,22 @@ class SyntheticCandleEngine {
     // RSI sintético de ticks (0.0 a 100.0)
     var syntheticTickRsi: Double = 50.0
         private set
+    // Microestructura Cuantitativa de Ticks Crypto IDX (Research Rentech)
+    var tickFlowImbalance: Float = 0.0f
+        private set
+    var tickZScore60: Double = 0.0
+        private set
+    var isClimaxReversalPutTrigger: Boolean = false
+        private set
+    var isClimaxReversalCallTrigger: Boolean = false
+        private set
+    var isContinuationConfirmedCall: Boolean = false
+        private set
+    var isContinuationConfirmedPut: Boolean = false
+        private set
+    private var windowUpTicksCount: Int = 0
+    private var windowDownTicksCount: Int = 0
+    private var lastRecordedCandleMinute: Long = 0L
 
     // Proximidad a Soporte/Resistencia dinámicos independientes (normalizados por ATR, 0.0 = en el nivel)
     var distanceToResistanceRatio: Float = 0.5f
@@ -136,6 +152,23 @@ class SyntheticCandleEngine {
 
         // 3. Calcular RSI sintético de ticks (período de 14 ticks)
         syntheticTickRsi = calculateTickRsi(14)
+        // Microestructura Cuantitativa (TFI + Z-Score 60 ticks)
+        val sec = tick.candleSecond
+        if (candleMinute != lastRecordedCandleMinute) {
+            windowUpTicksCount = 0
+            windowDownTicksCount = 0
+            lastRecordedCandleMinute = candleMinute
+            tickFlowImbalance = 0.0f
+        }
+        if (sec in 40..59 && lastTickPrice > 0.0) {
+            val deltaP = tick.price - lastTickPrice
+            val eps = lastTickPrice * 0.0000005
+            if (deltaP > eps) windowUpTicksCount++
+            else if (deltaP < -eps) windowDownTicksCount++
+            val totalTicks = windowUpTicksCount + windowDownTicksCount
+            tickFlowImbalance = if (totalTicks >= 4) (windowUpTicksCount - windowDownTicksCount).toFloat() / totalTicks else 0.0f
+        }
+        tickZScore60 = calculateTickZScore(60, tick.price)
 
         if (active == null || active.openTimeMs != candleMinute) {
             // Cierre de la vela anterior si existía
@@ -186,6 +219,30 @@ class SyntheticCandleEngine {
      * Calcula el RSI sintético de ticks sobre la ventana rodante de ticks.
      * Rango de salida: 0.0 a 100.0. Zero-allocation para no generar presión en GC.
      */
+    /**
+     * Z-Score de sobreextension de ticks: Z = (precio - media) / stdDev
+     */
+    fun calculateTickZScore(period: Int = 60, currentPrice: Double): Double {
+        synchronized(recentTickPrices) {
+            val total = recentTickPrices.size
+            if (total < 10) return 0.0
+            val n = Math.min(period, total)
+            val startIdx = total - n
+            var sum = 0.0
+            for (i in startIdx until total) {
+                sum += recentTickPrices[i]
+            }
+            val mean = sum / n
+            var sumSqDiff = 0.0
+            for (i in startIdx until total) {
+                val diff = recentTickPrices[i] - mean
+                sumSqDiff += diff * diff
+            }
+            val stdDev = Math.sqrt(sumSqDiff / n)
+            return if (stdDev > 0.000001) (currentPrice - mean) / stdDev else 0.0
+        }
+    }
+
     fun calculateTickRsi(period: Int = 14): Double {
         synchronized(recentTickPrices) {
             val total = recentTickPrices.size
@@ -657,6 +714,55 @@ class SyntheticCandleEngine {
             val isBullishExhausted = consecutiveGreenCandles >= 3
             // Prohibido buscar continuación de ventas (PUT) si ya van >= 3 velas rojas consecutivas sin retroceso
             val isBearishExhausted = consecutiveRedCandles >= 3
+
+            // 0. ESTRATEGIA QUANT_CRYPTO_IDX (Microestructura TFI + Z-Score 60 ticks + S/R)
+            // Research Rentech: Reversion con S/R = 91.7% WR | Continuacion con Espacio = 83.4% WR
+            val zScore = tickZScore60
+            val tfi = tickFlowImbalance
+            val zThreshold = if (isYolo) 1.9 else 2.1
+            val tfiThreshold = if (isYolo) 0.30f else 0.40f
+            val srMaxDist = if (isYolo) 0.25f else 0.20f
+
+            // Setup 0A: Reversion Climax en Resistencia (Fade Comprador)
+            if (zScore >= zThreshold && tfi >= tfiThreshold && distToResistance <= srMaxDist && !tick.isBullishImpulse) {
+                val zFmt = String.format(java.util.Locale.US, "%.1f", zScore)
+                val tfiPct = (tfi * 100).toInt()
+                onSignalGenerated?.invoke(
+                    TradeAction.SELL,
+                    "🎯 QUANT_CRYPTO: Clímax Exhaustion en Resistencia (Z: +" + zFmt + " | TFI: +" + tfiPct + "% | ⏱ " + sec + "s) -> PUT"
+                )
+                return
+            }
+
+            // Setup 0B: Reversion Climax en Soporte (Fade Vendedor)
+            if (zScore <= -zThreshold && tfi <= -tfiThreshold && distToSupport <= srMaxDist && !tick.isBearishImpulse) {
+                val zFmt = String.format(java.util.Locale.US, "%.1f", zScore)
+                val tfiPct = (tfi * 100).toInt()
+                onSignalGenerated?.invoke(
+                    TradeAction.BUY,
+                    "🎯 QUANT_CRYPTO: Clímax Exhaustion en Soporte (Z: " + zFmt + " | TFI: " + tfiPct + "% | ⏱ " + sec + "s) -> CALL"
+                )
+                return
+            }
+
+            // Setup 0C: Continuacion Momentum con Espacio Libre (>30% a obstaculo)
+            val minFreeSpace = if (isYolo) 0.28f else 0.35f
+            if (detectedTrend == TrendDirection.UPTREND && tfi >= 0.40f && distToResistance >= minFreeSpace && !isBullishExhausted && !tick.isBearishImpulse) {
+                val tfiPct = (tfi * 100).toInt()
+                onSignalGenerated?.invoke(
+                    TradeAction.BUY,
+                    "🎯 QUANT_CRYPTO: Momentum Alcista con Espacio Libre (TFI: +" + tfiPct + "% | Libre: " + ((distToResistance * 100).toInt()) + "% | ⏱ " + sec + "s) -> CALL"
+                )
+                return
+            }
+            if (detectedTrend == TrendDirection.DOWNTREND && tfi <= -0.40f && distToSupport >= minFreeSpace && !isBearishExhausted && !tick.isBullishImpulse) {
+                val tfiPct = (tfi * 100).toInt()
+                onSignalGenerated?.invoke(
+                    TradeAction.SELL,
+                    "🎯 QUANT_CRYPTO: Momentum Bajista con Espacio Libre (TFI: " + tfiPct + "% | Libre: " + ((distToSupport * 100).toInt()) + "% | ⏱ " + sec + "s) -> PUT"
+                )
+                return
+            }
 
             // 1. ESTRATEGIA MT_REJECTION (Rechazo en S/R con Mechas Claras)
             val supZoneLimit = if (isYolo) 0.28f else 0.24f

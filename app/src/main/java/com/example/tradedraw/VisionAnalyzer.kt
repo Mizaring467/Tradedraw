@@ -356,15 +356,17 @@ class VisionAnalyzer {
 
             // Pendiente temporal (precio más reciente vs más antiguo: menor Y = precio más alto)
             val netPriceChange = priceNewest - priceOldest // > 0 significa que el precio cayó hacia mayor Y
-            val minMoveThreshold = (chartHeight * 0.015f).coerceIn(8f, 25f)
+            val minMoveThreshold = (chartHeight * 0.008f).coerceIn(5f, 18f)
 
             when {
                 // Subida alcista contundente: precio neto subió (menor Y) con mayoría de verdes o inclinación fuerte
+                (greenCount >= 3 && redCount <= 1) || (consecutive >= 3 && lastType == CandleType.GREEN) -> TrendDirection.UPTREND
                 netPriceChange < -minMoveThreshold && greenCount >= redCount -> TrendDirection.UPTREND
                 netPriceChange < -minMoveThreshold * 1.5f -> TrendDirection.UPTREND
                 highestX > lowestX && greenCount > redCount + 1 -> TrendDirection.UPTREND
 
                 // Caída bajista contundente: precio neto cayó (mayor Y) con mayoría de rojas o inclinación fuerte
+                (redCount >= 3 && greenCount <= 1) || (consecutive >= 3 && lastType == CandleType.RED) -> TrendDirection.DOWNTREND
                 netPriceChange > minMoveThreshold && redCount >= greenCount -> TrendDirection.DOWNTREND
                 netPriceChange > minMoveThreshold * 1.5f -> TrendDirection.DOWNTREND
                 lowestX > highestX && redCount > greenCount + 1 -> TrendDirection.DOWNTREND
