@@ -361,7 +361,6 @@ class BinomoAuthActivity : AppCompatActivity() {
                 wsClient.stop()
                 wsClient.start()
             }
-            OverlayService.instance?.startHeadlessBrokerEngine()
         } catch (e: Exception) {
             Log.e(TAG, "Error notificando al WebSocket", e)
         }

@@ -197,15 +197,25 @@ class TradeDrawHttpBridge(
         val analysis = te.latestAnalysisResult
         val bal = AutoTradeAccessibilityService.instance?.readCurrentBalance() ?: 0.0
 
-        val currentPriceY = analysis?.currentPriceY ?: 0f
+        // Fuente viva: el motor sintético de ticks WebSocket. `latestAnalysisResult` viene de la
+        // ruta de visión (retirada por batería) y trae ceros en precio/velas, así que no sirve
+        // como indicador de salud del feed.
+        val synthetic = te.syntheticCandleEngine
+        val currentPriceY = te.latestMarketTick?.price?.toFloat() ?: 0f
+        // `dynamicResistanceY`/`dynamicSupportY` son coordenadas en PÍXELES que solo produce la
+        // ruta de visión (retirada). En modo WebSocket puro no hay imagen, así que se quedan en 0
+        // y no deben rellenarse con precios: se exponen los niveles reales del motor sintético en
+        // campos propios (`dynamicSupportPrice`/`dynamicResistancePrice`), en unidades de precio.
         val resY = analysis?.dynamicResistanceY ?: 0f
         val supY = analysis?.dynamicSupportY ?: 0f
+        val supPrice = synthetic.dynamicSupportPrice
+        val resPrice = synthetic.dynamicResistancePrice
         val callPct = analysis?.signalPowerCall ?: 50
         val putPct = analysis?.signalPowerPut ?: 50
-        val isSideways = analysis?.isMarketSideways ?: false
-        val candleCount = analysis?.candleList?.size ?: 0
+        val isSideways = synthetic.isChoppinessDetected()
+        val candleCount = synthetic.closedCandles.size
         val streak = analysis?.streakBadge ?: ""
-        val trend = analysis?.trend?.name ?: "SIDEWAYS"
+        val trend = synthetic.detectedTrend.name
         val strat = te.strategy.name
         val mode = te.mode.name
         val accessConnected = AutoTradeAccessibilityService.instance != null
@@ -217,6 +227,18 @@ class TradeDrawHttpBridge(
             "null"
         }
 
+        // Fuente única de datos: feed WebSocket del broker (la captura de pantalla fue retirada por consumo de batería).
+        val ws = overlayService.binomoWebSocketClient
+        val wsAge = ws?.lastTickAgeMs ?: Long.MAX_VALUE
+        val wsConnected = ws?.isConnected ?: false
+        val wsAsset = ws?.activeAsset ?: ""
+        val wsFresh = ws?.isFeedFresh() ?: false
+        val wsSource = ws?.lastTickSource ?: "none"
+        val wsRawMsgs = ws?.rawSocketMessages ?: 0L
+        val wsSocketTicks = ws?.socketTicks ?: 0L
+        // Antigüedad infinita no es serializable en JSON: se emite como -1 (sin tick recibido nunca).
+        val wsAgeJson = if (wsAge == Long.MAX_VALUE) -1L else wsAge
+
         return """{
             "app": "TradeDraw",
             "mode": "$mode",
@@ -227,6 +249,8 @@ class TradeDrawHttpBridge(
                 "currentPriceY": $currentPriceY,
                 "dynamicResistanceY": $resY,
                 "dynamicSupportY": $supY,
+                "dynamicResistancePrice": $resPrice,
+                "dynamicSupportPrice": $supPrice,
                 "callPower": $callPct,
                 "putPower": $putPct,
                 "isMarketSideways": $isSideways,
@@ -244,7 +268,26 @@ class TradeDrawHttpBridge(
                 "hasPendingTrade": ${rm.hasPendingTrade},
                 "remainingCooldown": ${rm.getRemainingCooldown()}
             },
-            "activeSignal": $signalJson
+            "activeSignal": $signalJson,
+            "feed": {
+                "source": "websocket",
+                "lastTickAgeMs": $wsAgeJson,
+                "activeAsset": "${escapeJson(wsAsset)}",
+                "ws_active_asset": "${escapeJson(wsAsset)}",
+                "connected": $wsConnected,
+                "isFresh": $wsFresh,
+                "tickSource": "$wsSource",
+                "rawSocketMessages": $wsRawMsgs,
+                "socketTicks": $wsSocketTicks,
+                "journalWrites": ${TradeJournalLogger.writeCount},
+                "lastJournalWriteMs": ${TradeJournalLogger.lastWriteAgeMs},
+                "journalError": "${escapeJson(TradeJournalLogger.lastError)}",
+                "journalDuplicatesRejected": ${TradeJournalLogger.duplicateRejections},
+                "journalRotations": ${TradeJournalLogger.rotationCount},
+                "priceFrozen": ${ws?.isPriceFrozen() ?: false},
+                "recentPriceRangeRatio": ${ws?.recentPriceRangeRatio() ?: -1.0},
+                "rawFrames": ${rawFramesJson(ws)}
+            }
         }""".trimIndent()
     }
 
@@ -285,6 +328,14 @@ class TradeDrawHttpBridge(
         output.write(headers.toByteArray(Charsets.UTF_8))
         output.write(bytes)
         output.flush()
+    }
+
+    // DIAGNÓSTICO TEMPORAL: últimas tramas crudas del WebSocket, para identificar
+    // qué campo del frame cambia entre ticks (precio vivo vs apertura de vela).
+    private fun rawFramesJson(ws: com.example.tradedraw.BinomoWebSocketClient?): String {
+        val frames = ws?.rawFrames ?: emptyList()
+        if (frames.isEmpty()) return "[]"
+        return frames.joinToString(",", "[", "]") { "\"${escapeJson(it)}\"" }
     }
 
     private fun escapeJson(str: String): String {

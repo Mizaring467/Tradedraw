@@ -26,6 +26,38 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             internal set
 
         var onBalanceUpdatedListener: ((Double) -> Unit)? = null
+
+        fun isAccessibilityPermissionGranted(context: android.content.Context): Boolean {
+            if (instance != null) return true
+            try {
+                val accessibilityEnabled = android.provider.Settings.Secure.getInt(
+                    context.contentResolver,
+                    android.provider.Settings.Secure.ACCESSIBILITY_ENABLED, 0
+                )
+                if (accessibilityEnabled == 1) {
+                    val enabledServices = android.provider.Settings.Secure.getString(
+                        context.contentResolver,
+                        android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                    ) ?: ""
+                    val expectedFull = "${context.packageName}/${AutoTradeAccessibilityService::class.java.name}"
+                    val expectedShort = "${context.packageName}/.AutoTradeAccessibilityService"
+                    if (enabledServices.contains(expectedFull) || enabledServices.contains(expectedShort) || enabledServices.contains(context.packageName)) {
+                        return true
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("TradeDraw", "Error leyendo ENABLED_ACCESSIBILITY_SERVICES", e)
+            }
+            val am = context.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE) as? android.view.accessibility.AccessibilityManager ?: return false
+            val enabledServices = am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            for (s in enabledServices) {
+                val sInfo = s.resolveInfo?.serviceInfo
+                if (sInfo?.packageName == context.packageName && (sInfo?.name == AutoTradeAccessibilityService::class.java.name || sInfo?.name?.endsWith("AutoTradeAccessibilityService") == true)) {
+                    return true
+                }
+            }
+            return false
+        }
     }
 
     private val commandReceiver = object : android.content.BroadcastReceiver() {
@@ -117,13 +149,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
-        if (instance == this) {
-            instance = null
-        }
-        try {
-            unregisterReceiver(commandReceiver)
-        } catch (e: Exception) {}
-        Log.w("TradeDraw", "AutoTradeAccessibilityService unbinded, returning true to allow rebind")
+        Log.w("TradeDraw", "AutoTradeAccessibilityService unbinded transitoriamente, retornando true para rebind")
         try {
             OverlayService.instance?.updateHUDView(true)
         } catch (e: Exception) {}

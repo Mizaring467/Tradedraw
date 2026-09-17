@@ -155,6 +155,36 @@ class TradingEngine(
         private set
 
     /**
+     * Umbral de frescura del feed WebSocket (ms). Un tick más viejo que esto se considera rancio
+     * y veta la operación: nunca se degrada a otra fuente de datos.
+     */
+    private val FEED_MAX_AGE_MS = BinomoWebSocketClient.DEFAULT_FRESHNESS_MS
+
+    /**
+     * Proveedor de frescura del feed. Lo inyecta OverlayService con el cliente WebSocket real.
+     * Sin proveedor (= null) o con resultado false, el motor veta por fail-closed.
+     */
+    var feedFreshnessProvider: (() -> Boolean)? = null
+
+    /** true si el feed WebSocket está conectado y con tick reciente (<5000 ms). */
+    fun isFeedFresh(): Boolean = feedFreshnessProvider?.invoke() ?: false
+
+    /**
+     * Proveedor de congelación del precio. Lo inyecta OverlayService con el cliente real.
+     *
+     * Cubre el caso "el feed está fresco pero el emisor no mueve el precio" (índice
+     * sintético pegado como `Z-CRY/IDX`, rango relativo ~5e-10). Sin esta guarda el bot
+     * decide CALL/PUT sobre una línea plana, que es equivalente a lanzar una moneda.
+     *
+     * Fail-closed al revés que la frescura: `null` (sin proveedor) NO veta, porque en
+     * tests y en modo headless simulado no hay cliente WebSocket real.
+     */
+    var priceFrozenProvider: (() -> Boolean)? = null
+
+    /** true si el emisor entrega ticks a ritmo normal pero el precio está inmóvil. */
+    fun isPriceFrozen(): Boolean = priceFrozenProvider?.invoke() ?: false
+
+    /**
      * Invocado cuando llega un nuevo micro-tick en tiempo real vía WebSocket.
      */
     fun onMarketTick(tick: MarketTick) {
@@ -162,10 +192,37 @@ class TradingEngine(
         syntheticCandleEngine.subMode = autonomousSubMode
         syntheticCandleEngine.onNewTick(tick)
 
+        // El análisis se publica desde el motor sintético de ticks (fuente única WebSocket).
+        // Sin esto, latestAnalysisResult solo se poblaba en onNewFrame() (visión retirada por
+        // consumo de batería) y el HUD/bridge reportaban ceros aunque el feed estuviera vivo.
+        latestAnalysisResult = buildAnalysisFromSyntheticEngine(tick)
+
         // En modo Headless (sin frames de pantalla capturados), resolver trade por tiempo y balance de Binomo
         if (framesAnalyzedCount == 0L && riskManager.hasPendingTrade) {
             checkHeadlessTradeResolution(tick)
         }
+    }
+
+    /**
+     * Construye el análisis a partir del motor sintético de ticks y del último micro-tick.
+     * Fuente única de verdad en modo WebSocket puro: no depende de la captura de pantalla.
+     */
+    private fun buildAnalysisFromSyntheticEngine(tick: MarketTick): VisionAnalysisResult {
+        val distSup = syntheticCandleEngine.distanceToSupportRatio
+        val distRes = syntheticCandleEngine.distanceToResistanceRatio
+        return VisionAnalysisResult(
+            trend = syntheticCandleEngine.detectedTrend,
+            distanceToSupportRatio = distSup,
+            distanceToResistanceRatio = distRes,
+            touchesSupport = distSup <= 0.15f,
+            touchesResistance = distRes <= 0.15f,
+            isNearSupportZone = distSup <= 0.30f,
+            isNearResistanceZone = distRes <= 0.30f,
+            tickVelocityNormalized = tick.velocity,
+            isBullishImpulse = tick.isBullishImpulse,
+            isBearishImpulse = tick.isBearishImpulse,
+            candleSecond = tick.candleSecond
+        )
     }
 
     fun onNewFrame(bitmap: Bitmap) {
@@ -202,6 +259,7 @@ class TradingEngine(
             val action = riskManager.pendingTradeAction
             val baseBalance = riskManager.pendingTradeBaseBalance
             val pendingConfidence = riskManager.pendingTradeConfidence
+            val tradeStartMs = riskManager.pendingTradeStartTime
 
             // Capturar el precio de cierre en la ventana de expiración (:58 - :02) tras al menos 40s de trade
             if (elapsedSec >= 40 && (analysis.candleSecond in 0..2 || analysis.candleSecond in 58..59)) {
@@ -268,12 +326,12 @@ class TradingEngine(
                         val sec = analysis.candleSecond
 
                         if (isTie) {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "TIE", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "TIE")
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "TIE", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "TIE", tradeStartMs)
                             riskManager.recordTradeVoid()
                             autoDrawEngine.clearTradeEntry()
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
                         } else if (finalWin) {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN")
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN", tradeStartMs)
                             riskManager.recordTradeWin()
                             adaptiveLearningEngine.recordTradeOutcome(true, context)
                             autoDrawEngine.clearTradeEntry()
@@ -281,7 +339,7 @@ class TradingEngine(
                             Toast.makeText(context, "🎉 OPERACIÓN GANADA (+1 W)", Toast.LENGTH_LONG).show()
                             onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
                         } else {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS")
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS", tradeStartMs)
                             riskManager.recordTradeLoss()
                             adaptiveLearningEngine.recordTradeOutcome(false, context)
                             autoDrawEngine.clearTradeEntry()
@@ -891,7 +949,8 @@ class TradingEngine(
     }
 
     fun getStrategyStatusHint(): String {
-        if (AutoTradeAccessibilityService.instance == null && mode == AutoTradeMode.AUTONOMOUS) {
+        val isAccessOk = AutoTradeAccessibilityService.instance != null || AutoTradeAccessibilityService.isAccessibilityPermissionGranted(context)
+        if (!isAccessOk && mode == AutoTradeMode.AUTONOMOUS) {
             return "⚠️ Accesibilidad DESACTIVADA (Clics bloqueados en Android)"
         }
 
@@ -1232,6 +1291,31 @@ class TradingEngine(
      * Utiliza las cotizaciones puras del WebSocket y pulsa las coordenadas calibradas con Accesibilidad.
      */
     fun executeHeadlessTrade(action: TradeAction, reasonDescription: String) {
+        // GUARD DE FRESCURA DEL FEED (fail-closed, fuente única = WebSocket).
+        // Sin tick reciente (<5000 ms) o sin conexión, se veta la operación: no se degrada
+        // a ninguna otra fuente (la captura de pantalla fue retirada por consumo de batería).
+        val tickAgeMs = latestMarketTick?.let { System.currentTimeMillis() - it.timestampMs }
+        if (tickAgeMs == null || tickAgeMs >= FEED_MAX_AGE_MS || !isFeedFresh()) {
+            Log.w(
+                "TradingEngine",
+                "⛔ Headless Trade $action VETADO por feed rancio: " +
+                    "ageMs=${tickAgeMs ?: -1} (umbral=${FEED_MAX_AGE_MS}ms) " +
+                    "fresh=${isFeedFresh()} → no se degrada a otra fuente"
+            )
+            return
+        }
+
+        // GUARD DE PRECIO CONGELADO: el feed está fresco pero el emisor no mueve el precio.
+        // En ese estado cualquier decisión CALL/PUT es equivalente a lanzar una moneda.
+        if (isPriceFrozen()) {
+            Log.w(
+                "TradingEngine",
+                "⛔ Headless Trade $action VETADO por precio congelado: el emisor entrega " +
+                    "ticks pero el rango del precio es ~0 (activo sintético pegado)"
+            )
+            return
+        }
+
         val sec = latestMarketTick?.candleSecond ?: (((System.currentTimeMillis() / 1000L) % 60L).toInt())
         val isYolo = (autonomousSubMode == AutonomousSubMode.YOLO)
         // Ventana Sniper Quirúrgica: :57 a :05
@@ -1263,21 +1347,10 @@ class TradingEngine(
         }
 
         // 2. Evaluación por Motor de Autoaprendizaje Adaptativo
-        val distSup = syntheticCandleEngine.distanceToSupportRatio
-        val distRes = syntheticCandleEngine.distanceToResistanceRatio
-        val effectiveAnalysis = latestAnalysisResult ?: VisionAnalysisResult(
-            trend = syntheticCandleEngine.detectedTrend,
-            distanceToSupportRatio = distSup,
-            distanceToResistanceRatio = distRes,
-            touchesSupport = distSup <= 0.15f,
-            touchesResistance = distRes <= 0.15f,
-            isNearSupportZone = distSup <= 0.30f,
-            isNearResistanceZone = distRes <= 0.30f,
-            tickVelocityNormalized = latestMarketTick?.velocity ?: 0f,
-            isBullishImpulse = latestMarketTick?.isBullishImpulse == true,
-            isBearishImpulse = latestMarketTick?.isBearishImpulse == true,
-            candleSecond = sec
-        )
+        // El análisis se construye SIEMPRE desde el motor sintético de ticks WebSocket.
+        // Ya no se reutiliza latestAnalysisResult (visión): sus mechas/S-R/choppiness son
+        // ceros en modo WebSocket puro y vetaban señales sobre datos nulos.
+        val effectiveAnalysis = buildAnalysisFromSyntheticEngine(latestMarketTick ?: return)
 
         val adaptiveDecision = adaptiveLearningEngine.evaluateSignalSuitability(
             candidateAction = action,
@@ -1374,7 +1447,20 @@ class TradingEngine(
     }
 
     private fun checkHeadlessTradeResolution(tick: MarketTick) {
-        val elapsedSec = (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000
+        // Punto ÚNICO de entrada de la liquidación (onMarketTick y onNewFrame): valida el pendiente aquí.
+        // Sin esto, la ruta de visión evaluaba el mismo trade con `hasPendingTrade` ya limpiado
+        // (p. ej. tras el timeout de 85s de canExecuteTrade) y escribía una segunda fila idéntica.
+        if (!riskManager.hasPendingTrade) return
+
+        // Sin timestamp de apertura no hay trade identificable: escribir aquí produciría filas huérfanas
+        // que la guarda de idempotencia no puede distinguir (clearPendingTrade lo deja a 0).
+        val tradeStartMs = riskManager.pendingTradeStartTime
+        if (tradeStartMs <= 0L) {
+            Log.w("TradingEngine", "Liquidación abortada: pendiente sin timestamp de apertura")
+            return
+        }
+
+        val elapsedSec = (System.currentTimeMillis() - tradeStartMs) / 1000
         val isExpired = elapsedSec >= 62
         if (!isExpired) return
 
@@ -1407,8 +1493,56 @@ class TradingEngine(
             if (!isTradeResolving.compareAndSet(false, true)) return
             val finalWin = isWin ?: false
             val pendingAction = riskManager.pendingTradeAction ?: TradeAction.BUY
+
+            // Evidencia de auditoría: la ruta headless es la que ejecuta la inmensa mayoría de los
+            // trades y antes NO persistía nada (el journal se congeló el último día que corrió visión).
+            // El estado del riskManager se captura AQUÍ, antes del handler.post: los desenlaces de
+            // abajo llaman a recordTradeWin/Loss, que mutan currentLossStreak y con él el stake.
+            val pendingEntry = riskManager.pendingTradeEntryPriceY
+            val pendingConfidence = riskManager.pendingTradeConfidence
+            val pendingStake = riskManager.getCurrentInvestmentAmount()
+            // Firma de idempotencia del journal: identifica de forma única ESTE trade.
+            val pendingTradeStartMs = tradeStartMs
+            val sec = latestMarketTick?.candleSecond ?: (((System.currentTimeMillis() / 1000L) % 60L).toInt())
+            val wsAnalysis = VisionAnalysisResult(
+                trend = syntheticCandleEngine.detectedTrend,
+                distanceToSupportRatio = syntheticCandleEngine.distanceToSupportRatio,
+                distanceToResistanceRatio = syntheticCandleEngine.distanceToResistanceRatio,
+                candleSecond = sec
+            )
+            val journalResult = if (isTie) "TIE" else if (finalWin) "WIN" else "LOSS"
+
             handler.post {
                 autoDrawEngine.clearTradeEntry()
+
+                TradeJournalLogger.logTrade(
+                    context = context,
+                    strategy = strategy.name,
+                    submode = autonomousSubMode.name,
+                    action = pendingAction.name,
+                    confidence = pendingConfidence,
+                    priceY = pendingEntry,
+                    stake = pendingStake,
+                    baseBalance = baseBalance,
+                    result = journalResult,
+                    settledBalance = currentBal,
+                    durationSec = elapsedSec,
+                    reason = method,
+                    trend = wsAnalysis.trend.name,
+                    distSupportRatio = wsAnalysis.distanceToSupportRatio,
+                    distResistanceRatio = wsAnalysis.distanceToResistanceRatio,
+                    tickVelocity = latestMarketTick?.velocity ?: 0f,
+                    impulse = when {
+                        latestMarketTick?.isBullishImpulse == true -> "BULLISH"
+                        latestMarketTick?.isBearishImpulse == true -> "BEARISH"
+                        else -> "NEUTRAL"
+                    },
+                    marketRegime = if (syntheticCandleEngine.isChoppinessDetected()) "CHOP" else "TRENDING",
+                    candleSecond = sec,
+                    adaptiveStatus = journalResult,
+                    tradeStartMs = pendingTradeStartMs
+                )
+
                 if (isTie) {
                     riskManager.clearPendingTrade()
                     Toast.makeText(context, "[HEADLESS] ⚪ Empate / Orden cancelada", Toast.LENGTH_SHORT).show()

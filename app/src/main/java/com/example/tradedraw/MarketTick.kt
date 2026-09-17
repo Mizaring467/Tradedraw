@@ -49,6 +49,37 @@ object MarketTickFilters {
     const val MAX_CHOPPY_RANGE_PERCENT = 0.05 // 0.05%
 
     /**
+     * Rango relativo por debajo del cual el precio se considera congelado: 1e-6 (0,0001%).
+     * `Z-CRY/IDX` se queda en ~5e-10; un activo real supera 1e-6 en segundos.
+     */
+    const val FROZEN_RANGE_RATIO = 1e-6
+
+    /**
+     * Rango relativo (max-min)/min de una serie de precios.
+     * Devuelve -1.0 si no hay muestra suficiente (menos de 3 precios) o si el mínimo no es válido.
+     */
+    fun priceRangeRatio(prices: List<Double>): Double {
+        if (prices.size < 3) return -1.0
+        val min = prices.min()
+        val max = prices.max()
+        if (min <= 0.0) return -1.0
+        return (max - min) / min
+    }
+
+    /**
+     * true si el emisor entrega ticks pero el precio está esencialmente inmóvil.
+     *
+     * Distingue un feed *vivo pero congelado* de un feed sano. Caso real: el índice
+     * sintético `Z-CRY/IDX` de Binomo emite ~2,5 ticks/s con un rango relativo de
+     * ~5e-10 (641,867393985 vs 641,86739430), que es una línea plana para cualquier
+     * estrategia. Un activo real líquido supera 1e-6 en segundos.
+     */
+    fun isPriceFrozen(prices: List<Double>, frozenRangeRatio: Double = FROZEN_RANGE_RATIO): Boolean {
+        val ratio = priceRangeRatio(prices)
+        return ratio >= 0.0 && ratio < frozenRangeRatio
+    }
+
+    /**
      * Evalúa si el segundo actual está dentro de la ventana estricta (:57 a :05).
      */
     fun isStrictTimingWindow(second: Int): Boolean = second in 57..59 || second in 0..5
