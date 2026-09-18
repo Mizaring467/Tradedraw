@@ -84,7 +84,14 @@ class TradingEngine(
             }
         }
     }
+    val syntheticCandleEngine = SyntheticCandleEngine()
+    val adaptiveLearningEngine = AdaptiveLearningEngine()
+
     var strategy: AutoTradeStrategy = AutoTradeStrategy.AUTO_ADAPTIVE
+        set(value) {
+            field = value
+            syntheticCandleEngine.currentStrategy = value
+        }
     var debugModeEnabled: Boolean = false
 
     val visionAnalyzer = VisionAnalyzer()
@@ -113,10 +120,8 @@ class TradingEngine(
     var onTradeExecutedListener: ((TradeAction, Boolean) -> Unit)? = null
     var onFrameProcessedListener: ((VisionAnalysisResult) -> Unit)? = null
 
-    val syntheticCandleEngine = SyntheticCandleEngine()
-    val adaptiveLearningEngine = AdaptiveLearningEngine()
-
     init {
+        syntheticCandleEngine.currentStrategy = strategy
         // Limpiar cualquier figura residual previa del bot (soportes/resistencias automáticas)
         drawingView.clearBotShapes()
 
@@ -1537,7 +1542,7 @@ class TradingEngine(
             candidateAction = action,
             analysis = effectiveAnalysis,
             tick = latestMarketTick,
-            strategyName = "HEADLESS_WS"
+            strategyName = strategy.name
         )
         val finalAction: TradeAction
         val finalReason: String
@@ -1616,7 +1621,7 @@ class TradingEngine(
                 action = finalAction,
                 analysis = effectiveAnalysis,
                 tick = latestMarketTick,
-                strategyName = "HEADLESS_WS"
+                strategyName = strategy.name
             )
             // Despacho con callback y fallback híbrido
             accessibility.performClickAt(x, y) { success, error ->
@@ -1631,7 +1636,7 @@ class TradingEngine(
                 autoDrawEngine.drawTradeEntry(finalAction, y.coerceIn(screenH * 0.35f, screenH * 0.65f), screenW)
                 emitHapticAndAudioFeedback()
                 val stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode)
-                Toast.makeText(context, "⚡ [HEADLESS WS] BOT OPERÓ: $finalAction ($$$stake)\n$finalReason", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "⚡ [${strategy.name}] BOT OPERÓ: $finalAction ($$$stake)\n$finalReason", Toast.LENGTH_LONG).show()
                 onTradeExecutedListener?.invoke(finalAction, true)
             }
         } else {
