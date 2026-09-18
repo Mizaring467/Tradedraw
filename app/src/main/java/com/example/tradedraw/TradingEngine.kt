@@ -65,7 +65,25 @@ class TradingEngine(
         set(value) {
             field = value
             syntheticCandleEngine.timeframe = value
+            riskManager.timeframe = value
         }
+
+    @Volatile
+    var sniperShutdownReason: String? = null
+
+    fun checkSniperSessionLimits() {
+        if (autonomousSubMode == AutonomousSubMode.SNIPER) {
+            val (canTrade, reason) = riskManager.canExecuteTrade(mode, autonomousSubMode)
+            if (!canTrade && (reason.contains("alcanzado", ignoreCase = true) || reason.contains("finalizada", ignoreCase = true) || reason.contains("Límite", ignoreCase = true))) {
+                mode = AutoTradeMode.DISABLED
+                sniperShutdownReason = reason
+                handler.post {
+                    Toast.makeText(context, "🛑 $reason", Toast.LENGTH_LONG).show()
+                    OverlayService.instance?.updateHUDView()
+                }
+            }
+        }
+    }
     var strategy: AutoTradeStrategy = AutoTradeStrategy.AUTO_ADAPTIVE
     var debugModeEnabled: Boolean = false
 
@@ -282,8 +300,9 @@ class TradingEngine(
                 }
             }
 
-            // Ventana de resolución estricta al EXPIRAR la vela de 1 minuto (60 segundos + ventana de liquidación del broker)
-            val isExpired = elapsedSec >= 62
+            // Ventana de resolución estricta al EXPIRAR la vela (según timeframe: 60s o 300s + ventana de liquidación del broker)
+            val expDurationSec = timeframe.seconds
+            val isExpired = elapsedSec >= (expDurationSec + 2)
             if (isExpired) {
                 var isWin: Boolean? = null
                 var isTie: Boolean = false
@@ -299,19 +318,19 @@ class TradingEngine(
                         // Binomo acreditó las ganancias (+1 W) de forma inmediata
                         isWin = true
                         method = "SALDO (+) Ganancia acreditada por Binomo: Diff=+$diff COP (${elapsedSec}s)"
-                    } else if (diff < -10.0 && elapsedSec >= 72) {
-                        // Solo confirmar pérdida tras ventana completa de liquidación (72s) para no confundir retrasos del broker
+                    } else if (diff < -10.0 && elapsedSec >= (expDurationSec + 12)) {
+                        // Solo confirmar pérdida tras ventana completa de liquidación para no confundir retrasos del broker
                         isWin = false
                         method = "SALDO (-) Pérdida confirmada tras liquidación: Diff=$diff COP (${elapsedSec}s)"
-                    } else if (Math.abs(diff) <= 10.0 && elapsedSec >= 75) {
-                        // Saldo inalterado tras 75s: La orden NUNCA fue procesada por Binomo (clic no recibido)
+                    } else if (Math.abs(diff) <= 10.0 && elapsedSec >= (expDurationSec + 15)) {
+                        // Saldo inalterado tras liquidación: La orden NUNCA fue procesada por Binomo (clic no recibido)
                         isTie = true
-                        method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado tras 75s)"
+                        method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado tras ${elapsedSec}s)"
                     }
-                } else if (elapsedSec >= 75) {
-                    // Si no hubo saldo legible tras 75 segundos, cancelar como empate preventivo sin alterar equity
+                } else if (elapsedSec >= (expDurationSec + 15)) {
+                    // Si no hubo saldo legible tras timeout, cancelar como empate preventivo sin alterar equity
                     isTie = true
-                    method = "TIMEOUT 75s (Sin saldo legible -> Cancelación preventiva)"
+                    method = "TIMEOUT ${expDurationSec + 15}s (Sin saldo legible -> Cancelación preventiva)"
                 }
 
                 if (isWin != null || isTie) {
@@ -356,6 +375,7 @@ class TradingEngine(
                         }
                         isTradeResolving.set(false)
                         lastTradeResolutionTime = System.currentTimeMillis()
+                        checkSniperSessionLimits()
                     }
                 }
             }
@@ -452,23 +472,41 @@ class TradingEngine(
             if (isSynthetic) {
                 return Pair(null, "⚠️ Veto Francotirador: Activo sintético/OTC ($currentAsset) prohibido para dinero real. Selecciona un par Forex real en Binomo")
             }
+            val classification = AutoTradeAccessibilityService.classifyAsset(currentAsset)
+            if (classification != AssetClassification.FOREX_REAL) {
+                return Pair(null, "⚠️ Francotirador: Activo ($currentAsset) no es un par Forex real válido. Selecciona EUR/USD, GBP/USD, etc.")
+            }
 
-            // Confluencia 4 (Timing): Entrada estricta en el segundo :58s-:59s
-            val sec = analysis.candleSecond
-            if (sec !in 58..59) {
-                return Pair(null, "⏳ Francotirador en espera: timing estricto :58s-:59s (actual: :${"%02d".format(sec)}s)")
+            // Confluencia 4 (Timing): Entrada estricta en el segundo :58s-:59s (o fin de ciclo de vela según timeframe)
+            val tf = syntheticEngine?.timeframe ?: CandleTimeframe.M1
+            val ts = latestTick?.timestampMs ?: System.currentTimeMillis()
+            val inTimingWindow = tf.isSniperTimingWindow(ts) || (analysis.candleSecond in 58..59 && tf == CandleTimeframe.M1)
+            if (!inTimingWindow) {
+                val cycleSec = tf.getCycleSecond(ts)
+                val cycleRem = tf.seconds - cycleSec
+                val remMin = cycleRem / 60
+                val remSec = cycleRem % 60
+                val remStr = if (tf == CandleTimeframe.M5) "%d:%02d".format(Locale.US, remMin, remSec) else ":%02ds".format(Locale.US, remSec)
+                return Pair(null, "⏳ Francotirador en espera: timing estricto :58s-:59s [${tf.label}] (restante: $remStr)")
             }
 
             val candleList = analysis.candleList
             val c0 = candleList.firstOrNull()
             val c1 = if (candleList.size >= 2) candleList[1] else null
 
+            val synCurrent = syntheticEngine?.currentCandle
+            val synPrev = syntheticEngine?.closedCandles?.lastOrNull()
+
             // Confluencia 3: Vela previa o actual con mecha de rechazo >= 40% del rango total en dirección contraria al nivel
             val hasBottomRejection40 = (c0 != null && c0.bottomWickRatio >= 0.40f) ||
                 (c1 != null && c1.bottomWickRatio >= 0.40f) ||
+                (synCurrent != null && synCurrent.lowerWickRatio >= 0.40f) ||
+                (synPrev != null && synPrev.lowerWickRatio >= 0.40f) ||
                 analysis.hasBottomRejectionWick
             val hasTopRejection40 = (c0 != null && c0.topWickRatio >= 0.40f) ||
                 (c1 != null && c1.topWickRatio >= 0.40f) ||
+                (synCurrent != null && synCurrent.upperWickRatio >= 0.40f) ||
+                (synPrev != null && synPrev.upperWickRatio >= 0.40f) ||
                 analysis.hasTopRejectionWick
 
             // Confluencia 2: Rebote claro en nivel de Soporte (para CALL) o Resistencia (para PUT) validado
@@ -480,8 +518,10 @@ class TradingEngine(
             // Confluencia 4 (Micro-velocidad a favor y sin vela sobreextendida):
             val velNorm = analysis.tickVelocityNormalized
             val tickVel = latestTick?.velocity ?: 0f
-            val velCallFavor = velNorm >= 0f || tickVel >= 0f || analysis.isBullishImpulse
-            val velPutFavor = velNorm <= 0f || tickVel <= 0f || analysis.isBearishImpulse
+            val velCallFavor = (velNorm > 0.0001f || tickVel > 0.0001f || analysis.isBullishImpulse) &&
+                !analysis.isBearishImpulse && velNorm >= -0.0001f && tickVel >= -0.0001f
+            val velPutFavor = (velNorm < -0.0001f || tickVel < -0.0001f || analysis.isBearishImpulse) &&
+                !analysis.isBullishImpulse && velNorm <= 0.0001f && tickVel <= 0.0001f
 
             val isOverextendedCall = (syntheticEngine?.isBullishOverextended == true) ||
                 (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.GREEN)
@@ -490,12 +530,12 @@ class TradingEngine(
 
             // CALL: Soporte validado + Mecha inferior >= 40% + Micro-velocidad alcista + No sobreextendido
             if (touchesSupport && hasBottomRejection40 && velCallFavor && !isOverextendedCall) {
-                return Pair(TradeAction.BUY, "🎯 FRANCOTIRADOR [CALL :${sec}s]: Soporte validado + Mecha rechazo ≥40% + Micro-velocidad alcista")
+                return Pair(TradeAction.BUY, "🎯 FRANCOTIRADOR [CALL ${tf.label}]: Soporte validado + Mecha rechazo ≥40% + Micro-velocidad alcista")
             }
 
             // PUT: Resistencia validada + Mecha superior >= 40% + Micro-velocidad bajista + No sobreextendido
             if (touchesResistance && hasTopRejection40 && velPutFavor && !isOverextendedPut) {
-                return Pair(TradeAction.SELL, "🎯 FRANCOTIRADOR [PUT :${sec}s]: Resistencia validada + Mecha rechazo ≥40% + Micro-velocidad bajista")
+                return Pair(TradeAction.SELL, "🎯 FRANCOTIRADOR [PUT ${tf.label}]: Resistencia validada + Mecha rechazo ≥40% + Micro-velocidad bajista")
             }
 
             return Pair(null, "🎯 Francotirador: Confluencias incompletas (S/R, Mecha ≥40%, Vel, :58-:59s)")
@@ -1038,9 +1078,13 @@ class TradingEngine(
             return "⚠️ Accesibilidad DESACTIVADA (Clics bloqueados en Android)"
         }
 
+        if (sniperShutdownReason != null) {
+            return "🛑 $sniperShutdownReason · Toca [MODO] para nueva sesión"
+        }
+
         val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(mode, autonomousSubMode)
         if (!canTradeStatus && !riskManager.hasPendingTrade && mode == AutoTradeMode.AUTONOMOUS) {
-            val requiresManualResume = blockReason.contains("Stop Loss", ignoreCase = true) || blockReason.contains("Take Profit", ignoreCase = true)
+            val requiresManualResume = blockReason.contains("Stop Loss", ignoreCase = true) || blockReason.contains("Take Profit", ignoreCase = true) || blockReason.contains("Límite", ignoreCase = true)
             return if (requiresManualResume) "🛑 $blockReason · Toca [MODO] para reanudar" else "⏳ $blockReason"
         }
 
@@ -1230,6 +1274,14 @@ class TradingEngine(
 
         if (mode == AutoTradeMode.AUTONOMOUS) {
             if (!canTrade) {
+                if (autonomousSubMode == AutonomousSubMode.SNIPER && (reason.contains("alcanzado", ignoreCase = true) || reason.contains("finalizada", ignoreCase = true) || reason.contains("Límite", ignoreCase = true))) {
+                    mode = AutoTradeMode.DISABLED
+                    sniperShutdownReason = reason
+                    handler.post {
+                        Toast.makeText(context, "🛑 $reason", Toast.LENGTH_LONG).show()
+                        OverlayService.instance?.updateHUDView()
+                    }
+                }
                 return
             }
 
@@ -1515,8 +1567,9 @@ class TradingEngine(
         val (canTrade, riskReason) = riskManager.canExecuteTrade(mode, autonomousSubMode, headlessConfidence)
         if (!canTrade) {
             Log.d("TradingEngine", "Headless bloqueado por riesgo: $riskReason")
-            if (isSniper && riskReason.contains("alcanzado", ignoreCase = true)) {
+            if (isSniper && (riskReason.contains("alcanzado", ignoreCase = true) || riskReason.contains("finalizada", ignoreCase = true) || riskReason.contains("Límite", ignoreCase = true))) {
                 mode = AutoTradeMode.DISABLED
+                sniperShutdownReason = riskReason
                 handler.post {
                     Toast.makeText(context, "🛑 $riskReason", Toast.LENGTH_LONG).show()
                     OverlayService.instance?.updateHUDView()
@@ -1591,12 +1644,9 @@ class TradingEngine(
 
     private fun checkHeadlessTradeResolution(tick: MarketTick) {
         // Punto ÚNICO de entrada de la liquidación (onMarketTick y onNewFrame): valida el pendiente aquí.
-        // Sin esto, la ruta de visión evaluaba el mismo trade con `hasPendingTrade` ya limpiado
-        // (p. ej. tras el timeout de 85s de canExecuteTrade) y escribía una segunda fila idéntica.
         if (!riskManager.hasPendingTrade) return
 
         // Sin timestamp de apertura no hay trade identificable: escribir aquí produciría filas huérfanas
-        // que la guarda de idempotencia no puede distinguir (clearPendingTrade lo deja a 0).
         val tradeStartMs = riskManager.pendingTradeStartTime
         if (tradeStartMs <= 0L) {
             Log.w("TradingEngine", "Liquidación abortada: pendiente sin timestamp de apertura")
@@ -1604,7 +1654,8 @@ class TradingEngine(
         }
 
         val elapsedSec = (System.currentTimeMillis() - tradeStartMs) / 1000
-        val isExpired = elapsedSec >= 62
+        val expDurationSec = timeframe.seconds
+        val isExpired = elapsedSec >= (expDurationSec + 2)
         if (!isExpired) return
 
         val baseBalance = riskManager.pendingTradeBaseBalance
@@ -1620,16 +1671,16 @@ class TradingEngine(
             if (diff > 10.0) {
                 isWin = true
                 method = "SALDO (+) Ganancia acreditada por Binomo: Diff=+$diff COP (${elapsedSec}s)"
-            } else if (diff < -10.0 && elapsedSec >= 72) {
+            } else if (diff < -10.0 && elapsedSec >= (expDurationSec + 12)) {
                 isWin = false
                 method = "SALDO (-) Pérdida confirmada tras liquidación: Diff=$diff COP (${elapsedSec}s)"
-            } else if (Math.abs(diff) <= 10.0 && elapsedSec >= 75) {
+            } else if (Math.abs(diff) <= 10.0 && elapsedSec >= (expDurationSec + 15)) {
                 isTie = true
-                method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado tras 75s)"
+                method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado tras ${elapsedSec}s)"
             }
-        } else if (elapsedSec >= 75) {
+        } else if (elapsedSec >= (expDurationSec + 15)) {
             isTie = true
-            method = "TIMEOUT 75s (Sin saldo legible -> Cancelación preventiva)"
+            method = "TIMEOUT ${expDurationSec + 15}s (Sin saldo legible -> Cancelación preventiva)"
         }
 
         if (isWin != null || isTie) {
@@ -1637,14 +1688,9 @@ class TradingEngine(
             val finalWin = isWin ?: false
             val pendingAction = riskManager.pendingTradeAction ?: TradeAction.BUY
 
-            // Evidencia de auditoría: la ruta headless es la que ejecuta la inmensa mayoría de los
-            // trades y antes NO persistía nada (el journal se congeló el último día que corrió visión).
-            // El estado del riskManager se captura AQUÍ, antes del handler.post: los desenlaces de
-            // abajo llaman a recordTradeWin/Loss, que mutan currentLossStreak y con él el stake.
             val pendingEntry = riskManager.pendingTradeEntryPriceY
             val pendingConfidence = riskManager.pendingTradeConfidence
             val pendingStake = riskManager.getCurrentInvestmentAmount()
-            // Firma de idempotencia del journal: identifica de forma única ESTE trade.
             val pendingTradeStartMs = tradeStartMs
             val sec = latestMarketTick?.candleSecond ?: (((System.currentTimeMillis() / 1000L) % 60L).toInt())
             val wsAnalysis = VisionAnalysisResult(
@@ -1687,7 +1733,7 @@ class TradingEngine(
                 )
 
                 if (isTie) {
-                    riskManager.clearPendingTrade()
+                    riskManager.recordTradeVoid()
                     Toast.makeText(context, "[HEADLESS] ⚪ Empate / Orden cancelada", Toast.LENGTH_SHORT).show()
                 } else if (finalWin) {
                     riskManager.recordTradeWin()
@@ -1704,6 +1750,7 @@ class TradingEngine(
                 }
                 lastTradeResolutionTime = System.currentTimeMillis()
                 isTradeResolving.set(false)
+                checkSniperSessionLimits()
             }
         } else {
             isTradeResolving.set(false)

@@ -1,0 +1,45 @@
+﻿{
+            "app": "TradeDraw",
+            "mode": "AUTONOMOUS",
+            "strategy": "AUTO_ADAPTIVE",
+            "accessibilityActive": true,
+            "balance": 4.012880896E7,
+            "analysis": {
+                "currentPriceY": 641.8674,
+                "dynamicResistanceY": 0.0,
+                "dynamicSupportY": 0.0,
+                "dynamicResistancePrice": 641.867392985,
+                "dynamicSupportPrice": 641.86739264,
+                "callPower": 50,
+                "putPower": 50,
+                "isMarketSideways": true,
+                "trend": "SIDEWAYS",
+                "candleCount": 60,
+                "streak": ""
+            },
+            "risk": {
+                "totalWins": 2,
+                "totalLosses": 1,
+                "winRate": 66.66667,
+                "currentLossStreak": 1,
+                "martingaleStatus": "[M1 | $2.0]",
+                "investmentAmount": 2.0,
+                "hasPendingTrade": false,
+                "remainingCooldown": 0
+            },
+            "activeSignal": null,
+            "feed": {
+                "source": "websocket",
+                "lastTickAgeMs": 61,
+                "activeAsset": "Z-CRY/IDX",
+                "ws_active_asset": "Z-CRY/IDX",
+                "connected": true,
+                "isFresh": true,
+                "tickSource": "socket",
+                "rawSocketMessages": 8869,
+                "socketTicks": 8867,
+                "journalWrites": 3,
+                "lastJournalWriteMs": 3071585,
+                "journalError": ""
+            }
+        }

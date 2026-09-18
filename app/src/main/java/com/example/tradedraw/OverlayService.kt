@@ -1394,8 +1394,26 @@ class OverlayService : Service() {
                     txtMode.setTextColor(Color.YELLOW)
                 }
                 AutoTradeMode.DISABLED -> {
-                    txtMode.text = "[OFF]"
-                    txtMode.setTextColor(Color.GRAY)
+                    val sniperReason = tradingEngine.sniperShutdownReason
+                    if (tradingEngine.autonomousSubMode == AutonomousSubMode.SNIPER && sniperReason != null) {
+                        when {
+                            sniperReason.contains("Take Profit", ignoreCase = true) -> {
+                                txtMode.text = "[META FRANCOTIRADOR]"
+                                txtMode.setTextColor(Color.parseColor("#22c55e"))
+                            }
+                            sniperReason.contains("Stop Loss", ignoreCase = true) -> {
+                                txtMode.text = "[STOP FRANCOTIRADOR]"
+                                txtMode.setTextColor(Color.parseColor("#ef4444"))
+                            }
+                            else -> {
+                                txtMode.text = "[LÍMITE FRANCOTIRADOR]"
+                                txtMode.setTextColor(Color.parseColor("#f97316"))
+                            }
+                        }
+                    } else {
+                        txtMode.text = "[OFF]"
+                        txtMode.setTextColor(Color.GRAY)
+                    }
                 }
             }
 
@@ -1408,9 +1426,19 @@ class OverlayService : Service() {
                         startActivity(intent)
                     } catch (e: Exception) {}
                 } else if (!canTradeStatus && !riskManager.hasPendingTrade && tradingEngine.mode == AutoTradeMode.AUTONOMOUS) {
-                    riskManager.resetStreakOnly()
+                    if (tradingEngine.autonomousSubMode == AutonomousSubMode.SNIPER) {
+                        riskManager.resetSniperSession()
+                        tradingEngine.sniperShutdownReason = null
+                    } else {
+                        riskManager.resetStreakOnly()
+                    }
                     updateHUDView()
                     Toast.makeText(this@OverlayService, "▶️ Operativa reanudada (Límites reseteados)", Toast.LENGTH_SHORT).show()
+                } else if (tradingEngine.mode == AutoTradeMode.DISABLED && tradingEngine.autonomousSubMode == AutonomousSubMode.SNIPER && tradingEngine.sniperShutdownReason != null) {
+                    riskManager.resetSniperSession()
+                    tradingEngine.sniperShutdownReason = null
+                    updateHUDView()
+                    Toast.makeText(this@OverlayService, "▶️ Sesión Francotirador reiniciada en limpio", Toast.LENGTH_SHORT).show()
                 } else {
                     showModeDialog()
                 }

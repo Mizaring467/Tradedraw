@@ -99,6 +99,12 @@ class RiskManager(context: Context? = null) {
     var consecutiveVoids: Int = 0
 
     @Volatile
+    var totalVoids: Int = 0
+
+    @Volatile
+    var timeframe: CandleTimeframe = CandleTimeframe.M1
+
+    @Volatile
     var stopLossStreak: Int = prefs?.getInt("sl_streak", DEFAULT_STOP_LOSS_STREAK) ?: DEFAULT_STOP_LOSS_STREAK
         set(value) {
             field = value
@@ -334,8 +340,9 @@ class RiskManager(context: Context? = null) {
 
         if (hasPendingTrade) {
             val elapsed = (System.currentTimeMillis() - pendingTradeStartTime) / 1000
-            // Timeout de seguridad: las operaciones de 1m en Binomo duran entre 45s y 75s
-            if (elapsed >= MAX_PENDING_TRADE_TIMEOUT_SEC) {
+            // Timeout de seguridad según timeframe: 85s para 1m, 330s para 5m
+            val timeoutSec = if (timeframe == CandleTimeframe.M5) 330L else MAX_PENDING_TRADE_TIMEOUT_SEC
+            if (elapsed >= timeoutSec) {
                 clearPendingTrade()
             } else {
                 return Pair(false, "Operación abierta en curso (${elapsed}s)")
@@ -372,10 +379,10 @@ class RiskManager(context: Context? = null) {
         }
 
         // En SUBMODO FRANCOTIRADOR (SNIPER):
-        // 1. Veto a activos sintéticos / OTC
+        // 1. Veto a activos sintéticos / OTC y validación estricta de par Forex real
         // 2. Stop Loss diario estricto: máximo 2 pérdidas consecutivas o acumuladas en la sesión
         // 3. Take Profit diario: 2 victorias
-        // 4. Máximo 3 operaciones ejecutadas por sesión diaria
+        // 4. Máximo 3 operaciones ejecutadas por sesión diaria (acumulando W + L + Voids)
         if (subMode == AutonomousSubMode.SNIPER) {
             val currentAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
             val isSynthetic = AutoTradeAccessibilityService.isSyntheticOrOTC ||
@@ -383,6 +390,10 @@ class RiskManager(context: Context? = null) {
                 currentAsset.contains("OTC", ignoreCase = true)
             if (isSynthetic) {
                 return Pair(false, "⚠️ Veto Francotirador: Activo sintético/OTC ($currentAsset) prohibido para dinero real. Selecciona un par Forex real en Binomo")
+            }
+            val classification = AutoTradeAccessibilityService.classifyAsset(currentAsset)
+            if (classification != AssetClassification.FOREX_REAL) {
+                return Pair(false, "⚠️ Francotirador: Activo ($currentAsset) no es un par Forex real válido. Selecciona EUR/USD, GBP/USD, etc.")
             }
 
             if (currentLossStreak >= SNIPER_MAX_LOSSES || totalLosses >= SNIPER_MAX_LOSSES) {
@@ -393,7 +404,7 @@ class RiskManager(context: Context? = null) {
                 return Pair(false, "🎯 Take Profit Francotirador alcanzado ($totalWins victorias). Meta diaria cumplida.")
             }
 
-            val sessionTrades = totalWins + totalLosses + consecutiveVoids
+            val sessionTrades = totalWins + totalLosses + totalVoids
             if (sessionTrades >= SNIPER_MAX_SESSION_TRADES) {
                 return Pair(false, "🛑 Límite diario Francotirador alcanzado ($sessionTrades/3 operaciones). Sesión finalizada.")
             }
@@ -475,6 +486,7 @@ class RiskManager(context: Context? = null) {
     fun recordTradeVoid(count: Int = 1) {
         val safeCount = count.coerceAtLeast(1)
         consecutiveVoids += safeCount
+        totalVoids += safeCount
         lastTradeTime = System.currentTimeMillis()
         clearPendingTrade()
     }
@@ -553,6 +565,7 @@ class RiskManager(context: Context? = null) {
         currentWins = 0
         currentLossStreak = 0
         consecutiveVoids = 0
+        totalVoids = 0
     }
 
     @Synchronized
@@ -562,6 +575,7 @@ class RiskManager(context: Context? = null) {
         currentWins = wins.coerceAtLeast(0)
         currentLossStreak = 0
         consecutiveVoids = 0
+        totalVoids = 0
     }
 
     @Synchronized
@@ -626,6 +640,7 @@ class RiskManager(context: Context? = null) {
         totalWins = 0
         totalLosses = 0
         consecutiveVoids = 0
+        totalVoids = 0
         lastTradeTime = 0L
         if (startBal > 0.0) {
             sessionStartBalance = startBal
@@ -635,6 +650,18 @@ class RiskManager(context: Context? = null) {
             sessionPeakBalance = 0.0
         }
         trailingProfitLockTriggered = false
+        clearPendingTrade()
+    }
+
+    @Synchronized
+    fun resetSniperSession() {
+        currentLossStreak = 0
+        currentWins = 0
+        totalWins = 0
+        totalLosses = 0
+        totalVoids = 0
+        consecutiveVoids = 0
+        lastTradeTime = 0L
         clearPendingTrade()
     }
 }

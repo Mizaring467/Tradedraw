@@ -1,0 +1,6 @@
+﻿02:37:02  ticks=1104  price=641,8674   frozen=True   rangeRatio=1,94744162310943E-10  fresh=True
+02:37:09  ticks=1121  price=641,8674   frozen=True   rangeRatio=4,20647610376339E-10  fresh=True
+02:37:16  ticks=1136  price=641,8674   frozen=True   rangeRatio=3,19380596348471E-10  fresh=True
+02:37:22  ticks=1151  price=641,8674   frozen=True   rangeRatio=4,67386273176774E-10  fresh=True
+02:37:28  ticks=1167  price=641,8674   frozen=True   rangeRatio=3,11590907896961E-10  fresh=True
+02:37:35  ticks=1182  price=641,8674   frozen=True   rangeRatio=3,27170462152851E-10  fresh=True
