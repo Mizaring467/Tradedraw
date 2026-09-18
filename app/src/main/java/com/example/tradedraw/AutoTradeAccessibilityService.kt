@@ -6,6 +6,12 @@ import android.graphics.Path
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 
+enum class AssetClassification {
+    FOREX_REAL,
+    SYNTHETIC_OTC,
+    UNKNOWN
+}
+
 class AutoTradeAccessibilityService : AccessibilityService() {
 
     companion object {
@@ -25,7 +31,61 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         var observedOrderAmount: Double = 0.0
             internal set
 
+        @Volatile
+        var latestObservedAsset: String = ""
+            internal set
+
+        @Volatile
+        var isSyntheticOrOTC: Boolean = false
+            internal set
+
         var onBalanceUpdatedListener: ((Double) -> Unit)? = null
+        var onAssetUpdatedListener: ((String, Boolean) -> Unit)? = null
+
+        fun classifyAsset(assetName: String): AssetClassification {
+            val upper = assetName.uppercase().trim()
+            if (upper.isEmpty()) return AssetClassification.UNKNOWN
+            if (upper.contains("IDX") || upper.contains("OTC")) {
+                return AssetClassification.SYNTHETIC_OTC
+            }
+            val forexRegex = Regex("^[A-Z]{3}\\s*/\\s*[A-Z]{3}$")
+            if (forexRegex.matches(upper)) {
+                return AssetClassification.FOREX_REAL
+            }
+            val currencies = listOf("EUR", "USD", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD")
+            val count = currencies.count { upper.contains(it) }
+            if (count >= 2 && upper.contains("/")) {
+                return AssetClassification.FOREX_REAL
+            }
+            return AssetClassification.UNKNOWN
+        }
+
+        fun extractAssetCandidate(rawText: String): String? {
+            val clean = rawText.trim()
+            if (clean.length < 3 || clean.length > 35) return null
+            val upper = clean.uppercase()
+            if (upper.contains("CUENTA") || upper.contains("SALDO") || upper.contains("CANTIDAD") ||
+                upper.contains("DEPOSITO") || upper.contains("HISTORIAL") || upper.contains("AJUSTES") ||
+                upper.contains("TIEMPO") || upper.contains("INVERSIÓN") || upper.contains("INVERSION") ||
+                upper.contains("REAL") || upper.contains("DEMO") || upper.contains("$") || upper.contains("COL")) {
+                return null
+            }
+            val name = clean.replace(Regex("(?i)\\s*\\d{1,3}%\\s*"), "").trim()
+            if (name.isEmpty()) return null
+            val nameUpper = name.uppercase()
+            if (nameUpper.contains("IDX") || nameUpper.contains("OTC")) {
+                return name
+            }
+            val forexRegex = Regex("^[A-Z]{3}\\s*/\\s*[A-Z]{3}(\\s*\\(OTC\\)|\\s*OTC)?$", RegexOption.IGNORE_CASE)
+            if (forexRegex.matches(name)) {
+                return name
+            }
+            val currencies = listOf("EUR", "USD", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD")
+            if (currencies.count { nameUpper.contains(it) } >= 2 && nameUpper.contains("/")) {
+                return name
+            }
+            return null
+        }
 
         fun isAccessibilityPermissionGranted(context: android.content.Context): Boolean {
             if (instance != null) return true
@@ -170,18 +230,26 @@ class AutoTradeAccessibilityService : AccessibilityService() {
      * Simula un toque en las coordenadas dadas en pantalla (x, y).
      * El controlador de IA usará esto para hacer click en "Sube" o "Baja".
      */
-    fun performClickAt(x: Float, y: Float) {
+    fun performClickAt(
+        x: Float,
+        y: Float,
+        onResult: ((Boolean, String?) -> Unit)? = null
+    ) {
         val overlay = OverlayService.instance
         if (overlay != null && overlay.isPointInsideHUD(x, y)) {
             overlay.temporarilyBypassHUD(250L) {
-                dispatchClickGesture(x, y)
+                dispatchClickGesture(x, y, onResult)
             }
         } else {
-            dispatchClickGesture(x, y)
+            dispatchClickGesture(x, y, onResult)
         }
     }
 
-    private fun dispatchClickGesture(x: Float, y: Float) {
+    private fun dispatchClickGesture(
+        x: Float,
+        y: Float,
+        onResult: ((Boolean, String?) -> Unit)? = null
+    ) {
         val path = Path().apply {
             moveTo(x, y)
         }
@@ -189,17 +257,50 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
 
         val startTime = System.currentTimeMillis()
-        dispatchGesture(gesture, object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) {
-                val latency = System.currentTimeMillis() - startTime
-                Log.i("TradeDraw", "⚡ Gesto táctil en ($x, $y) despachado en ${latency}ms")
-                onGestureClickListener?.invoke(x, y)
-            }
+        val isConfirmed = java.util.concurrent.atomic.AtomicBoolean(false)
 
-            override fun onCancelled(gestureDescription: GestureDescription?) {
-                Log.w("TradeDraw", "⚠️ Click en ($x, $y) cancelado por el sistema Android")
+        val timeoutRunnable = Runnable {
+            if (isConfirmed.compareAndSet(false, true)) {
+                Log.w("TradeDraw", "⚠️ Gesto táctil en ($x, $y) no confirmado en 300ms (Timeout de Accesibilidad)")
+                onResult?.invoke(false, "Timeout 300ms sin confirmación")
             }
-        }, null)
+        }
+        val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        mainHandler.postDelayed(timeoutRunnable, 300L)
+
+        val dispatched = try {
+            dispatchGesture(gesture, object : GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    mainHandler.removeCallbacks(timeoutRunnable)
+                    val latency = System.currentTimeMillis() - startTime
+                    if (isConfirmed.compareAndSet(false, true)) {
+                        Log.i("TradeDraw", "⚡ Gesto táctil en ($x, $y) despachado y confirmado en ${latency}ms")
+                        onGestureClickListener?.invoke(x, y)
+                        onResult?.invoke(true, null)
+                    }
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    mainHandler.removeCallbacks(timeoutRunnable)
+                    val latency = System.currentTimeMillis() - startTime
+                    if (isConfirmed.compareAndSet(false, true)) {
+                        Log.w("TradeDraw", "⚠️ Click en ($x, $y) cancelado por el sistema Android tras ${latency}ms")
+                        onResult?.invoke(false, "Gesto cancelado por Android")
+                    }
+                }
+            }, null)
+        } catch (e: Exception) {
+            Log.e("TradeDraw", "Excepción al despachar gesto", e)
+            false
+        }
+
+        if (!dispatched) {
+            mainHandler.removeCallbacks(timeoutRunnable)
+            if (isConfirmed.compareAndSet(false, true)) {
+                Log.w("TradeDraw", "⚠️ dispatchGesture rechazado por el sistema Android")
+                onResult?.invoke(false, "dispatchGesture rechazado por el sistema")
+            }
+        }
     }
 
     /**
@@ -264,6 +365,27 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                 isDemoAccount = false
             } else if (lower.contains("cuenta demo") || lower == "demo") {
                 isDemoAccount = true
+            }
+
+            val assetCandidate = extractAssetCandidate(text)
+            if (assetCandidate != null) {
+                latestObservedAsset = assetCandidate
+                val upper = assetCandidate.uppercase()
+                val isSyn = upper.contains("IDX") || upper.contains("OTC")
+                isSyntheticOrOTC = isSyn
+                onAssetUpdatedListener?.invoke(assetCandidate, isSyn)
+                try {
+                    OverlayService.instance?.binomoWebSocketClient?.let { ws ->
+                        val formattedRic = when {
+                            upper.contains("IDX") -> "Z-CRY/IDX"
+                            upper.contains("EUR/USD") -> "EUR/USD"
+                            upper.contains("GBP/USD") -> "GBP/USD"
+                            upper.contains("USD/JPY") -> "USD/JPY"
+                            else -> assetCandidate.replace(" ", "")
+                        }
+                        ws.updateActiveAsset(formattedRic)
+                    }
+                } catch (e: Exception) {}
             }
 
             if (lower.contains("cantidad")) {

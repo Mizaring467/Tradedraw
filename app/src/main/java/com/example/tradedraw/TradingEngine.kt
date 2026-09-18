@@ -31,7 +31,8 @@ enum class AutoTradeMode {
 
 enum class AutonomousSubMode {
     CONSERVATIVE,    // Con gestión de riesgo estándar (Stop Loss, Take Profit, Cooldown)
-    YOLO             // Sin Stop Loss ni límites, operativa continua y desatendida
+    YOLO,            // Sin Stop Loss ni límites, operativa continua y desatendida
+    SNIPER           // Modo Francotirador: Stake plano (M0), SL 2 derrotas, TP 2 victorias, máx 3 ops por sesión
 }
 
 class TradingEngine(
@@ -58,6 +59,12 @@ class TradingEngine(
         set(value) {
             field = value
             syntheticCandleEngine.subMode = value
+        }
+
+    var timeframe: CandleTimeframe = CandleTimeframe.M1
+        set(value) {
+            field = value
+            syntheticCandleEngine.timeframe = value
         }
     var strategy: AutoTradeStrategy = AutoTradeStrategy.AUTO_ADAPTIVE
     var debugModeEnabled: Boolean = false
@@ -407,7 +414,14 @@ class TradingEngine(
         analysis: VisionAnalysisResult,
         hasDrawnLines: Boolean = false
     ): TradeAction? {
-        val (action, reason) = evaluateStrategySignalWithReason(strategy, analysis, hasDrawnLines, syntheticCandleEngine)
+        val (action, reason) = evaluateStrategySignalWithReason(
+            strategy = strategy,
+            analysis = analysis,
+            hasDrawnLines = hasDrawnLines,
+            syntheticEngine = syntheticCandleEngine,
+            subMode = autonomousSubMode,
+            latestTick = latestMarketTick
+        )
         lastSignalReason = reason
         return action
     }
@@ -417,18 +431,88 @@ class TradingEngine(
             strategy: AutoTradeStrategy,
             analysis: VisionAnalysisResult,
             hasDrawnLines: Boolean = false,
-            syntheticEngine: SyntheticCandleEngine? = null
+            syntheticEngine: SyntheticCandleEngine? = null,
+            subMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE,
+            latestTick: MarketTick? = null
         ): TradeAction? {
-            val (action, _) = evaluateStrategySignalWithReason(strategy, analysis, hasDrawnLines, syntheticEngine)
+            val (action, _) = evaluateStrategySignalWithReason(strategy, analysis, hasDrawnLines, syntheticEngine, subMode, latestTick)
             return action
+        }
+
+        fun evaluateSniperConfluences(
+            analysis: VisionAnalysisResult,
+            syntheticEngine: SyntheticCandleEngine?,
+            latestTick: MarketTick?
+        ): Pair<TradeAction?, String> {
+            // Confluencia 1: Activo Forex Real válido (Veto estricto a Sintéticos y OTC)
+            val currentAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
+            val isSynthetic = AutoTradeAccessibilityService.isSyntheticOrOTC ||
+                currentAsset.contains("IDX", ignoreCase = true) ||
+                currentAsset.contains("OTC", ignoreCase = true)
+            if (isSynthetic) {
+                return Pair(null, "⚠️ Veto Francotirador: Activo sintético/OTC ($currentAsset) prohibido para dinero real. Selecciona un par Forex real en Binomo")
+            }
+
+            // Confluencia 4 (Timing): Entrada estricta en el segundo :58s-:59s
+            val sec = analysis.candleSecond
+            if (sec !in 58..59) {
+                return Pair(null, "⏳ Francotirador en espera: timing estricto :58s-:59s (actual: :${"%02d".format(sec)}s)")
+            }
+
+            val candleList = analysis.candleList
+            val c0 = candleList.firstOrNull()
+            val c1 = if (candleList.size >= 2) candleList[1] else null
+
+            // Confluencia 3: Vela previa o actual con mecha de rechazo >= 40% del rango total en dirección contraria al nivel
+            val hasBottomRejection40 = (c0 != null && c0.bottomWickRatio >= 0.40f) ||
+                (c1 != null && c1.bottomWickRatio >= 0.40f) ||
+                analysis.hasBottomRejectionWick
+            val hasTopRejection40 = (c0 != null && c0.topWickRatio >= 0.40f) ||
+                (c1 != null && c1.topWickRatio >= 0.40f) ||
+                analysis.hasTopRejectionWick
+
+            // Confluencia 2: Rebote claro en nivel de Soporte (para CALL) o Resistencia (para PUT) validado
+            val touchesSupport = analysis.touchesSupport || analysis.isNearSupportZone ||
+                (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.15f)
+            val touchesResistance = analysis.touchesResistance || analysis.isNearResistanceZone ||
+                (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.15f)
+
+            // Confluencia 4 (Micro-velocidad a favor y sin vela sobreextendida):
+            val velNorm = analysis.tickVelocityNormalized
+            val tickVel = latestTick?.velocity ?: 0f
+            val velCallFavor = velNorm >= 0f || tickVel >= 0f || analysis.isBullishImpulse
+            val velPutFavor = velNorm <= 0f || tickVel <= 0f || analysis.isBearishImpulse
+
+            val isOverextendedCall = (syntheticEngine?.isBullishOverextended == true) ||
+                (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.GREEN)
+            val isOverextendedPut = (syntheticEngine?.isBearishOverextended == true) ||
+                (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.RED)
+
+            // CALL: Soporte validado + Mecha inferior >= 40% + Micro-velocidad alcista + No sobreextendido
+            if (touchesSupport && hasBottomRejection40 && velCallFavor && !isOverextendedCall) {
+                return Pair(TradeAction.BUY, "🎯 FRANCOTIRADOR [CALL :${sec}s]: Soporte validado + Mecha rechazo ≥40% + Micro-velocidad alcista")
+            }
+
+            // PUT: Resistencia validada + Mecha superior >= 40% + Micro-velocidad bajista + No sobreextendido
+            if (touchesResistance && hasTopRejection40 && velPutFavor && !isOverextendedPut) {
+                return Pair(TradeAction.SELL, "🎯 FRANCOTIRADOR [PUT :${sec}s]: Resistencia validada + Mecha rechazo ≥40% + Micro-velocidad bajista")
+            }
+
+            return Pair(null, "🎯 Francotirador: Confluencias incompletas (S/R, Mecha ≥40%, Vel, :58-:59s)")
         }
 
         fun evaluateStrategySignalWithReason(
             strategy: AutoTradeStrategy,
             analysis: VisionAnalysisResult,
             hasDrawnLines: Boolean = false,
-            syntheticEngine: SyntheticCandleEngine? = null
+            syntheticEngine: SyntheticCandleEngine? = null,
+            subMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE,
+            latestTick: MarketTick? = null
         ): Pair<TradeAction?, String> {
+            // MODO FRANCOTIRADOR: Gatillo de 4 Confluencias Simultáneas
+            if (subMode == AutonomousSubMode.SNIPER) {
+                return evaluateSniperConfluences(analysis, syntheticEngine, latestTick)
+            }
             // Filtro Anti-Choppy / Micro-Rango Cuantitativo (<0.05% con alternancia de ticks sin dirección clara)
             val isChoppy = analysis.isMicroRangeChoppy || (syntheticEngine != null && syntheticEngine.isChoppinessDetected())
             if (isChoppy) {
@@ -1201,19 +1285,51 @@ class TradingEngine(
             val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
             isTradeResolving.set(false)
             riskManager.recordTradeSent(action, analysis.currentPriceY, baseBal, confidence)
-            // Despacho táctil único e inequívoco (sin repeticiones artificiales)
-            accessibility.performClickAt(x, y)
+            // Despacho táctil único con verificación de 300ms y fallback híbrido
+            accessibility.performClickAt(x, y) { success, error ->
+                if (!success) {
+                    triggerManualFallback(action, error ?: "Auto-clic falló en 300ms")
+                }
+            }
 
             handler.post {
                 drawingView.triggerClickAnimation(x, y)
                 autoDrawEngine.drawTradeEntry(action, analysis.currentPriceY, screenW)
                 saveAuditScreenshot(bitmap, action)
-                Toast.makeText(context, "🤖 BOT OPERÓ: $action ($$${riskManager.getCurrentInvestmentAmount()})\n$reasonDescription", Toast.LENGTH_LONG).show()
+                val stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode)
+                Toast.makeText(context, "🤖 BOT OPERÓ: $action ($$$stake)\n$reasonDescription", Toast.LENGTH_LONG).show()
             }
         } else {
+            triggerManualFallback(action, "Accesibilidad no conectada")
             handler.post {
                 Toast.makeText(context, "⚠️ Clic cancelado: Activa el Servicio de Accesibilidad en Ajustes para Auto-Trading", Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    fun triggerManualFallback(action: TradeAction, reason: String) {
+        Log.w("TradingEngine", "🚨 Activando MODO HÍBRIDO Fallback: $reason. Alerta manual para $action")
+        emitHapticWarning()
+        OverlayService.instance?.showManualFallbackAlert(action, 2500L)
+        handler.post {
+            val dir = if (action == TradeAction.BUY) "CALL ▲ (SUBE)" else "PUT ▼ (BAJA)"
+            Toast.makeText(context, "🚨 ¡PULSA MANUAL: $dir!\n$reason", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun emitHapticWarning() {
+        try {
+            val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            if (vibrator != null && vibrator.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 150, 80, 200), -1))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(350)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("TradingEngine", "Error en vibración háptica", e)
         }
     }
 
@@ -1318,10 +1434,23 @@ class TradingEngine(
 
         val sec = latestMarketTick?.candleSecond ?: (((System.currentTimeMillis() / 1000L) % 60L).toInt())
         val isYolo = (autonomousSubMode == AutonomousSubMode.YOLO)
-        // Ventana Sniper Quirúrgica: :57 a :05
-        val inWindow = sec in 57..59 || sec in 0..5
+        val isSniper = (autonomousSubMode == AutonomousSubMode.SNIPER)
+
+        if (isSniper) {
+            val currentAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
+            val isSynthetic = AutoTradeAccessibilityService.isSyntheticOrOTC ||
+                currentAsset.contains("IDX", ignoreCase = true) ||
+                currentAsset.contains("OTC", ignoreCase = true)
+            if (isSynthetic) {
+                Log.d("TradingEngine", "Headless bloqueado por Veto Francotirador: Activo sintético/OTC ($currentAsset)")
+                return
+            }
+        }
+
+        // Ventana Sniper Quirúrgica: :58-:59 en SNIPER, :57-:05 en otros modos
+        val inWindow = if (isSniper) sec in 58..59 else (sec in 57..59 || sec in 0..5)
         if (!inWindow) {
-            Log.d("TradingEngine", "Headless bloqueado fuera de ventana timing sniper :57-:05 (⏱ ${sec}s | YOLO=$isYolo)")
+            Log.d("TradingEngine", "Headless bloqueado fuera de ventana timing sniper (⏱ ${sec}s | SNIPER=$isSniper | YOLO=$isYolo)")
             return
         }
         val isRejectionOrBounce = reasonDescription.contains("MT_REJECTION") ||
@@ -1386,6 +1515,13 @@ class TradingEngine(
         val (canTrade, riskReason) = riskManager.canExecuteTrade(mode, autonomousSubMode, headlessConfidence)
         if (!canTrade) {
             Log.d("TradingEngine", "Headless bloqueado por riesgo: $riskReason")
+            if (isSniper && riskReason.contains("alcanzado", ignoreCase = true)) {
+                mode = AutoTradeMode.DISABLED
+                handler.post {
+                    Toast.makeText(context, "🛑 $riskReason", Toast.LENGTH_LONG).show()
+                    OverlayService.instance?.updateHUDView()
+                }
+            }
             return
         }
 
@@ -1429,17 +1565,24 @@ class TradingEngine(
                 tick = latestMarketTick,
                 strategyName = "HEADLESS_WS"
             )
-            accessibility.performClickAt(x, y)
+            // Despacho con callback y fallback híbrido
+            accessibility.performClickAt(x, y) { success, error ->
+                if (!success) {
+                    triggerManualFallback(finalAction, error ?: "Auto-clic headless falló en 300ms")
+                }
+            }
 
             handler.post {
                 drawingView.triggerClickAnimation(x, y)
                 // En modo Headless, situar la STRIKE_PRICE_LINE en la altura estimada del gráfico
                 autoDrawEngine.drawTradeEntry(finalAction, y.coerceIn(screenH * 0.35f, screenH * 0.65f), screenW)
                 emitHapticAndAudioFeedback()
-                Toast.makeText(context, "⚡ [HEADLESS WS] BOT OPERÓ: $finalAction ($${riskManager.getCurrentInvestmentAmount()})\n$finalReason", Toast.LENGTH_LONG).show()
+                val stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode)
+                Toast.makeText(context, "⚡ [HEADLESS WS] BOT OPERÓ: $finalAction ($$$stake)\n$finalReason", Toast.LENGTH_LONG).show()
                 onTradeExecutedListener?.invoke(finalAction, true)
             }
         } else {
+            triggerManualFallback(finalAction, "Accesibilidad no conectada")
             handler.post {
                 Toast.makeText(context, "⚠️ Clic Headless cancelado: Activa Accesibilidad en Ajustes", Toast.LENGTH_LONG).show()
             }

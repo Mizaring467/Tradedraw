@@ -21,6 +21,8 @@ class RiskManagerTest {
         AutoTradeAccessibilityService.isDemoAccount = true
         AutoTradeAccessibilityService.latestObservedBalance = 0.0
         AutoTradeAccessibilityService.observedOrderAmount = 0.0
+        AutoTradeAccessibilityService.latestObservedAsset = ""
+        AutoTradeAccessibilityService.isSyntheticOrOTC = false
     }
 
     @Test
@@ -573,5 +575,118 @@ class RiskManagerTest {
         // Reseteo al liquidar trade (recordTradeLoss limpia pending trade)
         riskManager.recordTradeLoss()
         assertEquals("Confidence should be reset after trade resolution", 0.0f, riskManager.pendingTradeConfidence, 0.001f)
+    }
+
+    @Test
+    fun testSniperMode_FlatStake_ZeroMartingale() {
+        riskManager.martingaleEnabled = true
+        riskManager.maxMartingaleLevel = 2
+        riskManager.baseAmount = 4000f
+
+        // 1ra pérdida
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+
+        // En submodo SNIPER la inversión DEBE ser estrictamente plana M0 (baseAmount)
+        val amountSniper = riskManager.getCurrentInvestmentAmount(AutonomousSubMode.SNIPER)
+        assertEquals("En Francotirador el stake debe ser estrictamente plano (M0)", 4000f, amountSniper, 0.01f)
+
+        // En submodo CONSERVATIVE o YOLO el monto sí aplica martingala
+        val amountNormal = riskManager.getCurrentInvestmentAmount(AutonomousSubMode.CONSERVATIVE)
+        assertEquals("En modo normal con 1 pérdida debe ser M1", 4000f * 2.2f, amountNormal, 0.01f)
+
+        // Badge en Sniper
+        val badge = riskManager.getMartingaleStatusBadge(AutonomousSubMode.SNIPER)
+        assertTrue("Badge debe indicar stake plano M0", badge.contains("M0") || badge.contains("FRANCOTIRADOR"))
+    }
+
+    @Test
+    fun testSniperMode_StopLoss_MaxTwoLosses() {
+        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.lastTradeTime = 0L
+        val (canTrade1, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertTrue("Con 1 pérdida aún puede operar", canTrade1)
+
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.lastTradeTime = 0L
+        val (canTrade2, reason2) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Con 2 pérdidas debe bloquearse por Stop Loss Francotirador", canTrade2)
+        assertTrue("Razón debe mencionar Stop Loss Francotirador", reason2.contains("Stop Loss Francotirador"))
+    }
+
+    @Test
+    fun testSniperMode_TakeProfit_TwoWins() {
+        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        riskManager.cooldownSeconds = 0
+
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        riskManager.lastTradeTime = 0L
+        val (canTrade1, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertTrue("Con 1 victoria aún puede operar", canTrade1)
+
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        riskManager.lastTradeTime = 0L
+        val (canTrade2, reason2) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Con 2 victorias debe bloquearse por Take Profit Francotirador", canTrade2)
+        assertTrue("Razón debe mencionar Take Profit Francotirador", reason2.contains("Take Profit Francotirador"))
+    }
+
+    @Test
+    fun testSniperMode_MaxThreeTradesPerSession() {
+        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+
+        // 1 Victoria
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        riskManager.lastTradeTime = 0L
+
+        // 1 Derrota
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.lastTradeTime = 0L
+
+        val (canTrade2, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertTrue("Con 2 trades totales (1W, 1L) aún puede operar", canTrade2)
+
+        // 1 Empate (Void) -> total session trades = 3 (1W + 1L + 1Void)
+        riskManager.recordTradeVoid()
+        riskManager.lastTradeTime = 0L
+        val (canTrade3, reason3) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Con 3 operaciones de sesión debe bloquearse por límite de trades", canTrade3)
+        assertTrue("Razón debe mencionar límite diario", reason3.contains("Límite diario Francotirador"))
+    }
+
+    @Test
+    fun testSniperMode_SyntheticAssetVeto() {
+        AutoTradeAccessibilityService.latestObservedAsset = "Crypto IDX"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = true
+        val (canTradeIdx, reasonIdx) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Crypto IDX debe ser vetado en modo Francotirador", canTradeIdx)
+        assertTrue("Razón debe mencionar Veto Francotirador", reasonIdx.contains("Veto Francotirador"))
+
+        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD OTC"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = true
+        val (canTradeOtc, reasonOtc) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("OTC debe ser vetado en modo Francotirador", canTradeOtc)
+        assertTrue("Razón debe mencionar Veto Francotirador", reasonOtc.contains("Veto Francotirador"))
+
+        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        val (canTradeForex, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertTrue("Forex real EUR/USD debe ser permitido", canTradeForex)
     }
 }

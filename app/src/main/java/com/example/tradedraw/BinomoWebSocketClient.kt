@@ -29,6 +29,18 @@ class BinomoWebSocketClient(private val context: Context) {
         get() = prefs.getString("ws_active_asset", "Z-CRY/IDX") ?: "Z-CRY/IDX"
         set(value) = prefs.edit().putString("ws_active_asset", value.trim()).apply()
 
+    fun updateActiveAsset(newAsset: String) {
+        val clean = newAsset.trim()
+        if (clean.isNotBlank() && activeAsset != clean) {
+            Log.i(TAG, "Sincronizando activo activo de WebSocket: $activeAsset -> $clean")
+            activeAsset = clean
+            val ws = webSocket
+            if (ws != null && isConnected) {
+                subscribeToAsset(ws, clean)
+            }
+        }
+    }
+
     var isEnabled: Boolean
         get() = prefs.getBoolean("ws_client_enabled", true)
         set(value) = prefs.edit().putBoolean("ws_client_enabled", value).apply()

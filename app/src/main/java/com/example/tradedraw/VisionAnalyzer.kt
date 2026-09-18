@@ -648,12 +648,8 @@ class VisionAnalyzer {
             avgBodyHeight < 12.0 || rangeHeight < (chartHeight * 0.035f) || isAlternatingChop
         } else false
 
-        // En tendencias direccionales confirmadas (UPTREND o DOWNTREND), el mercado NO es lateral
-        val isSideways = if (trend != TrendDirection.SIDEWAYS) {
-            false
-        } else {
-            isSidewaysByCandles || isConsolidationTight || isAlternatingChop || (candleList.size >= 4 && Math.abs(callPct - putPct) < 18)
-        }
+        // En tendencias direccionales confirmadas sin micro-velas ni dojis, el mercado NO es lateral
+        val isSideways = isSidewaysByCandles || (trend == TrendDirection.SIDEWAYS && (isConsolidationTight || isAlternatingChop || (candleList.size >= 4 && Math.abs(callPct - putPct) < 18)))
 
         // Confluencia Multi-Factor Cuantitativa (0-100%)
         var confCall = 40

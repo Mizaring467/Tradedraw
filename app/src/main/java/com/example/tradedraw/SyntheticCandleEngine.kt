@@ -112,6 +112,7 @@ class SyntheticCandleEngine {
     }
 
     var subMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE
+    var timeframe: CandleTimeframe = CandleTimeframe.M1
 
     var onSignalGenerated: ((TradeAction, String) -> Unit)? = null
 
@@ -119,7 +120,8 @@ class SyntheticCandleEngine {
      * Procesa cada micro-tick entrante desde el WebSocket.
      */
     fun onNewTick(tick: MarketTick) {
-        val candleMinute = (tick.timestampMs / 60000L) * 60000L
+        val periodMs = timeframe.durationMs
+        val candleMinute = (tick.timestampMs / periodMs) * periodMs
         val active = currentCandle
 
         // 1. Conteo de ticks sin retroceso (momentum instantáneo)
@@ -676,17 +678,17 @@ class SyntheticCandleEngine {
     private fun evaluateSniperOpportunity(tick: MarketTick) {
         val sec = tick.candleSecond
 
-        // Ventana de entrada sniper quirúrgica en cambio de vela (:57s a :05s)
-        val inWindow = sec in 57..59 || sec in 0..5
+        // Ventana de entrada sniper: estricta :58s-:59s en Modo Francotirador, :57s-:05s en otros modos
+        val isSniper = (subMode == AutonomousSubMode.SNIPER)
+        val inWindow = if (isSniper) sec in 58..59 else (sec in 57..59 || sec in 0..5)
         if (!inWindow) return
 
         val isYolo = (subMode == AutonomousSubMode.YOLO)
         val isChoppy = isChoppinessDetected()
 
-        // En modo Conservador: si hay choppiness (micro-rango estático, dojis solapados o caída con alternancia), suprimir
-        // En modo YOLO: solo suprimir si hay colapso extremo de micro-rango (<0.05% con alternancia)
+        // En modo Conservador o Francotirador: si hay choppiness, suprimir
         if (!isYolo && isChoppy) {
-            Log.d(TAG, "Oportunidad Sniper Headless suprimida por choppiness/dojis en modo conservador")
+            Log.d(TAG, "Oportunidad Sniper Headless suprimida por choppiness/dojis")
             return
         }
 
