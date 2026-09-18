@@ -358,6 +358,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
 
     private fun traverseScreenContext(node: android.view.accessibility.AccessibilityNodeInfo?) {
         if (node == null) return
+        if (node.packageName?.toString() == packageName) return
         val text = node.text?.toString() ?: ""
         if (text.isNotBlank()) {
             val lower = text.lowercase()
@@ -369,23 +370,27 @@ class AutoTradeAccessibilityService : AccessibilityService() {
 
             val assetCandidate = extractAssetCandidate(text)
             if (assetCandidate != null) {
-                latestObservedAsset = assetCandidate
-                val upper = assetCandidate.uppercase()
-                val isSyn = upper.contains("IDX") || upper.contains("OTC")
-                isSyntheticOrOTC = isSyn
-                onAssetUpdatedListener?.invoke(assetCandidate, isSyn)
-                try {
-                    OverlayService.instance?.binomoWebSocketClient?.let { ws ->
-                        val formattedRic = when {
-                            upper.contains("IDX") -> "Z-CRY/IDX"
-                            upper.contains("EUR/USD") -> "EUR/USD"
-                            upper.contains("GBP/USD") -> "GBP/USD"
-                            upper.contains("USD/JPY") -> "USD/JPY"
-                            else -> assetCandidate.replace(" ", "")
+                val isActiveTab = isTabExplicitlyActive(node)
+                // Solo actualizar si la pestaña está explícitamente seleccionada o si aún no hay ningún activo detectado
+                if (isActiveTab || latestObservedAsset.isBlank()) {
+                    latestObservedAsset = assetCandidate
+                    val upper = assetCandidate.uppercase()
+                    val isSyn = upper.contains("IDX") || upper.contains("OTC")
+                    isSyntheticOrOTC = isSyn
+                    onAssetUpdatedListener?.invoke(assetCandidate, isSyn)
+                    try {
+                        OverlayService.instance?.binomoWebSocketClient?.let { ws ->
+                            val formattedRic = when {
+                                upper.contains("IDX") -> "Z-CRY/IDX"
+                                upper.contains("EUR/USD") -> "EUR/USD"
+                                upper.contains("GBP/USD") -> "GBP/USD"
+                                upper.contains("USD/JPY") -> "USD/JPY"
+                                else -> assetCandidate.replace(" ", "")
+                            }
+                            ws.updateActiveAsset(formattedRic)
                         }
-                        ws.updateActiveAsset(formattedRic)
-                    }
-                } catch (e: Exception) {}
+                    } catch (e: Exception) {}
+                }
             }
 
             if (lower.contains("cantidad")) {
@@ -409,8 +414,40 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun isTabExplicitlyActive(node: android.view.accessibility.AccessibilityNodeInfo): Boolean {
+        if (node.isSelected) return true
+        var curr: android.view.accessibility.AccessibilityNodeInfo? = node.parent
+        var depth = 0
+        while (curr != null && depth < 3) {
+            if (curr.isSelected) return true
+            val resId = curr.viewIdResourceName ?: ""
+            if (resId.contains("SelectedAssetTab", ignoreCase = true)) return true
+            for (i in 0 until curr.childCount) {
+                val child = curr.getChild(i)
+                val cRes = child?.viewIdResourceName ?: ""
+                if (cRes.contains("CloseButton", ignoreCase = true)) {
+                    return true
+                }
+            }
+            curr = curr.parent
+            depth++
+        }
+        return false
+    }
+
     private fun findBalanceInNode(node: android.view.accessibility.AccessibilityNodeInfo?): Double? {
         if (node == null) return null
+        
+        // Ignorar absolutamente cualquier nodo proveniente del propio TradeDraw (HUD, burbuja, etc.)
+        if (node.packageName?.toString() == packageName) return null
+
+        // Prioridad máxima: nodo oficial de saldo de Binomo (BalanceText)
+        val resId = node.viewIdResourceName ?: ""
+        if (resId.contains("BalanceText", ignoreCase = true)) {
+            val text = node.text?.toString() ?: ""
+            val parsed = parseBalanceString(text)
+            if (parsed != null && parsed > 0.0) return parsed
+        }
         
         // Descartar nodos fuera de la cabecera de saldo superior
         val rect = android.graphics.Rect()
@@ -429,8 +466,10 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             } else if (lower.contains("cuenta demo") || lower == "demo") {
                 isDemoAccount = true
             }
-            val parsed = parseBalanceString(text)
-            if (parsed != null && parsed > 0.0) return parsed
+            if (!lower.contains("m0") && !lower.contains("m1") && !lower.contains("m2") && !lower.contains("strat") && !lower.contains("auto")) {
+                val parsed = parseBalanceString(text)
+                if (parsed != null && parsed > 0.0) return parsed
+            }
         }
         for (i in 0 until node.childCount) {
             val childResult = findBalanceInNode(node.getChild(i))
