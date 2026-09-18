@@ -719,5 +719,84 @@ class TradingEngineTest {
         assertEquals("5m", CandleTimeframe.M5.label)
         assertEquals(300000L, CandleTimeframe.M5.periodMs)
     }
+
+    @Test
+    fun testSniperConfluences_AdverseVelocityBlocked() {
+        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+
+        // S/R y mecha presentes, pero micro-velocidad adversa (bajista en soporte CALL)
+        val analysisAdverse = VisionAnalysisResult(
+            candleSecond = 58,
+            touchesSupport = true,
+            hasBottomRejectionWick = true,
+            tickVelocityNormalized = -0.05f,
+            isBearishImpulse = true
+        )
+        val (action, reason) = TradingEngine.evaluateSniperConfluences(analysisAdverse, null, null)
+        assertNull("Velocidad adversa bajista no debe disparar CALL en Francotirador", action)
+        assertTrue("Razón debe mencionar confluencias incompletas", reason.contains("Confluencias incompletas"))
+    }
+
+    @Test
+    fun testSniperConfluences_HeadlessSyntheticCandleWick() {
+        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+
+        val syntheticEngine = SyntheticCandleEngine()
+        // Crear un tick para abrir la vela
+        syntheticEngine.onNewTick(MarketTick(asset = "EUR/USD", price = 1.0500, timestampMs = 1000L))
+        // Crear un mínimo profundo para generar mecha inferior > 40%
+        syntheticEngine.onNewTick(MarketTick(asset = "EUR/USD", price = 1.0400, timestampMs = 2000L))
+        // Cerrar cerca del máximo: open=1.0500, low=1.0400, high=1.0510, close=1.0500
+        syntheticEngine.onNewTick(MarketTick(asset = "EUR/USD", price = 1.0510, timestampMs = 3000L))
+        syntheticEngine.onNewTick(MarketTick(asset = "EUR/USD", price = 1.0500, timestampMs = 4000L))
+
+        assertTrue("La mecha inferior sintética debe ser >= 40%", (syntheticEngine.currentCandle?.lowerWickRatio ?: 0f) >= 0.40f)
+
+        // En Headless no hay candleList visual
+        val analysisHeadless = VisionAnalysisResult(
+            candleSecond = 58,
+            touchesSupport = true,
+            hasBottomRejectionWick = false,
+            candleList = emptyList(),
+            tickVelocityNormalized = 0.03f
+        )
+        val (action, reason) = TradingEngine.evaluateSniperConfluences(analysisHeadless, syntheticEngine, null)
+        assertEquals("Debe disparar BUY usando mecha de vela sintética", TradeAction.BUY, action)
+        assertTrue("Razón debe mencionar FRANCOTIRADOR CALL", reason.contains("FRANCOTIRADOR [CALL"))
+    }
+
+    @Test
+    fun testSniperConfluences_NonForexAssetBlocked() {
+        AutoTradeAccessibilityService.latestObservedAsset = "COMMODITY_GOLD"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+
+        val analysis = VisionAnalysisResult(
+            candleSecond = 58,
+            touchesSupport = true,
+            hasBottomRejectionWick = true,
+            tickVelocityNormalized = 0.04f
+        )
+        val (action, reason) = TradingEngine.evaluateSniperConfluences(analysis, null, null)
+        assertNull("Activo no-forex debe ser bloqueado en Francotirador", action)
+        assertTrue("Razón debe indicar que no es par Forex real", reason.contains("no es un par Forex real"))
+    }
+
+    @Test
+    fun testCandleTimeframe_TimingWindowCycle() {
+        // M1: 60s
+        val tsM1_58 = 58000L // 58s
+        val tsM1_30 = 30000L // 30s
+        assertTrue("Segundo 58 debe ser sniper window para M1", CandleTimeframe.M1.isSniperTimingWindow(tsM1_58))
+        assertFalse("Segundo 30 no debe ser sniper window para M1", CandleTimeframe.M1.isSniperTimingWindow(tsM1_30))
+
+        // M5: 300s
+        val tsM5_298 = 298000L // 4m 58s (segundo 298 de 300)
+        val tsM5_58 = 58000L   // 58s (apenas minuto 1 de 5)
+        assertTrue("Segundo 298 debe ser sniper window para M5", CandleTimeframe.M5.isSniperTimingWindow(tsM5_298))
+        assertFalse("Segundo 58 en M5 NO debe ser sniper window", CandleTimeframe.M5.isSniperTimingWindow(tsM5_58))
+    }
 }
+
 

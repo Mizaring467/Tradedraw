@@ -1,0 +1,48 @@
+{
+            "app": "TradeDraw",
+            "mode": "AUTONOMOUS",
+            "strategy": "AUTO_ADAPTIVE",
+            "accessibilityActive": true,
+            "balance": 4.012880896E7,
+            "analysis": {
+                "currentPriceY": 641.8674,
+                "dynamicResistanceY": 0.0,
+                "dynamicSupportY": 0.0,
+                "dynamicResistancePrice": 641.867393325,
+                "dynamicSupportPrice": 641.867243175,
+                "callPower": 50,
+                "putPower": 50,
+                "isMarketSideways": false,
+                "trend": "SIDEWAYS",
+                "candleCount": 0,
+                "streak": ""
+            },
+            "risk": {
+                "totalWins": 0,
+                "totalLosses": 0,
+                "winRate": 0.0,
+                "currentLossStreak": 0,
+                "martingaleStatus": "[M0 | $1.0]",
+                "investmentAmount": 1.0,
+                "hasPendingTrade": false,
+                "remainingCooldown": 0
+            },
+            "activeSignal": null,
+            "feed": {
+                "source": "websocket",
+                "lastTickAgeMs": 345,
+                "activeAsset": "Z-CRY/IDX",
+                "ws_active_asset": "Z-CRY/IDX",
+                "connected": true,
+                "isFresh": true,
+                "tickSource": "socket",
+                "rawSocketMessages": 66,
+                "socketTicks": 65,
+                "journalWrites": 0,
+                "lastJournalWriteMs": -1,
+                "journalError": "",
+                "journalDuplicatesRejected": 0,
+                "journalRotations": 0,
+                "rawFrames": ["{\"data\":[{\"assets\":[{\"sent_at\":\"2026-09-17T07:05:30.099688Z\",\"provider_time\":\"2026-09-17T07:05:30.098000Z\",\"rate\":641.86739317,\"created_at_with_millis\":\"2026-09-17T07:05:30.099000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.86739318,\"created_at\":\"2026-09-17T07:05:31.000000Z\",\"bid\":641.86739316,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}","{\"data\":[{\"assets\":[{\"sent_at\":\"2026-09-17T07:05:30.499755Z\",\"provider_time\":\"2026-09-17T07:05:30.498000Z\",\"rate\":641.867393155,\"created_at_with_millis\":\"2026-09-17T07:05:30.499000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.86739318,\"created_at\":\"2026-09-17T07:05:31.000000Z\",\"bid\":641.86739313,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}","{\"data\":[{\"assets\":[{\"sent_at\":\"2026-09-17T07:05:30.899648Z\",\"provider_time\":\"2026-09-17T07:05:30.898000Z\",\"rate\":641.867393175,\"created_at_with_millis\":\"2026-09-17T07:05:30.899000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.86739318,\"created_at\":\"2026-09-17T07:05:31.000000Z\",\"bid\":641.86739317,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}"]
+            }
+        }

@@ -32,7 +32,8 @@ class SyntheticCandleEngine {
 
     private val TAG = "SyntheticCandleEngine"
 
-    private var currentCandle: SyntheticCandle? = null
+    var currentCandle: SyntheticCandle? = null
+        private set
     val closedCandles = ArrayList<SyntheticCandle>(64)
     private val recentTickPrices = ArrayDeque<Double>(120)
     private var lastTickPrice: Double = 0.0
@@ -678,9 +679,9 @@ class SyntheticCandleEngine {
     private fun evaluateSniperOpportunity(tick: MarketTick) {
         val sec = tick.candleSecond
 
-        // Ventana de entrada sniper: estricta :58s-:59s en Modo Francotirador, :57s-:05s en otros modos
+        // Ventana de entrada sniper: estricta :58s-:59s en Modo Francotirador (o fin de vela según timeframe), :57s-:05s en otros modos
         val isSniper = (subMode == AutonomousSubMode.SNIPER)
-        val inWindow = if (isSniper) sec in 58..59 else (sec in 57..59 || sec in 0..5)
+        val inWindow = if (isSniper) timeframe.isSniperTimingWindow(tick.timestampMs) else timeframe.isStandardTimingWindow(tick.timestampMs)
         if (!inWindow) return
 
         val isYolo = (subMode == AutonomousSubMode.YOLO)

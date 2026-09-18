@@ -689,4 +689,85 @@ class RiskManagerTest {
         val (canTradeForex, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
         assertTrue("Forex real EUR/USD debe ser permitido", canTradeForex)
     }
+
+    @Test
+    fun testSniperMode_CumulativeTradesWithAlternatingVoids() {
+        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+
+        // 1. Trade 1: Void
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeVoid()
+        assertEquals(1, riskManager.totalVoids)
+        assertEquals(1, riskManager.consecutiveVoids)
+
+        // 2. Trade 2: Win (consecutiveVoids se reinicia a 0, pero totalVoids debe mantenerse en 1)
+        riskManager.lastTradeTime = 0L
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        assertEquals(0, riskManager.consecutiveVoids)
+        assertEquals(1, riskManager.totalVoids)
+        assertEquals(1, riskManager.totalWins)
+
+        val (canTrade2, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertTrue("Con 2 trades acumulados (1 Void + 1 Win) debe permitir trade 3", canTrade2)
+
+        // 3. Trade 3: Otro Void (totalVoids = 2, totalWins = 1 -> totalSessionTrades = 3)
+        riskManager.lastTradeTime = 0L
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeVoid()
+        assertEquals(2, riskManager.totalVoids)
+
+        val (canTrade3, reason3) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Con 3 operaciones acumuladas (2 Voids + 1 Win) debe bloquearse por límite diario", canTrade3)
+        assertTrue("Razón debe mencionar límite diario Francotirador", reason3.contains("Límite diario Francotirador"))
+    }
+
+    @Test
+    fun testSniperMode_ResetSniperSession_clearsStatsAndResumes() {
+        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+
+        // Forzar bloqueo por 2 derrotas
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.lastTradeTime = 0L
+
+        val (blocked, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Debe estar bloqueado tras 2 derrotas", blocked)
+
+        // Reset Sniper Session
+        riskManager.resetSniperSession()
+        assertEquals(0, riskManager.totalWins)
+        assertEquals(0, riskManager.totalLosses)
+        assertEquals(0, riskManager.totalVoids)
+        assertEquals(0, riskManager.currentLossStreak)
+
+        val (canTradeAgain, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertTrue("Tras resetSniperSession debe permitir nueva sesión de Francotirador", canTradeAgain)
+    }
+
+    @Test
+    fun testSniperMode_M5TimeoutScaling() {
+        riskManager.timeframe = CandleTimeframe.M5
+        riskManager.recordTradeSent(TradeAction.BUY)
+
+        // A los 90s, una operación de 5m NO debe considerarse timeout (85s solo aplica a M1)
+        riskManager.pendingTradeStartTime = System.currentTimeMillis() - 90000L
+        val (canTrade90s, reason90s) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Operación abierta a los 90s aún está en curso para M5", canTrade90s)
+        assertTrue("Razón debe indicar operación abierta", reason90s.contains("Operación abierta en curso"))
+
+        // A los 335s (supera 330s de timeout M5), el timeout se ejecuta y limpia la operación
+        riskManager.pendingTradeStartTime = System.currentTimeMillis() - 335000L
+        val (canTrade335s, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Pending trade fue limpiado por timeout", riskManager.hasPendingTrade)
+    }
 }
+
