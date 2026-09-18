@@ -638,5 +638,86 @@ class TradingEngineTest {
         assertEquals("Los 3 desenlaces deben ser distintos", 3, resultados.toSet().size)
         assertEquals("Deben cubrirse WIN, LOSS y TIE", setOf("WIN", "LOSS", "TIE"), resultados.toSet())
     }
+
+    @Test
+    fun testSniperConfluences_AssetVeto() {
+        AutoTradeAccessibilityService.latestObservedAsset = "Crypto IDX"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = true
+
+        val analysis = VisionAnalysisResult(
+            candleSecond = 58,
+            touchesSupport = true,
+            hasBottomRejectionWick = true
+        )
+
+        val (action, reason) = TradingEngine.evaluateSniperConfluences(analysis, null, null)
+        assertNull("No debe disparar en activo sintético", action)
+        assertTrue("Razón debe mencionar Veto Francotirador", reason.contains("Veto Francotirador"))
+    }
+
+    @Test
+    fun testSniperConfluences_TimingWindow() {
+        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+
+        val analysisOutside = VisionAnalysisResult(
+            candleSecond = 35,
+            touchesSupport = true,
+            hasBottomRejectionWick = true
+        )
+
+        val (actionOutside, reasonOutside) = TradingEngine.evaluateSniperConfluences(analysisOutside, null, null)
+        assertNull("Fuera de :58-:59s no debe disparar", actionOutside)
+        assertTrue("Razón debe mencionar timing estricto", reasonOutside.contains("timing estricto"))
+
+        val analysisInside = VisionAnalysisResult(
+            candleSecond = 58,
+            touchesSupport = true,
+            hasBottomRejectionWick = true,
+            tickVelocityNormalized = 0.05f
+        )
+        val (actionInside, reasonInside) = TradingEngine.evaluateSniperConfluences(analysisInside, null, null)
+        assertEquals("En :58s con soporte y mecha debe emitir BUY", TradeAction.BUY, actionInside)
+        assertTrue("Razón debe ser FRANCOTIRADOR CALL", reasonInside.contains("FRANCOTIRADOR [CALL"))
+    }
+
+    @Test
+    fun testSniperConfluences_FullConfluenceCallAndPut() {
+        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
+        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+
+        // CALL Confluence
+        val analysisCall = VisionAnalysisResult(
+            candleSecond = 59,
+            touchesSupport = true,
+            hasBottomRejectionWick = true,
+            tickVelocityNormalized = 0.02f
+        )
+        val (actionCall, reasonCall) = TradingEngine.evaluateSniperConfluences(analysisCall, null, null)
+        assertEquals("Debe disparar BUY ante confluencia de soporte", TradeAction.BUY, actionCall)
+        assertTrue("Razón debe mencionar FRANCOTIRADOR CALL", reasonCall.contains("FRANCOTIRADOR [CALL"))
+
+        // PUT Confluence
+        val analysisPut = VisionAnalysisResult(
+            candleSecond = 58,
+            touchesResistance = true,
+            hasTopRejectionWick = true,
+            tickVelocityNormalized = -0.02f
+        )
+        val (actionPut, reasonPut) = TradingEngine.evaluateSniperConfluences(analysisPut, null, null)
+        assertEquals("Debe disparar SELL ante confluencia de resistencia", TradeAction.SELL, actionPut)
+        assertTrue("Razón debe mencionar FRANCOTIRADOR PUT", reasonPut.contains("FRANCOTIRADOR [PUT"))
+    }
+
+    @Test
+    fun testCandleTimeframe_Properties() {
+        assertEquals(60, CandleTimeframe.M1.seconds)
+        assertEquals("1m", CandleTimeframe.M1.label)
+        assertEquals(60000L, CandleTimeframe.M1.periodMs)
+
+        assertEquals(300, CandleTimeframe.M5.seconds)
+        assertEquals("5m", CandleTimeframe.M5.label)
+        assertEquals(300000L, CandleTimeframe.M5.periodMs)
+    }
 }
 

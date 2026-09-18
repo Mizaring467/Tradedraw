@@ -28,6 +28,9 @@ class RiskManager(context: Context? = null) {
         const val DEFAULT_MAX_MARTINGALE_LEVEL = 1
         const val DEFAULT_MARTINGALE_MULTIPLIER = 2.0f
         const val SELECTIVE_MARTINGALE_M1_MIN_CONFIDENCE = 0.85f // Umbral A+ para Martingala M1 (85%)
+        const val SNIPER_MAX_LOSSES = 2
+        const val SNIPER_TAKE_PROFIT_WINS = 2
+        const val SNIPER_MAX_SESSION_TRADES = 3
     }
 
     @Volatile
@@ -368,6 +371,41 @@ class RiskManager(context: Context? = null) {
             return Pair(true, "🚀 MODO YOLO: Operativa continua sin límites")
         }
 
+        // En SUBMODO FRANCOTIRADOR (SNIPER):
+        // 1. Veto a activos sintéticos / OTC
+        // 2. Stop Loss diario estricto: máximo 2 pérdidas consecutivas o acumuladas en la sesión
+        // 3. Take Profit diario: 2 victorias
+        // 4. Máximo 3 operaciones ejecutadas por sesión diaria
+        if (subMode == AutonomousSubMode.SNIPER) {
+            val currentAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
+            val isSynthetic = AutoTradeAccessibilityService.isSyntheticOrOTC ||
+                currentAsset.contains("IDX", ignoreCase = true) ||
+                currentAsset.contains("OTC", ignoreCase = true)
+            if (isSynthetic) {
+                return Pair(false, "⚠️ Veto Francotirador: Activo sintético/OTC ($currentAsset) prohibido para dinero real. Selecciona un par Forex real en Binomo")
+            }
+
+            if (currentLossStreak >= SNIPER_MAX_LOSSES || totalLosses >= SNIPER_MAX_LOSSES) {
+                return Pair(false, "🛑 Stop Loss Francotirador alcanzado ($totalLosses derrotas). Sesión finalizada.")
+            }
+
+            if (totalWins >= SNIPER_TAKE_PROFIT_WINS || currentWins >= SNIPER_TAKE_PROFIT_WINS) {
+                return Pair(false, "🎯 Take Profit Francotirador alcanzado ($totalWins victorias). Meta diaria cumplida.")
+            }
+
+            val sessionTrades = totalWins + totalLosses + consecutiveVoids
+            if (sessionTrades >= SNIPER_MAX_SESSION_TRADES) {
+                return Pair(false, "🛑 Límite diario Francotirador alcanzado ($sessionTrades/3 operaciones). Sesión finalizada.")
+            }
+
+            val remaining = getRemainingCooldown(subMode)
+            if (remaining > 0) {
+                return Pair(false, "Pausa de Cooldown Francotirador: ${remaining}s")
+            }
+
+            return Pair(true, "🎯 MODO FRANCOTIRADOR: Listo para disparo de alta precisión")
+        }
+
         if (takeProfitWins > 0 && currentWins >= takeProfitWins) {
             return Pair(false, "Take Profit alcanzado ($takeProfitWins victorias)")
         }
@@ -541,7 +579,11 @@ class RiskManager(context: Context? = null) {
     }
 
     @Synchronized
-    fun getCurrentInvestmentAmount(): Float {
+    fun getCurrentInvestmentAmount(subMode: AutonomousSubMode? = null): Float {
+        val effectiveSubMode = subMode ?: currentSubMode
+        if (effectiveSubMode == AutonomousSubMode.SNIPER) {
+            return baseAmount // 100% libre de Martingala (M0 plano)
+        }
         if (moneyManagementMode == MoneyManagementMode.SOROS_COMPOUNDING) {
             var amt = baseAmount
             for (i in 0 until currentSorosStep) {
@@ -561,14 +603,19 @@ class RiskManager(context: Context? = null) {
     }
 
     @Synchronized
-    fun getMartingaleStatusBadge(): String {
+    fun getMartingaleStatusBadge(subMode: AutonomousSubMode? = null): String {
+        val effectiveSubMode = subMode ?: currentSubMode
+        if (effectiveSubMode == AutonomousSubMode.SNIPER) {
+            val amt = getCurrentInvestmentAmount(subMode)
+            return "[🎯 M0 Plano | $$amt]"
+        }
         if (moneyManagementMode == MoneyManagementMode.SOROS_COMPOUNDING) {
-            val amt = getCurrentInvestmentAmount()
+            val amt = getCurrentInvestmentAmount(subMode)
             return "[Soros S$currentSorosStep/$sorosCycleTarget | $$amt]"
         }
         if (!martingaleEnabled) return "[OFF]"
         val level = "M$currentLossStreak"
-        val amt = getCurrentInvestmentAmount()
+        val amt = getCurrentInvestmentAmount(subMode)
         return "[$level | $$amt]"
     }
 

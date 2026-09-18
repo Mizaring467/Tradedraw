@@ -202,6 +202,38 @@
         android:layout_marginTop="3dp"
         android:visibility="visible">
 
+        <!-- ALERTA VISUAL DESTACADA MODO HÍBRIDO (¡PULSA MANUAL!) -->
+        <LinearLayout
+            android:id="@+id/hud_manual_fallback_alert"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_hud_chip"
+            android:padding="6dp"
+            android:layout_marginBottom="3dp"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/hud_manual_fallback_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🚨 ¡PULSA MANUAL! 🚨"
+                android:textColor="#ffffff"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/hud_manual_fallback_action"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▲ CALL (SUBE) ▲"
+                android:textColor="#22c55e"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:layout_marginTop="2dp" />
+        </LinearLayout>
+
         <!-- TARJETA 1: LO QUE VE EL AGENTE (Mercado & Enlace WebSocket 0ms) -->
         <LinearLayout
             android:layout_width="match_parent"
