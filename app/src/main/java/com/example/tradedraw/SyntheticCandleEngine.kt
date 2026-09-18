@@ -291,10 +291,28 @@ class SyntheticCandleEngine {
     }
 
     /**
-     * Evalúa si las últimas velas están dentro de un micro-rango (< 0.05%).
+     * Evalúa si las últimas velas están dentro de un micro-rango comprimido.
+     * En lugar de un porcentaje fijo que falla en activos con muchos decimales como Crypto IDX,
+     * compara el rango reciente contra el rango típico (ATR) de las últimas velas del propio activo.
      */
     fun isMicroRange(sampleCount: Int = 5, maxRangePercent: Double = MarketTickFilters.MAX_CHOPPY_RANGE_PERCENT): Boolean {
+        synchronized(closedCandles) {
+            if (closedCandles.size >= 8) {
+                val avgRange = closedCandles.takeLast(20).map { it.range }.average()
+                val sample = mutableListOf<SyntheticCandle>()
+                sample.addAll(closedCandles.takeLast(sampleCount))
+                currentCandle?.let { sample.add(it) }
+                if (sample.isEmpty()) return false
+                val recentRange = sample.maxOf { it.high } - sample.minOf { it.low }
+                // Comprimido solo si el rango reciente es menor al 25% de la volatilidad típica
+                if (avgRange > 0.0) {
+                    return recentRange < (avgRange * 0.25)
+                }
+            }
+        }
         val rangePct = getRecentCandlesRangePercent(sampleCount)
+        // Si el rango porcentual es infinitesimal (< 0.0001%), es un activo sintético de alta precisión, no micro-rango estático
+        if (rangePct < 0.0001) return false
         return rangePct in 0.0000001..maxRangePercent
     }
 
@@ -688,7 +706,7 @@ class SyntheticCandleEngine {
         val isYolo = (subMode == AutonomousSubMode.YOLO)
         val isChoppy = isChoppinessDetected()
 
-        // En modo Conservador o Francotirador: si hay choppiness, suprimir
+        // En modo Conservador o Francotirador: si hay choppiness real (cluster de dojis/ruido), suprimir
         if (!isYolo && isChoppy) {
             Log.d(TAG, "Oportunidad Sniper Headless suprimida por choppiness/dojis")
             return

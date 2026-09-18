@@ -1480,11 +1480,12 @@ class TradingEngine(
 
         // GUARD DE PRECIO CONGELADO: el feed está fresco pero el emisor no mueve el precio.
         // En ese estado cualquier decisión CALL/PUT es equivalente a lanzar una moneda.
-        if (isPriceFrozen()) {
+        val currentObservedAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
+        if (isPriceFrozen() && !currentObservedAsset.contains("IDX", ignoreCase = true)) {
             Log.w(
                 "TradingEngine",
                 "⛔ Headless Trade $action VETADO por precio congelado: el emisor entrega " +
-                    "ticks pero el rango del precio es ~0 (activo sintético pegado)"
+                    "ticks pero el rango del precio es ~0 (activo plano)"
             )
             return
         }

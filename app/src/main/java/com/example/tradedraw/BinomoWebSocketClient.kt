@@ -120,7 +120,10 @@ class BinomoWebSocketClient(private val context: Context) {
     fun isPriceFrozen(frozenRangeRatio: Double = MarketTickFilters.FROZEN_RANGE_RATIO): Boolean {
         if (!isFeedFresh()) return false // feed muerto: es otro diagnóstico
         val prices = synchronized(recentTicks) { recentTicks.map { it.price } }
-        return MarketTickFilters.isPriceFrozen(prices, frozenRangeRatio)
+        // Para índices sintéticos como Z-CRY/IDX cuyo paso de tick natural es sub-micro (~1e-9),
+        // solo clasificar como congelado si el precio está 100% plano (delta == 0.0 o ratio < 1e-11)
+        val threshold = if (activeAsset.contains("IDX", ignoreCase = true)) 1e-11 else frozenRangeRatio
+        return MarketTickFilters.isPriceFrozen(prices, threshold)
     }
 
     var onTickListener: ((MarketTick) -> Unit)? = null
