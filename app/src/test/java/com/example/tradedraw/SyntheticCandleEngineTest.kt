@@ -746,4 +746,102 @@ class SyntheticCandleEngineTest {
         assertEquals("Debe emitir señal de COMPRA (CALL) en segunda vela de rebote confirmado", TradeAction.BUY, signalEmitted)
         assertTrue("El motivo debe indicar MT_CONFIRM_BOUNCE", signalReason?.contains("MT_CONFIRM_BOUNCE") == true)
     }
+
+    @Test
+    fun testRealisticUptrendWithPullbacksDetectedAsUptrend() {
+        val engine = SyntheticCandleEngine()
+        var now = 60000L * 10L
+        var price = 100.0
+
+        // Secuencia realista de 8 velas: 6 verdes y 2 rojas (pullbacks), con mínimos y máximos crecientes
+        val deltas = listOf(
+            Pair(1.0, 0.8),   // Vela 1 verde: range 1.0, close +0.8
+            Pair(1.2, 0.9),   // Vela 2 verde: range 1.2, close +0.9
+            Pair(0.8, -0.3),  // Vela 3 roja (pullback): range 0.8, close -0.3
+            Pair(1.5, 1.1),   // Vela 4 verde: range 1.5, close +1.1
+            Pair(1.1, 0.8),   // Vela 5 verde: range 1.1, close +0.8
+            Pair(0.7, -0.2),  // Vela 6 roja (pullback): range 0.7, close -0.2
+            Pair(1.3, 1.0),   // Vela 7 verde: range 1.3, close +1.0
+            Pair(1.0, 0.7)    // Vela 8 verde: range 1.0, close +0.7
+        )
+
+        for ((range, closeDelta) in deltas) {
+            val open = price
+            val high = open + range * 0.7
+            val low = open - range * 0.3
+            val close = open + closeDelta
+            engine.onNewTick(MarketTick("CRYPTO_IDX", open, now))
+            engine.onNewTick(MarketTick("CRYPTO_IDX", high, now + 20000L))
+            engine.onNewTick(MarketTick("CRYPTO_IDX", low, now + 40000L))
+            engine.onNewTick(MarketTick("CRYPTO_IDX", close, now + 59000L))
+            price = close
+            now += 60000L
+        }
+
+        assertEquals("Tendencia alcista realista con pullbacks debe clasificarse como UPTREND", TrendDirection.UPTREND, engine.detectedTrend)
+    }
+
+    @Test
+    fun testRealisticDowntrendWithPullbacksDetectedAsDowntrend() {
+        val engine = SyntheticCandleEngine()
+        var now = 60000L * 10L
+        var price = 200.0
+
+        // Secuencia realista de 8 velas bajistas con pullbacks alcistas
+        val deltas = listOf(
+            Pair(1.0, -0.8),
+            Pair(1.2, -0.9),
+            Pair(0.8, 0.3),  // pullback alcista
+            Pair(1.5, -1.1),
+            Pair(1.1, -0.8),
+            Pair(0.7, 0.2),  // pullback alcista
+            Pair(1.3, -1.0),
+            Pair(1.0, -0.7)
+        )
+
+        for ((range, closeDelta) in deltas) {
+            val open = price
+            val high = open + range * 0.3
+            val low = open - range * 0.7
+            val close = open + closeDelta
+            engine.onNewTick(MarketTick("CRYPTO_IDX", open, now))
+            engine.onNewTick(MarketTick("CRYPTO_IDX", high, now + 20000L))
+            engine.onNewTick(MarketTick("CRYPTO_IDX", low, now + 40000L))
+            engine.onNewTick(MarketTick("CRYPTO_IDX", close, now + 59000L))
+            price = close
+            now += 60000L
+        }
+
+        assertEquals("Tendencia bajista realista con pullbacks debe clasificarse como DOWNTREND", TrendDirection.DOWNTREND, engine.detectedTrend)
+    }
+
+    @Test
+    fun testEarlyTickMomentumUptrendWithoutClosedCandles() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 10L
+        var price = 500.0
+
+        // Inyectar 15 ticks ascendentes consecutivos al inicio de la sesión
+        for (i in 0 until 15) {
+            price += 0.4
+            engine.onNewTick(MarketTick("CRYPTO_IDX", price, now + (i * 1000L)))
+        }
+
+        assertEquals("Ticks alcistas tempranos deben detectar UPTREND sin requerir 3 velas cerradas", TrendDirection.UPTREND, engine.detectedTrend)
+    }
+
+    @Test
+    fun testEarlyTickMomentumDowntrendWithoutClosedCandles() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 10L
+        var price = 500.0
+
+        // Inyectar 15 ticks descendentes consecutivos al inicio de la sesión
+        for (i in 0 until 15) {
+            price -= 0.4
+            engine.onNewTick(MarketTick("CRYPTO_IDX", price, now + (i * 1000L)))
+        }
+
+        assertEquals("Ticks bajistas tempranos deben detectar DOWNTREND sin requerir 3 velas cerradas", TrendDirection.DOWNTREND, engine.detectedTrend)
+    }
 }

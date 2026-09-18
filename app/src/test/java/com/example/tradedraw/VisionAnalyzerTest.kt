@@ -428,4 +428,71 @@ class VisionAnalyzerTest {
         assertTrue("Debe detectar que está cerca de la nueva zona de soporte", resultFloor.isNearSupportZone)
         assertTrue("Ratio a soporte debe ser menor a 0.15", resultFloor.distanceToSupportRatio < 0.15f)
     }
+
+    @Test
+    fun testVisionAnalyzerTrend_uptrendDetectionWithPullback() {
+        // 7 velas ascendentes con 1 pullback:
+        // x va de 400 a 540 (más reciente en mayor x)
+        // Y va bajando (precio subiendo)
+        val candles = (1..7).map { i ->
+            val isPullback = (i == 4)
+            val deltaY = if (isPullback) +10f else -25f
+            val baseTopY = 600f - (i * 20f) + deltaY
+            analyzer.createCandle(
+                type = if (isPullback) CandleType.RED else CandleType.GREEN,
+                x = (400 + i * 20).toFloat(),
+                topY = baseTopY - 5f,
+                bottomY = baseTopY + 35f,
+                bodyTopY = baseTopY,
+                bodyBottomY = baseTopY + 25f
+            )
+        }
+
+        val result = analyzer.evaluateCandlePatterns(candleList = candles)
+        assertEquals("Debe clasificar como UPTREND", TrendDirection.UPTREND, result.trend)
+        assertFalse("No debe marcar lateral en tendencia alcista", result.isMarketSideways)
+    }
+
+    @Test
+    fun testVisionAnalyzerTrend_downtrendDetectionWithPullback() {
+        // 7 velas descendentes con 1 pullback:
+        // Y va subiendo en pantalla (precio cayendo)
+        val candles = (1..7).map { i ->
+            val isPullback = (i == 4)
+            val deltaY = if (isPullback) -10f else +25f
+            val baseTopY = 200f + (i * 20f) + deltaY
+            analyzer.createCandle(
+                type = if (isPullback) CandleType.GREEN else CandleType.RED,
+                x = (400 + i * 20).toFloat(),
+                topY = baseTopY - 5f,
+                bottomY = baseTopY + 35f,
+                bodyTopY = baseTopY,
+                bodyBottomY = baseTopY + 25f
+            )
+        }
+
+        val result = analyzer.evaluateCandlePatterns(candleList = candles)
+        assertEquals("Debe clasificar como DOWNTREND", TrendDirection.DOWNTREND, result.trend)
+        assertFalse("No debe marcar lateral en tendencia bajista", result.isMarketSideways)
+    }
+
+    @Test
+    fun testVisionAnalyzerTrend_tightSidewaysDetection() {
+        // Velas oscilando horizontalmente alrededor de Y = 400
+        val candles = (1..6).map { i ->
+            val isEven = (i % 2 == 0)
+            val baseTopY = if (isEven) 398f else 402f
+            analyzer.createCandle(
+                type = if (isEven) CandleType.GREEN else CandleType.RED,
+                x = (400 + i * 20).toFloat(),
+                topY = baseTopY - 4f,
+                bottomY = baseTopY + 20f,
+                bodyTopY = baseTopY,
+                bodyBottomY = baseTopY + 16f
+            )
+        }
+
+        val result = analyzer.evaluateCandlePatterns(candleList = candles)
+        assertEquals("Debe clasificar como SIDEWAYS en oscilación horizontal", TrendDirection.SIDEWAYS, result.trend)
+    }
 }

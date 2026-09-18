@@ -213,7 +213,7 @@ class SyntheticCandleEngine {
         updateOverextensionStatus(tick)
 
         // 6. Recalcular tendencia en cada tick para respuesta inmediata en HUD y estrategia
-        recalculateTrend()
+        recalculateTrend(currentTickTimeMs = tick.timestampMs)
 
         // 7. Evaluar señales cuantitativas en la ventana sniper (:57s - :05s)
         evaluateSniperOpportunity(tick)
@@ -633,9 +633,9 @@ class SyntheticCandleEngine {
         }
     }
 
-    private fun recalculateTrend(force: Boolean = false) {
-        val now = System.currentTimeMillis()
-        if (!force && now - lastTrendCalcTime < 1000L) return
+    private fun recalculateTrend(force: Boolean = false, currentTickTimeMs: Long = 0L) {
+        val now = if (currentTickTimeMs > 0L) currentTickTimeMs else System.currentTimeMillis()
+        if (!force && Math.abs(now - lastTrendCalcTime) < 500L) return
         lastTrendCalcTime = now
 
         synchronized(closedCandles) {
@@ -643,21 +643,38 @@ class SyntheticCandleEngine {
             sample.addAll(closedCandles.takeLast(9))
             currentCandle?.let { sample.add(it) }
 
-            // Si hay pocas velas en memoria (< 3), evaluar ticks recientes con OLS
+            // Si hay pocas velas en memoria (< 3), evaluar ticks recientes con OLS y momentum
             if (sample.size < 3) {
                 synchronized(recentTickPrices) {
                     if (recentTickPrices.size >= 10) {
                         val tickList = recentTickPrices.takeLast(30).toList()
                         val tickSlope = calculateLinearRegressionSlope(tickList)
                         val tickAtr = calculateAtr(14)
-                        val normTickSlope = if (tickAtr > 0.0) tickSlope / (tickAtr / 60.0) else 0.0
+                        val maxP = tickList.maxOrNull() ?: 0.0
+                        val minP = tickList.minOrNull() ?: 0.0
+                        val tickSpan = (maxP - minP).coerceAtLeast(0.0001)
+                        val referenceRange = if (tickAtr > 0.001) tickAtr else tickSpan
+                        val netMove = tickList.last() - tickList.first()
+                        val netRatio = netMove / referenceRange
+                        val slopeRatio = (tickSlope * (tickList.size - 1)) / referenceRange
+
                         detectedTrend = when {
-                            normTickSlope >= 0.12 -> TrendDirection.UPTREND
-                            normTickSlope <= -0.12 -> TrendDirection.DOWNTREND
+                            netRatio >= 0.12 || slopeRatio >= 0.12 || consecutiveUpTicks >= 4 -> TrendDirection.UPTREND
+                            netRatio <= -0.12 || slopeRatio <= -0.12 || consecutiveDownTicks >= 4 -> TrendDirection.DOWNTREND
                             else -> visionTrend ?: TrendDirection.SIDEWAYS
                         }
                     } else {
-                        detectedTrend = visionTrend ?: TrendDirection.SIDEWAYS
+                        val active = currentCandle
+                        if (active != null && active.range > 0.0001) {
+                            val bodyRatio = (active.close - active.open) / active.range
+                            detectedTrend = when {
+                                bodyRatio >= 0.35 -> TrendDirection.UPTREND
+                                bodyRatio <= -0.35 -> TrendDirection.DOWNTREND
+                                else -> visionTrend ?: TrendDirection.SIDEWAYS
+                            }
+                        } else {
+                            detectedTrend = visionTrend ?: TrendDirection.SIDEWAYS
+                        }
                     }
                 }
                 return
@@ -668,28 +685,32 @@ class SyntheticCandleEngine {
             val atr = calculateAtr(14)
             val normSlope = if (atr > 0.0) slope / atr else 0.0
 
+            val greenCandles = sample.count { it.close > it.open }
+            val redCandles = sample.count { it.close < it.open }
+            val last3 = sample.takeLast(3)
+            val isConsecutiveHigherHighs = last3.size >= 3 && last3[2].high > last3[1].high && last3[1].high > last3[0].high && last3[2].low > last3[1].low
+            val isConsecutiveLowerLows = last3.size >= 3 && last3[2].low < last3[1].low && last3[1].low < last3[0].low && last3[2].high < last3[1].high
+
             val vTrend = visionTrend
 
             when {
-                // Tendencia alcista contundente por pendiente normalizada respecto a ATR
-                normSlope >= 0.12 -> {
-                    if (vTrend == TrendDirection.DOWNTREND && normSlope < 0.20) {
-                        detectedTrend = TrendDirection.SIDEWAYS
-                    } else {
-                        detectedTrend = TrendDirection.UPTREND
-                    }
+                // Tendencia alcista contundente por OLS o confluencia de acción de precio
+                normSlope >= 0.040 || (normSlope >= 0.018 && (greenCandles >= redCandles + 2 || isConsecutiveHigherHighs)) || (greenCandles >= sample.size - 1 && normSlope > 0.005) -> {
+                    detectedTrend = TrendDirection.UPTREND
                 }
-                // Tendencia bajista contundente por pendiente normalizada respecto a ATR
-                normSlope <= -0.12 -> {
-                    if (vTrend == TrendDirection.UPTREND && normSlope > -0.20) {
-                        detectedTrend = TrendDirection.SIDEWAYS
-                    } else {
-                        detectedTrend = TrendDirection.DOWNTREND
-                    }
+                // Tendencia bajista contundente por OLS o confluencia de acción de precio
+                normSlope <= -0.040 || (normSlope <= -0.018 && (redCandles >= greenCandles + 2 || isConsecutiveLowerLows)) || (redCandles >= sample.size - 1 && normSlope < -0.005) -> {
+                    detectedTrend = TrendDirection.DOWNTREND
                 }
                 else -> {
                     // En ausencia de pendiente estadística significativa, el mercado está en rango
-                    detectedTrend = TrendDirection.SIDEWAYS
+                    if (vTrend == TrendDirection.UPTREND && normSlope > 0.010) {
+                        detectedTrend = TrendDirection.UPTREND
+                    } else if (vTrend == TrendDirection.DOWNTREND && normSlope < -0.010) {
+                        detectedTrend = TrendDirection.DOWNTREND
+                    } else {
+                        detectedTrend = TrendDirection.SIDEWAYS
+                    }
                 }
             }
         }

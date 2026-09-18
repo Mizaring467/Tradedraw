@@ -1007,9 +1007,10 @@ class TradingEngine(
             analysis?.isValidBreakoutCall == true || analysis?.isValidBreakoutPut == true -> "💥 Breakout Validado (>50% fuera de nivel)"
             analysis?.trend == TrendDirection.UPTREND -> "📈 Flujo Continuo Alcista (Higher Highs)"
             analysis?.trend == TrendDirection.DOWNTREND -> "📉 Flujo Continuo Bajista (Lower Lows)"
-            wsTrend == TrendDirection.UPTREND -> "📈 Micro-Ticks Alcistas en Velas Sintéticas 1m"
-            wsTrend == TrendDirection.DOWNTREND -> "📉 Micro-Ticks Bajistas en Velas Sintéticas 1m"
+            wsTrend == TrendDirection.UPTREND -> "📈 Tendencia Alcista en Velas Sintéticas 1m"
+            wsTrend == TrendDirection.DOWNTREND -> "📉 Tendencia Bajista en Velas Sintéticas 1m"
             analysis?.isMarketSideways == true -> "📊 Rango Lateral / Dojis de Indecisión"
+            wsTrend == TrendDirection.SIDEWAYS -> "📊 Rango Lateral Cuantitativo / Esperando Expansión"
             else -> "🔍 Monitoreando Acción del Precio"
         }
 
@@ -1022,7 +1023,9 @@ class TradingEngine(
             }
             tick != null -> {
                 val vel = Math.abs(tick.velocity)
-                if (vel > 0.0003f) 85 else if (vel > 0.0001f) 72 else 60
+                val trendBonus = if (wsTrend != TrendDirection.SIDEWAYS) 12 else 0
+                val baseVel = if (vel > 0.0003f) 78 else if (vel > 0.0001f) 68 else 58
+                (baseVel + trendBonus).coerceIn(55, 92)
             }
             else -> 65
         }

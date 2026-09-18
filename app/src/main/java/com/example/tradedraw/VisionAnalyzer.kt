@@ -287,16 +287,23 @@ class VisionAnalyzer {
         isBullishImpulse: Boolean = false,
         isBearishImpulse: Boolean = false
     ): VisionAnalysisResult {
+        // Normalizar a orden descendente de X (más reciente en índice 0, derecha a izquierda)
+        val orderedCandles = if (candleList.size >= 2 && candleList.first().x < candleList.last().x) {
+            candleList.reversed()
+        } else {
+            candleList
+        }
+
         var minPriceY = Float.MAX_VALUE // Menor Y = Mayor precio (Resistencia / Techo)
         var maxPriceY = Float.MIN_VALUE // Mayor Y = Menor precio (Soporte / Piso)
         var highestX = (startX + endX) * 0.5f
         var lowestX = (startX + endX) * 0.5f
         var latestPriceY = (startY + endY) / 2f
 
-        val candleTypes = candleList.map { it.type }
+        val candleTypes = orderedCandles.map { it.type }
 
-       if (candleList.isNotEmpty()) {
-            val historicalCandles = if (candleList.size >= 3) candleList.drop(1) else candleList
+       if (orderedCandles.isNotEmpty()) {
+            val historicalCandles = if (orderedCandles.size >= 3) orderedCandles.drop(1) else orderedCandles
 
             // Detección institucional por Fractales (Swing Highs y Swing Lows)
             val (fractalSupports, fractalResistances) = detectFractalLevels(historicalCandles)
@@ -309,7 +316,7 @@ class VisionAnalyzer {
             highestX = historicalCandles.find { it.topY == minPriceY }?.x ?: ((startX + endX) * 0.5f)
             lowestX = historicalCandles.find { it.bottomY == maxPriceY }?.x ?: ((startX + endX) * 0.5f)
 
-            latestPriceY = (candleList.first().bodyTopY + candleList.first().bodyBottomY) / 2f
+            latestPriceY = (orderedCandles.first().bodyTopY + orderedCandles.first().bodyBottomY) / 2f
        }
 
         // Racha consecutiva de la última vela hacia atrás
@@ -329,50 +336,73 @@ class VisionAnalyzer {
             else -> "1D ⚪"
         }
 
-        // Tendencia institucional basada en medias móviles de velas recientes (8-12 velas) y pendiente
+        // Tendencia institucional basada en pendiente temporal OLS y acción del precio
         val chartHeight = (endY - startY).coerceAtLeast(100f)
-        val trend = if (candleList.size >= 3) {
-            val sampleSize = candleList.size.coerceAtMost(10)
-            val sample = candleList.take(sampleSize)
+        val trend = if (orderedCandles.size >= 3) {
+            val sampleSize = orderedCandles.size.coerceAtMost(10)
+            val sample = orderedCandles.take(sampleSize) // sample[0] es la más reciente
+            val sampleChronological = sample.reversed() // Cronológico: index 0 es la más antigua, last() es la más reciente
 
-            // Determinar si candleList está ordenada de derecha a izquierda (más reciente en index 0) o de izquierda a derecha
-            val isOrderedRightToLeft = sample.size >= 2 && sample.first().x >= sample.last().x
-            val candleNewest = if (isOrderedRightToLeft) sample.first() else sample.last()
-            val candleOldest = if (isOrderedRightToLeft) sample.last() else sample.first()
+            val closesY = sampleChronological.map { c ->
+                when (c.type) {
+                    CandleType.GREEN -> c.bodyTopY
+                    CandleType.RED -> c.bodyBottomY
+                    else -> (c.bodyTopY + c.bodyBottomY) * 0.5f
+                }
+            }
 
-            val priceNewest = if (candleNewest.type == CandleType.GREEN) candleNewest.bodyTopY else candleNewest.bodyBottomY
-            val priceOldest = if (candleOldest.type == CandleType.GREEN) candleOldest.bodyTopY else candleOldest.bodyBottomY
+            // OLS sobre los precios de cierre (menor Y = mayor precio)
+            val n = closesY.size
+            var sumX = 0.0
+            var sumY = 0.0
+            var sumXY = 0.0
+            var sumX2 = 0.0
+            for (i in 0 until n) {
+                val x = i.toDouble()
+                val y = closesY[i].toDouble()
+                sumX += x
+                sumY += y
+                sumXY += x * y
+                sumX2 += x * x
+            }
+            val denom = (n * sumX2) - (sumX * sumX)
+            val slopeY = if (Math.abs(denom) > 1e-9) ((n * sumXY) - (sumX * sumY)) / denom else 0.0
+            // Positivo en normPriceSlope = sube en precio (Y decrece en pantalla)
+            val normPriceSlope = -slopeY / chartHeight.toDouble()
 
             val redCount = sample.count { it.type == CandleType.RED }
             val greenCount = sample.count { it.type == CandleType.GREEN }
+            val dojiCount = sample.count { it.type == CandleType.DOJI || it.bodyHeight <= 4f }
+            val isMostlyDojis = dojiCount >= (sample.size * 0.5)
 
-            // Micro-tendencia de las 4 velas más recientes para detectar consolidación plana inmediata
-            val microSample = sample.take(4)
-            val microNewest = if (isOrderedRightToLeft) microSample.first() else microSample.last()
-            val microOldest = if (isOrderedRightToLeft) microSample.last() else microSample.first()
-            val microChange = (if (microNewest.type == CandleType.GREEN) microNewest.bodyTopY else microNewest.bodyBottomY) -
-                              (if (microOldest.type == CandleType.GREEN) microOldest.bodyTopY else microOldest.bodyBottomY)
-            val isMicroFlat = Math.abs(microChange) < (chartHeight * 0.025f)
+            // Detección de Chop / Alternancia de Velas en la ventana local
+            val isChop = if (sample.size >= 4) {
+                val last4 = sample.take(4)
+                val alt = (last4[0].type != last4[1].type && last4[1].type != last4[2].type && last4[2].type != last4[3].type)
+                val microDisp = Math.abs(last4.first().bodyTopY - last4.last().bodyTopY)
+                alt && microDisp < (chartHeight * 0.035f)
+            } else false
 
-            // Pendiente temporal (precio más reciente vs más antiguo: menor Y = precio más alto)
-            val netPriceChange = priceNewest - priceOldest // > 0 significa que el precio cayó hacia mayor Y
-            val minMoveThreshold = (chartHeight * 0.008f).coerceIn(5f, 18f)
+            val priceNewest = closesY.last()
+            val priceOldest = closesY.first()
+            val netPriceChange = priceNewest - priceOldest // < 0 significa que el precio subió
+            val minMoveThreshold = (chartHeight * 0.006f).coerceIn(4f, 15f)
 
             when {
-                // Subida alcista contundente: precio neto subió (menor Y) con mayoría de verdes o inclinación fuerte
-                (greenCount >= 3 && redCount <= 1) || (consecutive >= 3 && lastType == CandleType.GREEN) -> TrendDirection.UPTREND
-                netPriceChange < -minMoveThreshold && greenCount >= redCount -> TrendDirection.UPTREND
-                netPriceChange < -minMoveThreshold * 1.5f -> TrendDirection.UPTREND
-                highestX > lowestX && greenCount > redCount + 1 -> TrendDirection.UPTREND
+                isMostlyDojis || isChop -> TrendDirection.SIDEWAYS
 
-                // Caída bajista contundente: precio neto cayó (mayor Y) con mayoría de rojas o inclinación fuerte
-                (redCount >= 3 && greenCount <= 1) || (consecutive >= 3 && lastType == CandleType.RED) -> TrendDirection.DOWNTREND
-                netPriceChange > minMoveThreshold && redCount >= greenCount -> TrendDirection.DOWNTREND
-                netPriceChange > minMoveThreshold * 1.5f -> TrendDirection.DOWNTREND
-                lowestX > highestX && redCount > greenCount + 1 -> TrendDirection.DOWNTREND
+                // Subida alcista contundente: pendiente OLS positiva o confluencia de velas verdes
+                (normPriceSlope >= 0.004 && greenCount > redCount) ||
+                (greenCount >= 3 && redCount <= 1 && normPriceSlope > 0.001) ||
+                (consecutive >= 3 && lastType == CandleType.GREEN) ||
+                (netPriceChange < -minMoveThreshold && greenCount > redCount) -> TrendDirection.UPTREND
 
-                // Si la micro-tendencia inmediata está completamente estancada con alternancia y sin desplazamiento neto
-                isMicroFlat && microSample.size >= 4 && (microSample.count { it.type == CandleType.GREEN } == microSample.count { it.type == CandleType.RED }) && Math.abs(netPriceChange) < minMoveThreshold -> TrendDirection.SIDEWAYS
+                // Caída bajista contundente: pendiente OLS negativa o confluencia de velas rojas
+                (normPriceSlope <= -0.004 && redCount > greenCount) ||
+                (redCount >= 3 && greenCount <= 1 && normPriceSlope < -0.001) ||
+                (consecutive >= 3 && lastType == CandleType.RED) ||
+                (netPriceChange > minMoveThreshold && redCount > greenCount) -> TrendDirection.DOWNTREND
+
                 else -> TrendDirection.SIDEWAYS
             }
         } else {
@@ -614,16 +644,17 @@ class VisionAnalyzer {
         val putPct = 100 - callPct
 
         // 7. Filtro Anti-Mercado Lateral (Sideways, Dojis & Whipsaw Alternante)
-        val recentCandles = candleList.take(10)
-        val last5 = candleList.take(5)
+        val recentCandles = orderedCandles.take(10)
+        val last5 = orderedCandles.take(5)
         val avgBodyHeightLast5 = if (last5.isNotEmpty()) last5.map { it.bodyHeight }.average().toFloat() else 0f
         val currentCandleBody = lastCandle?.bodyHeight ?: 0f
-        // Filtro Anti-Doji y micro-rango: Si cuerpo actual < 15px o promedio de últimas 5 < 15px
-        val isDojiOrLowVolume = (lastCandle != null && currentCandleBody < 15f) || (last5.isNotEmpty() && avgBodyHeightLast5 < 15f)
+        val minBodyPx = (chartHeight * 0.008f).coerceIn(4f, 12f)
+        // Filtro Anti-Doji y micro-rango
+        val isDojiOrLowVolume = (lastCandle != null && currentCandleBody < minBodyPx) || (last5.isNotEmpty() && avgBodyHeightLast5 < minBodyPx)
 
         // Detección de Chop / Alternancia de Velas (Whipsaw: ej. V-R-V-R)
-        val isAlternatingChop = if (candleList.size >= 4) {
-            val last4 = candleList.take(4)
+        val isAlternatingChop = if (orderedCandles.size >= 4) {
+            val last4 = orderedCandles.take(4)
             val alternatingColors = (last4[0].type != last4[1].type && last4[1].type != last4[2].type && last4[2].type != last4[3].type)
             val microDisplacement = Math.abs(last4.first().bodyTopY - last4.last().bodyTopY)
             alternatingColors && microDisplacement < (chartHeight * 0.025f)
@@ -635,7 +666,7 @@ class VisionAnalyzer {
                 it.type == CandleType.DOJI || it.bodyHeight <= 4f || (it.bodyHeight <= it.totalHeight * 0.10f && it.totalHeight >= 8f)
             }
             val dojiRatio = dojiCount.toFloat() / recentCandles.size
-            avgBodyHeight < 15.0 || dojiRatio >= 0.50f || isAlternatingChop
+            avgBodyHeight < minBodyPx || dojiRatio >= 0.50f || isAlternatingChop
         } else false
 
         // Filtro Cuantitativo de Consolidación Estrecha (tradingview-quantitative)
@@ -645,11 +676,17 @@ class VisionAnalyzer {
             val highestY = sample.minOf { it.topY }
             val lowestY = sample.maxOf { it.bottomY }
             val rangeHeight = lowestY - highestY
-            avgBodyHeight < 12.0 || rangeHeight < (chartHeight * 0.035f) || isAlternatingChop
+            avgBodyHeight < minBodyPx || rangeHeight < (chartHeight * 0.035f) || isAlternatingChop
         } else false
 
-        // En tendencias direccionales confirmadas sin micro-velas ni dojis, el mercado NO es lateral
-        val isSideways = isSidewaysByCandles || (trend == TrendDirection.SIDEWAYS && (isConsolidationTight || isAlternatingChop || (candleList.size >= 4 && Math.abs(callPct - putPct) < 18)))
+        // En tendencias direccionales confirmadas, no marcar falso lateral a menos que haya dojis masivos o chop alternante
+        val isSideways = if (isSidewaysByCandles) {
+            true
+        } else if (trend != TrendDirection.SIDEWAYS) {
+            isAlternatingChop
+        } else {
+            isConsolidationTight || (orderedCandles.size >= 4 && Math.abs(callPct - putPct) < 15)
+        }
 
         // Confluencia Multi-Factor Cuantitativa (0-100%)
         var confCall = 40

@@ -1639,12 +1639,11 @@ class OverlayService : Service() {
             val reasoning = tradingEngine.getEngineReasoning()
 
             val wsTrend = tradingEngine.syntheticCandleEngine.detectedTrend
-            val trendDir = if (analysis != null && analysis.trend != TrendDirection.SIDEWAYS) {
-                analysis.trend
-            } else if (wsTrend != TrendDirection.SIDEWAYS) {
-                wsTrend
-            } else {
-                analysis?.trend ?: TrendDirection.SIDEWAYS
+            val trendDir = when {
+                wsTrend != TrendDirection.SIDEWAYS -> wsTrend
+                analysis != null && analysis.trend != TrendDirection.SIDEWAYS -> analysis.trend
+                analysis != null -> analysis.trend
+                else -> wsTrend
             }
             when (trendDir) {
                 TrendDirection.UPTREND -> {
