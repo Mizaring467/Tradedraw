@@ -1,4 +1,4 @@
-﻿# AGENTS.md Â· TradeDraw Development Guide
+# AGENTS.md Â· TradeDraw Development Guide
 
 Este documento proporciona el contexto completo, la arquitectura tÃ©cnica, las reglas de desarrollo y los procedimientos de compilaciÃ³n de **TradeDraw** para cualquier agente de cÃ³digo autÃ³nomo o asÃ­ncrono (**Jules, Hermes, DeepSeek Harness, OpenCode, Claude Code, etc.**).
 
@@ -136,7 +136,9 @@ git push origin main
 ```
 Luego, verifica en la pestaÃ±a de **Actions** del repositorio de GitHub que el build haya concluido en verde (âœ“) y deja el enlace al artefacto descargable para el usuario.
 
-> âš¡ **Regla Estricta:** Siempre compila e instala el APK de inmediato en el telÃ©fono vÃ­a `adb install -r` ante cada cambio, para que el usuario no tenga que instalar manualmente.
+> ⚡ **Regla Estricta y Memoria Permanente:**
+> 1. **Siempre al terminar una tarea o cambio**, compila e instala de inmediato la app en el teléfono vía `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
+> 2. **El probador (`tester`) DEBE probar la app en el dispositivo** (verificación visual, logs de runtime y flujos clave) y **emitir su reporte formal** con evidencia para validar el avance y continuar con la siguiente iteración.
 
 ---
 

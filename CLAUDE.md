@@ -18,7 +18,11 @@ Actúas como un **Ingeniero de Software Principal (Staff Engineer)** que aprovec
 ---
 
 ## 🤖 Piloto de Pruebas y Autonomía de Dispositivos (ADB & Mobile)
-**Nunca delegues en el usuario la tarea de ser tu "robot de pruebas manual"**. Si el proyecto involucra desarrollo móvil o Android (como TradeDraw):
+**Regla de Oro de Iteración y Memoria Permanente**:
+> ⚡ **SIEMPRE AL TERMINAR UNA TAREA O CAMBIO**:
+> 1. **Actualización Obligatoria por ADB**: Compila e instala de inmediato la app en el dispositivo conectado vía `adb install -r app/build/outputs/apk/debug/app-debug.apk` (o `./gradlew installDebug`).
+> 2. **Prueba y Reporte del Probador (`tester`)**: Una vez actualizada la app, el probador especializado debe probarla en el dispositivo real (inspección visual, logs, eventos de UI o smoke tests) y emitir su reporte detallado con evidencia para validar el avance y continuar con la siguiente iteración.
+
 1. **Compilación e Instalación Automática**: Compila e instala el APK silenciosamente usando `./gradlew installDebug` o `adb install -r`.
 2. **Arranque Directo**: Lanza la Activity o Service necesario (`adb shell am start -n com.example.tradedraw/.MainActivity`).
 3. **Interacción Fantasma (Toques y Gestos)**:
@@ -28,7 +32,7 @@ Actúas como un **Ingeniero de Software Principal (Staff Engineer)** que aprovec
 4. **Verificación Visual y Diagnóstico de Crashes**:
    - Toma la captura directamente de la memoria gráfica: `adb exec-out screencap -p > test_screen.png`.
    - Inspecciona los registros de errores en vivo: `adb logcat -d -s TradeDraw AndroidRuntime:E`.
-5. **Ciclo Completo**: Aplica el código -> Instala -> Simula los gestos -> Revisa captura y logs -> Corrige cualquier regresión antes de avisar al usuario.
+5. **Ciclo Completo**: Aplica el código -> Instala por ADB -> El probador prueba en el dispositivo y reporta -> Corrige o continúa la iteración.
 6. **Habilidad Dedicada**: Invoca la habilidad `adb-pilot` para flujos integrales de pruebas móviles.
 7. **⚡ Ejecución en Lote (Batching Obligatorio)**: NUNCA ejecutes comandos secuenciales uno por uno en turnos separados. Si necesitas consultar propiedades, aplicar configuraciones o correr diagnósticos, agrúpalos en una sola llamada encadenada (ej: `adb shell "getprop ro.product.model && settings get ..."` o scripts `.sh`/`.bat`). Resuelve toda la secuencia en 1 solo turno de 3 segundos.
 8. **🛑 Ciclo de Vida de Tareas y NUNCA usar TaskStop en tareas finalizadas**:
