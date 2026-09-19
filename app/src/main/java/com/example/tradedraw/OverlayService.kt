@@ -682,25 +682,21 @@ class OverlayService : Service() {
                 when (which) {
                     0 -> {
                         ai.baseUrl = "http://localhost:20128/v1"
-                        ai.apiKey = ""
                         ai.model = "auto/best-vision"
                         Toast.makeText(this, "Preset: OmniRoute Termux Móvil activado", Toast.LENGTH_SHORT).show()
                     }
                     1 -> {
                         ai.baseUrl = "http://192.168.1.185:20128/v1"
-                        ai.apiKey = ""
                         ai.model = "auto/best-vision"
                         Toast.makeText(this, "Preset: OmniRoute Termux Wi-Fi activado", Toast.LENGTH_SHORT).show()
                     }
                     2 -> {
                         ai.baseUrl = "http://192.168.1.245:20128/v1"
-                        ai.apiKey = ""
                         ai.model = "antigravity/gemini-3.7-flash-high"
                         Toast.makeText(this, "Preset: OmniRoute Wi-Fi PC activado", Toast.LENGTH_SHORT).show()
                     }
                     3 -> {
                         ai.baseUrl = "https://api.b.ai/v1"
-                        ai.apiKey = ""
                         ai.model = "deepseek-v4-flash-vision-exp"
                         Toast.makeText(this, "Preset: B.AI Cloud activado", Toast.LENGTH_SHORT).show()
                     }

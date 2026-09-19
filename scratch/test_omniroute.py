@@ -1,6 +1,9 @@
+import os
 import urllib.request
 import json
 import base64
+
+api_key = os.environ.get('OMNIROUTE_API_KEY', '')
 
 with open('C:/Users/heidy/Tradedraw/test_screen.png', 'rb') as f:
     b64 = base64.b64encode(f.read()).decode()
@@ -21,7 +24,7 @@ payload = {
 
 req = urllib.request.Request(
     'http://192.168.1.185:20128/v1/chat/completions',
-    headers={'Authorization': 'Bearer ', 'Content-Type': 'application/json'},
+    headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
     data=json.dumps(payload).encode()
 )
 
