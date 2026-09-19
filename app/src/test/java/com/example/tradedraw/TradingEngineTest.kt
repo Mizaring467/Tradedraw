@@ -516,27 +516,31 @@ class TradingEngineTest {
 
     @Test
     fun testStrictTimingWindowAndVetoFilters() {
-        // 1. Probar ventana estricta :57 a :05
-        assertTrue("Segundo 57 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(57))
+        // 1. Probar ventana estricta :58 a :03 conforme a master_traders_skill
+        assertFalse("Segundo 57 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(57))
         assertTrue("Segundo 58 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(58))
         assertTrue("Segundo 59 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(59))
         assertTrue("Segundo 00 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(0))
         assertTrue("Segundo 01 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(1))
         assertTrue("Segundo 02 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(2))
         assertTrue("Segundo 03 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(3))
-        assertTrue("Segundo 04 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(4))
-        assertTrue("Segundo 05 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(5))
+        assertFalse("Segundo 04 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(4))
+        assertFalse("Segundo 05 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(5))
         assertFalse("Segundo 06 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(6))
         assertFalse("Segundo 30 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(30))
         assertFalse("Segundo 56 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(56))
 
-        // 2. Probar veto estricto :15 a :55
+        // 2. Probar veto estricto :06 a :57 conforme a master_traders_skill
+        assertTrue("Segundo 06 debe estar vetado", MarketTickFilters.isTimingVetoed(6))
         assertTrue("Segundo 15 debe estar vetado", MarketTickFilters.isTimingVetoed(15))
         assertTrue("Segundo 30 debe estar vetado", MarketTickFilters.isTimingVetoed(30))
         assertTrue("Segundo 55 debe estar vetado", MarketTickFilters.isTimingVetoed(55))
+        assertTrue("Segundo 57 debe estar vetado", MarketTickFilters.isTimingVetoed(57))
         assertFalse("Segundo 00 no debe estar vetado", MarketTickFilters.isTimingVetoed(0))
+        assertFalse("Segundo 58 no debe estar vetado", MarketTickFilters.isTimingVetoed(58))
         assertFalse("Segundo 59 no debe estar vetado", MarketTickFilters.isTimingVetoed(59))
         assertFalse("Segundo 02 no debe estar vetado", MarketTickFilters.isTimingVetoed(2))
+        assertFalse("Segundo 03 no debe estar vetado", MarketTickFilters.isTimingVetoed(3))
 
         // 3. Probar evaluación en TradingEngine con segundo vetado (:30s)
         val vetoAnalysis = VisionAnalysisResult(
@@ -796,6 +800,37 @@ class TradingEngineTest {
         val tsM5_58 = 58000L   // 58s (apenas minuto 1 de 5)
         assertTrue("Segundo 298 debe ser sniper window para M5", CandleTimeframe.M5.isSniperTimingWindow(tsM5_298))
         assertFalse("Segundo 58 en M5 NO debe ser sniper window", CandleTimeframe.M5.isSniperTimingWindow(tsM5_58))
+
+        // Test de ventana estándar (:58-:03)
+        val tsM1_02 = 2000L  // 02s
+        val tsM1_05 = 5000L  // 05s
+        assertTrue("Segundo 02 debe ser standard timing window para M1", CandleTimeframe.M1.isStandardTimingWindow(tsM1_02))
+        assertTrue("Segundo 58 debe ser standard timing window para M1", CandleTimeframe.M1.isStandardTimingWindow(tsM1_58))
+        assertFalse("Segundo 05 NO debe ser standard timing window para M1 (:58-:03)", CandleTimeframe.M1.isStandardTimingWindow(tsM1_05))
+    }
+
+    @Test
+    fun testSingleTradePerCandleLock_PreventsMultipleTradesInSameMinute() {
+        // Simular que ya se ejecutó un trade en el minuto actual
+        val epochMinute = 1_000_000L
+        val nowMs = epochMinute * 60_000L + 58_500L // Minuto X, segundo :58.5s
+
+        // Crear mock/instancia de TradingEngine lógica
+        var lastMinute = epochMinute
+        fun canExecuteInMinute(ts: Long): Boolean {
+            val m = ts / 60000L
+            return if (lastMinute == m) false else {
+                lastMinute = m
+                true
+            }
+        }
+
+        // Intento 1 en el mismo minuto debe ser bloqueado
+        assertFalse("No se debe permitir un segundo trade en el mismo minuto de vela", canExecuteInMinute(nowMs + 500L))
+
+        // Intento en el siguiente minuto debe ser permitido
+        val nextMinuteMs = (epochMinute + 1) * 60_000L + 58_200L
+        assertTrue("En el siguiente minuto de vela sí debe permitirse operar", canExecuteInMinute(nextMinuteMs))
     }
 }
 

@@ -80,14 +80,14 @@ object MarketTickFilters {
     }
 
     /**
-     * Evalúa si el segundo actual está dentro de la ventana estricta (:57 a :05).
+     * Evalúa si el segundo actual está dentro de la ventana estricta (:58 a :03) conforme a master_traders_skill.
      */
-    fun isStrictTimingWindow(second: Int): Boolean = second in 57..59 || second in 0..5
+    fun isStrictTimingWindow(second: Int): Boolean = second in 58..59 || second in 0..3
 
     /**
-     * Evalúa si el segundo actual cae dentro del veto estricto (:15 a :55).
+     * Evalúa si el segundo actual cae dentro del veto estricto (:06 a :57) conforme a master_traders_skill.
      */
-    fun isTimingVetoed(second: Int): Boolean = second in 15..55
+    fun isTimingVetoed(second: Int): Boolean = second in 6..57
 
     /**
      * Calcula el rango porcentual de las últimas velas: ((maxHigh - minLow) / refPrice) * 100.

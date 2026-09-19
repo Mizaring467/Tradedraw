@@ -19,6 +19,6 @@ enum class CandleTimeframe(val seconds: Int, val label: String) {
 
     fun isStandardTimingWindow(timestampMs: Long = System.currentTimeMillis()): Boolean {
         val s = getCycleSecond(timestampMs)
-        return s in (seconds - 3)..(seconds - 1) || s in 0..5
+        return s in (seconds - 2)..(seconds - 1) || s in 0..3
     }
 }

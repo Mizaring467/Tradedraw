@@ -844,4 +844,132 @@ class SyntheticCandleEngineTest {
 
         assertEquals("Ticks bajistas tempranos deben detectar DOWNTREND sin requerir 3 velas cerradas", TrendDirection.DOWNTREND, engine.detectedTrend)
     }
+
+    @Test
+    fun testCryptoIdxMicroPrecisionUptrendDetected() {
+        val engine = SyntheticCandleEngine()
+        var now = 60000L * 10L
+        var price = 641.8673950000
+
+        // 6 velas ascendentes con micro-deltas realistas de Crypto IDX (variaciones en 5ª y 6ª decimal)
+        for (i in 0 until 6) {
+            val open = price
+            val high = open + 0.000005
+            val low = open - 0.000001
+            val close = open + 0.000003
+            engine.onNewTick(MarketTick("Z-CRY/IDX", open, now))
+            engine.onNewTick(MarketTick("Z-CRY/IDX", high, now + 20000L))
+            engine.onNewTick(MarketTick("Z-CRY/IDX", low, now + 40000L))
+            engine.onNewTick(MarketTick("Z-CRY/IDX", close, now + 59000L))
+            price = close
+            now += 60000L
+        }
+
+        assertEquals("Activo de alta precisión como Crypto IDX debe clasificar subida sostenida como UPTREND", TrendDirection.UPTREND, engine.detectedTrend)
+    }
+
+    @Test
+    fun testCryptoIdxMicroPrecisionDowntrendDetected() {
+        val engine = SyntheticCandleEngine()
+        var now = 60000L * 10L
+        var price = 641.8674030000
+
+        // 6 velas descendentes con micro-deltas realistas de Crypto IDX
+        for (i in 0 until 6) {
+            val open = price
+            val high = open + 0.000001
+            val low = open - 0.000005
+            val close = open - 0.000003
+            engine.onNewTick(MarketTick("Z-CRY/IDX", open, now))
+            engine.onNewTick(MarketTick("Z-CRY/IDX", high, now + 20000L))
+            engine.onNewTick(MarketTick("Z-CRY/IDX", low, now + 40000L))
+            engine.onNewTick(MarketTick("Z-CRY/IDX", close, now + 59000L))
+            price = close
+            now += 60000L
+        }
+
+        assertEquals("Activo de alta precisión como Crypto IDX debe clasificar caída sostenida como DOWNTREND", TrendDirection.DOWNTREND, engine.detectedTrend)
+    }
+
+    @Test
+    fun testCryptoIdxEarlyTicksUptrendDetected() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 10L
+        var price = 641.8673950000
+
+        // 12 ticks tempranos con tendencia ascendente y micro-oscilación
+        for (i in 0 until 12) {
+            val step = if (i % 3 == 0) -0.0000005 else +0.0000015
+            price += step
+            engine.onNewTick(MarketTick("Z-CRY/IDX", price, now + (i * 1000L)))
+        }
+
+        assertEquals("Ticks tempranos de Crypto IDX con avance neto deben detectar UPTREND", TrendDirection.UPTREND, engine.detectedTrend)
+    }
+
+    @Test
+    fun testCryptoIdxEarlyTicksDowntrendDetected() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 10L
+        var price = 641.8674030000
+
+        // 12 ticks tempranos con tendencia descendente y micro-oscilación
+        for (i in 0 until 12) {
+            val step = if (i % 3 == 0) +0.0000005 else -0.0000015
+            price += step
+            engine.onNewTick(MarketTick("Z-CRY/IDX", price, now + (i * 1000L)))
+        }
+
+        assertEquals("Ticks tempranos de Crypto IDX con retroceso neto deben detectar DOWNTREND", TrendDirection.DOWNTREND, engine.detectedTrend)
+    }
+
+    @Test
+    fun testSupportResistanceStrategy_ExecutesMtRejectionAtSupport() {
+        val engine = SyntheticCandleEngine()
+        engine.currentStrategy = AutoTradeStrategy.SUPPORT_RESISTANCE
+        var now = 60000L * 20L
+
+        // 1. Simular velas para establecer soporte en 100.0 y resistencia en 150.0
+        for (m in 0 until 10) {
+            val isEven = m % 2 == 0
+            val openP = if (isEven) 110.0 else 140.0
+            val closeP = if (isEven) 135.0 else 115.0
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = openP, timestampMs = now))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 150.0, timestampMs = now + 20000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 100.0, timestampMs = now + 40000L))
+            engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = closeP, timestampMs = now + 59000L))
+            now += 60000L
+        }
+
+        // 2. Vela previa testeando soporte con mecha de rechazo inferior (60%)
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 108.0, timestampMs = now))
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 110.0, timestampMs = now + 20000L))
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 100.0, timestampMs = now + 40000L))
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 106.0, timestampMs = now + 59000L))
+        now += 60000L
+
+        var signalEmitted: TradeAction? = null
+        var signalReason = ""
+        engine.onSignalGenerated = { action, reason ->
+            signalEmitted = action
+            signalReason = reason
+        }
+
+        // 3. Tick en ventana sniper :59s confirmando rechazo
+        val sniperTime = now + 59000L
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 104.0, timestampMs = sniperTime - 2000L))
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 104.5, timestampMs = sniperTime - 1000L))
+        val sniperTick = MarketTick(
+            asset = "CRYPTO_IDX",
+            price = 105.0,
+            timestampMs = sniperTime,
+            velocity = 0.05f,
+            isBullishImpulse = true
+        )
+        engine.onNewTick(sniperTick)
+
+        assertEquals("Bajo estrategia SUPPORT_RESISTANCE debe ejecutarse MT_REJECTION en soporte", TradeAction.BUY, signalEmitted)
+        assertTrue("La señal debe ser MT_REJECTION", signalReason.contains("MT_REJECTION"))
+    }
 }
+

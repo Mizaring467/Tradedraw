@@ -1574,15 +1574,18 @@ class OverlayService : Service() {
                         else -> 1.0f
                     }
                     val vel = rawVel * decayFactor
-                    val velStr = String.format(java.util.Locale.US, "%+.3f px/s", vel)
+                    val isIdx = latestTick.asset.contains("IDX", ignoreCase = true)
+                    val velFormat = if (isIdx) "%+.6f/s" else "%+.3f/s"
+                    val velThreshold = if (isIdx) 0.000005f else 0.00008f
+                    val velStr = String.format(java.util.Locale.US, velFormat, vel)
                     val impulseStr = when {
-                        isStale || Math.abs(vel) <= 0.0001f -> "━ Neutro"
-                        tick.isBullishImpulse || vel > 0.0001f -> "▲ Impulso Alcista"
-                        tick.isBearishImpulse || vel < -0.0001f -> "▼ Impulso Bajista"
+                        isStale || Math.abs(vel) <= velThreshold -> "━ Neutro"
+                        tick.isBullishImpulse || vel > velThreshold -> "▲ Impulso Alcista"
+                        tick.isBearishImpulse || vel < -velThreshold -> "▼ Impulso Bajista"
                         else -> "━ Neutro"
                     }
                     txtTickVelocity?.text = "⚡ Micro-Velocidad: $velStr $impulseStr"
-                    txtTickVelocity?.setTextColor(if (vel > 0.0001f) Color.parseColor("#4ade80") else if (vel < -0.0001f) Color.parseColor("#f87171") else Color.parseColor("#94a3b8"))
+                    txtTickVelocity?.setTextColor(if (vel > velThreshold) Color.parseColor("#4ade80") else if (vel < -velThreshold) Color.parseColor("#f87171") else Color.parseColor("#94a3b8"))
                     txtTickVelocity?.visibility = View.VISIBLE
                 }
             } else {

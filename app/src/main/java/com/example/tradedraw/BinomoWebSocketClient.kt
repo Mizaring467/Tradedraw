@@ -589,9 +589,12 @@ class BinomoWebSocketClient(private val context: Context) {
             }
 
             // Umbrales de micro-impulso: evalúa tanto el impulso instantáneo como la velocidad suavizada
-            val effectiveVel = if (Math.abs(velocity) > 0.0001f) velocity else smoothedVelocity
-            if (effectiveVel > 0.0003f) isBullish = true
-            else if (effectiveVel < -0.0003f) isBearish = true
+            val isIdx = asset.contains("IDX", ignoreCase = true)
+            val impulseThreshold = if (isIdx) 0.000008f else 0.0003f
+            val minVelThreshold = if (isIdx) 0.000003f else 0.0001f
+            val effectiveVel = if (Math.abs(velocity) > minVelThreshold) velocity else smoothedVelocity
+            if (effectiveVel > impulseThreshold) isBullish = true
+            else if (effectiveVel < -impulseThreshold) isBearish = true
         } else {
             smoothedVelocity = 0f
         }

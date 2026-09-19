@@ -438,8 +438,19 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     private fun findBalanceInNode(node: android.view.accessibility.AccessibilityNodeInfo?): Double? {
         if (node == null) return null
         
-        // Ignorar absolutamente cualquier nodo proveniente del propio TradeDraw (HUD, burbuja, etc.)
-        if (node.packageName?.toString() == packageName) return null
+        // Si el nodo proviene de TradeDraw, solo permitir si NO es parte del HUD flotante o controles de superposición
+        if (node.packageName?.toString() == packageName) {
+            val resId = node.viewIdResourceName ?: ""
+            if (resId.contains("hud", ignoreCase = true) || 
+                resId.contains("overlay", ignoreCase = true) || 
+                resId.contains("bubble", ignoreCase = true) ||
+                resId.contains("control", ignoreCase = true) ||
+                resId.contains("btn_", ignoreCase = true) ||
+                resId.contains("chat", ignoreCase = true) ||
+                resId.contains("et_auth_token", ignoreCase = true)) {
+                return null
+            }
+        }
 
         // Prioridad máxima: nodo oficial de saldo de Binomo (BalanceText)
         val resId = node.viewIdResourceName ?: ""
@@ -449,13 +460,13 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             if (parsed != null && parsed > 0.0) return parsed
         }
         
-        // Descartar nodos fuera de la cabecera de saldo superior
+        // Descartar nodos fuera de la cabecera de saldo superior (en BinomoAuthActivity el header web está hasta 30% de la pantalla)
         val rect = android.graphics.Rect()
         node.getBoundsInScreen(rect)
         val displayH = resources.displayMetrics.heightPixels
-        val maxTopRatio = if (resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 0.18f else 0.12f
+        val maxTopRatio = if (resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 0.35f else 0.30f
         if (rect.top > (displayH * maxTopRatio)) {
-            return null // Saldo de Binomo siempre está en la barra superior (top < 12% portrait / 18% landscape)
+            return null
         }
 
         val text = node.text?.toString() ?: ""
@@ -466,7 +477,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             } else if (lower.contains("cuenta demo") || lower == "demo") {
                 isDemoAccount = true
             }
-            if (!lower.contains("m0") && !lower.contains("m1") && !lower.contains("m2") && !lower.contains("strat") && !lower.contains("auto")) {
+            if (!lower.contains("m0") && !lower.contains("m1") && !lower.contains("m2") && !lower.contains("strat") && !lower.contains("auto") && !lower.contains("crypto") && !lower.contains("idx")) {
                 val parsed = parseBalanceString(text)
                 if (parsed != null && parsed > 0.0) return parsed
             }
@@ -505,14 +516,22 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     private fun parseBalanceString(text: String): Double? {
         val lower = text.lowercase()
         if (lower.contains("cantidad") || lower.contains("ingreso") || lower.contains("deposito") || lower.contains("depositar") ||
-            lower.contains("crypto") || lower.contains("idx") || lower.contains("otc")) {
+            lower.contains("crypto") || lower.contains("idx") || lower.contains("otc") || lower.contains("cuenta demo") || lower.contains("cuenta real")) {
             return null // Descartar botones y banners flotantes de ganancias del activo
         }
-        if (!text.contains("$") && !text.contains("€") && !text.contains("£") && !text.contains("Col") && !text.contains("USD")) {
-            return null
-        }
+        val hasCurrencySign = text.contains("$") || text.contains("€") || text.contains("£") || text.contains("Col") || text.contains("USD")
         val clean = text.replace("[^0-9.,]".toRegex(), "")
         if (clean.isBlank()) return null
+
+        // Si no tiene signo monetario, debe tener estructura de miles/saldo (ej: "39.642.536" o "39,642,536.00")
+        if (!hasCurrencySign) {
+            val isThousandsFormatted = clean.contains(".") || clean.contains(",")
+            val digitsCount = clean.replace("[.,]".toRegex(), "").length
+            if (!isThousandsFormatted || digitsCount < 4) {
+                return null
+            }
+        }
+
         return try {
             val standard = if (clean.contains(",") && clean.contains(".")) {
                 if (clean.lastIndexOf(".") > clean.lastIndexOf(",")) {
@@ -525,6 +544,13 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                     clean.replace(",", ".")
                 } else {
                     clean.replace(",", "")
+                }
+            } else if (clean.contains(".")) {
+                val parts = clean.split(".")
+                if (parts.size > 2 || (parts.size == 2 && parts[1].length == 3)) {
+                    clean.replace(".", "")
+                } else {
+                    clean
                 }
             } else clean
 

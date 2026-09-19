@@ -174,6 +174,19 @@ class TradingEngine(
         val isFavorable: Boolean
     )
 
+    data class PendingTradeSnapshot(
+        val action: TradeAction,
+        val startTime: Long,
+        val entryY: Float,
+        val baseBalance: Double,
+        val confidence: Float
+    )
+
+    /** Minuto de época (epochMs / 60000) de la última orden ejecutada. Garantiza máx 1 trade por vela. */
+    @Volatile
+    var lastExecutedCandleEpochMinute: Long = -1L
+        internal set
+
     var currentActiveSignal: ActiveSignal? = null
         private set
 
@@ -640,14 +653,14 @@ class TradingEngine(
 
             val sec = analysis.candleSecond
             val isStrictTimingWindow = MarketTickFilters.isStrictTimingWindow(sec) // :58 a :03
-            val isTimingVetoed = MarketTickFilters.isTimingVetoed(sec) // :15 a :55
+            val isTimingVetoed = MarketTickFilters.isTimingVetoed(sec) // :06 a :57
             val isInstitutionalTrap = analysis.isFalseBreakoutCall || analysis.isFalseBreakoutPut
             val isSniperPullbackTrigger = (sec in 1..3 || analysis.isSniperPullbackWindow) &&
                 (analysis.isPullbackAgainstSignalCall || analysis.isPullbackAgainstSignalPut || analysis.isPullbackSniperCall || analysis.isPullbackSniperPut)
 
-            // Veto universal de entrada tardía (:15 a :55)
+            // Veto universal de entrada tardía (:06 a :57)
             if (isTimingVetoed && !isInstitutionalTrap) {
-                return Pair(null, "⏳ Entrada tardía - Veto Timing Estricto (:15-:55): Fuera de ventana sniper :00 (:58-:03) (⏱ ${sec}s)")
+                return Pair(null, "⏳ Entrada tardía - Veto Timing Estricto (:06-:57): Fuera de ventana sniper :00 (:58-:03) (⏱ ${sec}s)")
             }
 
             // Veto de entrada si está fuera de la ventana estricta :58-:03 (salvo trampas institucionales)
@@ -1603,6 +1616,14 @@ class TradingEngine(
             return
         }
 
+        val currentCandleEpochMinute = (latestMarketTick?.timestampMs ?: System.currentTimeMillis()) / 60000L
+        synchronized(this) {
+            if (lastExecutedCandleEpochMinute == currentCandleEpochMinute) {
+                Log.d("TradingEngine", "⛔ Headless Trade $action bloqueado: Vela de minuto $currentCandleEpochMinute ya fue operada (1 orden por vela máx).")
+                return
+            }
+        }
+
         val sec = latestMarketTick?.candleSecond ?: (((System.currentTimeMillis() / 1000L) % 60L).toInt())
         val isYolo = (autonomousSubMode == AutonomousSubMode.YOLO)
         val isSniper = (autonomousSubMode == AutonomousSubMode.SNIPER)
@@ -1618,8 +1639,8 @@ class TradingEngine(
             }
         }
 
-        // Ventana Sniper Quirúrgica: :58-:59 en SNIPER, :57-:05 en otros modos
-        val inWindow = if (isSniper) sec in 58..59 else (sec in 57..59 || sec in 0..5)
+        // Ventana Sniper Quirúrgica: :58-:59 en SNIPER, :58-:03 en otros modos conforme a master_traders_skill
+        val inWindow = if (isSniper) sec in 58..59 else (sec in 58..59 || sec in 0..3)
         if (!inWindow) {
             Log.d("TradingEngine", "Headless bloqueado fuera de ventana timing sniper (⏱ ${sec}s | SNIPER=$isSniper | YOLO=$isYolo)")
             return
@@ -1733,6 +1754,9 @@ class TradingEngine(
             val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
             isTradeResolving.set(false)
             riskManager.recordTradeSent(finalAction, latestMarketTick?.price?.toFloat() ?: 0f, baseBal, headlessConfidence)
+            synchronized(this) {
+                lastExecutedCandleEpochMinute = currentCandleEpochMinute
+            }
             adaptiveLearningEngine.recordTradeOpened(
                 action = finalAction,
                 analysis = effectiveAnalysis,
@@ -1764,22 +1788,31 @@ class TradingEngine(
     }
 
     private fun checkHeadlessTradeResolution(tick: MarketTick) {
-        // Punto ÚNICO de entrada de la liquidación (onMarketTick y onNewFrame): valida el pendiente aquí.
-        if (!riskManager.hasPendingTrade) return
+        val snapshot = synchronized(riskManager) {
+            if (!riskManager.hasPendingTrade) null
+            else {
+                val startMs = riskManager.pendingTradeStartTime
+                if (startMs <= 0L) {
+                    Log.w("TradingEngine", "Liquidación abortada: pendiente sin timestamp de apertura")
+                    null
+                } else {
+                    PendingTradeSnapshot(
+                        action = riskManager.pendingTradeAction ?: TradeAction.BUY,
+                        startTime = startMs,
+                        entryY = riskManager.pendingTradeEntryPriceY,
+                        baseBalance = riskManager.pendingTradeBaseBalance,
+                        confidence = riskManager.pendingTradeConfidence
+                    )
+                }
+            }
+        } ?: return
 
-        // Sin timestamp de apertura no hay trade identificable: escribir aquí produciría filas huérfanas
-        val tradeStartMs = riskManager.pendingTradeStartTime
-        if (tradeStartMs <= 0L) {
-            Log.w("TradingEngine", "Liquidación abortada: pendiente sin timestamp de apertura")
-            return
-        }
-
-        val elapsedSec = (System.currentTimeMillis() - tradeStartMs) / 1000
+        val elapsedSec = (System.currentTimeMillis() - snapshot.startTime) / 1000
         val expDurationSec = timeframe.seconds
         val isExpired = elapsedSec >= (expDurationSec + 2)
         if (!isExpired) return
 
-        val baseBalance = riskManager.pendingTradeBaseBalance
+        val baseBalance = snapshot.baseBalance
         val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance()
             ?: AutoTradeAccessibilityService.latestObservedBalance
 
@@ -1800,10 +1833,10 @@ class TradingEngine(
                 method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado tras ${elapsedSec}s)"
             }
         } else if (elapsedSec >= (expDurationSec + 5)) {
-            val pendingEntry = riskManager.pendingTradeEntryPriceY
+            val pendingEntry = snapshot.entryY
             val latestPrice = latestMarketTick?.price?.toFloat() ?: 0f
             if (pendingEntry > 0f && latestPrice > 0f) {
-                val isCall = (riskManager.pendingTradeAction == TradeAction.BUY)
+                val isCall = (snapshot.action == TradeAction.BUY)
                 val isDiffSignificant = Math.abs(latestPrice - pendingEntry) > 0.00001f
                 if (!isDiffSignificant) {
                     isTie = true
@@ -1822,13 +1855,18 @@ class TradingEngine(
 
         if (isWin != null || isTie) {
             if (!isTradeResolving.compareAndSet(false, true)) return
-            val finalWin = isWin ?: false
-            val pendingAction = riskManager.pendingTradeAction ?: TradeAction.BUY
 
-            val pendingEntry = riskManager.pendingTradeEntryPriceY
-            val pendingConfidence = riskManager.pendingTradeConfidence
+            // Bloquear atómicamente RiskManager para que ningún otro tick evalúe este trade
+            synchronized(riskManager) {
+                riskManager.hasPendingTrade = false
+            }
+
+            val finalWin = isWin ?: false
+            val pendingAction = snapshot.action
+            val pendingEntry = snapshot.entryY
+            val pendingConfidence = snapshot.confidence
             val pendingStake = riskManager.getCurrentInvestmentAmount()
-            val pendingTradeStartMs = tradeStartMs
+            val pendingTradeStartMs = snapshot.startTime
             val sec = latestMarketTick?.candleSecond ?: (((System.currentTimeMillis() / 1000L) % 60L).toInt())
             val wsAnalysis = VisionAnalysisResult(
                 trend = syntheticCandleEngine.detectedTrend,

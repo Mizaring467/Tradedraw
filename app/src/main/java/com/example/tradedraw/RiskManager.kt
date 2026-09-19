@@ -330,8 +330,15 @@ class RiskManager(context: Context? = null) {
         }
         
         if (consecutiveVoids >= 3) {
-            android.util.Log.e("RiskManager", "CRITICAL STOP: 3 trades VOID consecutivos. Ejecución no confiable.")
-            return Pair(false, "Parada: 3 trades VOID seguidos (ejecución fallida)")
+            val cooldownMs = 120_000L
+            val elapsedSinceVoid = System.currentTimeMillis() - lastTradeTime
+            if (elapsedSinceVoid < cooldownMs) {
+                val remSec = ((cooldownMs - elapsedSinceVoid) / 1000).coerceAtLeast(1)
+                return Pair(false, "Parada: 3 trades VOID seguidos (ejecución fallida, ${remSec}s cooldown)")
+            } else {
+                android.util.Log.i("RiskManager", "Auto-recuperación de parada por VOID tras 2 minutos de enfriamiento")
+                consecutiveVoids = 0
+            }
         }
 
         if (stopLossStreak > 0 && currentLossStreak >= stopLossStreak) {

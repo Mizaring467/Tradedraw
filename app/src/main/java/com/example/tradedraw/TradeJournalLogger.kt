@@ -129,11 +129,11 @@ object TradeJournalLogger {
                 // reintento de liquidación (duplicado) de un trade nuevo con la misma acción y resultado.
                 // La liquidación siempre lo aporta (TradingEngine captura pendingTradeStartTime).
                 if (tradeStartMs > 0L) {
-                    val signature = "$action|$tradeStartMs"
+                    val signature = "$tradeStartMs"
                     if (signature == lastSignature) {
                         duplicateRejections++
                         lastError = "DUPLICADO RECHAZADO: $signature"
-                        Log.w(TAG, "Registro duplicado rechazado (mismo trade y acción): $signature")
+                        Log.w(TAG, "Registro duplicado rechazado (mismo trade): $signature")
                         return false
                     }
                     // La firma se fija tras persistir en disco: si la escritura falla, el reintento

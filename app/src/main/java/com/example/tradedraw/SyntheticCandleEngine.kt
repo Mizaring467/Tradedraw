@@ -94,7 +94,7 @@ class SyntheticCandleEngine {
     private val cachedPivotLows = ArrayList<Double>(80)
     private var cachedHighestPivotHigh: Double? = null
     private var cachedLowestPivotLow: Double? = null
-    private var cachedAtr: Double = 0.0001
+    private var cachedAtr: Double = 0.0
     @Volatile
     private var pivotsCacheDirty: Boolean = true
     private var lastTrendCalcTime: Long = 0L
@@ -398,17 +398,17 @@ class SyntheticCandleEngine {
             val thresholdRatio = 0.40
             val isRelativeDrop = avgRange > 0.0 && recentRange < (avgRange * thresholdRatio)
 
-            // 3. Cluster de Indecisión: dojis solapados (cuerpo promedio diminuto < 28% y CHOP elevado >= 58.0 o compresión de rango)
+            // 3. Cluster de Indecisión: dojis solapados (cuerpo promedio diminuto < 28% y CHOP elevado >= 61.8 con alternancia)
             val recentSample = closedCandles.takeLast(minOf(5, closedCandles.size))
             val avgBodyRatio = recentSample.map { it.bodyRatio }.average()
             val period = minOf(14, closedCandles.size)
             val chop = if (period >= 8) calculateChoppinessIndex(period) else 50.0
 
-            val isDojiNoiseCluster = avgBodyRatio < 0.28 && (chop >= 58.0 || (avgRange > 0.0 && recentRange <= avgRange * 0.70))
+            val isDojiNoiseCluster = avgBodyRatio < 0.28 && chop >= 61.8
             if (isDojiNoiseCluster) return true
 
-            // Micro-rango estático absoluto o caída relativa con alternancia
-            return isStaticMicro || (isRelativeDrop && isAlternating)
+            // Micro-rango estático real con alternancia errática o caída relativa con alternancia
+            return (isStaticMicro && isAlternating) || (isRelativeDrop && isAlternating)
         }
     }
 
@@ -440,8 +440,8 @@ class SyntheticCandleEngine {
     fun calculateAtr(period: Int = 14): Double {
         synchronized(closedCandles) {
             if (closedCandles.isEmpty()) {
-                currentCandle?.let { return it.range.coerceAtLeast(0.0001) }
-                return 0.0001
+                currentCandle?.let { return it.range.coerceAtLeast(1e-9) }
+                return 1e-9
             }
             val n = Math.min(period, closedCandles.size)
             val sample = closedCandles.takeLast(n)
@@ -461,7 +461,7 @@ class SyntheticCandleEngine {
                 sumTr += tr
             }
             val avgTr = sumTr / n
-            return avgTr.coerceAtLeast(0.0001)
+            return avgTr.coerceAtLeast(1e-9)
         }
     }
 
@@ -551,14 +551,14 @@ class SyntheticCandleEngine {
                 dynamicResistancePrice = minResAbove
             } else {
                 // Breakout alcista / nuevo ATH: la resistencia está proyectada por encima del precio actual
-                dynamicResistancePrice = currentPrice + (atr * 1.5).coerceAtLeast(0.0001)
+                dynamicResistancePrice = currentPrice + (atr * 1.5).coerceAtLeast(1e-7)
             }
 
             if (maxSupBelow != Double.MIN_VALUE) {
                 dynamicSupportPrice = maxSupBelow
             } else {
                 // Breakdown bajista / nuevo ATL: el soporte está proyectado por debajo del precio actual
-                dynamicSupportPrice = currentPrice - (atr * 1.5).coerceAtLeast(0.0001)
+                dynamicSupportPrice = currentPrice - (atr * 1.5).coerceAtLeast(1e-7)
             }
 
             // Principio de Polaridad Dinámica Cuantitativa:
@@ -574,7 +574,7 @@ class SyntheticCandleEngine {
             }
 
             // Normalización por ATR independiente:
-            val atrNorm = (atr * 2.0).coerceAtLeast(0.0001)
+            val atrNorm = (atr * 2.0).coerceAtLeast(1e-7)
 
             val rawDistToSupport = Math.abs(currentPrice - dynamicSupportPrice)
             val rawDistToResistance = Math.abs(dynamicResistancePrice - currentPrice)
@@ -646,30 +646,35 @@ class SyntheticCandleEngine {
             // Si hay pocas velas en memoria (< 3), evaluar ticks recientes con OLS y momentum
             if (sample.size < 3) {
                 synchronized(recentTickPrices) {
-                    if (recentTickPrices.size >= 10) {
-                        val tickList = recentTickPrices.takeLast(30).toList()
+                    if (recentTickPrices.size >= 8) {
+                        val tickList = recentTickPrices.takeLast(minOf(30, recentTickPrices.size)).toList()
                         val tickSlope = calculateLinearRegressionSlope(tickList)
-                        val tickAtr = calculateAtr(14)
                         val maxP = tickList.maxOrNull() ?: 0.0
                         val minP = tickList.minOrNull() ?: 0.0
-                        val tickSpan = (maxP - minP).coerceAtLeast(0.0001)
-                        val referenceRange = if (tickAtr > 0.001) tickAtr else tickSpan
+                        val tickSpan = maxP - minP
                         val netMove = tickList.last() - tickList.first()
-                        val netRatio = netMove / referenceRange
-                        val slopeRatio = (tickSlope * (tickList.size - 1)) / referenceRange
+                        val netRatio = if (tickSpan > 1e-9) netMove / tickSpan else 0.0
+
+                        var upMoves = 0
+                        var downMoves = 0
+                        for (k in 1 until tickList.size) {
+                            val diff = tickList[k] - tickList[k - 1]
+                            if (diff > 1e-9) upMoves++
+                            else if (diff < -1e-9) downMoves++
+                        }
 
                         detectedTrend = when {
-                            netRatio >= 0.12 || slopeRatio >= 0.12 || consecutiveUpTicks >= 4 -> TrendDirection.UPTREND
-                            netRatio <= -0.12 || slopeRatio <= -0.12 || consecutiveDownTicks >= 4 -> TrendDirection.DOWNTREND
+                            (netRatio >= 0.30 && tickSlope > 0.0) || consecutiveUpTicks >= 3 || (upMoves >= downMoves + 2 && netRatio > 0.15) -> TrendDirection.UPTREND
+                            (netRatio <= -0.30 && tickSlope < 0.0) || consecutiveDownTicks >= 3 || (downMoves >= upMoves + 2 && netRatio < -0.15) -> TrendDirection.DOWNTREND
                             else -> visionTrend ?: TrendDirection.SIDEWAYS
                         }
                     } else {
                         val active = currentCandle
-                        if (active != null && active.range > 0.0001) {
+                        if (active != null && active.range > 1e-9) {
                             val bodyRatio = (active.close - active.open) / active.range
                             detectedTrend = when {
-                                bodyRatio >= 0.35 -> TrendDirection.UPTREND
-                                bodyRatio <= -0.35 -> TrendDirection.DOWNTREND
+                                bodyRatio >= 0.25 -> TrendDirection.UPTREND
+                                bodyRatio <= -0.25 -> TrendDirection.DOWNTREND
                                 else -> visionTrend ?: TrendDirection.SIDEWAYS
                             }
                         } else {
@@ -683,7 +688,7 @@ class SyntheticCandleEngine {
             val closes = sample.map { it.close }
             val slope = calculateLinearRegressionSlope(closes)
             val atr = calculateAtr(14)
-            val normSlope = if (atr > 0.0) slope / atr else 0.0
+            val normSlope = if (atr > 1e-9) slope / atr else 0.0
 
             val greenCandles = sample.count { it.close > it.open }
             val redCandles = sample.count { it.close < it.open }
@@ -691,22 +696,28 @@ class SyntheticCandleEngine {
             val isConsecutiveHigherHighs = last3.size >= 3 && last3[2].high > last3[1].high && last3[1].high > last3[0].high && last3[2].low > last3[1].low
             val isConsecutiveLowerLows = last3.size >= 3 && last3[2].low < last3[1].low && last3[1].low < last3[0].low && last3[2].high < last3[1].high
 
+            val netCandleMove = closes.last() - closes.first()
+            val maxClose = closes.maxOrNull() ?: closes.last()
+            val minClose = closes.minOrNull() ?: closes.first()
+            val closeSpan = maxClose - minClose
+            val closeNetRatio = if (closeSpan > 1e-9) netCandleMove / closeSpan else 0.0
+
             val vTrend = visionTrend
 
             when {
                 // Tendencia alcista contundente por OLS o confluencia de acción de precio
-                normSlope >= 0.040 || (normSlope >= 0.018 && (greenCandles >= redCandles + 2 || isConsecutiveHigherHighs)) || (greenCandles >= sample.size - 1 && normSlope > 0.005) -> {
+                normSlope >= 0.035 || (normSlope >= 0.015 && (greenCandles >= redCandles + 1 || isConsecutiveHigherHighs)) || (greenCandles >= sample.size - 1 && normSlope > 0.003) || (closeNetRatio >= 0.40 && greenCandles > redCandles) -> {
                     detectedTrend = TrendDirection.UPTREND
                 }
                 // Tendencia bajista contundente por OLS o confluencia de acción de precio
-                normSlope <= -0.040 || (normSlope <= -0.018 && (redCandles >= greenCandles + 2 || isConsecutiveLowerLows)) || (redCandles >= sample.size - 1 && normSlope < -0.005) -> {
+                normSlope <= -0.035 || (normSlope <= -0.015 && (redCandles >= greenCandles + 1 || isConsecutiveLowerLows)) || (redCandles >= sample.size - 1 && normSlope < -0.003) || (closeNetRatio <= -0.40 && redCandles > greenCandles) -> {
                     detectedTrend = TrendDirection.DOWNTREND
                 }
                 else -> {
                     // En ausencia de pendiente estadística significativa, el mercado está en rango
-                    if (vTrend == TrendDirection.UPTREND && normSlope > 0.010) {
+                    if (vTrend == TrendDirection.UPTREND && normSlope > 0.008) {
                         detectedTrend = TrendDirection.UPTREND
-                    } else if (vTrend == TrendDirection.DOWNTREND && normSlope < -0.010) {
+                    } else if (vTrend == TrendDirection.DOWNTREND && normSlope < -0.008) {
                         detectedTrend = TrendDirection.DOWNTREND
                     } else {
                         detectedTrend = TrendDirection.SIDEWAYS
@@ -733,6 +744,7 @@ class SyntheticCandleEngine {
             return
         }
 
+        // Veto por micro-compresión extrema: mercado congelado sin volumen ni desplazamiento direccional
         val isExtremeMicroCompression = isMicroRange(5, MarketTickFilters.MAX_CHOPPY_RANGE_PERCENT) &&
                 isTickAlternatingWithoutDirection(if (isYolo) 10 else 8)
         if (isExtremeMicroCompression) {
@@ -761,10 +773,10 @@ class SyntheticCandleEngine {
             // Permisos de evaluación según la estrategia seleccionada por el usuario
             val allowAll = currentStrategy == AutoTradeStrategy.AUTO_ADAPTIVE || currentStrategy == AutoTradeStrategy.MT_MASTER_COMBO || currentStrategy == AutoTradeStrategy.COMBINED
             val allowQuantCrypto = allowAll
-            val allowRejection = allowAll || currentStrategy == AutoTradeStrategy.MT_REJECTION
+            val allowRejection = allowAll || currentStrategy == AutoTradeStrategy.MT_REJECTION || currentStrategy == AutoTradeStrategy.SUPPORT_RESISTANCE
             val allowConfirmBounce = allowAll || currentStrategy == AutoTradeStrategy.MT_REJECTION || currentStrategy == AutoTradeStrategy.SUPPORT_RESISTANCE
-            val allow3Velas = allowAll || currentStrategy == AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO
-            val allowReversal = allowAll || currentStrategy == AutoTradeStrategy.CANDLE_PATTERNS
+            val allow3Velas = allowAll || currentStrategy == AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO || currentStrategy == AutoTradeStrategy.SUPPORT_RESISTANCE
+            val allowReversal = allowAll || currentStrategy == AutoTradeStrategy.CANDLE_PATTERNS || currentStrategy == AutoTradeStrategy.SUPPORT_RESISTANCE
             val allowChoquePullback = allowAll || currentStrategy == AutoTradeStrategy.MT_CHOQUE_PULLBACK
             val allowEngulfing = allowAll || currentStrategy == AutoTradeStrategy.MT_ENGULFING_SR
             val allowFalseBreakout = allowAll || currentStrategy == AutoTradeStrategy.MT_FALSE_BREAKOUT
@@ -824,8 +836,8 @@ class SyntheticCandleEngine {
             // 1. ESTRATEGIA MT_REJECTION (Rechazo en S/R con Mechas Claras)
             if (allowRejection) {
                 val supZoneLimit = if (isYolo) 0.28f else 0.24f
-                val wickLimit = if (isYolo) 0.30f else 0.38f
-                val bodyLimit = if (isYolo) 0.54f else 0.45f
+                val wickLimit = if (isYolo) 0.30f else 0.45f
+                val bodyLimit = if (isYolo) 0.54f else 0.40f
 
                 // CALL: Rechazo en Soporte con mecha inferior y sin impulso bajista
                 if (distToSupport <= supZoneLimit && prev.lowerWickRatio >= wickLimit && prev.bodyRatio <= bodyLimit && !tick.isBearishImpulse && syntheticTickRsi <= 75.0) {
@@ -852,7 +864,7 @@ class SyntheticCandleEngine {
             }
 
             // 1b. ESTRATEGIA MT_CONFIRM_BOUNCE (Rebote Confirmado en S/R · 2da Vela de Giro)
-            if (allowConfirmBounce) {
+            if (allowConfirmBounce && (isYolo || !isChoppy)) {
                 val confirmDistLimit = if (isYolo) 0.34f else 0.28f
                 val confirmFreeSpace = if (isYolo) 0.32f else 0.38f
                 val cAnte = if (closedCandles.size >= 2) closedCandles[closedCandles.size - 2] else null
@@ -892,7 +904,7 @@ class SyntheticCandleEngine {
                 val c2 = closedCandles[closedCandles.size - 2]
                 val c3 = closedCandles[closedCandles.size - 1]
 
-                val agotDecayRatio = if (isYolo) 0.65f else 0.55f
+                val agotDecayRatio = if (isYolo) 0.65f else 0.45f
                 val agotDistLimit = if (isYolo) 0.28f else 0.25f
 
                 // Agotamiento bajista en soporte: 3 velas rojas con decaimiento -> Reversión CALL
