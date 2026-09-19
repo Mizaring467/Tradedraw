@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Log
 import java.io.File
 import java.io.FileWriter
+import java.io.BufferedReader
+import java.io.FileReader
 import kotlin.math.abs
 
 /**
@@ -27,6 +29,38 @@ object TradeLearningEngine {
     private const val TAG = "TradeLearningEngine"
     private const val MIN_SAMPLES = 5
     private val history = mutableListOf<TradeContext>()
+    private var isLoaded = false
+
+    fun loadHistory(context: Context) {
+        if (isLoaded) return
+        try {
+            val file = File(context.getExternalFilesDir(null), "TradeDraw_Learning/learning_history.csv")
+            if (!file.exists()) return
+
+            BufferedReader(FileReader(file)).use { reader ->
+                reader.readLine() // Skip header
+                var line = reader.readLine()
+                while (line != null) {
+                    val tokens = line.split(",")
+                    if (tokens.size >= 7) {
+                        val isCall = tokens[0].toBoolean()
+                        val won = tokens[1].toBoolean()
+                        val topWick = tokens[2].toFloatOrNull() ?: 0f
+                        val bottomWick = tokens[3].toFloatOrNull() ?: 0f
+                        val count = tokens[4].toIntOrNull() ?: 0
+                        val touchSup = tokens[5].toBoolean()
+                        val touchRes = tokens[6].toBoolean()
+                        history.add(TradeContext(topWick, bottomWick, count, touchSup, touchRes, isCall, won))
+                    }
+                    line = reader.readLine()
+                }
+            }
+            isLoaded = true
+            Log.d(TAG, "Historial de aprendizaje cargado: ${history.size} registros")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cargando historial", e)
+        }
+    }
 
     /**
      * Extrae el contexto a partir del análisis visual.
@@ -67,7 +101,7 @@ object TradeLearningEngine {
      * Predice la fiabilidad (0.0 a 1.0) de un trade comparándolo con el historial.
      */
     fun predictReliability(analysis: VisionAnalysisResult, action: TradeAction): Float {
-        if (history.size < MIN_SAMPLES) return 0.5f // Neutral si hay pocos datos
+        if (history.size < MIN_SAMPLES) return -1f // Retorna -1f si no hay suficientes datos
 
         val currentCtx = extractContext(analysis, action)
 
@@ -102,7 +136,7 @@ object TradeLearningEngine {
             }
         }
 
-        if (matchCount < 3) return 0.5f // Muy pocas similitudes
+        if (matchCount < 3) return -1f // Muy pocas similitudes
 
         val reliability = winCount.toFloat() / matchCount.toFloat()
         Log.d(TAG, "Fiabilidad predicha: $reliability (Wins: $winCount / Matches: $matchCount)")

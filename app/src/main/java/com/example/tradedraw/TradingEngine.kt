@@ -110,6 +110,8 @@ class TradingEngine(
 
     var currentActiveSignal: ActiveSignal? = null
         private set
+    var lastTradeAnalysis: VisionAnalysisResult? = null
+        private set
 
     fun clearActiveSignal() {
         currentActiveSignal = null
@@ -223,6 +225,9 @@ class TradingEngine(
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
                         } else if (finalWin) {
                             TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method)
+                            lastTradeAnalysis?.let { analysis ->
+                                action?.let { TradeLearningEngine.recordTrade(analysis, it, true, context) }
+                            }
                             riskManager.recordTradeWin()
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
@@ -230,6 +235,9 @@ class TradingEngine(
                             onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
                         } else {
                             TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", 1.0f, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method)
+                            lastTradeAnalysis?.let { analysis ->
+                                action?.let { TradeLearningEngine.recordTrade(analysis, it, false, context) }
+                            }
                             riskManager.recordTradeLoss()
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
@@ -854,6 +862,8 @@ class TradingEngine(
         val actionText = if (action == TradeAction.BUY) "COMPRA / CALL (Sube)" else "VENTA / PUT (Baja)"
         val emoji = if (action == TradeAction.BUY) "🟢 ▲" else "🔴 ▼"
 
+        TradeLearningEngine.loadHistory(context)
+
         currentActiveSignal = ActiveSignal(
             action = action,
             title = "$emoji $actionText",
@@ -901,6 +911,20 @@ class TradingEngine(
 
         // 1. Prioridad Máxima: Detección visual en tiempo real sobre el frame activo
         val visionCoords = visionAnalyzer.findBrokerButtonCoordinates(bitmap, action == TradeAction.BUY)
+
+        val reliability = TradeLearningEngine.predictReliability(analysis, action)
+        android.util.Log.d("TradingEngine", "Predicción de Fiabilidad para Trade ($action): $reliability")
+        lastTradeAnalysis = analysis
+
+        // Filtro de Entradas: Si la fiabilidad predicha es < 60% (0.6), abortamos la operación
+        if (reliability != -1f && reliability < 0.60f) {
+            android.util.Log.w("TradingEngine", "Trade abortado. Fiabilidad insuficiente: $reliability")
+            handler.post {
+                Toast.makeText(context, "🛡️ TRADE ABORTADO: Fiabilidad baja ($reliability)", Toast.LENGTH_SHORT).show()
+            }
+            riskManager.clearPendingTrade()
+            return
+        }
 
         // 2. Respaldo: Calibración guardada o fórmulas geométricas precisas
         val (x, y) = if (visionCoords != null) {
