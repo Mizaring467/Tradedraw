@@ -91,14 +91,51 @@ El proyecto estÃ¡ estructurado en mÃ³dulos desacoplados bajo el paquete `com
 
 ---
 
-## ðŸŽ¯ 5. Estrategias de AcciÃ³n del Precio de "Master Traders"
+## 🎯 5. Habilidad Obligatoria: `master_traders_skill` (Gobernanza Letra por Letra)
 
-El motor cuenta con las estrategias de acciÃ³n del precio basadas en la operativa de Master Traders para Binomo:
+Todo agente autónomo o asistente de desarrollo que intervenga en **TradeDraw** tiene la obligación categórica de seguir **letra por letra** las reglas, fórmulas, filtros temporales y gestión de capital definidas en `master_traders_skill` (ubicada en `.agents/skills/master_traders_skill/SKILL.md` y en la configuración global de Antigravity).
 
-1. **`MT_MASTER_COMBO` (Recomendado):** EvalÃºa de forma priorizada: Mechas de Rechazo $\rightarrow$ Choque de Niveles $\rightarrow$ Agotamiento de 3 Velas.
-2. **`MT_REJECTION` (Mechas de Rechazo en S/R):** Detecta velas con mecha $\ge 40\%$ del rango total rebotando contra soportes o resistencias.
-3. **`MT_CHOQUE_PULLBACK` (Breakout + Retest):** Detecta rompimientos de mÃ¡ximos/mÃ­nimos y opera el retest en el punto de contacto exacto con el nivel roto.
-4. **`MT_3_VELAS_AGOTAMIENTO`:** Identifica secuencias de 3 velas consecutivas del mismo color con cuerpos decrecientes ($Vela_1 > Vela_2 > Vela_3$) y opera la reversiÃ³n en la 4Âª vela.
+### 5.1 Principio de Ventaja Cuantitativa
+- **Punto de Equilibrio (Breakeven):** $p_{\text{BE}} = \frac{1}{1 + b}$ (54.95% para payout del 82%).
+- **Objetivo Matemático:** Mantener un win rate entre el **62% y 73%** mediante confluencia estricta.
+
+### 5.2 Estrategias Nucleares de Acción del Precio Pura (60s)
+1. **`MT_REJECTION` (Mechas de Rechazo en S/R):**
+   - Rango total mínimo: $R_{\text{total}} \ge 12\text{ px}$.
+   - Ratio de mecha de rechazo: $\text{Ratio}_{\text{wick}} \ge 0.45$ ($\ge 45\%$ del rango total).
+   - Proporción de cuerpo real: $\frac{B}{R_{\text{total}}} \le 0.40$ ($\le 40\%$).
+   - Tolerancia a zona S/R o nivel institucional redondo (`.000`, `.500`, `.200`, `.800`): $\le 4\text{ px}$.
+   - En CALL: mecha inferior $\ge 0.45$, cuerpo cierra protegido por encima del soporte.
+   - En PUT: mecha superior $\ge 0.45$, cuerpo cierra protegido por debajo de la resistencia.
+2. **`MT_3_VELAS_AGOT` (Agotamiento Cuantitativo de 3 Velas):**
+   - Paridad cromática estricta: $\text{Color}(C_1) = \text{Color}(C_2) = \text{Color}(C_3)$ (3 rojas o 3 verdes seguidas).
+   - Decaimiento monótono: $B_1 > B_2 > B_3$.
+   - Contracción cuantitativa: $B_3 \le 0.45 \cdot B_1$ y $B_2 \le 0.80 \cdot B_1$.
+   - Proximidad a nivel S/R en $C_3$: $\le 10\text{ px}$.
+   - Invalidación (*Falling Knife*): Veto si $B_3 \ge B_2$ o rango sumado $> 3.5\times$ ATR sin mecha opuesta. Entrada a reversión en apertura de 4ª vela.
+3. **`MT_CHOQUE_PULLBACK` (Polaridad Breakout + Retest):**
+   - Ruptura válida: cuerpo fuera de S/R $> 50\%$ y mecha frontal opuesta $< 20\%$.
+   - Choque/Retest: contacto exacto $\le 3\text{ px}$ con el nivel roto.
+   - Ventana temporal estricta de choque: segundos **:01 a :05** exclusivamente.
+4. **`MT_FALSE_BREAKOUT` (Trampa Institucional / Falso Rompimiento):**
+   - Falsa penetración de nivel con reingreso y cierre al interior del canal, dejando mecha $\ge 0.35$.
+
+### 5.3 Filtros Anti-Derrotas Obligatorios
+- **Ventana Sniper Cronológica:**
+  - Entrada estándar: segundos **:58 a :03**.
+  - Entrada Sniper Pullback: segundos **:01 a :05** (únicamente con descuento de strike).
+  - **VETO TOTAL UNIVERSAL:** Entre los segundos **:06 y :57** queda rotundamente prohibido disparar órdenes.
+- **Filtro Anti-Choppiness:**
+  - $\text{CHOP} > 61.8 \implies$ Veto total de continuación/tendencia.
+  - Ratio de Dojis ($\text{cuerpo} \le 4\text{ px}$) $\ge 0.35 \implies$ Veto por mercado sucio.
+  - Alternancia de color ($V \to R \to V \to R$ con desplazamiento $< 2.5\%$) $\implies$ Veto.
+
+### 5.4 Matriz de Confluencia (Umbral $\ge 80$ puntos)
+- Sincronización de reloj obligatoria, suma ponderada de factores técnicos. Disparo automatizado únicamente si el puntaje total es $\ge 80\text{ pts}$.
+
+### 5.5 Gestión de Capital Cuantitativa (Quarter-Kelly)
+- $f^* = p - \frac{1 - p}{b}$, Operativo: $f_{\text{operativo}} = \min(0.25 \times f^*, 0.035)$.
+- Dimensionamiento acotado estrictamente entre el **1.0%** y el **3.5%** del balance total.
 
 ---
 
@@ -162,5 +199,14 @@ Para interactuar con el dispositivo Android (POCO X6 Pro / `10.218.252.45:5555` 
 5. **Streaming en Tiempo Real (H.264):**
    - `android.vision.startStream` / `android.vision.stopStream` para monitoreo continuo mediante resource frames.
 
-> âš ï¸ **Regla para Agentes:** **NO** ejecutes comandos de PowerShell lentos como `adb shell screencap` o `adb shell input tap` salvo que el MCP no responda; utiliza siempre las herramientas del servidor MCP `android-vision` para mÃ¡xima velocidad y estabilidad.
+> âš ï¸  **Regla para Agentes:** **NO** ejecutes comandos de PowerShell lentos como `adb shell screencap` o `adb shell input tap` salvo que el MCP no responda; utiliza siempre las herramientas del servidor MCP `android-vision` para mÃ¡xima velocidad y estabilidad.
 
+---
+
+## ❓ 9. Formato Obligatorio para Preguntas al Usuario (Ask Questions / Selección Rápida)
+
+> ⚡ **REGLA DE ORO DE INTERACCIÓN**:
+> - **CERO preguntas abiertas que requieran que el usuario escriba párrafos o texto extenso.**
+> - **Formato Opciones Múltiples:** Siempre formular las preguntas con opciones claras identificadas por letras (`A)`, `B)`, `C)`, `D)`).
+> - **Una Pregunta por Turno:** Entregar una sola pregunta a la vez en sesiones interactivas (o grilling) para que el usuario responda escribiendo únicamente una letra (`A`).
+> - **Recomendación Destacada:** Siempre indicar `➡️ Opción recomendada: [Letra]` con la justificación técnica resumida, de modo que el usuario pueda simplemente confirmar o elegir otra letra al instante.

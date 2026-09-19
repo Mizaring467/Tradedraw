@@ -1,43 +1,41 @@
-# Objetivo del Bucle: Corrección de Detección de Tendencia en el HUD
+# Objetivo Técnico: Modo de Estrategia en Automático con Detección de Régimen de Mercado (Regime-Aware Auto Strategy)
 
-## Objetivo Principal
-Corregir la anomalía en el HUD y motores de análisis (`SyntheticCandleEngine`, `VisionAnalyzer`, `TradingEngine`, `OverlayService`) donde la tendencia siempre se diagnostica o muestra como "LATERAL / RANGO", impidiendo el reconocimiento adecuado de tendencias ALCISTAS y BAJISTAS reales en el gráfico y en WebSocket Headless.
+**Fecha:** 2026-09-19  
+**Proyecto:** TradeDraw (Android Native / POCO X6 Pro `5PPFAACU6H7XHEY9`)  
+**Rama:** `main`  
+**Objetivo Principal:**  
+Implementar un motor de selección y detección de régimen de mercado en 2 etapas para el modo automático (`AUTO_ADAPTIVE`) de TradeDraw, evitando operaciones erráticas o en cada señal marginal. El motor debe clasificar primero el contexto estructural del gráfico (Rango S/R, Tendencia Fuerte, Rompimiento/Retest o Ruido/Standby) y habilitar únicamente la estrategia especializada correspondiente bajo las reglas cuantitativas de `master_traders_skill`.
 
-## Diagnóstico del Agente Revisor / Ideator (Causa Raíz)
-1. **Umbral OLS/ATR Hiper-Restrictivo en `SyntheticCandleEngine.kt`**:
-   - Para `sample.size >= 3`, el motor exige una pendiente OLS normalizada `normSlope = slope / atr >= 0.12`.
-   - En activos reales (Crypto IDX, OTC), la volatilidad intrínseca y mechas hacen que el ATR de vela sea alto en relación al avance neto por barra. Un avance sostenido de 0.03 a 0.08 ATR por vela (que en 10 velas representa hasta el 80% del ATR) quedaba descartado arbitrariamente como `SIDEWAYS`.
-   - El veto cruzado `if (vTrend == TrendDirection.DOWNTREND && normSlope < 0.20)` bloqueaba transiciones a alcista forzando `SIDEWAYS`.
-2. **Inconsistencia en Estimación con Pocas Velas (< 3) en `SyntheticCandleEngine.kt`**:
-   - `normTickSlope` dividía la pendiente por tick entre `(tickAtr / 60.0)`, mezclando unidades de tiempo con unidades de tick y exigiendo `>= 0.12`, haciendo que durante los primeros minutos o transiciones el motor se quedara congelado en `SIDEWAYS`.
-   - No se empleaba el momentum directo de velas sintéticas en formación ni medias móviles de corto plazo (EMA rápida vs lenta / precio vs EMA).
-3. **Fragilidad de Detección en `VisionAnalyzer.kt`**:
-   - El cálculo de tendencia en `VisionAnalyzer.kt` dependía de una comparación de 2 puntos aislados (`priceNewest - priceOldest`) sujeto a ruido de mechas de la última vela, y filtros de conteo rígidos (`greenCount >= 3 && redCount <= 1`) que colapsaban ante cualquier vela de retroceso normal dentro de una tendencia.
-   - Umbral fijo de `avgBodyHeight < 15.0` en `isSidewaysByCandles` que marcaba falso lateral en pantallas con escalado fino de velas.
-4. **Sincronización en `OverlayService.kt` y `TradingEngine.kt`**:
-   - La priorización y fallback entre `analysis.trend` y `wsTrend` dejaba como resultado por defecto `SIDEWAYS` cuando cualquiera de los dos estaba neutro o no inicializado, propagando la etiqueta al HUD, al badge de tendencia y a los filtros de trading.
+---
 
 ## Criterios de Éxito Verificables
-1. **Detección Dinámica de Tendencia Cuantitativa**:
-   - `SyntheticCandleEngine` debe clasificar correctamente secuencias alcistas (`UPTREND`), bajistas (`DOWNTREND`) y consolidaciones estrechas (`SIDEWAYS`) usando un umbral balanceado (`0.04f` / EMA / acción del precio) tanto en velas sintéticas como en ventana temprana de ticks.
-2. **Robustez en Visión y Velas Discretizadas**:
-   - `VisionAnalyzer` debe evaluar la tendencia mediante regresión lineal ponderada o EMA de velas en lugar de diferencias frágiles de 2 extremos, soportando pullbacks normales sin degradarse a lateral.
-3. **HUD y Razonamiento Desbloqueados**:
-   - `OverlayService` y `TradingEngine` deben reflejar `UPTREND` (📈 Alcista), `DOWNTREND` (📉 Bajista) y `SIDEWAYS` (📊 Lateral) fielmente sin sesgo hacia lateral perpetuo.
-4. **Suite de Pruebas Unitarias Aprobada**:
-   - Pruebas en JUnit verificando secuencias alcistas, bajistas y laterales tanto para `SyntheticCandleEngine` como para `VisionAnalyzer`.
-5. **Compilación Limpia**:
-   - Gradle `assembleDebug` exitoso sin errores ni warnings críticos.
+1. **Clasificador de Régimen Dedicado (`MarketRegimeClassifier.kt`)**:
+   - `RANGING_CHANNEL`: S/R respetados, distancia $\ge 25\text{ px}$, $38.2 \le \text{CHOP} \le 61.8$. Estrategias autorizadas: `MT_REJECTION_WICK` y Sobreextensión RSI en S/R.
+   - `STRONG_TREND`: Estructura unívoca de máximos/mínimos, momentum claro. Estrategias autorizadas: `MT_PULLBACK_SNIPER` y `MT_ENGULFING_SR` exclusivamente a favor de la tendencia.
+   - `BREAKOUT_RETEST`: Ruptura confirmada >50% cuerpo fuera y retesteo de nivel en :01s-:05s. Estrategia autorizada: `MT_CHOQUE_RETEST`.
+   - `CHOPPY_NOISE`: CHOP > 61.8 o DojiRatio $\ge 0.35$ o compresión lateral estrecha (< 15 px). **Standby absoluto: Cero órdenes disparadas**.
+2. **Refactorización de `AUTO_ADAPTIVE` en `TradingEngine.kt`**:
+   - Eliminar el `when` plano desordenado.
+   - Ejecutar la toma de decisiones en 2 fases: 1) Clasificación de Régimen, 2) Disparo de la estrategia especializada correspondiente con confluencia $\ge 85$ pts y timing sniper :58s-:03s.
+3. **Visibilidad en HUD (`OverlayService.kt` / `TradeHUDView`)**:
+   - Mostrar el régimen de mercado detectado en vivo (ej. `[Rég: RANGO S/R]`, `[Rég: TENDENCIA]`, `[Rég: STANDBY/RUIDO]`).
+4. **Validación y Suite de Pruebas**:
+   - Suite de pruebas unitarias (`MarketRegimeClassifierTest.kt`) con 100% de éxito cubriendo los 4 regímenes y los bloqueos por ruido.
+   - Compilación exitosa del APK debug (`./gradlew assembleDebug`).
+   - Despliegue e instalación física en el dispositivo POCO X6 Pro vía ADB (`5PPFAACU6H7XHEY9`).
+   - Smoke test en runtime con captura de pantalla confirmando el HUD con régimen activo en vivo.
+
+---
 
 ## Matriz de Herramientas del Proyecto
-| Fase | Herramienta / Comando | Propósito |
-| :--- | :--- | :--- |
-| **Build** | `.\gradlew assembleDebug --no-daemon --no-configuration-cache` | Compilación completa de la aplicación Android |
-| **Test** | `.\gradlew testDebugUnitTest --no-daemon --no-configuration-cache` | Ejecución de pruebas unitarias locales en JVM |
-| **Lint** | Inspección sintáctica y de imports en Kotlin 1.9.24 / AGP 8.5.2 | Validación estática de código |
-| **Smoke** | Validación de ejecución de métodos con casos de prueba sintéticos | Verificación empírica de algoritmos de tendencia |
-
-## Restricciones y Supuestos
-- Idioma estrictamente en español en reportes y comentarios.
-- Mantener compatibilidad con modo Headless WebSocket y con visión de pantalla.
-- Filosofía Ponytail: Solución directa, matemática y limpia, sin sobreingeniería.
+```json
+{
+  "stack": "Android / Kotlin 1.9.24 / Gradle 9.5 / ADB",
+  "build_command": ".\\gradlew.bat assembleDebug --no-daemon --no-configuration-cache",
+  "test_command": ".\\gradlew.bat testDebugUnitTest --no-daemon",
+  "install_command": "adb -s 5PPFAACU6H7XHEY9 install -r app/build/outputs/apk/debug/app-debug.apk",
+  "device_serial": "5PPFAACU6H7XHEY9",
+  "recommended_skills": ["master_traders_skill", "android-verify-checklist", "project-verify-protocol"],
+  "recommended_mcps": ["android-vision", "artemis"]
+}
+```

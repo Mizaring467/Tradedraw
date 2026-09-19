@@ -67,6 +67,13 @@ Tienes a tu disposición las habilidades y plugins oficiales de alto impacto:
 
 ---
 
+## 🎯 Gobernanza Cuantitativa Obligatoria: master_traders_skill
+- El agente de TradeDraw debe seguir **estrictamente y letra por letra** la habilidad `master_traders_skill` (`.agents/skills/master_traders_skill/SKILL.md`).
+- Queda estrictamente prohibido relajar tolerancias numéricas (Rechazo $\ge 45\%$, Cuerpo $\le 40\%$, S/R $\le 4\text{ px}$), saltarse los vetos cronológicos (:06 a :57) o ignorar los filtros anti-choppiness (CHOP > 61.8, DojiRatio $\ge 0.35$).
+- Todo cambio algorítmico, lógica de trading, confluencia ($\ge 80\text{ pts}$) o propuesta cuantitativa debe contrastarse y validarse contra las fórmulas exactas de `master_traders_skill`.
+
+---
+
 ## ✂️ Cero Sobreingeniería y Simplicidad (Filosofía Ponytail / YAGNI)
 - **La solución más simple y directa que funcione**: No construyas abstracciones prematuras ni patrones complejos si unas pocas líneas de código nativo resuelven el requerimiento.
 - **Biblioteca Estándar Primero**: Prioriza siempre las APIs nativas del lenguaje o plataforma antes de sugerir dependencias externas adicionales.
@@ -81,7 +88,16 @@ Tienes a tu disposición las habilidades y plugins oficiales de alto impacto:
 
 ---
 
-## 💬 Estilo de Comunicación
+## 💬 Estilo de Comunicación y Preguntas al Usuario
 - Sé conciso, técnico y directo al grano.
 - Evita introducciones innecesarias o frases de relleno conversacional.
 - Informa con claridad qué cambios se realizaron, por qué se tomaron ciertas decisiones y muestra la evidencia de verificación.
+
+---
+
+## ❓ Formato Obligatorio de Preguntas al Usuario (Ask Questions / Selección Rápida)
+> ⚡ **REGLA DE ORO DE INTERACCIÓN CON EL USUARIO**:
+> - **NUNCA hagas preguntas abiertas extensas** que obliguen al usuario a redactar respuestas largas o escribir por cada ítem.
+> - **Formato de Opciones Múltiples Cerradas**: Presenta siempre las preguntas con opciones estructuradas por letras (`A)`, `B)`, `C)`, `D)`).
+> - **Una Pregunta a la Vez**: Formula **una sola pregunta por turno** (o un bloque con letras inmediatas) para que el usuario pueda responder con un solo clic o una sola letra (ej: "A").
+> - **Recomendación Destacada**: Incluye siempre la respuesta recomendada (`➡️ Opción recomendada: A - ...`) con una justificación técnica de 1 línea, permitiendo que el usuario solo confirme si está de acuerdo.

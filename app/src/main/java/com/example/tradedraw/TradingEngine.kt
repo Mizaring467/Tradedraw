@@ -225,7 +225,9 @@ class TradingEngine(
         // El análisis se publica desde el motor sintético de ticks (fuente única WebSocket).
         // Sin esto, latestAnalysisResult solo se poblaba en onNewFrame() (visión retirada por
         // consumo de batería) y el HUD/bridge reportaban ceros aunque el feed estuviera vivo.
-        latestAnalysisResult = buildAnalysisFromSyntheticEngine(tick)
+        val analysis = buildAnalysisFromSyntheticEngine(tick)
+        latestAnalysisResult = analysis
+        onFrameProcessedListener?.invoke(analysis)
 
         // En modo Headless (sin frames de pantalla capturados), resolver trade por tiempo y balance de Binomo
         if (framesAnalyzedCount == 0L && riskManager.hasPendingTrade) {
@@ -240,8 +242,46 @@ class TradingEngine(
     private fun buildAnalysisFromSyntheticEngine(tick: MarketTick): VisionAnalysisResult {
         val distSup = syntheticCandleEngine.distanceToSupportRatio
         val distRes = syntheticCandleEngine.distanceToResistanceRatio
+        val trend = syntheticCandleEngine.detectedTrend
+        val rsi = syntheticCandleEngine.syntheticTickRsi
+        val isChoppy = syntheticCandleEngine.cachedChoppiness || trend == TrendDirection.SIDEWAYS
+
+        // Cálculo dinámico de probabilidades para termómetro del HUD y telemetría
+        var callPower = 50
+        var putPower = 50
+        when (trend) {
+            TrendDirection.UPTREND -> {
+                callPower = 68
+                putPower = 32
+                if (distSup <= 0.25f) callPower += 10
+                if (rsi in 40.0..68.0) callPower += 8
+                if (tick.isBullishImpulse) callPower += 6
+            }
+            TrendDirection.DOWNTREND -> {
+                callPower = 32
+                putPower = 68
+                if (distRes <= 0.25f) putPower += 10
+                if (rsi in 32.0..60.0) putPower += 8
+                if (tick.isBearishImpulse) putPower += 6
+            }
+            TrendDirection.SIDEWAYS -> {
+                if (distSup <= 0.20f) { callPower = 62; putPower = 38 }
+                else if (distRes <= 0.20f) { callPower = 38; putPower = 62 }
+            }
+        }
+        callPower = callPower.coerceIn(15, 95)
+        putPower = putPower.coerceIn(15, 95)
+
+        val streak = when {
+            syntheticCandleEngine.consecutiveUpTicks >= 2 -> "${syntheticCandleEngine.consecutiveUpTicks}T 🟢"
+            syntheticCandleEngine.consecutiveDownTicks >= 2 -> "${syntheticCandleEngine.consecutiveDownTicks}T 🔴"
+            trend == TrendDirection.UPTREND -> "TREND 🟢"
+            trend == TrendDirection.DOWNTREND -> "TREND 🔴"
+            else -> "1D ⚪"
+        }
+
         return VisionAnalysisResult(
-            trend = syntheticCandleEngine.detectedTrend,
+            trend = trend,
             distanceToSupportRatio = distSup,
             distanceToResistanceRatio = distRes,
             touchesSupport = distSup <= 0.15f,
@@ -251,7 +291,13 @@ class TradingEngine(
             tickVelocityNormalized = tick.velocity,
             isBullishImpulse = tick.isBullishImpulse,
             isBearishImpulse = tick.isBearishImpulse,
-            candleSecond = tick.candleSecond
+            candleSecond = tick.candleSecond,
+            signalPowerCall = callPower,
+            signalPowerPut = putPower,
+            confluenceScoreCall = callPower,
+            confluenceScorePut = putPower,
+            isMarketSideways = isChoppy,
+            streakBadge = streak
         )
     }
 
@@ -332,10 +378,26 @@ class TradingEngine(
                         isTie = true
                         method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado tras ${elapsedSec}s)"
                     }
-                } else if (elapsedSec >= (expDurationSec + 15)) {
-                    // Si no hubo saldo legible tras timeout, cancelar como empate preventivo sin alterar equity
-                    isTie = true
-                    method = "TIMEOUT ${expDurationSec + 15}s (Sin saldo legible -> Cancelación preventiva)"
+                } else if (elapsedSec >= (expDurationSec + 5)) {
+                    // 2. Fallback de resolución por Acción de Precio (si el saldo no es legible por UI)
+                    val entryPrice = entryY
+                    val exitPrice = if (pendingTradeRecordedCandleCloseY > 0f) pendingTradeRecordedCandleCloseY else exitY
+                    if (entryPrice > 0f && exitPrice > 0f) {
+                        val isCall = (action == TradeAction.BUY)
+                        val isDiffSignificant = Math.abs(exitPrice - entryPrice) >= 0.5f
+                        if (!isDiffSignificant) {
+                            isTie = true
+                            method = "PRECIO (=) Empate técnico: Entry=$entryPrice vs Exit=$exitPrice (${elapsedSec}s)"
+                        } else {
+                            val priceWon = if (isCall) (exitPrice < entryPrice) else (exitPrice > entryPrice)
+                            isWin = priceWon
+                            val sign = if (priceWon) "+" else "-"
+                            method = "PRECIO ($sign) Resolución por acción de precio: Entry=$entryPrice vs Exit=$exitPrice (${elapsedSec}s)"
+                        }
+                    } else if (elapsedSec >= (expDurationSec + 15)) {
+                        isTie = true
+                        method = "TIMEOUT ${expDurationSec + 15}s (Sin saldo legible -> Cancelación preventiva)"
+                    }
                 }
 
                 if (isWin != null || isTie) {
@@ -485,7 +547,11 @@ class TradingEngine(
             // Confluencia 4 (Timing): Entrada estricta en el segundo :58s-:59s (o fin de ciclo de vela según timeframe)
             val tf = syntheticEngine?.timeframe ?: CandleTimeframe.M1
             val ts = latestTick?.timestampMs ?: System.currentTimeMillis()
-            val inTimingWindow = tf.isSniperTimingWindow(ts) || (analysis.candleSecond in 58..59 && tf == CandleTimeframe.M1)
+            val inTimingWindow = if (analysis.candleSecond > 0 && tf == CandleTimeframe.M1) {
+                analysis.candleSecond in 58..59
+            } else {
+                tf.isSniperTimingWindow(ts)
+            }
             if (!inTimingWindow) {
                 val cycleSec = tf.getCycleSecond(ts)
                 val cycleRem = tf.seconds - cycleSec
@@ -599,86 +665,124 @@ class TradingEngine(
 
             val rawResult = when (strategy) {
                 AutoTradeStrategy.AUTO_ADAPTIVE -> {
-                    // Modo Automático Total: Confluencia Multi-Factor + Sniping de Entrada
+                    // Modo Automático por Detección de Régimen de Mercado (Regime Engine en 2 Etapas)
+                    val regimeResult = MarketRegimeClassifier.classify(analysis, syntheticEngine)
                     val inDowntrend = analysis.trend == TrendDirection.DOWNTREND
                     val inUptrend = analysis.trend == TrendDirection.UPTREND
-                    val isSideways = analysis.trend == TrendDirection.SIDEWAYS || analysis.isMarketSideways || analysis.isConsolidationTight
 
-                    when {
-                        // 1. Prioridad Máxima: Falso Rompimiento / Trampa Institucional en S/R (95% confluencia)
-                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isFalseBreakoutCall -> Pair(TradeAction.BUY, "🎯 Auto [Trampa en Soporte | ⏱ ${sec}s] -> CALL")
-                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.isFalseBreakoutPut -> Pair(TradeAction.SELL, "🎯 Auto [Trampa en Resistencia | ⏱ ${sec}s] -> PUT")
-
-                        // 1b. Reversión Contra-Tendencia Cuantitativa por Sobreextensión en Zonas Clave S/R
-                        !inUptrend && (analysis.isNearResistanceZone || analysis.touchesResistance || analysis.distanceToResistanceRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.20f)) &&
-                        (syntheticEngine?.isBullishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi >= 78.0 && syntheticEngine.distanceToResistanceRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.GREEN) || analysis.isPriceNearTop) &&
-                        (!analysis.hasStrongMomentumUp && !analysis.isValidBreakoutCall && (analysis.tickVelocityNormalized <= 0.05f || analysis.isBearishImpulse || analysis.hasTopRejectionWick || analysis.isRejectionPut || (syntheticEngine != null && syntheticEngine.consecutiveDownTicks >= 2))) -> {
-                            val rsiStr = if (syntheticEngine != null) " | RSI: ${syntheticEngine.syntheticTickRsi.toInt()}" else ""
-                            Pair(TradeAction.SELL, "🎯 Auto [Reversión por Sobreextensión en Resistencia$rsiStr | ⏱ ${sec}s] -> PUT")
-                        }
-                        !inDowntrend && (analysis.isNearSupportZone || analysis.touchesSupport || analysis.distanceToSupportRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.20f)) &&
-                        (syntheticEngine?.isBearishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi <= 22.0 && syntheticEngine.distanceToSupportRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.RED) || analysis.isPriceNearBottom) &&
-                        (!analysis.hasStrongMomentumDown && !analysis.isValidBreakoutPut && (analysis.tickVelocityNormalized >= -0.05f || analysis.isBullishImpulse || analysis.hasBottomRejectionWick || analysis.isRejectionCall || (syntheticEngine != null && syntheticEngine.consecutiveUpTicks >= 2))) -> {
-                            val rsiStr = if (syntheticEngine != null) " | RSI: ${syntheticEngine.syntheticTickRsi.toInt()}" else ""
-                            Pair(TradeAction.BUY, "🎯 Auto [Reversión por Sobreextensión en Soporte$rsiStr | ⏱ ${sec}s] -> CALL")
+                    when (regimeResult.regime) {
+                        MarketRegime.CHOPPY_NOISE -> {
+                            Pair(null, "⏸ Auto Standby [${regimeResult.reason}] -> Sin trade")
                         }
 
-                        // 2. Sniper Pullback Entry Timing (:01s-:05s tras vela de señal fuerte)
-                        !inDowntrend && !analysis.hasStrongMomentumDown && isSniperPullbackCallTrigger ->
-                            Pair(TradeAction.BUY, "🎯 Auto [Sniper Pullback :0${sec}s | Retroceso tras vela fuerte] -> CALL")
-                        !inUptrend && !analysis.hasStrongMomentumUp && isSniperPullbackPutTrigger ->
-                            Pair(TradeAction.SELL, "🎯 Auto [Sniper Pullback :0${sec}s | Retroceso tras vela fuerte] -> PUT")
+                        MarketRegime.RANGING_CHANNEL -> {
+                            // En Rango S/R: Solo se operan Reversiones en extremos (Trampas, Sobreextensión RSI, Mechas de Rechazo, Envolventes en S/R y Agotamiento)
+                            when {
+                                // 1. Trampa Institucional / Falso Rompimiento en S/R (95% confluencia)
+                                !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isFalseBreakoutCall ->
+                                    Pair(TradeAction.BUY, "🎯 Auto [Trampa en Soporte | Rango S/R | ⏱ ${sec}s] -> CALL")
+                                !inUptrend && !analysis.hasStrongMomentumUp && analysis.isFalseBreakoutPut ->
+                                    Pair(TradeAction.SELL, "🎯 Auto [Trampa en Resistencia | Rango S/R | ⏱ ${sec}s] -> PUT")
 
-                        // 3. Rompimiento Válido S/R (>50% cuerpo fuera, mecha opuesta <20%)
-                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isValidBreakoutCall && !analysis.isDojiOrLowVolume ->
-                            Pair(TradeAction.BUY, "🎯 Auto [Rompimiento Válido Resistencia | ⏱ ${sec}s] -> CALL")
-                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.isValidBreakoutPut && !analysis.isDojiOrLowVolume ->
-                            Pair(TradeAction.SELL, "🎯 Auto [Rompimiento Válido Soporte | ⏱ ${sec}s] -> PUT")
+                                // 2. Reversión Cuantitativa por Sobreextensión en Extremos S/R
+                                !inUptrend && (analysis.isNearResistanceZone || analysis.touchesResistance || analysis.distanceToResistanceRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.20f)) &&
+                                (syntheticEngine?.isBullishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi >= 78.0 && syntheticEngine.distanceToResistanceRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.GREEN) || analysis.isPriceNearTop) &&
+                                (!analysis.hasStrongMomentumUp && !analysis.isValidBreakoutCall && (analysis.tickVelocityNormalized <= 0.05f || analysis.isBearishImpulse || analysis.hasTopRejectionWick || analysis.isRejectionPut || (syntheticEngine != null && syntheticEngine.consecutiveDownTicks >= 2))) -> {
+                                    val rsiStr = if (syntheticEngine != null) " | RSI: ${syntheticEngine.syntheticTickRsi.toInt()}" else ""
+                                    Pair(TradeAction.SELL, "🎯 Auto [Reversión por Sobreextensión en Resistencia$rsiStr | Rango S/R | ⏱ ${sec}s] -> PUT")
+                                }
 
-                        // 2. Mechas de Rechazo y Absorción en S/R con Sniping de Pullback (90% confluencia)
-                        !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.isRejectionCall || (analysis.touchesSupport && analysis.hasBottomRejectionWick)) &&
-                            (analysis.isPullbackSniperCall || analysis.isSniperTimingWindow) ->
-                            Pair(TradeAction.BUY, "🎯 Auto [Mecha Rechazo Soporte | ⏱ ${sec}s] -> CALL")
-                        !inUptrend && !analysis.hasStrongMomentumUp && (analysis.isRejectionPut || (analysis.touchesResistance && analysis.hasTopRejectionWick)) &&
-                            (analysis.isPullbackSniperPut || analysis.isSniperTimingWindow) ->
-                            Pair(TradeAction.SELL, "🎯 Auto [Mecha Rechazo Resistencia | ⏱ ${sec}s] -> PUT")
+                                !inDowntrend && (analysis.isNearSupportZone || analysis.touchesSupport || analysis.distanceToSupportRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.20f)) &&
+                                (syntheticEngine?.isBearishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi <= 22.0 && syntheticEngine.distanceToSupportRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.RED) || analysis.isPriceNearBottom) &&
+                                (!analysis.hasStrongMomentumDown && !analysis.isValidBreakoutPut && (analysis.tickVelocityNormalized >= -0.05f || analysis.isBullishImpulse || analysis.hasBottomRejectionWick || analysis.isRejectionCall || (syntheticEngine != null && syntheticEngine.consecutiveUpTicks >= 2))) -> {
+                                    val rsiStr = if (syntheticEngine != null) " | RSI: ${syntheticEngine.syntheticTickRsi.toInt()}" else ""
+                                    Pair(TradeAction.BUY, "🎯 Auto [Reversión por Sobreextensión en Soporte$rsiStr | Rango S/R | ⏱ ${sec}s] -> CALL")
+                                }
 
-                        // 3. Patrón Vela Envolvente en S/R (85% confluencia) con sniping de entrada
-                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isEngulfingCall &&
-                            (analysis.isPullbackSniperCall || analysis.isSniperTimingWindow) -> Pair(TradeAction.BUY, "🎯 Auto [Vela Envolvente Soporte | ⏱ ${sec}s] -> CALL")
-                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.isEngulfingPut &&
-                            (analysis.isPullbackSniperPut || analysis.isSniperTimingWindow) -> Pair(TradeAction.SELL, "🎯 Auto [Vela Envolvente Resistencia | ⏱ ${sec}s] -> PUT")
+                                // 3. Mechas de Rechazo y Absorción en S/R (MT_REJECTION)
+                                !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.isRejectionCall || (analysis.touchesSupport && analysis.hasBottomRejectionWick)) &&
+                                    (analysis.isPullbackSniperCall || analysis.isSniperTimingWindow) ->
+                                    Pair(TradeAction.BUY, "🎯 Auto [Mecha Rechazo Soporte | Rango S/R | ⏱ ${sec}s] -> CALL")
+                                !inUptrend && !analysis.hasStrongMomentumUp && (analysis.isRejectionPut || (analysis.touchesResistance && analysis.hasTopRejectionWick)) &&
+                                    (analysis.isPullbackSniperPut || analysis.isSniperTimingWindow) ->
+                                    Pair(TradeAction.SELL, "🎯 Auto [Mecha Rechazo Resistencia | Rango S/R | ⏱ ${sec}s] -> PUT")
 
-                        // 4. Choque / Retest tras Rompimiento (80% confluencia)
-                        !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.isChoqueCall || analysis.isChoquePullbackCall) -> Pair(TradeAction.BUY, "🎯 Auto [Choque / Pullback Alcista | ⏱ ${sec}s] -> CALL")
-                        !inUptrend && !analysis.hasStrongMomentumUp && (analysis.isChoquePut || analysis.isChoquePullbackPut) -> Pair(TradeAction.SELL, "🎯 Auto [Choque / Pullback Bajista | ⏱ ${sec}s] -> PUT")
+                                // 4. Vela Envolvente en Zona S/R (85% confluencia)
+                                !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isEngulfingCall &&
+                                    (analysis.isPullbackSniperCall || analysis.isSniperTimingWindow) ->
+                                    Pair(TradeAction.BUY, "🎯 Auto [Vela Envolvente Soporte | Rango S/R | ⏱ ${sec}s] -> CALL")
+                                !inUptrend && !analysis.hasStrongMomentumUp && analysis.isEngulfingPut &&
+                                    (analysis.isPullbackSniperPut || analysis.isSniperTimingWindow) ->
+                                    Pair(TradeAction.SELL, "🎯 Auto [Vela Envolvente Resistencia | Rango S/R | ⏱ ${sec}s] -> PUT")
 
-                        // 5. Agotamiento de 3 Velas Consecutivas (75% confluencia)
-                        !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall) -> Pair(TradeAction.BUY, "🎯 Auto [Agotamiento 3 Rojas Alcista | ⏱ ${sec}s] -> CALL")
-                        !inUptrend && !analysis.hasStrongMomentumUp && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut) -> Pair(TradeAction.SELL, "🎯 Auto [Agotamiento 3 Verdes Bajista | ⏱ ${sec}s] -> PUT")
+                                // 5. Agotamiento de 3 Velas Consecutivas (MT_3_VELAS)
+                                !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall) ->
+                                    Pair(TradeAction.BUY, "🎯 Auto [Agotamiento 3 Rojas Alcista | Rango S/R | ⏱ ${sec}s] -> CALL")
+                                !inUptrend && !analysis.hasStrongMomentumUp && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut) ->
+                                    Pair(TradeAction.SELL, "🎯 Auto [Agotamiento 3 Verdes Bajista | Rango S/R | ⏱ ${sec}s] -> PUT")
 
-                        // 6. Rebote S/R Clásico con Sniping de Entrada (70% confluencia)
-                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.touchesSupport && analysis.isPullbackSniperCall && !isSideways -> Pair(TradeAction.BUY, "🎯 Auto [Rebote en Soporte | ⏱ ${sec}s] -> CALL")
-                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.touchesResistance && analysis.isPullbackSniperPut && !isSideways -> Pair(TradeAction.SELL, "🎯 Auto [Rebote en Resistencia | ⏱ ${sec}s] -> PUT")
+                                // 6. Rebote Clásico con confirmación de timing
+                                !inDowntrend && !analysis.hasStrongMomentumDown && analysis.touchesSupport && analysis.isPullbackSniperCall ->
+                                    Pair(TradeAction.BUY, "🎯 Auto [Rebote en Soporte | Rango S/R | ⏱ ${sec}s] -> CALL")
+                                !inUptrend && !analysis.hasStrongMomentumUp && analysis.touchesResistance && analysis.isPullbackSniperPut ->
+                                    Pair(TradeAction.SELL, "🎯 Auto [Rebote en Resistencia | Rango S/R | ⏱ ${sec}s] -> PUT")
 
-                        // 7. Impulso y Confluencia Cuantitativa Alta >= 80% — estrictamente a favor de tendencia confirmada
-                        inUptrend && !analysis.hasStrongMomentumDown && (analysis.confluenceScoreCall >= 80 || analysis.signalPowerCall >= 80 || (analysis.isCallSignal && analysis.signalScore >= 80)) -> {
-                            if (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop) {
-                                Pair(null, "⚠️ Veto: Continuación alcista sin retroceso (Vela en extremo opuesto del rango)")
-                            } else {
-                                val score = Math.max(analysis.confluenceScoreCall, analysis.signalPowerCall)
-                                Pair(TradeAction.BUY, "🎯 Auto [Confluencia Fuerte Alcista ($score%) | ⏱ ${sec}s] -> CALL")
+                                else -> Pair(null, "⏳ Auto [Rango S/R]: Esperando aproximación a extremo con rechazo")
                             }
                         }
-                        inDowntrend && !analysis.hasStrongMomentumUp && (analysis.confluenceScorePut >= 80 || analysis.signalPowerPut >= 80 || (analysis.isPutSignal && analysis.signalScore >= 80)) -> {
-                            if (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom) {
-                                Pair(null, "⚠️ Veto: Continuación bajista sin retroceso (Vela en extremo opuesto del rango)")
-                            } else {
-                                val score = Math.max(analysis.confluenceScorePut, analysis.signalPowerPut)
-                                Pair(TradeAction.SELL, "🎯 Auto [Confluencia Fuerte Bajista ($score%) | ⏱ ${sec}s] -> PUT")
+
+                        MarketRegime.STRONG_TREND_UP -> {
+                            // En Tendencia Alcista: Únicamente entradas a favor de tendencia (Pullback Sniper o Vela Envolvente)
+                            when {
+                                !analysis.hasStrongMomentumDown && isSniperPullbackCallTrigger ->
+                                    Pair(TradeAction.BUY, "🎯 Auto [Sniper Pullback :0${sec}s | Tendencia Alcista] -> CALL")
+                                !analysis.hasStrongMomentumDown && analysis.isEngulfingCall && (analysis.isPullbackSniperCall || analysis.isSniperTimingWindow) ->
+                                    Pair(TradeAction.BUY, "🎯 Auto [Vela Envolvente Soporte | Tendencia Alcista | ⏱ ${sec}s] -> CALL")
+                                !analysis.hasStrongMomentumDown && (analysis.confluenceScoreCall >= 85 || analysis.signalPowerCall >= 85) -> {
+                                    if (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop) {
+                                        Pair(null, "⚠️ Veto: Tendencia alcista en techo de canal sin retroceso")
+                                    } else {
+                                        val score = Math.max(analysis.confluenceScoreCall, analysis.signalPowerCall)
+                                        Pair(TradeAction.BUY, "🎯 Auto [Confluencia Fuerte Alcista ($score%) | ⏱ ${sec}s] -> CALL")
+                                    }
+                                }
+                                else -> Pair(null, "⏳ Auto [Tendencia Alcista]: Esperando retroceso pullback o envolvente a favor")
                             }
                         }
-                        else -> Pair(null, "")
+
+                        MarketRegime.STRONG_TREND_DOWN -> {
+                            // En Tendencia Bajista: Únicamente entradas a favor de tendencia (Pullback Sniper o Vela Envolvente)
+                            when {
+                                !analysis.hasStrongMomentumUp && isSniperPullbackPutTrigger ->
+                                    Pair(TradeAction.SELL, "🎯 Auto [Sniper Pullback :0${sec}s | Tendencia Bajista] -> PUT")
+                                !analysis.hasStrongMomentumUp && analysis.isEngulfingPut && (analysis.isPullbackSniperPut || analysis.isSniperTimingWindow) ->
+                                    Pair(TradeAction.SELL, "🎯 Auto [Vela Envolvente Resistencia | Tendencia Bajista | ⏱ ${sec}s] -> PUT")
+                                !analysis.hasStrongMomentumUp && (analysis.confluenceScorePut >= 85 || analysis.signalPowerPut >= 85) -> {
+                                    if (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom) {
+                                        Pair(null, "⚠️ Veto: Tendencia bajista en piso de canal sin retroceso")
+                                    } else {
+                                        val score = Math.max(analysis.confluenceScorePut, analysis.signalPowerPut)
+                                        Pair(TradeAction.SELL, "🎯 Auto [Confluencia Fuerte Bajista ($score%) | ⏱ ${sec}s] -> PUT")
+                                    }
+                                }
+                                else -> Pair(null, "⏳ Auto [Tendencia Bajista]: Esperando retroceso pullback o envolvente a favor")
+                            }
+                        }
+
+                        MarketRegime.BREAKOUT_RETEST -> {
+                            // En Rompimiento y Retest: Choque con nivel roto o Rompimiento Validado
+                            when {
+                                !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.isChoqueCall || analysis.isChoquePullbackCall) ->
+                                    Pair(TradeAction.BUY, "🎯 Auto [Choque / Pullback Alcista | Rompimiento/Retest | ⏱ ${sec}s] -> CALL")
+                                !inUptrend && !analysis.hasStrongMomentumUp && (analysis.isChoquePut || analysis.isChoquePullbackPut) ->
+                                    Pair(TradeAction.SELL, "🎯 Auto [Choque / Pullback Bajista | Rompimiento/Retest | ⏱ ${sec}s] -> PUT")
+                                !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isValidBreakoutCall && !analysis.isDojiOrLowVolume ->
+                                    Pair(TradeAction.BUY, "🎯 Auto [Rompimiento Válido Resistencia | ⏱ ${sec}s] -> CALL")
+                                !inUptrend && !analysis.hasStrongMomentumUp && analysis.isValidBreakoutPut && !analysis.isDojiOrLowVolume ->
+                                    Pair(TradeAction.SELL, "🎯 Auto [Rompimiento Válido Soporte | ⏱ ${sec}s] -> PUT")
+                                else -> Pair(null, "⏳ Auto [Rompimiento/Retest]: Esperando confirmación de choque o ruptura limpia")
+                            }
+                        }
                     }
                 }
                 AutoTradeStrategy.MT_MASTER_COMBO -> {
@@ -997,8 +1101,9 @@ class TradingEngine(
         val sup = syntheticCandleEngine.dynamicSupportPrice
         val res = syntheticCandleEngine.dynamicResistancePrice
 
-        // 1. Patrón Detectado
-        val pattern = when {
+        // 1. Régimen de Mercado y Patrón Detectado
+        val regimeResult = MarketRegimeClassifier.classify(analysis, syntheticCandleEngine)
+        val basePattern = when {
             analysis?.isFalseBreakoutCall == true || analysis?.isFalseBreakoutPut == true -> "⚡ Trampa Institucional / Fakeout S/R"
             analysis?.isRejectionCall == true || analysis?.isRejectionPut == true || analysis?.hasBottomRejectionWick == true || analysis?.hasTopRejectionWick == true -> "🕯️ Mecha de Rechazo en Nivel S/R"
             analysis?.isEngulfingCall == true || analysis?.isEngulfingPut == true -> "⚡ Vela Envolvente de Reversión"
@@ -1013,6 +1118,7 @@ class TradingEngine(
             wsTrend == TrendDirection.SIDEWAYS -> "📊 Rango Lateral Cuantitativo / Esperando Expansión"
             else -> "🔍 Monitoreando Acción del Precio"
         }
+        val pattern = "${regimeResult.regime.hudBadge} | $basePattern"
 
         // 2. Probabilidad Estimada
         val prob = when {
@@ -1057,7 +1163,11 @@ class TradingEngine(
                 "⏳ Trade Activo: $act (${elapsed}s transcurridos) · Liquidando en vela :00s"
             }
             (syntheticCandleEngine.cachedChoppiness && autonomousSubMode != AutonomousSubMode.YOLO) -> {
-                "🛡️ Filtro Anti-Chop Activo: Consolidación/CHOP elevado. Esperando ruptura limpia con volumen."
+                val distS = syntheticCandleEngine.distanceToSupportRatio
+                val distR = syntheticCandleEngine.distanceToResistanceRatio
+                if (distS <= 0.25f) "🛡️ Anti-Chop Activo · Cerca de Soporte (${(distS * 100).toInt()}%): Buscando Mecha Rechazo CALL"
+                else if (distR <= 0.25f) "🛡️ Anti-Chop Activo · Cerca de Resistencia (${(distR * 100).toInt()}%): Buscando Mecha Rechazo PUT"
+                else "🛡️ Filtro Anti-Chop Activo: Consolidación/CHOP elevado. Esperando extremos S/R o ruptura."
             }
             analysis?.trend == TrendDirection.UPTREND || wsTrend == TrendDirection.UPTREND -> {
                 "🎯 Plan: Buscar retroceso leve a soporte para ejecutar CALL al segundo :58s - :01s."
@@ -1502,7 +1612,7 @@ class TradingEngine(
             val isSynthetic = AutoTradeAccessibilityService.isSyntheticOrOTC ||
                 currentAsset.contains("IDX", ignoreCase = true) ||
                 currentAsset.contains("OTC", ignoreCase = true)
-            if (isSynthetic) {
+            if (isSynthetic && strategy != AutoTradeStrategy.MT_MASTER_COMBO && strategy != AutoTradeStrategy.AUTO_ADAPTIVE && strategy != AutoTradeStrategy.SUPPORT_RESISTANCE && strategy != AutoTradeStrategy.MT_REJECTION) {
                 Log.d("TradingEngine", "Headless bloqueado por Veto Francotirador: Activo sintético/OTC ($currentAsset)")
                 return
             }
@@ -1518,7 +1628,9 @@ class TradingEngine(
                 reasonDescription.contains("MT_RANGE") ||
                 reasonDescription.contains("MT_3_VELAS") ||
                 reasonDescription.contains("MT_REVERSAL") ||
-                reasonDescription.contains("MT_CONFIRM")
+                reasonDescription.contains("MT_CONFIRM") ||
+                reasonDescription.contains("MT_ENGULFING") ||
+                reasonDescription.contains("QUANT_CRYPTO")
         if (syntheticCandleEngine.isChoppinessDetected() && !isRejectionOrBounce && !isYolo) {
             Log.d("TradingEngine", "Headless bloqueado por Filtro Anti-Choppy (<0.05% y ticks alternantes)")
             return
@@ -1687,9 +1799,25 @@ class TradingEngine(
                 isTie = true
                 method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado tras ${elapsedSec}s)"
             }
-        } else if (elapsedSec >= (expDurationSec + 15)) {
-            isTie = true
-            method = "TIMEOUT ${expDurationSec + 15}s (Sin saldo legible -> Cancelación preventiva)"
+        } else if (elapsedSec >= (expDurationSec + 5)) {
+            val pendingEntry = riskManager.pendingTradeEntryPriceY
+            val latestPrice = latestMarketTick?.price?.toFloat() ?: 0f
+            if (pendingEntry > 0f && latestPrice > 0f) {
+                val isCall = (riskManager.pendingTradeAction == TradeAction.BUY)
+                val isDiffSignificant = Math.abs(latestPrice - pendingEntry) > 0.00001f
+                if (!isDiffSignificant) {
+                    isTie = true
+                    method = "PRECIO (=) Empate técnico en tick WS: Entry=$pendingEntry vs Close=$latestPrice (${elapsedSec}s)"
+                } else {
+                    val priceWon = if (isCall) (latestPrice > pendingEntry) else (latestPrice < pendingEntry)
+                    isWin = priceWon
+                    val sign = if (priceWon) "+" else "-"
+                    method = "PRECIO ($sign) Tick WS: Entry=$pendingEntry vs Close=$latestPrice (${elapsedSec}s)"
+                }
+            } else if (elapsedSec >= (expDurationSec + 15)) {
+                isTie = true
+                method = "TIMEOUT ${expDurationSec + 15}s (Sin saldo legible -> Cancelación preventiva)"
+            }
         }
 
         if (isWin != null || isTie) {
