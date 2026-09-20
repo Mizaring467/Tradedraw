@@ -251,7 +251,7 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
                 canvas.drawText(label, 25f, shape.startY - 15f, textPaint)
             }
             TradingTool.RECTANGLE -> canvas.drawRect(Math.min(shape.startX, shape.endX), Math.min(shape.startY, shape.endY), Math.max(shape.startX, shape.endX), Math.max(shape.startY, shape.endY), paint)
-            TradingTool.FIB_RETRACEMENT -> drawFibonacci(canvas, shape, paint)
+            TradingTool.FIB_RETRACEMENT -> drawFibonacci(canvas, shape)
             TradingTool.LONG_POSITION -> drawPosition(canvas, shape, isLong = true)
             TradingTool.SHORT_POSITION -> drawPosition(canvas, shape, isLong = false)
             TradingTool.HORIZONTAL_LINE -> canvas.drawLine(0f, shape.startY, width.toFloat(), shape.startY, paint)
@@ -355,7 +355,7 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
         canvas.drawLine(shape.thirdX, shape.thirdY, p2x, p2y, paint)
     }
 
-    private fun drawFibonacci(canvas: Canvas, shape: DrawShape, paint: Paint) {
+    private fun drawFibonacci(canvas: Canvas, shape: DrawShape) {
         val minX = Math.min(shape.startX, shape.endX)
         val maxX = Math.max(shape.startX, shape.endX)
         val left = if (maxX - minX < 30f) 0f else minX

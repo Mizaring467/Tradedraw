@@ -255,7 +255,7 @@ class BinomoWebSocketClient(private val context: Context) {
             val request = reqBuilder.build()
 
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
-                override fun onOpen(ws: WebSocket, response: Response) {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
                     isConnecting.set(false)
                     isConnectedFlag.set(true)
                     reconnectAttempts = 0
@@ -263,10 +263,10 @@ class BinomoWebSocketClient(private val context: Context) {
                     Log.d(TAG, "WebSocket conectado exitosamente: $wsUrl")
 
                     // Suscripción al activo configurado (ej. Z-CRY/IDX)
-                    subscribeToAsset(ws, activeAsset)
+                    subscribeToAsset(webSocket, activeAsset)
                 }
 
-                override fun onMessage(ws: WebSocket, text: String) {
+                override fun onMessage(webSocket: WebSocket, text: String) {
                     rawSocketMessages++
                     recordRawFrame(text)
                     // Traza de los primeros frames crudos: sin esto es imposible distinguir
@@ -282,7 +282,7 @@ class BinomoWebSocketClient(private val context: Context) {
                             .find(text)?.groupValues?.getOrNull(1)
                             ?: Regex("""(?:\[|,)"(\d+)","?phoenix""").find(text)?.groupValues?.getOrNull(1)
                         if (ref != null) {
-                            ws.send(
+                            webSocket.send(
                                 JSONArray().apply {
                                     put(JSONObject.NULL)
                                     put(ref)
@@ -296,19 +296,19 @@ class BinomoWebSocketClient(private val context: Context) {
                     processIncomingMessage(text, source = "socket")
                 }
 
-                override fun onClosing(ws: WebSocket, code: Int, reason: String) {
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                     Log.d(TAG, "WebSocket cerrando: code=$code, reason=$reason")
-                    ws.close(1000, null)
+                    webSocket.close(1000, null)
                 }
 
-                override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     isConnecting.set(false)
                     isConnectedFlag.set(false)
                     updateState(WebSocketState.DISCONNECTED, "Cerrado: $reason")
                     scheduleReconnect()
                 }
 
-                override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     isConnecting.set(false)
                     isConnectedFlag.set(false)
                     val errorMsg = t.message ?: "Fallo de red"

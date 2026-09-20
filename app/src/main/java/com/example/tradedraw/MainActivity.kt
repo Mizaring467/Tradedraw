@@ -8,11 +8,19 @@ import android.provider.Settings
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.example.tradedraw.R
 
 class MainActivity : AppCompatActivity() {
+    private val overlayPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
+            startFloatingService()
+        } else {
+            Toast.makeText(this, "Permiso denegado. No se puede iniciar el overlay.", Toast.LENGTH_SHORT).show()
+        }
+    }
     private lateinit var btnAccessibility: Button
     private lateinit var btnStop: Button
 
@@ -115,7 +123,7 @@ class MainActivity : AppCompatActivity() {
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:$packageName")
             )
-            startActivityForResult(intent, 123)
+            overlayPermissionLauncher.launch(intent)
             Toast.makeText(this, "Por favor, permite que TradeDraw se muestre sobre otras apps", Toast.LENGTH_LONG).show()
         }
     }

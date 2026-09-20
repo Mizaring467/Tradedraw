@@ -465,7 +465,7 @@ class OverlayService : Service() {
             .setPositiveButton("Sí") { _, _ -> drawingView.clearCanvas() }
             .setNegativeButton("No", null)
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -594,7 +594,7 @@ class OverlayService : Service() {
             }
             .setNegativeButton("Cerrar", null)
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -609,7 +609,7 @@ class OverlayService : Service() {
                 showCalibrationDialog()
             }
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -663,7 +663,7 @@ class OverlayService : Service() {
             }
             .setNegativeButton("Cerrar", null)
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -705,7 +705,7 @@ class OverlayService : Service() {
             }
             .setNegativeButton("Cancelar", null)
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -733,7 +733,7 @@ class OverlayService : Service() {
             }
             .setNegativeButton("Cancelar", null)
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -755,7 +755,7 @@ class OverlayService : Service() {
                 showAISubmenu()
             }
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -789,7 +789,7 @@ class OverlayService : Service() {
                 showAISubmenu()
             }
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -805,7 +805,7 @@ class OverlayService : Service() {
                 showAISubmenu()
             }
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -883,7 +883,7 @@ class OverlayService : Service() {
                 showAISubmenu()
             }
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -904,7 +904,7 @@ class OverlayService : Service() {
             }
             .setNeutralButton("Cerrar", null)
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -947,7 +947,7 @@ class OverlayService : Service() {
             }
             .setNegativeButton("Cerrar", null)
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -972,7 +972,7 @@ class OverlayService : Service() {
             .setPositiveButton("Guardar") { _, _ -> onValueChosen(value) }
             .setNegativeButton("Cancelar", null)
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -1016,7 +1016,7 @@ class OverlayService : Service() {
             }
             .setNegativeButton("Cancelar", null)
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -1155,7 +1155,7 @@ class OverlayService : Service() {
                     }
                 }
                 .create().apply {
-                    window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                    window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                     show()
                 }
             true
@@ -1298,8 +1298,6 @@ class OverlayService : Service() {
                 val metrics = resources.displayMetrics
                 val screenW = metrics.widthPixels
                 val screenH = metrics.heightPixels
-                val hudW = view.width.takeIf { it > 0 } ?: 400
-                val hudH = view.height.takeIf { it > 0 } ?: 200
                 // Si está fuera de los límites de la pantalla, reposicionar a zona segura
                 val outOfBounds = p.x < 0 || p.x > screenW - 40 ||
                                   p.y < 0 || p.y > screenH - 80
@@ -1351,7 +1349,7 @@ class OverlayService : Service() {
             v.alpha = hudAlpha
 
             val isAccessConnected = AutoTradeAccessibilityService.instance != null || AutoTradeAccessibilityService.isAccessibilityPermissionGranted(this)
-            val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(tradingEngine.mode, tradingEngine.autonomousSubMode)
+            val (canTradeStatus, _) = riskManager.canExecuteTrade(tradingEngine.autonomousSubMode)
 
             when (tradingEngine.mode) {
                 AutoTradeMode.AUTONOMOUS -> {
@@ -1818,7 +1816,7 @@ class OverlayService : Service() {
             }
             .setNegativeButton("Cancelar", null)
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
     }
@@ -1862,13 +1860,13 @@ class OverlayService : Service() {
             setPadding(16, 16, 16, 8)
             addView(wheel, FrameLayout.LayoutParams(size, size))
         }
-        val dialog = AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
+        AlertDialog.Builder(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog))
             .setTitle("Color del gráfico")
             .setView(container)
             .setPositiveButton("Aplicar", null)
             .setNegativeButton("Cancelar", null)
             .create().apply {
-                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
                 show()
             }
         wheel.onColorChanged = { color -> drawingView.setColor(color) }

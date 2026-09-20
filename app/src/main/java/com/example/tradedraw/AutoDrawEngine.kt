@@ -70,7 +70,7 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
      * El análisis de S/R y figuras técnicas se procesa 100% de forma cuantitativa interna
      * en el HUD didáctico, manteniendo el lienzo de pantalla despejado y sin líneas estáticas.
      */
-    fun updateTechnicalDrawings(strategy: AutoTradeStrategy, result: VisionAnalysisResult) {
+    fun updateTechnicalDrawings() {
         // No generar figuras estáticas automáticas sobre la pantalla.
         // El HUD didáctico muestra la información de S/R, probabilidad y patrones en tiempo real.
     }

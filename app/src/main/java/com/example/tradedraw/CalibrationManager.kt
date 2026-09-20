@@ -182,8 +182,8 @@ class CalibrationManager(private val context: Context) {
         val density = context.resources.displayMetrics.density
         val pinSize = (38 * density).toInt()
 
-        val buyPin = createPinView("▲\nSUBE", Color.parseColor("#22c55e"), pinSize)
-        val sellPin = createPinView("▼\nBAJA", Color.parseColor("#ef4444"), pinSize)
+        val buyPin = createPinView("▲\nSUBE", Color.parseColor("#22c55e"))
+        val sellPin = createPinView("▼\nBAJA", Color.parseColor("#ef4444"))
 
         val buyParams = FrameLayout.LayoutParams(pinSize, pinSize).apply {
             leftMargin = (buyX - pinSize / 2).toInt().coerceAtLeast(0)
@@ -272,7 +272,7 @@ class CalibrationManager(private val context: Context) {
         }
     }
 
-    private fun createPinView(label: String, color: Int, size: Int): View {
+    private fun createPinView(label: String, color: Int): View {
         val bg = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(Color.argb(190, Color.red(color), Color.green(color), Color.blue(color)))
