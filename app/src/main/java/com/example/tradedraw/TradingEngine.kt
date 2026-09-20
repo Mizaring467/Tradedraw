@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
+import android.os.VibratorManager
 import android.os.Vibrator
 import android.content.res.Configuration
 import android.provider.Settings
@@ -73,7 +74,7 @@ class TradingEngine(
 
     fun checkSniperSessionLimits() {
         if (autonomousSubMode == AutonomousSubMode.SNIPER) {
-            val (canTrade, reason) = riskManager.canExecuteTrade(mode, autonomousSubMode)
+            val (canTrade, reason) = riskManager.canExecuteTrade(autonomousSubMode)
             if (!canTrade && (reason.contains("alcanzado", ignoreCase = true) || reason.contains("finalizada", ignoreCase = true) || reason.contains("Límite", ignoreCase = true))) {
                 mode = AutoTradeMode.DISABLED
                 sniperShutdownReason = reason
@@ -244,7 +245,7 @@ class TradingEngine(
 
         // En modo Headless (sin frames de pantalla capturados), resolver trade por tiempo y balance de Binomo
         if (framesAnalyzedCount == 0L && riskManager.hasPendingTrade) {
-            checkHeadlessTradeResolution(tick)
+            checkHeadlessTradeResolution()
         }
     }
 
@@ -330,7 +331,7 @@ class TradingEngine(
 
         // 3. Auto-dibujar escenario técnico en TradeDraw según la estrategia
         handler.post {
-            autoDrawEngine.updateTechnicalDrawings(strategy, analysis)
+            autoDrawEngine.updateTechnicalDrawings()
             onFrameProcessedListener?.invoke(analysis)
         }
 
@@ -468,7 +469,7 @@ class TradingEngine(
 
         // 5. Evaluar señal de trading puramente local y cuantitativa (0ms latencia, sin llamadas remotas lentas)
         if (!riskManager.hasPendingTrade && !isSpacingCooldown && mode != AutoTradeMode.DISABLED) {
-            val localSignal = evaluateStrategySignal(strategy, analysis, supports.isNotEmpty() || resistances.isNotEmpty())
+            val localSignal = evaluateStrategySignal(strategy, analysis)
 
             if (localSignal != null && !riskManager.hasPendingTrade) {
                 val sec = analysis.candleSecond
@@ -511,13 +512,11 @@ class TradingEngine(
 
     fun evaluateStrategySignal(
         strategy: AutoTradeStrategy = this.strategy,
-        analysis: VisionAnalysisResult,
-        hasDrawnLines: Boolean = false
+        analysis: VisionAnalysisResult
     ): TradeAction? {
         val (action, reason) = evaluateStrategySignalWithReason(
             strategy = strategy,
             analysis = analysis,
-            hasDrawnLines = hasDrawnLines,
             syntheticEngine = syntheticCandleEngine,
             subMode = autonomousSubMode,
             latestTick = latestMarketTick
@@ -530,12 +529,11 @@ class TradingEngine(
         fun evaluateStrategySignal(
             strategy: AutoTradeStrategy,
             analysis: VisionAnalysisResult,
-            hasDrawnLines: Boolean = false,
             syntheticEngine: SyntheticCandleEngine? = null,
             subMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE,
             latestTick: MarketTick? = null
         ): TradeAction? {
-            val (action, _) = evaluateStrategySignalWithReason(strategy, analysis, hasDrawnLines, syntheticEngine, subMode, latestTick)
+            val (action, _) = evaluateStrategySignalWithReason(strategy, analysis, syntheticEngine, subMode, latestTick)
             return action
         }
 
@@ -628,7 +626,6 @@ class TradingEngine(
         fun evaluateStrategySignalWithReason(
             strategy: AutoTradeStrategy,
             analysis: VisionAnalysisResult,
-            hasDrawnLines: Boolean = false,
             syntheticEngine: SyntheticCandleEngine? = null,
             subMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE,
             latestTick: MarketTick? = null
@@ -1213,7 +1210,7 @@ class TradingEngine(
             return "🛑 $sniperShutdownReason · Toca [MODO] para nueva sesión"
         }
 
-        val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(mode, autonomousSubMode)
+        val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(autonomousSubMode)
         if (!canTradeStatus && !riskManager.hasPendingTrade && mode == AutoTradeMode.AUTONOMOUS) {
             val requiresManualResume = blockReason.contains("Stop Loss", ignoreCase = true) || blockReason.contains("Take Profit", ignoreCase = true) || blockReason.contains("Límite", ignoreCase = true)
             return if (requiresManualResume) "🛑 $blockReason · Toca [MODO] para reanudar" else "⏳ $blockReason"
@@ -1239,7 +1236,6 @@ class TradingEngine(
             }
         }
 
-        val (supports, resistances) = drawingView.getSupportResistanceYLevels()
         val analysis = latestAnalysisResult
 
         if (analysis != null && analysis.isMarketSideways) {
@@ -1375,7 +1371,7 @@ class TradingEngine(
             else -> 1.0f
         }
         val signalConfidence = (baseConfidence * adaptiveModifier).coerceIn(0.1f, 1.0f)
-        val (canTrade, reason) = riskManager.canExecuteTrade(mode, autonomousSubMode, signalConfidence)
+        val (canTrade, reason) = riskManager.canExecuteTrade(autonomousSubMode, signalConfidence)
         val actionText = if (finalAction == TradeAction.BUY) "COMPRA / CALL (Sube)" else "VENTA / PUT (Baja)"
         val emoji = if (finalAction == TradeAction.BUY) "🟢 ▲" else "🔴 ▼"
 
@@ -1502,7 +1498,13 @@ class TradingEngine(
 
     private fun emitHapticWarning() {
         try {
-            val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                vibratorManager?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
             if (vibrator != null && vibrator.hasVibrator()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 150, 80, 200), -1))
@@ -1549,7 +1551,13 @@ class TradingEngine(
 
     private fun emitHapticAndAudioFeedback() {
         try {
-            val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                vibratorManager?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
             if (vibrator != null && vibrator.hasVibrator()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     vibrator.vibrate(VibrationEffect.createOneShot(250, VibrationEffect.DEFAULT_AMPLITUDE))
@@ -1706,7 +1714,7 @@ class TradingEngine(
         }
 
         val headlessConfidence = (0.85f * adaptiveModifier).coerceIn(0.1f, 1.0f)
-        val (canTrade, riskReason) = riskManager.canExecuteTrade(mode, autonomousSubMode, headlessConfidence)
+        val (canTrade, riskReason) = riskManager.canExecuteTrade(autonomousSubMode, headlessConfidence)
         if (!canTrade) {
             Log.d("TradingEngine", "Headless bloqueado por riesgo: $riskReason")
             if (isSniper && (riskReason.contains("alcanzado", ignoreCase = true) || riskReason.contains("finalizada", ignoreCase = true) || riskReason.contains("Límite", ignoreCase = true))) {
@@ -1787,7 +1795,7 @@ class TradingEngine(
         }
     }
 
-    private fun checkHeadlessTradeResolution(tick: MarketTick) {
+    private fun checkHeadlessTradeResolution() {
         val snapshot = synchronized(riskManager) {
             if (!riskManager.hasPendingTrade) null
             else {

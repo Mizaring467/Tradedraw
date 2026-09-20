@@ -51,7 +51,7 @@ class RiskManagerTest {
 
         // Envejecemos el pendiente más allá del timeout de seguridad (85s)
         riskManager.pendingTradeStartTime = System.currentTimeMillis() - 86_000L
-        riskManager.canExecuteTrade(AutoTradeMode.AUTONOMOUS, AutonomousSubMode.YOLO, 0.9f)
+        riskManager.canExecuteTrade(AutonomousSubMode.YOLO, 0.9f)
 
         assertFalse("Pasado el timeout el pendiente debe limpiarse", riskManager.hasPendingTrade)
         assertEquals("El timestamp del pendiente debe resetearse", 0L, riskManager.pendingTradeStartTime)
@@ -766,7 +766,7 @@ class RiskManagerTest {
 
         // A los 335s (supera 330s de timeout M5), el timeout se ejecuta y limpia la operación
         riskManager.pendingTradeStartTime = System.currentTimeMillis() - 335000L
-        val (canTrade335s, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
         assertFalse("Pending trade fue limpiado por timeout", riskManager.hasPendingTrade)
     }
 }

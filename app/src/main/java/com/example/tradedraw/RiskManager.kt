@@ -266,7 +266,6 @@ class RiskManager(context: Context? = null) {
 
     @Synchronized
     fun canExecuteTrade(
-        mode: AutoTradeMode? = null,
         subMode: AutonomousSubMode? = null,
         confidence: Float = 1.0f
     ): Pair<Boolean, String> {

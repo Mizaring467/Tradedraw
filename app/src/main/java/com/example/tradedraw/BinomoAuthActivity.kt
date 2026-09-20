@@ -200,7 +200,7 @@ class BinomoAuthActivity : AppCompatActivity() {
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(v: WebView?, url: String?) {
                             super.onPageFinished(v, url)
-                            url?.let { inspectUrlAndCookies(it, v) }
+                            url?.let { inspectUrlAndCookies(it) }
                         }
                     }
 
@@ -234,19 +234,19 @@ class BinomoAuthActivity : AppCompatActivity() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 view?.evaluateJavascript(snifferJs, null)
-                url?.let { inspectUrlAndCookies(it, view) }
+                url?.let { inspectUrlAndCookies(it) }
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 view?.evaluateJavascript(snifferJs, null)
-                url?.let { inspectUrlAndCookies(it, view) }
+                url?.let { inspectUrlAndCookies(it) }
                 checkLocalStorageForToken(view)
             }
         }
     }
 
-    private fun inspectUrlAndCookies(url: String, view: WebView?) {
+    private fun inspectUrlAndCookies(url: String) {
         // 1. Detección en parámetros de URL
         if (url.contains("authtoken=") || url.contains("token=")) {
             val tokenRegex = Regex("""[?&](?:authtoken|token)=([^&#]+)""")
