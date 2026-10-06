@@ -581,20 +581,20 @@ class RiskManager(context: Context? = null) {
     }
 
     @Synchronized
-    fun setStats(wins: Int, losses: Int) {
+    fun setStats(wins: Int, losses: Int, lossStreak: Int? = null) {
         totalWins = wins.coerceAtLeast(0)
         totalLosses = losses.coerceAtLeast(0)
         currentWins = wins.coerceAtLeast(0)
-        currentLossStreak = 0
+        currentLossStreak = lossStreak ?: if (wins == 0) losses.coerceAtLeast(0) else 0
         consecutiveVoids = 0
         totalVoids = 0
     }
 
     @Synchronized
-    fun correctStats(wins: Int, losses: Int) {
-        setStats(wins, losses)
+    fun correctStats(wins: Int, losses: Int, lossStreak: Int? = null) {
+        setStats(wins, losses, lossStreak)
         OverlayService.instance?.updateHUDView()
-        android.util.Log.i("RiskManager", "Marcador corregido a: $wins W | $losses L")
+        android.util.Log.i("RiskManager", "Marcador corregido a: $wins W | $losses L (Racha=$currentLossStreak)")
     }
 
     @Synchronized

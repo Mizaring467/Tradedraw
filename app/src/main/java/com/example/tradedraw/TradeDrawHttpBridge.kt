@@ -182,17 +182,20 @@ class TradeDrawHttpBridge(
                         sendJsonResponse(output, 200, """{"success":true,"wins":$wins,"losses":$losses}""")
                     }
                     "/stats" -> {
-                        if (params.containsKey("wins") || params.containsKey("losses")) {
+                        if (params.containsKey("wins") || params.containsKey("losses") || params.containsKey("streak")) {
                             val wins = params["wins"]?.toIntOrNull() ?: overlayService.riskManager.totalWins
                             val losses = params["losses"]?.toIntOrNull() ?: overlayService.riskManager.totalLosses
-                            overlayService.riskManager.correctStats(wins, losses)
+                            val streak = params["streak"]?.toIntOrNull()
+                            overlayService.riskManager.correctStats(wins, losses, streak)
                             val wr = overlayService.riskManager.getWinRate()
-                            sendJsonResponse(output, 200, """{"success":true,"wins":$wins,"losses":$losses,"winRate":$wr}""")
+                            val curStreak = overlayService.riskManager.currentLossStreak
+                            sendJsonResponse(output, 200, """{"success":true,"wins":$wins,"losses":$losses,"lossStreak":$curStreak,"winRate":$wr}""")
                         } else {
                             val wins = overlayService.riskManager.totalWins
                             val losses = overlayService.riskManager.totalLosses
+                            val curStreak = overlayService.riskManager.currentLossStreak
                             val wr = overlayService.riskManager.getWinRate()
-                            sendJsonResponse(output, 200, """{"wins":$wins,"losses":$losses,"winRate":$wr}""")
+                            sendJsonResponse(output, 200, """{"wins":$wins,"losses":$losses,"lossStreak":$curStreak,"winRate":$wr}""")
                         }
                     }
                     "/win" -> {

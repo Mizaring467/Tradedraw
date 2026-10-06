@@ -798,6 +798,12 @@ class RiskManagerTest {
         assertEquals(0, riskManager.totalLosses)
         assertEquals(100.0f, riskManager.getWinRate(), 0.01f)
 
+        riskManager.correctStats(0, 2)
+        assertEquals(0, riskManager.totalWins)
+        assertEquals(2, riskManager.totalLosses)
+        assertEquals(2, riskManager.currentLossStreak)
+        assertEquals(0.0f, riskManager.getWinRate(), 0.01f)
+
         riskManager.correctStats(3, 1)
         assertEquals(3, riskManager.totalWins)
         assertEquals(1, riskManager.totalLosses)
