@@ -571,6 +571,20 @@ class RiskManager(context: Context? = null) {
     fun recordTradeLoss(force: Boolean = false) = recordTradeLosses(1, force)
 
     @Synchronized
+    fun resolvePendingTradeWin(): Boolean {
+        if (!hasPendingTrade) return false
+        recordTradeWins(1, force = true)
+        return true
+    }
+
+    @Synchronized
+    fun resolvePendingTradeLoss(): Boolean {
+        if (!hasPendingTrade) return false
+        recordTradeLosses(1, force = true)
+        return true
+    }
+
+    @Synchronized
     fun resetStats() {
         totalWins = 0
         totalLosses = 0

@@ -809,5 +809,27 @@ class RiskManagerTest {
         assertEquals(1, riskManager.totalLosses)
         assertEquals(75.0f, riskManager.getWinRate(), 0.01f)
     }
+
+    @Test
+    fun testResolvePendingTrade_claimsAtomicallyAndPreventsDuplicate() {
+        assertFalse("Sin pending trade no debe resolver", riskManager.resolvePendingTradeWin())
+        assertFalse("Sin pending trade no debe resolver", riskManager.resolvePendingTradeLoss())
+
+        riskManager.recordTradeSent(TradeAction.BUY)
+        assertTrue("Con pending trade debe resolver la primera vez", riskManager.resolvePendingTradeWin())
+        assertEquals(1, riskManager.totalWins)
+        assertFalse("Pending trade debe quedar limpio", riskManager.hasPendingTrade)
+
+        // Second call on the same trade must be rejected
+        assertFalse("Segunda llamada debe ser rechazada", riskManager.resolvePendingTradeWin())
+        assertEquals("Total wins no debe incrementar dos veces", 1, riskManager.totalWins)
+
+        // Now test loss
+        riskManager.recordTradeSent(TradeAction.SELL)
+        assertTrue("Con pending trade debe resolver loss", riskManager.resolvePendingTradeLoss())
+        assertEquals(1, riskManager.totalLosses)
+        assertFalse("Segunda llamada de loss debe ser rechazada", riskManager.resolvePendingTradeLoss())
+        assertEquals("Total losses no debe incrementar dos veces", 1, riskManager.totalLosses)
+    }
 }
 

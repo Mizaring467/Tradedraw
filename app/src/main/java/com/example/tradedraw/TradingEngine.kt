@@ -438,21 +438,23 @@ class TradingEngine(
                             autoDrawEngine.clearTradeEntry()
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
                         } else if (finalWin) {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN", tradeStartMs)
-                            riskManager.recordTradeWin(force = true)
-                            adaptiveLearningEngine.recordTradeOutcome(true, context)
-                            autoDrawEngine.clearTradeEntry()
-                            emitHapticAndAudioFeedback()
-                            Toast.makeText(context, "🎉 OPERACIÓN GANADA (+1 W)", Toast.LENGTH_LONG).show()
-                            onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
+                            if (riskManager.resolvePendingTradeWin()) {
+                                TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN", tradeStartMs)
+                                adaptiveLearningEngine.recordTradeOutcome(true, context)
+                                autoDrawEngine.clearTradeEntry()
+                                emitHapticAndAudioFeedback()
+                                Toast.makeText(context, "🎉 OPERACIÓN GANADA (+1 W)", Toast.LENGTH_LONG).show()
+                                onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
+                            }
                         } else {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS", tradeStartMs)
-                            riskManager.recordTradeLoss(force = true)
-                            adaptiveLearningEngine.recordTradeOutcome(false, context)
-                            autoDrawEngine.clearTradeEntry()
-                            emitHapticAndAudioFeedback()
-                            Toast.makeText(context, "⚠️ OPERACIÓN PERDIDA (+1 L)", Toast.LENGTH_LONG).show()
-                            onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, false)
+                            if (riskManager.resolvePendingTradeLoss()) {
+                                TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS", tradeStartMs)
+                                adaptiveLearningEngine.recordTradeOutcome(false, context)
+                                autoDrawEngine.clearTradeEntry()
+                                emitHapticAndAudioFeedback()
+                                Toast.makeText(context, "⚠️ OPERACIÓN PERDIDA (+1 L)", Toast.LENGTH_LONG).show()
+                                onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, false)
+                            }
                         }
                         isTradeResolving.set(false)
                         lastTradeResolutionTime = System.currentTimeMillis()
@@ -1900,17 +1902,19 @@ class TradingEngine(
                     riskManager.recordTradeVoid()
                     Toast.makeText(context, "[HEADLESS] ⚪ Empate / Orden cancelada", Toast.LENGTH_SHORT).show()
                 } else if (finalWin) {
-                    riskManager.recordTradeWin(force = true)
-                    adaptiveLearningEngine.recordTradeOutcome(true, context)
-                    emitHapticAndAudioFeedback()
-                    Toast.makeText(context, "[HEADLESS] 🎉 GANADA (+1 W) [$method]", Toast.LENGTH_SHORT).show()
-                    onTradeExecutedListener?.invoke(pendingAction, true)
+                    if (riskManager.resolvePendingTradeWin()) {
+                        adaptiveLearningEngine.recordTradeOutcome(true, context)
+                        emitHapticAndAudioFeedback()
+                        Toast.makeText(context, "[HEADLESS] 🎉 GANADA (+1 W) [$method]", Toast.LENGTH_SHORT).show()
+                        onTradeExecutedListener?.invoke(pendingAction, true)
+                    }
                 } else {
-                    riskManager.recordTradeLoss(force = true)
-                    adaptiveLearningEngine.recordTradeOutcome(false, context)
-                    emitHapticAndAudioFeedback()
-                    Toast.makeText(context, "[HEADLESS] ⚠️ PERDIDA (+1 L) [$method]", Toast.LENGTH_SHORT).show()
-                    onTradeExecutedListener?.invoke(pendingAction, false)
+                    if (riskManager.resolvePendingTradeLoss()) {
+                        adaptiveLearningEngine.recordTradeOutcome(false, context)
+                        emitHapticAndAudioFeedback()
+                        Toast.makeText(context, "[HEADLESS] ⚠️ PERDIDA (+1 L) [$method]", Toast.LENGTH_SHORT).show()
+                        onTradeExecutedListener?.invoke(pendingAction, false)
+                    }
                 }
                 lastTradeResolutionTime = System.currentTimeMillis()
                 isTradeResolving.set(false)
