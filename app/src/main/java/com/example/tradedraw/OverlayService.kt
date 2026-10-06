@@ -1369,9 +1369,6 @@ class OverlayService : Service() {
         }
     }
 
-    private fun toggleHUDVisibility() {
-        setHUDVisibility(!isHudVisible)
-    }
 
     fun updateHUDView(force: Boolean = false) {
         // Si no es forzado (timer), respetar throttle de 400ms
