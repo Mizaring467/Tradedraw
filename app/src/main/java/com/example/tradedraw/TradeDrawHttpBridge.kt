@@ -181,6 +181,34 @@ class TradeDrawHttpBridge(
                         overlayService.updateHUDView()
                         sendJsonResponse(output, 200, """{"success":true,"wins":$wins,"losses":$losses}""")
                     }
+                    "/stats" -> {
+                        if (params.containsKey("wins") || params.containsKey("losses")) {
+                            val wins = params["wins"]?.toIntOrNull() ?: overlayService.riskManager.totalWins
+                            val losses = params["losses"]?.toIntOrNull() ?: overlayService.riskManager.totalLosses
+                            overlayService.riskManager.correctStats(wins, losses)
+                            val wr = overlayService.riskManager.getWinRate()
+                            sendJsonResponse(output, 200, """{"success":true,"wins":$wins,"losses":$losses,"winRate":$wr}""")
+                        } else {
+                            val wins = overlayService.riskManager.totalWins
+                            val losses = overlayService.riskManager.totalLosses
+                            val wr = overlayService.riskManager.getWinRate()
+                            sendJsonResponse(output, 200, """{"wins":$wins,"losses":$losses,"winRate":$wr}""")
+                        }
+                    }
+                    "/win" -> {
+                        overlayService.riskManager.recordTradeWin(force = true)
+                        val wins = overlayService.riskManager.totalWins
+                        val losses = overlayService.riskManager.totalLosses
+                        val wr = overlayService.riskManager.getWinRate()
+                        sendJsonResponse(output, 200, """{"success":true,"action":"win","wins":$wins,"losses":$losses,"winRate":$wr}""")
+                    }
+                    "/loss" -> {
+                        overlayService.riskManager.recordTradeLoss(force = true)
+                        val wins = overlayService.riskManager.totalWins
+                        val losses = overlayService.riskManager.totalLosses
+                        val wr = overlayService.riskManager.getWinRate()
+                        sendJsonResponse(output, 200, """{"success":true,"action":"loss","wins":$wins,"losses":$losses,"winRate":$wr}""")
+                    }
                     "/click" -> {
                         val x = params["x"]?.toFloatOrNull()
                         val y = params["y"]?.toFloatOrNull()

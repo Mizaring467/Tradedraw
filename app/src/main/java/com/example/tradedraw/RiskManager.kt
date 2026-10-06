@@ -498,19 +498,21 @@ class RiskManager(context: Context? = null) {
     }
 
     @Synchronized
-    fun recordTradeWins(count: Int = 1) {
-        if (!hasPendingTrade) {
+    fun recordTradeWins(count: Int = 1, force: Boolean = false) {
+        if (!force && !hasPendingTrade) {
             android.util.Log.w("RiskManager", "recordTradeWins ignorado: No hay trade pendiente (llamada duplicada bloqueada)")
             return
         }
         
-        val currentBal = AutoTradeAccessibilityService.latestObservedBalance
-        if (pendingTradeBaseBalance > 0.0 && currentBal > 0.0) {
-            val diff = Math.abs(currentBal - pendingTradeBaseBalance)
-            if (diff <= 10.0) {
-                android.util.Log.w("RiskManager", "Interceptado WIN falso (Diff=$diff). Convirtiendo a VOID.")
-                recordTradeVoid(count)
-                return
+        if (!force) {
+            val currentBal = AutoTradeAccessibilityService.latestObservedBalance
+            if (pendingTradeBaseBalance > 0.0 && currentBal > 0.0) {
+                val diff = Math.abs(currentBal - pendingTradeBaseBalance)
+                if (diff <= 10.0) {
+                    android.util.Log.w("RiskManager", "Interceptado WIN falso (Diff=$diff). Convirtiendo a VOID.")
+                    recordTradeVoid(count)
+                    return
+                }
             }
         }
 
@@ -528,22 +530,25 @@ class RiskManager(context: Context? = null) {
         }
         lastTradeTime = System.currentTimeMillis()
         clearPendingTrade()
+        OverlayService.instance?.updateHUDView()
     }
 
     @Synchronized
-    fun recordTradeLosses(count: Int = 1) {
-        if (!hasPendingTrade) {
+    fun recordTradeLosses(count: Int = 1, force: Boolean = false) {
+        if (!force && !hasPendingTrade) {
             android.util.Log.w("RiskManager", "recordTradeLosses ignorado: No hay trade pendiente (llamada duplicada bloqueada)")
             return
         }
         
-        val currentBal = AutoTradeAccessibilityService.latestObservedBalance
-        if (pendingTradeBaseBalance > 0.0 && currentBal > 0.0) {
-            val diff = Math.abs(currentBal - pendingTradeBaseBalance)
-            if (diff <= 10.0) {
-                android.util.Log.w("RiskManager", "Interceptado LOSS falso (Diff=$diff). Convirtiendo a VOID.")
-                recordTradeVoid(count)
-                return
+        if (!force) {
+            val currentBal = AutoTradeAccessibilityService.latestObservedBalance
+            if (pendingTradeBaseBalance > 0.0 && currentBal > 0.0) {
+                val diff = Math.abs(currentBal - pendingTradeBaseBalance)
+                if (diff <= 10.0) {
+                    android.util.Log.w("RiskManager", "Interceptado LOSS falso (Diff=$diff). Convirtiendo a VOID.")
+                    recordTradeVoid(count)
+                    return
+                }
             }
         }
 
@@ -556,13 +561,14 @@ class RiskManager(context: Context? = null) {
         }
         lastTradeTime = System.currentTimeMillis()
         clearPendingTrade()
+        OverlayService.instance?.updateHUDView()
     }
 
     @Synchronized
-    fun recordTradeWin() = recordTradeWins(1)
+    fun recordTradeWin(force: Boolean = false) = recordTradeWins(1, force)
 
     @Synchronized
-    fun recordTradeLoss() = recordTradeLosses(1)
+    fun recordTradeLoss(force: Boolean = false) = recordTradeLosses(1, force)
 
     @Synchronized
     fun resetStats() {

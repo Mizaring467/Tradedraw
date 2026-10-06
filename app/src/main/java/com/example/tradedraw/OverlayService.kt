@@ -204,7 +204,6 @@ class OverlayService : Service() {
         setupCanvasWindow()
 
         riskManager = RiskManager(this)
-        riskManager.resetSession() // Sesión limpia en 0W / 0L para cada nuevo inicio de TradeDraw
         calibrationManager = CalibrationManager(this)
         tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager)
         tradingEngine.adaptiveLearningEngine.loadState(this)
@@ -1115,11 +1114,11 @@ class OverlayService : Service() {
         }
 
         hudView?.findViewById<Button>(R.id.hud_btn_win)?.setOnClickListener {
-            riskManager.recordTradeWin()
+            riskManager.recordTradeWin(force = true)
             updateHUDView()
         }
         hudView?.findViewById<Button>(R.id.hud_btn_loss)?.setOnClickListener {
-            riskManager.recordTradeLoss()
+            riskManager.recordTradeLoss(force = true)
             updateHUDView()
         }
         hudView?.findViewById<Button>(R.id.hud_btn_recalc_ai)?.setOnClickListener {

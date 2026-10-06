@@ -439,7 +439,7 @@ class TradingEngine(
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
                         } else if (finalWin) {
                             TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN", tradeStartMs)
-                            riskManager.recordTradeWin()
+                            riskManager.recordTradeWin(force = true)
                             adaptiveLearningEngine.recordTradeOutcome(true, context)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
@@ -447,7 +447,7 @@ class TradingEngine(
                             onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
                         } else {
                             TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS", tradeStartMs)
-                            riskManager.recordTradeLoss()
+                            riskManager.recordTradeLoss(force = true)
                             adaptiveLearningEngine.recordTradeOutcome(false, context)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
@@ -1850,11 +1850,6 @@ class TradingEngine(
         if (isWin != null || isTie) {
             if (!isTradeResolving.compareAndSet(false, true)) return
 
-            // Bloquear atómicamente RiskManager para que ningún otro tick evalúe este trade
-            synchronized(riskManager) {
-                riskManager.hasPendingTrade = false
-            }
-
             val finalWin = isWin ?: false
             val pendingAction = snapshot.action
             val pendingEntry = snapshot.entryY
@@ -1905,13 +1900,13 @@ class TradingEngine(
                     riskManager.recordTradeVoid()
                     Toast.makeText(context, "[HEADLESS] ⚪ Empate / Orden cancelada", Toast.LENGTH_SHORT).show()
                 } else if (finalWin) {
-                    riskManager.recordTradeWin()
+                    riskManager.recordTradeWin(force = true)
                     adaptiveLearningEngine.recordTradeOutcome(true, context)
                     emitHapticAndAudioFeedback()
                     Toast.makeText(context, "[HEADLESS] 🎉 GANADA (+1 W) [$method]", Toast.LENGTH_SHORT).show()
                     onTradeExecutedListener?.invoke(pendingAction, true)
                 } else {
-                    riskManager.recordTradeLoss()
+                    riskManager.recordTradeLoss(force = true)
                     adaptiveLearningEngine.recordTradeOutcome(false, context)
                     emitHapticAndAudioFeedback()
                     Toast.makeText(context, "[HEADLESS] ⚠️ PERDIDA (+1 L) [$method]", Toast.LENGTH_SHORT).show()

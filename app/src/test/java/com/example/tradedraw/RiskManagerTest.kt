@@ -769,5 +769,39 @@ class RiskManagerTest {
         riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
         assertFalse("Pending trade fue limpiado por timeout", riskManager.hasPendingTrade)
     }
+
+    @Test
+    fun testRecordTradeWin_withForce_registersWithoutPendingTrade() {
+        assertFalse("No debe haber pending trade", riskManager.hasPendingTrade)
+        assertEquals(0, riskManager.totalWins)
+
+        // Without force, recordTradeWin is ignored
+        riskManager.recordTradeWin(force = false)
+        assertEquals("Sin force y sin pending trade no debe sumar", 0, riskManager.totalWins)
+
+        // With force, recordTradeWin increments win count even without pending trade
+        riskManager.recordTradeWin(force = true)
+        assertEquals("Con force debe sumar 1 victoria", 1, riskManager.totalWins)
+        assertEquals("Current wins debe ser 1", 1, riskManager.currentWins)
+        assertEquals("Racha de pérdidas debe ser 0", 0, riskManager.currentLossStreak)
+
+        // With force, recordTradeLoss increments loss count even without pending trade
+        riskManager.recordTradeLoss(force = true)
+        assertEquals("Con force debe sumar 1 derrota", 1, riskManager.totalLosses)
+        assertEquals("Racha de pérdidas debe ser 1", 1, riskManager.currentLossStreak)
+    }
+
+    @Test
+    fun testCorrectStats_updatesTotalsAndWinRate() {
+        riskManager.correctStats(2, 0)
+        assertEquals(2, riskManager.totalWins)
+        assertEquals(0, riskManager.totalLosses)
+        assertEquals(100.0f, riskManager.getWinRate(), 0.01f)
+
+        riskManager.correctStats(3, 1)
+        assertEquals(3, riskManager.totalWins)
+        assertEquals(1, riskManager.totalLosses)
+        assertEquals(75.0f, riskManager.getWinRate(), 0.01f)
+    }
 }
 
