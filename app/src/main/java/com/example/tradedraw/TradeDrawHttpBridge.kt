@@ -181,6 +181,112 @@ class TradeDrawHttpBridge(
                         overlayService.updateHUDView()
                         sendJsonResponse(output, 200, """{"success":true,"wins":$wins,"losses":$losses}""")
                     }
+                    "/click" -> {
+                        val x = params["x"]?.toFloatOrNull()
+                        val y = params["y"]?.toFloatOrNull()
+                        if (x == null || y == null) {
+                            sendJsonResponse(output, 400, """{"success":false,"error":"Parámetros 'x' e 'y' requeridos"}""")
+                        } else {
+                            AutoTradeAccessibilityService.performClick(x, y) { success, err ->
+                                Log.d("TradeDrawHttp", "Click en ($x, $y): success=$success err=$err")
+                            }
+                            sendJsonResponse(output, 200, """{"success":true,"x":$x,"y":$y}""")
+                        }
+                    }
+                    "/swipe" -> {
+                        val x1 = params["x1"]?.toFloatOrNull()
+                        val y1 = params["y1"]?.toFloatOrNull()
+                        val x2 = params["x2"]?.toFloatOrNull()
+                        val y2 = params["y2"]?.toFloatOrNull()
+                        val dur = params["duration"]?.toLongOrNull() ?: 300L
+                        if (x1 == null || y1 == null || x2 == null || y2 == null) {
+                            sendJsonResponse(output, 400, """{"success":false,"error":"Parámetros 'x1', 'y1', 'x2', 'y2' requeridos"}""")
+                        } else {
+                            val access = AutoTradeAccessibilityService.instance
+                            if (access != null) {
+                                access.performSwipe(x1, y1, x2, y2, dur)
+                                sendJsonResponse(output, 200, """{"success":true,"x1":$x1,"y1":$y1,"x2":$x2,"y2":$y2,"duration":$dur}""")
+                            } else {
+                                sendJsonResponse(output, 503, """{"success":false,"error":"Servicio de Accesibilidad inactivo"}""")
+                            }
+                        }
+                    }
+                    "/submode" -> {
+                        val subStr = params["name"]?.uppercase() ?: params["submode"]?.uppercase() ?: ""
+                        try {
+                            val sm = AutonomousSubMode.valueOf(subStr)
+                            overlayService.tradingEngine.autonomousSubMode = sm
+                            overlayService.updateHUDView()
+                            sendJsonResponse(output, 200, """{"success":true,"submode":"${sm.name}"}""")
+                        } catch (e: Exception) {
+                            sendJsonResponse(output, 400, """{"success":false,"error":"Submodo desconocido: $subStr"}""")
+                        }
+                    }
+                    "/calibrate" -> {
+                        val cal = overlayService.tradingEngine.calibrationManager
+                        if (cal == null) {
+                            sendJsonResponse(output, 503, """{"success":false,"error":"CalibrationManager no inicializado"}""")
+                        } else {
+                            val buyX = params["buyX"]?.toFloatOrNull()
+                            val buyY = params["buyY"]?.toFloatOrNull()
+                            val sellX = params["sellX"]?.toFloatOrNull()
+                            val sellY = params["sellY"]?.toFloatOrNull()
+                            if (buyX != null && buyY != null) cal.saveBuyCoordinates(buyX, buyY)
+                            if (sellX != null && sellY != null) cal.saveSellCoordinates(sellX, sellY)
+                            val (curBuyX, curBuyY) = cal.getBuyCoordinates()
+                            val (curSellX, curSellY) = cal.getSellCoordinates()
+                            sendJsonResponse(output, 200, """{"success":true,"buy":{"x":$curBuyX,"y":$curBuyY},"sell":{"x":$curSellX,"y":$curSellY}}""")
+                        }
+                    }
+                    "/hud" -> {
+                        val visibleParam = params["visible"]?.toBooleanStrictOrNull()
+                        val collapseParam = params["collapse"]?.toBooleanStrictOrNull()
+                        val recenterParam = params["recenter"]?.toBooleanStrictOrNull()
+                        val xParam = params["x"]?.toIntOrNull()
+                        val yParam = params["y"]?.toIntOrNull()
+
+                        if (recenterParam == true || xParam != null || yParam != null) {
+                            overlayService.recenterHUD(xParam, yParam)
+                        }
+                        if (visibleParam != null) {
+                            overlayService.setHUDVisibility(visibleParam)
+                        }
+                        if (collapseParam != null) {
+                            overlayService.setHUDCollapsed(collapseParam)
+                        }
+                        sendJsonResponse(output, 200, """{"success":true,"hudVisible":${overlayService.isHudVisible},"hudCollapsed":${overlayService.isHudCollapsed}}""")
+                    }
+                    "/overlay" -> {
+                        val visibleParam = params["visible"]?.toBooleanStrictOrNull()
+                        val expandParam = params["expand"]?.toBooleanStrictOrNull()
+                        if (visibleParam != null) {
+                            overlayService.setOverlayVisible(visibleParam)
+                        }
+                        if (expandParam != null) {
+                            overlayService.setMenuExpanded(expandParam)
+                        }
+                        sendJsonResponse(output, 200, """{"success":true,"menuExpanded":${overlayService.isMenuExpanded}}""")
+                    }
+                    "/nodes" -> {
+                        val access = AutoTradeAccessibilityService.instance
+                        if (access != null) {
+                            val bal = access.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
+                            val asset = AutoTradeAccessibilityService.latestObservedAsset
+                            val isDemo = AutoTradeAccessibilityService.isDemoAccount
+                            val isSyn = AutoTradeAccessibilityService.isSyntheticOrOTC
+                            val amount = AutoTradeAccessibilityService.observedOrderAmount
+                            sendJsonResponse(output, 200, """{
+                                "success": true,
+                                "balance": $bal,
+                                "activeAsset": "${escapeJson(asset)}",
+                                "isDemoAccount": $isDemo,
+                                "isSyntheticOrOTC": $isSyn,
+                                "observedOrderAmount": $amount
+                            }""".trimIndent())
+                        } else {
+                            sendJsonResponse(output, 503, """{"success":false,"error":"Servicio de Accesibilidad inactivo"}""")
+                        }
+                    }
                     else -> {
                         sendJsonResponse(output, 404, """{"error":"Ruta no encontrada: $path"}""")
                     }

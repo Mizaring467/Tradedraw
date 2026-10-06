@@ -118,6 +118,67 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             }
             return false
         }
+
+        fun performClick(
+            x: Float,
+            y: Float,
+            onResult: ((Boolean, String?) -> Unit)? = null
+        ) {
+            val inst = instance
+            if (inst != null) {
+                inst.performClickAt(x, y) { success, err ->
+                    if (!success) {
+                        Log.w("TradeDraw", "⚠️ Click por accesibilidad falló ($err). Probando fallback ROOT...")
+                        executeRootTap(x, y, onResult)
+                    } else {
+                        onResult?.invoke(true, null)
+                    }
+                }
+            } else {
+                Log.w("TradeDraw", "⚠️ AutoTradeAccessibilityService inactivo. Ejecutando tap con fallback ROOT...")
+                executeRootTap(x, y, onResult)
+                autoHealAccessibility()
+            }
+        }
+
+        fun executeRootTap(
+            x: Float,
+            y: Float,
+            onResult: ((Boolean, String?) -> Unit)? = null
+        ) {
+            Thread {
+                try {
+                    val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "input tap ${x.toInt()} ${y.toInt()}"))
+                    val exit = p.waitFor()
+                    if (exit == 0) {
+                        Log.i("TradeDraw", "⚡ Tap ejecutado con éxito vía ROOT en ($x, $y)")
+                        onGestureClickListener?.invoke(x, y)
+                        onResult?.invoke(true, null)
+                    } else {
+                        Log.w("TradeDraw", "Root tap falló con código $exit")
+                        onResult?.invoke(false, "Root tap exit=$exit")
+                    }
+                } catch (e: Exception) {
+                    Log.e("TradeDraw", "Excepción ejecutando root tap", e)
+                    onResult?.invoke(false, e.message)
+                }
+            }.start()
+        }
+
+        fun autoHealAccessibility() {
+            Thread {
+                try {
+                    val p = Runtime.getRuntime().exec(arrayOf(
+                        "su", "-c",
+                        "settings put secure enabled_accessibility_services com.example.tradedraw/.AutoTradeAccessibilityService; settings put secure accessibility_enabled 1"
+                    ))
+                    p.waitFor()
+                    Log.i("TradeDraw", "Auto-heal accessibility invocado vía root")
+                } catch (e: Exception) {
+                    Log.e("TradeDraw", "Error en autoHealAccessibility", e)
+                }
+            }.start()
+        }
     }
 
     private val commandReceiver = object : android.content.BroadcastReceiver() {

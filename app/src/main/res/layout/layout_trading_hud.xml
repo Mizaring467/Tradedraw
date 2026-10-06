@@ -90,15 +90,15 @@
         <!-- Botón Minimizar / Desplegar -->
         <TextView
             android:id="@+id/hud_btn_collapse"
-            android:layout_width="18dp"
-            android:layout_height="18dp"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
             android:text="▼"
             android:textColor="#cbd5e1"
-            android:textSize="8.5sp"
+            android:textSize="9.5sp"
             android:textStyle="bold"
             android:gravity="center"
             android:background="@drawable/bg_hud_chip"
-            android:layout_marginStart="3dp"
+            android:layout_marginStart="4dp"
             android:clickable="true"
             android:focusable="true" />
     </LinearLayout>

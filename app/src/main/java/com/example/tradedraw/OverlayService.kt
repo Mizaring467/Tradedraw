@@ -69,9 +69,11 @@ class OverlayService : Service() {
 
     private var hudView: View? = null
     private var hudParams: WindowManager.LayoutParams? = null
-    private var isHudVisible = false
+    var isHudVisible = false
+        internal set
     private var hudAlpha: Float = 0.70f
-    private var isHudCollapsed: Boolean = true
+    var isHudCollapsed: Boolean = true
+        internal set
     private var agentChatOverlay: AgentChatOverlay? = null
 
     fun openAgentChat() {
@@ -83,15 +85,17 @@ class OverlayService : Service() {
         }
     }
 
-    private var isMenuExpanded = false
+    var isMenuExpanded = false
+        internal set
     private var isDrawingMode = false
     private var currentActiveCategory: Int = -1
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val accessibilityCheckRunnable = object : Runnable {
         override fun run() {
-            if (AutoTradeAccessibilityService.instance == null && !AutoTradeAccessibilityService.isAccessibilityPermissionGranted(this@OverlayService)) {
-                Log.w("TradeDraw", "AutoTradeAccessibilityService desconectado. Notificando HUD.")
+            if (AutoTradeAccessibilityService.instance == null) {
+                Log.w("TradeDraw", "AutoTradeAccessibilityService desconectado. Intentando auto-heal vía ROOT...")
+                AutoTradeAccessibilityService.autoHealAccessibility()
                 mainHandler.post { updateHUDView() }
             }
             mainHandler.postDelayed(this, 10000)
@@ -1187,8 +1191,8 @@ class OverlayService : Service() {
                         hudParams?.let { p ->
                             val hudW = v.width.takeIf { it > 0 } ?: 400
                             val hudH = v.height.takeIf { it > 0 } ?: 200
-                            val maxW = if (cachedScreenW > 0) cachedScreenW - hudW else 680
-                            val maxH = if (cachedScreenH > 0) cachedScreenH - hudH else 1720
+                            val maxW = (cachedScreenW - hudW).coerceAtLeast(0)
+                            val maxH = (cachedScreenH - hudH - 80).coerceAtLeast(0)
                             p.x = (initX + dx).coerceIn(0, maxW)
                             p.y = (initY + dy).coerceIn(0, maxH)
 
@@ -1209,6 +1213,12 @@ class OverlayService : Service() {
                     MotionEvent.ACTION_UP -> {
                         if (isMove) {
                             hudParams?.let { p ->
+                                val hudW = v.width.takeIf { it > 0 } ?: 400
+                                val hudH = v.height.takeIf { it > 0 } ?: 200
+                                val maxW = (cachedScreenW - hudW).coerceAtLeast(0)
+                                val maxH = (cachedScreenH - hudH - 80).coerceAtLeast(0)
+                                p.x = p.x.coerceIn(0, maxW)
+                                p.y = p.y.coerceIn(0, maxH)
                                 if (v.isAttachedToWindow) {
                                     try { windowManager.updateViewLayout(v, p) } catch (e: Exception) {}
                                 }
@@ -1289,29 +1299,78 @@ class OverlayService : Service() {
         mainHandler.post(hudTimerRunnable)
     }
 
-    private fun toggleHUDVisibility() {
-        isHudVisible = !isHudVisible
-        if (isHudVisible) {
-            // Antes de mostrar, garantizar que el HUD esté dentro de los bordes visibles de la pantalla
-            hudParams?.let { p ->
-                val view = hudView ?: return@let
-                val metrics = resources.displayMetrics
-                val screenW = metrics.widthPixels
-                val screenH = metrics.heightPixels
-                // Si está fuera de los límites de la pantalla, reposicionar a zona segura
-                val outOfBounds = p.x < 0 || p.x > screenW - 40 ||
-                                  p.y < 0 || p.y > screenH - 80
-                if (outOfBounds) {
-                    p.x = 40
-                    p.y = 200
-                    windowManager.updateViewLayout(view, p)
-                }
+    fun recenterHUD(x: Int? = null, y: Int? = null) {
+        mainHandler.post {
+            val view = hudView ?: return@post
+            val p = hudParams ?: return@post
+            val metrics = resources.displayMetrics
+            val screenW = metrics.widthPixels
+            val screenH = metrics.heightPixels
+            val hudW = view.width.takeIf { it > 0 } ?: 400
+            val hudH = view.height.takeIf { it > 0 } ?: 200
+            val maxW = (screenW - hudW).coerceAtLeast(0)
+            val maxH = (screenH - hudH - 80).coerceAtLeast(0)
+
+            p.x = (x ?: 20).coerceIn(0, maxW)
+            p.y = (y ?: 250).coerceIn(0, maxH)
+
+            if (view.isAttachedToWindow) {
+                try { windowManager.updateViewLayout(view, p) } catch (e: Exception) {}
             }
-            hudView?.visibility = View.VISIBLE
-            updateHUDView()
-        } else {
-            hudView?.visibility = View.GONE
+            if (!isHudVisible) {
+                setHUDVisibility(true)
+            } else {
+                updateHUDView(force = true)
+            }
         }
+    }
+
+    private fun toggleHUDVisibility() {
+        setHUDVisibility(!isHudVisible)
+    }
+
+    fun setHUDVisibility(visible: Boolean) {
+        mainHandler.post {
+            isHudVisible = visible
+            if (isHudVisible) {
+                hudParams?.let { p ->
+                    val view = hudView ?: return@let
+                    val metrics = resources.displayMetrics
+                    val screenW = metrics.widthPixels
+                    val screenH = metrics.heightPixels
+                    val hudW = view.width.takeIf { it > 0 } ?: 400
+                    val hudH = view.height.takeIf { it > 0 } ?: 200
+                    val outOfBounds = p.x < 0 || p.x > screenW - 40 ||
+                                      p.y < 0 || p.y > screenH - 80
+                    if (outOfBounds) {
+                        p.x = 40
+                        p.y = 200
+                        try { windowManager.updateViewLayout(view, p) } catch (e: Exception) {}
+                    }
+                }
+                hudView?.visibility = View.VISIBLE
+                updateHUDView(force = true)
+            } else {
+                hudView?.visibility = View.GONE
+            }
+        }
+    }
+
+    fun setHUDCollapsed(collapsed: Boolean) {
+        mainHandler.post {
+            isHudCollapsed = collapsed
+            getSharedPreferences("TradeDraw_HUDConfig", Context.MODE_PRIVATE)
+                .edit().putBoolean("hud_collapsed", isHudCollapsed).apply()
+            hudView?.findViewById<View>(R.id.hud_details_container)?.visibility =
+                if (isHudCollapsed) View.GONE else View.VISIBLE
+            hudView?.findViewById<TextView>(R.id.hud_btn_collapse)?.text =
+                if (isHudCollapsed) "▼" else "▲"
+            updateHUDView(force = true)
+        }
+    }
+
+    private fun toggleHUDVisibility() {
+        setHUDVisibility(!isHudVisible)
     }
 
     fun updateHUDView(force: Boolean = false) {
@@ -1890,11 +1949,28 @@ class OverlayService : Service() {
         startActivity(Intent.createChooser(intent, "Exportar").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
+    fun setMenuExpanded(expanded: Boolean) {
+        mainHandler.post {
+            isMenuExpanded = expanded
+            categoryContainer.visibility = if (isMenuExpanded) View.VISIBLE else View.GONE
+            if (!isMenuExpanded) hideSubmenu()
+            if (isMenuExpanded) keepMenuOnScreen()
+        }
+    }
+
+    fun setOverlayVisible(visible: Boolean) {
+        mainHandler.post {
+            if (::menuView.isInitialized) {
+                menuView.visibility = if (visible) View.VISIBLE else View.GONE
+            }
+            if (!visible) {
+                hideSubmenu()
+            }
+        }
+    }
+
     private fun toggleMenu() {
-        isMenuExpanded = !isMenuExpanded
-        categoryContainer.visibility = if (isMenuExpanded) View.VISIBLE else View.GONE
-        if (!isMenuExpanded) hideSubmenu()
-        if (isMenuExpanded) keepMenuOnScreen()
+        setMenuExpanded(!isMenuExpanded)
     }
 
     @SuppressLint("ClickableViewAccessibility")

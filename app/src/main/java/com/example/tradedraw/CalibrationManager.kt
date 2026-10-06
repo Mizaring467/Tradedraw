@@ -77,7 +77,7 @@ class CalibrationManager(private val context: Context) {
         val x = prefs.getFloat("${p}_${o}_buy_x", -1f)
         val y = prefs.getFloat("${p}_${o}_buy_y", -1f)
         if (x >= 0 && y >= 0) {
-            val isValid = if (isLandscape) (x >= w * 0.80f) else (y >= h * 0.865f)
+            val isValid = if (isLandscape) (x >= w * 0.80f) else (y >= h * 0.80f)
             if (isValid) return Pair(x, y)
         }
 
@@ -90,12 +90,12 @@ class CalibrationManager(private val context: Context) {
                 BrokerProfile.CUSTOM -> Pair(w * 0.881f, h * 0.735f)
             }
         } else {
-            // Vertical (Portrait): Botones abajo en franja inferior limpia (90.3% de la pantalla física)
+            // Vertical (Portrait): Botones abajo en franja inferior (83.8% de la pantalla física)
             when (activeProfile) {
-                BrokerProfile.BINOMO -> Pair(w * 0.25f, h * 0.903f)
+                BrokerProfile.BINOMO -> Pair(w * 0.347f, h * 0.838f)
                 BrokerProfile.QUOTEX -> Pair(w * 0.25f, h * 0.88f)
                 BrokerProfile.POCKET_OPTION -> Pair(w * 0.25f, h * 0.88f)
-                BrokerProfile.CUSTOM -> Pair(w * 0.25f, h * 0.903f)
+                BrokerProfile.CUSTOM -> Pair(w * 0.347f, h * 0.838f)
             }
         }
     }
@@ -109,7 +109,7 @@ class CalibrationManager(private val context: Context) {
         val x = prefs.getFloat("${p}_${o}_sell_x", -1f)
         val y = prefs.getFloat("${p}_${o}_sell_y", -1f)
         if (x >= 0 && y >= 0) {
-            val isValid = if (isLandscape) (x >= w * 0.80f) else (y >= h * 0.865f)
+            val isValid = if (isLandscape) (x >= w * 0.80f) else (y >= h * 0.80f)
             if (isValid) return Pair(x, y)
         }
 
@@ -122,12 +122,12 @@ class CalibrationManager(private val context: Context) {
                 BrokerProfile.CUSTOM -> Pair(w * 0.881f, h * 0.844f)
             }
         } else {
-            // Vertical (Portrait): Botón BAJA abajo a la derecha (90.3% de la pantalla)
+            // Vertical (Portrait): Botón BAJA abajo a la derecha (83.8% de la pantalla)
             when (activeProfile) {
-                BrokerProfile.BINOMO -> Pair(w * 0.75f, h * 0.903f)
+                BrokerProfile.BINOMO -> Pair(w * 0.75f, h * 0.838f)
                 BrokerProfile.QUOTEX -> Pair(w * 0.75f, h * 0.88f)
                 BrokerProfile.POCKET_OPTION -> Pair(w * 0.75f, h * 0.88f)
-                BrokerProfile.CUSTOM -> Pair(w * 0.75f, h * 0.903f)
+                BrokerProfile.CUSTOM -> Pair(w * 0.75f, h * 0.838f)
             }
         }
     }

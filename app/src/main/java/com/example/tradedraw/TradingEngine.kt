@@ -1459,30 +1459,23 @@ class TradingEngine(
         android.util.Log.d("TradingEngine", "executeAutonomousTrade: $action hacia ($x, $y) [Vision:${visionCoords != null}] Motivo: $reasonDescription")
 
         val accessibility = AutoTradeAccessibilityService.instance
-        if (accessibility != null) {
-            val observed = accessibility.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
-            val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
-            isTradeResolving.set(false)
-            riskManager.recordTradeSent(action, analysis.currentPriceY, baseBal, confidence)
-            // Despacho táctil único con verificación de 300ms y fallback híbrido
-            accessibility.performClickAt(x, y) { success, error ->
-                if (!success) {
-                    triggerManualFallback(action, error ?: "Auto-clic falló en 300ms")
-                }
+        val observed = accessibility?.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
+        val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
+        isTradeResolving.set(false)
+        riskManager.recordTradeSent(action, analysis.currentPriceY, baseBal, confidence)
+        // Despacho táctil único con verificación y fallback ROOT transparente
+        AutoTradeAccessibilityService.performClick(x, y) { success, error ->
+            if (!success) {
+                triggerManualFallback(action, error ?: "Auto-clic falló en 300ms")
             }
+        }
 
-            handler.post {
-                drawingView.triggerClickAnimation(x, y)
-                autoDrawEngine.drawTradeEntry(action, analysis.currentPriceY, screenW)
-                saveAuditScreenshot(bitmap, action)
-                val stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode)
-                Toast.makeText(context, "🤖 BOT OPERÓ: $action ($$$stake)\n$reasonDescription", Toast.LENGTH_LONG).show()
-            }
-        } else {
-            triggerManualFallback(action, "Accesibilidad no conectada")
-            handler.post {
-                Toast.makeText(context, "⚠️ Clic cancelado: Activa el Servicio de Accesibilidad en Ajustes para Auto-Trading", Toast.LENGTH_LONG).show()
-            }
+        handler.post {
+            drawingView.triggerClickAnimation(x, y)
+            autoDrawEngine.drawTradeEntry(action, analysis.currentPriceY, screenW)
+            saveAuditScreenshot(bitmap, action)
+            val stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode)
+            Toast.makeText(context, "🤖 BOT OPERÓ: $action ($$$stake)\n$reasonDescription", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1748,50 +1741,43 @@ class TradingEngine(
             }
         }
 
-        // Sanitización estricta: en modo vertical, nunca permitir clics por encima del 86.5% (fila de Hora / Cantidad)
-        val (x, y) = if (!isLand && rawY < screenH * 0.865f) {
-            Log.w("TradingEngine", "⚠️ Coordenada Y corregida de $rawY a ${screenH * 0.903f} para no tocar fila de tiempo")
-            Pair(rawX, screenH * 0.903f)
+        // Sanitización estricta: en modo vertical, nunca permitir clics por encima del 80.0% (fila de gráfico/indicadores)
+        val (x, y) = if (!isLand && rawY < screenH * 0.80f) {
+            Log.w("TradingEngine", "⚠️ Coordenada Y corregida de $rawY a ${screenH * 0.838f} para tocar botones de orden")
+            Pair(rawX, screenH * 0.838f)
         } else {
             Pair(rawX, rawY)
         }
 
         val accessibility = AutoTradeAccessibilityService.instance
-        if (accessibility != null) {
-            val observed = accessibility.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
-            val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
-            isTradeResolving.set(false)
-            riskManager.recordTradeSent(finalAction, latestMarketTick?.price?.toFloat() ?: 0f, baseBal, headlessConfidence)
-            synchronized(this) {
-                lastExecutedCandleEpochMinute = currentCandleEpochMinute
+        val observed = accessibility?.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
+        val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
+        isTradeResolving.set(false)
+        riskManager.recordTradeSent(finalAction, latestMarketTick?.price?.toFloat() ?: 0f, baseBal, headlessConfidence)
+        synchronized(this) {
+            lastExecutedCandleEpochMinute = currentCandleEpochMinute
+        }
+        adaptiveLearningEngine.recordTradeOpened(
+            action = finalAction,
+            analysis = effectiveAnalysis,
+            tick = latestMarketTick,
+            strategyName = strategy.name
+        )
+        // Despacho táctil único con verificación y fallback ROOT transparente
+        AutoTradeAccessibilityService.performClick(x, y) { success, error ->
+            if (!success) {
+                triggerManualFallback(finalAction, error ?: "Auto-clic headless falló en 300ms")
             }
-            adaptiveLearningEngine.recordTradeOpened(
-                action = finalAction,
-                analysis = effectiveAnalysis,
-                tick = latestMarketTick,
-                strategyName = strategy.name
-            )
-            // Despacho con callback y fallback híbrido
-            accessibility.performClickAt(x, y) { success, error ->
-                if (!success) {
-                    triggerManualFallback(finalAction, error ?: "Auto-clic headless falló en 300ms")
-                }
-            }
+        }
 
-            handler.post {
-                drawingView.triggerClickAnimation(x, y)
-                // En modo Headless, situar la STRIKE_PRICE_LINE en la altura estimada del gráfico
-                autoDrawEngine.drawTradeEntry(finalAction, y.coerceIn(screenH * 0.35f, screenH * 0.65f), screenW)
-                emitHapticAndAudioFeedback()
-                val stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode)
-                Toast.makeText(context, "⚡ [${strategy.name}] BOT OPERÓ: $finalAction ($$$stake)\n$finalReason", Toast.LENGTH_LONG).show()
-                onTradeExecutedListener?.invoke(finalAction, true)
-            }
-        } else {
-            triggerManualFallback(finalAction, "Accesibilidad no conectada")
-            handler.post {
-                Toast.makeText(context, "⚠️ Clic Headless cancelado: Activa Accesibilidad en Ajustes", Toast.LENGTH_LONG).show()
-            }
+        handler.post {
+            drawingView.triggerClickAnimation(x, y)
+            // En modo Headless, situar la STRIKE_PRICE_LINE en la altura estimada del gráfico
+            autoDrawEngine.drawTradeEntry(finalAction, y.coerceIn(screenH * 0.35f, screenH * 0.65f), screenW)
+            emitHapticAndAudioFeedback()
+            val stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode)
+            Toast.makeText(context, "⚡ [${strategy.name}] BOT OPERÓ: $finalAction ($$$stake)\n$finalReason", Toast.LENGTH_LONG).show()
+            onTradeExecutedListener?.invoke(finalAction, true)
         }
     }
 
