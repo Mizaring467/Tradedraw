@@ -25,11 +25,11 @@ data class MarketTick(
 
     /** Ventana estricta de entrada al segundo :00 (:57 a :05) */
     val isStrictTimingWindow: Boolean
-        get() = candleSecond in 57..59 || candleSecond in 0..5
+        get() = candleSecond in 1..5
 
     /** Veto estricto de entrada a mitad de ciclo de vela (:15 a :55) */
     val isTimingVetoed: Boolean
-        get() = candleSecond in 15..55
+        get() = candleSecond !in 1..5
 }
 
 enum class WebSocketState {
@@ -80,14 +80,14 @@ object MarketTickFilters {
     }
 
     /**
-     * Evalúa si el segundo actual está dentro de la ventana estricta (:58 a :03) conforme a master_traders_skill.
+     * Evalúa si el segundo actual está dentro de la ventana estricta (:01 a :05) conforme a master_traders_skill.
      */
-    fun isStrictTimingWindow(second: Int): Boolean = second in 58..59 || second in 0..3
+    fun isStrictTimingWindow(second: Int): Boolean = second in 1..5
 
     /**
-     * Evalúa si el segundo actual cae dentro del veto estricto (:06 a :57) conforme a master_traders_skill.
+     * Evalúa si el segundo actual cae dentro del veto estricto conforme a master_traders_skill.
      */
-    fun isTimingVetoed(second: Int): Boolean = second in 6..57
+    fun isTimingVetoed(second: Int): Boolean = second !in 1..5
 
     /**
      * Calcula el rango porcentual de las últimas velas: ((maxHigh - minLow) / refPrice) * 100.

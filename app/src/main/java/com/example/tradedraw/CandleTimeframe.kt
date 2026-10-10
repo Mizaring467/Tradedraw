@@ -14,11 +14,11 @@ enum class CandleTimeframe(val seconds: Int, val label: String) {
 
     fun isSniperTimingWindow(timestampMs: Long = System.currentTimeMillis()): Boolean {
         val s = getCycleSecond(timestampMs)
-        return s in (seconds - 2)..(seconds - 1)
+        return s in 1..5
     }
 
     fun isStandardTimingWindow(timestampMs: Long = System.currentTimeMillis()): Boolean {
         val s = getCycleSecond(timestampMs)
-        return s in (seconds - 2)..(seconds - 1) || s in 0..3
+        return s in 1..5
     }
 }

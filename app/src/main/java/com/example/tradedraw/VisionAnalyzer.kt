@@ -74,7 +74,7 @@ data class VisionAnalysisResult(
     val isCallSignal: Boolean = false,
     val isPutSignal: Boolean = false,
     val signalScore: Int = 50,
-    val candleSecond: Int = 0,
+    val candleSecond: Int = 2,
     val isSniperTimingWindow: Boolean = true,
     val isLateTimingForbidden: Boolean = false,
     val isTimingVetoed: Boolean = false,
@@ -707,13 +707,13 @@ class VisionAnalyzer {
         val finalConfCall = confCall.coerceIn(0, 100)
         val finalConfPut = confPut.coerceIn(0, 100)
 
-        // Micro-Sincronización Reloj Sniper Estricto (:58-:03 ventana permitida, :15-:55 veto)
+        // Micro-Sincronización Reloj Sniper Estricto (:01-:05 ventana permitida, veto fuera de ella)
         val candleSecond = ((System.currentTimeMillis() / 1000) % 60).toInt()
-        val isStrictTimingWindow = candleSecond in 58..59 || candleSecond in 0..3
-        val isTimingVetoed = candleSecond in 15..55
+        val isStrictTimingWindow = candleSecond in 1..5
+        val isTimingVetoed = candleSecond !in 1..5
         val isSniperTimingWindow = isStrictTimingWindow
         val isSniperZeroSecondWindow = isStrictTimingWindow
-        val isSniperPullbackWindow = candleSecond in 1..3
+        val isSniperPullbackWindow = candleSecond in 1..5
         val isLateTimingForbidden = isTimingVetoed || !isStrictTimingWindow
 
         // Detección de Micro-Rango Choppy en Visión (< 0.05% de altura o velas comprimidas alternantes)

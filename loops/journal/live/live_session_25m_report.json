@@ -1,0 +1,45 @@
+{
+  "session_start": "2026-10-09 21:07:19",
+  "session_end": "2026-10-09 21:32:19",
+  "duration_minutes": 25,
+  "initial_balance": 39312737.28,
+  "final_balance": 39312737.28,
+  "net_pnl": 0.0,
+  "session_trades_count": 1,
+  "session_wins": 0,
+  "session_losses": 0,
+  "session_voids": 1,
+  "session_win_rate": 0.0,
+  "trades": [
+    {
+      "trade_num": 1,
+      "entry_time": "2026-10-09 21:13:03",
+      "entry_epoch": 1791598388.8943162,
+      "balance_before": 39312737.28,
+      "signal": "Señal no parseada en logcat",
+      "confluence_score": null,
+      "analysis": {
+        "currentPriceY": 641.8673,
+        "dynamicResistanceY": 0.0,
+        "dynamicSupportY": 0.0,
+        "dynamicResistancePrice": 641.8673086739286,
+        "dynamicSupportPrice": 641.8673078,
+        "callPower": 76,
+        "putPower": 32,
+        "isMarketSideways": false,
+        "trend": "UPTREND",
+        "candleCount": 7,
+        "streak": "TREND 🟢"
+      },
+      "screenshot_placed": "live_25m_trade_1_placed.png",
+      "settle_time": "2026-10-09 21:14:18",
+      "settle_epoch": 1791598461.9479508,
+      "duration_sec": 69,
+      "balance_after": 39312737.28,
+      "diff": 0.0,
+      "result": "TIE/VOID",
+      "journal_row": "1791598457020,2026-10-09T21:14:17,AUTO_ADAPTIVE,CONSERVATIVE,BUY,0.85,641.87,1.00,39312737.28,TIE,39312737.28,75,UPTREND,0.88,0.11,-0.00,NEUTRAL,TRENDING,16,TIE,\"ORDEN NO PROCESADA (Diff=0.0 -> Saldo inalterado tras 75s)\"",
+      "screenshot_settled": "live_25m_trade_1_settled.png"
+    }
+  ]
+}

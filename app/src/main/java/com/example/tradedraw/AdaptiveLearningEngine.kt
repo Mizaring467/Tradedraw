@@ -250,30 +250,19 @@ class AdaptiveLearningEngine {
             }
         }
 
-        if (highestSimilarity >= 0.82f && matchingLossSig != null) {
+        if (highestSimilarity >= 0.90f && matchingLossSig != null &&
+            isTightlyMatchingContext(candidateSignature, matchingLossSig!!)) {
             val loss = matchingLossSig!!
             val simPct = (highestSimilarity * 100).toInt()
 
-            // Si el anti-patrón fue una trampa en S/R o rechazo falso que se fue en contra, invertir la señal
-            val canInvert = (analysis.isNearSupportZone || analysis.isNearResistanceZone) &&
-                    (loss.action == candidateAction) &&
-                    (analysis.distanceToSupportRatio < 0.15f || analysis.distanceToResistanceRatio < 0.15f)
-
-            if (canInvert) {
-                val inverted = if (candidateAction == TradeAction.BUY) TradeAction.SELL else TradeAction.BUY
-                totalInvertedAntiPatterns++
-                Log.w(TAG, "🔄 Autoaprendizaje: Anti-patrón idéntico ($simPct% sim). Invirtiendo señal $candidateAction -> $inverted")
-                return AdaptiveDecision.Invert(
-                    invertedAction = inverted,
-                    reason = "Anti-patrón perdedor detectado ($simPct% similitud en ${loss.strategyName}) -> Señal invertida a $inverted"
-                )
-            } else {
-                totalBlockedAntiPatterns++
-                Log.w(TAG, "⛔ Autoaprendizaje: Anti-patrón perdedor bloqueado ($simPct% similitud con pérdida previa en ${loss.strategyName})")
-                return AdaptiveDecision.Block(
-                    "Anti-patrón perdedor recurrente ($simPct% similitud en contexto S/R=${(loss.distanceToSupportRatio * 100).toInt()}%)"
-                )
-            }
+            // H3: veto total de la inversión adaptativa (governance Master Traders).
+            // Ante un anti-patrón perdedor recurrente se BLOQUEA la señal; nunca se invierte
+            // (la inversión forzaba ventas en soporte y compras en resistencia).
+            totalBlockedAntiPatterns++
+            Log.w(TAG, "⛔ Autoaprendizaje: Anti-patrón perdedor bloqueado ($simPct% similitud con pérdida previa en ${loss.strategyName}) - inversión deshabilitada")
+            return AdaptiveDecision.Block(
+                "Anti-patrón perdedor recurrente ($simPct% similitud en contexto S/R=${(loss.distanceToSupportRatio * 100).toInt()}%) - inversión deshabilitada"
+            )
         }
 
         val modifier = if (isReversion) reversionBonusWeight else continuationPenaltyWeight
@@ -282,6 +271,22 @@ class AdaptiveLearningEngine {
             confidenceModifier = modifier,
             reason = "Aprobado por Autoaprendizaje (Modificador=$modifier)"
         )
+    }
+
+    /**
+     * H6: Compuerta de contexto ESTRICTA para el veto por anti-patrón.
+     * En activos near-static (Crypto IDX) las distancias S/R y el régimen son casi constantes,
+     * por lo que la similitud puede rozar 0.80-0.85 sin que exista identidad real de setup.
+     * Para vetar se exige coincidencia plena: misma acción, misma tendencia, mismo régimen
+     * lateral y S/R dentro de ±0.10. Así solo se bloquean anti-patrones genuinamente idénticos.
+     */
+    private fun isTightlyMatchingContext(a: TradeContextSignature, b: TradeContextSignature): Boolean {
+        if (a.action != b.action) return false
+        if (a.trend != b.trend) return false
+        if (a.isMarketSideways != b.isMarketSideways) return false
+        val ds = Math.abs(a.distanceToSupportRatio - b.distanceToSupportRatio)
+        val dr = Math.abs(a.distanceToResistanceRatio - b.distanceToResistanceRatio)
+        return ds <= 0.10f && dr <= 0.10f
     }
 
     /**

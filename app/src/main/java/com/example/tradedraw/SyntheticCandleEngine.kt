@@ -104,7 +104,7 @@ class SyntheticCandleEngine {
     var dynamicResistancePrice: Double = 0.0
         private set
     var detectedTrend: TrendDirection = TrendDirection.SIDEWAYS
-        private set
+        internal set
 
     var visionTrend: TrendDirection? = null
         private set
@@ -117,6 +117,15 @@ class SyntheticCandleEngine {
     var timeframe: CandleTimeframe = CandleTimeframe.M1
 
     var onSignalGenerated: ((TradeAction, String) -> Unit)? = null
+
+    // --- Telemetría H5 (Ronda 2): frecuencia de señales y motivos de supresión ---
+    @Volatile var signalsGenerated: Int = 0
+    @Volatile var lastSignalTimestampMs: Long = -1L
+    @Volatile var lastSignalAction: String = ""
+    @Volatile var evaluatedCount: Int = 0
+    @Volatile var suppressedByConfluence: Int = 0
+    @Volatile var suppressedByChop: Int = 0
+    @Volatile var suppressedByMicroCompression: Int = 0
 
     /**
      * Procesa cada micro-tick entrante desde el WebSocket.
@@ -162,7 +171,8 @@ class SyntheticCandleEngine {
             windowUpTicksCount = 0
             windowDownTicksCount = 0
             lastRecordedCandleMinute = candleMinute
-            tickFlowImbalance = 0.0f
+            // NO resetear tickFlowImbalance: se preserva la lectura de cierre (:40-:59) de la vela previa
+            // para evaluar la continuación en la apertura (:01-:05) sin quedar ciego en 0.0f.
         }
         if (sec in 40..59 && lastTickPrice > 0.0) {
             val deltaP = tick.price - lastTickPrice
@@ -727,6 +737,176 @@ class SyntheticCandleEngine {
         }
     }
 
+    /**
+     * Evalúa si una señal propuesta es en contra de la tendencia dominante y si cumple con
+     * las únicas excepciones válidas de acción del precio (Agotamiento 3 Velas o Mecha de Rechazo >= 50%).
+     * Retorna true si la señal está permitida, o false si queda vetada por contra-tendencia.
+     */
+    fun isTrendDirectionAllowed(action: TradeAction, reason: String, prev: SyntheticCandle): Boolean {
+        val isCounterTrend = (action == TradeAction.BUY && detectedTrend == TrendDirection.DOWNTREND) ||
+                (action == TradeAction.SELL && detectedTrend == TrendDirection.UPTREND)
+
+        if (!isCounterTrend) return true
+
+        val isYolo = (subMode == AutonomousSubMode.YOLO)
+        val minWick = if (isYolo) 0.30f else 0.50f
+
+        // Excepciones cuantitativas válidas contra-tendencia (Master Traders):
+        // 1. Patrón MT_3_VELAS_AGOT (Agotamiento monótono de 3 velas con contracción)
+        if (reason.contains("MT_3_VELAS_AGOT")) return true
+
+        // 2. Fuerte Mecha de Rechazo en S/R (>= 50% en conservador/sniper, >= 30% en YOLO)
+        if (action == TradeAction.BUY && prev.lowerWickRatio >= minWick) return true
+        if (action == TradeAction.SELL && prev.upperWickRatio >= minWick) return true
+
+        // 3. Trampa institucional / falso rompimiento con mecha >= 45% (>= 30% en YOLO)
+        if (reason.contains("MT_FALSE_BREAKOUT")) {
+            val minTrapWick = if (isYolo) 0.30f else 0.45f
+            if (action == TradeAction.BUY && prev.lowerWickRatio >= minTrapWick) return true
+            if (action == TradeAction.SELL && prev.upperWickRatio >= minTrapWick) return true
+        }
+
+        Log.d(TAG, "⚠️ Veto Anti-Contra-Tendencia: Orden $action rechazada en tendencia $detectedTrend sin mecha >= ${(minWick*100).toInt()}% ni agotamiento de 3 velas ($reason)")
+        return false
+    }
+
+    /**
+     * Calcula la puntuación cuantitativa de confluencia (0 a 100 puntos) según la metodología Master Traders.
+     * Componentes:
+     * 1. Alineación con Tendencia: hasta 35 pts (35 pts a favor, 25 pts lateral, 15 pts excepción válida).
+     * 2. Geometría y Espacio Libre S/R: hasta 25 pts (proximidad <= 22% en reversión o espacio libre >= 35% en tendencia).
+     * 3. Calidad de Acción del Precio: hasta 25 pts (mecha rechazo >= 40% o impulso sólido con mecha opuesta <= 18%).
+     * 4. Micro-Momentum y Confirmación de Tick: hasta 15 pts (velocidad y dirección de ticks alineados).
+     */
+    fun calculateConfluenceScore(
+        action: TradeAction,
+        reason: String,
+        tick: MarketTick,
+        prev: SyntheticCandle
+    ): Int {
+        var score = 0
+        val isYolo = (subMode == AutonomousSubMode.YOLO)
+
+        // 1. Tendencia (0 - 35 pts)
+        val isWithTrend = (action == TradeAction.BUY && detectedTrend == TrendDirection.UPTREND) ||
+                (action == TradeAction.SELL && detectedTrend == TrendDirection.DOWNTREND)
+        val isSideways = (detectedTrend == TrendDirection.SIDEWAYS)
+
+        if (isWithTrend) {
+            score += 35
+        } else if (isSideways) {
+            score += 25
+        } else {
+            // Contra-tendencia autorizada por excepción
+            score += 15
+        }
+
+        // 2. Geometría S/R y Espacio Libre (0 - 25 pts)
+        val isReversalOrBounce = reason.contains("REJECTION") || reason.contains("BOUNCE") ||
+                reason.contains("AGOT") || reason.contains("REVERSAL") || reason.contains("FALSE_BREAKOUT") ||
+                reason.contains("ENGULFING") || reason.contains("RANGE") || reason.contains("Clímax")
+
+        val distToSupport = distanceToSupportRatio
+        val distToResistance = distanceToResistanceRatio
+
+        if (isReversalOrBounce) {
+            if (action == TradeAction.BUY) {
+                if (distToSupport <= 0.22f) score += 25
+                else if (distToSupport <= 0.28f) score += 18
+                else score += 10
+            } else {
+                if (distToResistance <= 0.22f) score += 25
+                else if (distToResistance <= 0.28f) score += 18
+                else score += 10
+            }
+        } else {
+            // Continuación / Momentum / Breakout: Exige espacio libre a obstáculo
+            if (action == TradeAction.BUY) {
+                if (distToResistance >= 0.35f) score += 25
+                else if (distToResistance >= 0.28f) score += 18
+                else score += 10
+            } else {
+                if (distToSupport >= 0.35f) score += 25
+                else if (distToSupport >= 0.28f) score += 18
+                else score += 10
+            }
+        }
+
+        // 3. Calidad de Acción del Precio (0 - 25 pts)
+        if (reason.contains("MT_3_VELAS_AGOT")) {
+            score += 25
+        } else if (isReversalOrBounce) {
+            val wickRatio = if (action == TradeAction.BUY) prev.lowerWickRatio else prev.upperWickRatio
+            val fullWickThreshold = if (isYolo) 0.32f else 0.40f
+            val midWickThreshold = if (isYolo) 0.22f else 0.28f
+            if (wickRatio >= fullWickThreshold) score += 25
+            else if (wickRatio >= midWickThreshold) score += 18
+            else if (prev.bodyRatio <= 0.45f) score += 12
+            else score += 8
+        } else {
+            // Impulso direccional / continuación
+            val opposingWick = if (action == TradeAction.BUY) prev.upperWickRatio else prev.lowerWickRatio
+            if (prev.bodyRatio >= 0.40f && opposingWick <= 0.18f) score += 25
+            else if (prev.bodyRatio >= 0.30f) score += 18
+            else score += 10
+        }
+
+        // 4. Micro-Momentum / Confirmación de Tick (0 - 15 pts)
+        if (action == TradeAction.BUY) {
+            if (tick.isBullishImpulse || consecutiveUpTicks >= 2 || (tick.velocity > 0f && consecutiveUpTicks >= 1)) {
+                score += 15
+            } else if (consecutiveUpTicks >= 1 || tick.velocity > 0f) {
+                score += 10
+            } else if (!tick.isBearishImpulse) {
+                score += 5
+            }
+        } else {
+            if (tick.isBearishImpulse || consecutiveDownTicks >= 2 || (tick.velocity < 0f && consecutiveDownTicks >= 1)) {
+                score += 15
+            } else if (consecutiveDownTicks >= 1 || tick.velocity < 0f) {
+                score += 10
+            } else if (!tick.isBullishImpulse) {
+                score += 5
+            }
+        }
+
+        return score.coerceIn(0, 100)
+    }
+
+    /**
+     * Valida la señal a través del Filtro Anti-Contra-Tendencia y la Matriz Cuantitativa de Confluencia (>= 80 pts).
+     * Si califica, despacha la señal a onSignalGenerated y retorna true; si no califica, la suprime y retorna false.
+     */
+    fun dispatchSniperSignal(
+        action: TradeAction,
+        reason: String,
+        tick: MarketTick,
+        prev: SyntheticCandle
+    ): Boolean {
+        // 1. Filtro Anti-Contra-Tendencia
+        if (!isTrendDirectionAllowed(action, reason, prev)) {
+            return false
+        }
+
+        // 2. Matriz Cuantitativa de Confluencia
+        val score = calculateConfluenceScore(action, reason, tick, prev)
+        val isYolo = (subMode == AutonomousSubMode.YOLO)
+        val requiredScore = if (isYolo) 75 else 80
+
+        if (score < requiredScore) {
+            suppressedByConfluence++
+            Log.d(TAG, "⚠️ Señal $action suprimida por confluencia insuficiente: $score pts < $requiredScore pts mín ($reason)")
+            return false
+        }
+
+        val enrichedReason = "$reason [Confluencia: ${score}pts]"
+        signalsGenerated++
+        lastSignalTimestampMs = tick.timestampMs
+        lastSignalAction = action.name
+        onSignalGenerated?.invoke(action, enrichedReason)
+        return true
+    }
+
     private fun evaluateSniperOpportunity(tick: MarketTick) {
         val sec = tick.candleSecond
 
@@ -735,19 +915,28 @@ class SyntheticCandleEngine {
         val inWindow = if (isSniper) timeframe.isSniperTimingWindow(tick.timestampMs) else timeframe.isStandardTimingWindow(tick.timestampMs)
         if (!inWindow) return
 
+        evaluatedCount++
         val isYolo = (subMode == AutonomousSubMode.YOLO)
         val isChoppy = isChoppinessDetected()
 
-        // En modo Conservador o Francotirador: si hay choppiness real (cluster de dojis/ruido), suprimir
+        // Veto anti-chop selectivo: la skill veta continuación/tendencia con CHOP alto, pero AUTORIZA
+        // reversiones/rebotes en S/R (MT_REJECTION, MT_RANGE, MT_3_VELAS_AGOT, MT_FALSE_BREAKOUT).
         if (!isYolo && isChoppy) {
-            Log.d(TAG, "Oportunidad Sniper Headless suprimida por choppiness/dojis")
-            return
+            val reversalContext = distanceToSupportRatio < 0.22f || distanceToResistanceRatio < 0.22f ||
+                    tickZScore60 <= -2.0 || tickZScore60 >= 2.0
+            if (!reversalContext) {
+                suppressedByChop++
+                Log.d(TAG, "Oportunidad Sniper Headless suprimida por choppiness/dojis (sin contexto de reversión S/R)")
+                return
+            }
+            Log.d(TAG, "Chop presente pero hay contexto de reversión S/R: se permite evaluar (governance)")
         }
 
         // Veto por micro-compresión extrema: mercado congelado sin volumen ni desplazamiento direccional
         val isExtremeMicroCompression = isMicroRange(5, MarketTickFilters.MAX_CHOPPY_RANGE_PERCENT) &&
                 isTickAlternatingWithoutDirection(if (isYolo) 10 else 8)
         if (isExtremeMicroCompression) {
+            suppressedByMicroCompression++
             Log.d(TAG, "Oportunidad Sniper Headless suprimida por micro-rango estático (<0.05%) sin volumen ni desplazamiento")
             return
         }
@@ -795,41 +984,45 @@ class SyntheticCandleEngine {
                 if (zScore >= zThreshold && tfi >= tfiThreshold && distToResistance <= srMaxDist && !tick.isBullishImpulse) {
                     val zFmt = String.format(java.util.Locale.US, "%.1f", zScore)
                     val tfiPct = (tfi * 100).toInt()
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.SELL,
-                        "🎯 QUANT_CRYPTO: Clímax Exhaustion en Resistencia (Z: +" + zFmt + " | TFI: +" + tfiPct + "% | ⏱ " + sec + "s) -> PUT"
-                    )
-                    return
+                        "🎯 QUANT_CRYPTO: Clímax Exhaustion en Resistencia (Z: +" + zFmt + " | TFI: +" + tfiPct + "% | ⏱ " + sec + "s) -> PUT",
+                        tick,
+                        prev
+                    )) return
                 }
 
                 // Setup 0B: Reversion Climax en Soporte (Fade Vendedor)
                 if (zScore <= -zThreshold && tfi <= -tfiThreshold && distToSupport <= srMaxDist && !tick.isBearishImpulse) {
                     val zFmt = String.format(java.util.Locale.US, "%.1f", zScore)
                     val tfiPct = (tfi * 100).toInt()
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.BUY,
-                        "🎯 QUANT_CRYPTO: Clímax Exhaustion en Soporte (Z: " + zFmt + " | TFI: " + tfiPct + "% | ⏱ " + sec + "s) -> CALL"
-                    )
-                    return
+                        "🎯 QUANT_CRYPTO: Clímax Exhaustion en Soporte (Z: " + zFmt + " | TFI: " + tfiPct + "% | ⏱ " + sec + "s) -> CALL",
+                        tick,
+                        prev
+                    )) return
                 }
 
                 // Setup 0C: Continuacion Momentum con Espacio Libre (>30% a obstaculo)
                 val minFreeSpace = if (isYolo) 0.28f else 0.35f
                 if (detectedTrend == TrendDirection.UPTREND && tfi >= 0.40f && distToResistance >= minFreeSpace && !isBullishExhausted && !tick.isBearishImpulse) {
                     val tfiPct = (tfi * 100).toInt()
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.BUY,
-                        "🎯 QUANT_CRYPTO: Momentum Alcista con Espacio Libre (TFI: +" + tfiPct + "% | Libre: " + ((distToResistance * 100).toInt()) + "% | ⏱ " + sec + "s) -> CALL"
-                    )
-                    return
+                        "🎯 QUANT_CRYPTO: Momentum Alcista con Espacio Libre (TFI: +" + tfiPct + "% | Libre: " + ((distToResistance * 100).toInt()) + "% | ⏱ " + sec + "s) -> CALL",
+                        tick,
+                        prev
+                    )) return
                 }
                 if (detectedTrend == TrendDirection.DOWNTREND && tfi <= -0.40f && distToSupport >= minFreeSpace && !isBearishExhausted && !tick.isBullishImpulse) {
                     val tfiPct = (tfi * 100).toInt()
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.SELL,
-                        "🎯 QUANT_CRYPTO: Momentum Bajista con Espacio Libre (TFI: " + tfiPct + "% | Libre: " + ((distToSupport * 100).toInt()) + "% | ⏱ " + sec + "s) -> PUT"
-                    )
-                    return
+                        "🎯 QUANT_CRYPTO: Momentum Bajista con Espacio Libre (TFI: " + tfiPct + "% | Libre: " + ((distToSupport * 100).toInt()) + "% | ⏱ " + sec + "s) -> PUT",
+                        tick,
+                        prev
+                    )) return
                 }
             }
 
@@ -843,11 +1036,12 @@ class SyntheticCandleEngine {
                 if (distToSupport <= supZoneLimit && prev.lowerWickRatio >= wickLimit && prev.bodyRatio <= bodyLimit && !tick.isBearishImpulse && syntheticTickRsi <= 75.0) {
                     val wickPct = (prev.lowerWickRatio * 100).toInt()
                     val distPct = (distToSupport * 100).toInt()
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.BUY,
-                        "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: $wickPct% | Dist S: $distPct% | ⏱ ${sec}s) -> CALL"
-                    )
-                    return
+                        "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: $wickPct% | Dist S: $distPct% | ⏱ ${sec}s) -> CALL",
+                        tick,
+                        prev
+                    )) return
                 }
 
                 // PUT: Rechazo en Resistencia con mecha superior y sin impulso alcista
@@ -855,11 +1049,12 @@ class SyntheticCandleEngine {
                 if (distToResistance <= resZoneLimit && prev.upperWickRatio >= wickLimit && prev.bodyRatio <= bodyLimit && !tick.isBullishImpulse && syntheticTickRsi >= 25.0) {
                     val wickPct = (prev.upperWickRatio * 100).toInt()
                     val distPct = (distToResistance * 100).toInt()
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.SELL,
-                        "🎯 MT_REJECTION: Rechazo en Resistencia (Mecha: $wickPct% | Dist R: $distPct% | ⏱ ${sec}s) -> PUT"
-                    )
-                    return
+                        "🎯 MT_REJECTION: Rechazo en Resistencia (Mecha: $wickPct% | Dist R: $distPct% | ⏱ ${sec}s) -> PUT",
+                        tick,
+                        prev
+                    )) return
                 }
             }
 
@@ -877,11 +1072,12 @@ class SyntheticCandleEngine {
                         (cAnteLower >= 0.18f || prev.lowerWickRatio >= 0.18f || cAnte?.isRed == true)
                 if (isBounceCallSetup && (tick.isBullishImpulse || consecutiveUpTicks >= 1 || tick.velocity > 0f) && !tick.isBearishImpulse && syntheticTickRsi <= 72.0) {
                     val distPct = (distToSupport * 100).toInt()
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.BUY,
-                        "🎯 MT_CONFIRM_BOUNCE: Rebote Confirmado en Soporte (2da Vela Giro | Dist S: $distPct% | ⏱ ${sec}s) -> CALL"
-                    )
-                    return
+                        "🎯 MT_CONFIRM_BOUNCE: Rebote Confirmado en Soporte (2da Vela Giro | Dist S: $distPct% | ⏱ ${sec}s) -> CALL",
+                        tick,
+                        prev
+                    )) return
                 }
 
                 // PUT: Confirmación de rechazo bajista (vela previa roja tras testeo de resistencia, despegue con espacio libre a soporte)
@@ -890,11 +1086,12 @@ class SyntheticCandleEngine {
                         (cAnteUpper >= 0.18f || prev.upperWickRatio >= 0.18f || cAnte?.isGreen == true)
                 if (isBouncePutSetup && (tick.isBearishImpulse || consecutiveDownTicks >= 1 || tick.velocity < 0f) && !tick.isBullishImpulse && syntheticTickRsi >= 28.0) {
                     val distPct = (distToResistance * 100).toInt()
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.SELL,
-                        "🎯 MT_CONFIRM_BOUNCE: Rechazo Confirmado en Resistencia (2da Vela Giro | Dist R: $distPct% | ⏱ ${sec}s) -> PUT"
-                    )
-                    return
+                        "🎯 MT_CONFIRM_BOUNCE: Rechazo Confirmado en Resistencia (2da Vela Giro | Dist R: $distPct% | ⏱ ${sec}s) -> PUT",
+                        tick,
+                        prev
+                    )) return
                 }
             }
 
@@ -911,22 +1108,24 @@ class SyntheticCandleEngine {
                 val is3RedExhaustion = c1.isRed && c2.isRed && c3.isRed &&
                         (c1.body > c2.body && c2.body > c3.body) && (c3.body <= c1.body * agotDecayRatio) && distToSupport <= agotDistLimit
                 if (is3RedExhaustion && !tick.isBearishImpulse && syntheticTickRsi <= 70.0) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.BUY,
-                        "🎯 MT_3_VELAS_AGOT: Agotamiento 3 Velas Rojas en Soporte (C3 <= ${(agotDecayRatio * 100).toInt()}% C1 | ⏱ ${sec}s) -> CALL"
-                    )
-                    return
+                        "🎯 MT_3_VELAS_AGOT: Agotamiento 3 Velas Rojas en Soporte (C3 <= ${(agotDecayRatio * 100).toInt()}% C1 | ⏱ ${sec}s) -> CALL",
+                        tick,
+                        prev
+                    )) return
                 }
 
                 // Agotamiento alcista en resistencia: 3 velas verdes con decaimiento -> Reversión PUT
                 val is3GreenExhaustion = c1.isGreen && c2.isGreen && c3.isGreen &&
                         (c1.body > c2.body && c2.body > c3.body) && (c3.body <= c1.body * agotDecayRatio) && distToResistance <= agotDistLimit
                 if (is3GreenExhaustion && !tick.isBullishImpulse && syntheticTickRsi >= 30.0) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.SELL,
-                        "🎯 MT_3_VELAS_AGOT: Agotamiento 3 Velas Verdes en Resistencia (C3 <= ${(agotDecayRatio * 100).toInt()}% C1 | ⏱ ${sec}s) -> PUT"
-                    )
-                    return
+                        "🎯 MT_3_VELAS_AGOT: Agotamiento 3 Velas Verdes en Resistencia (C3 <= ${(agotDecayRatio * 100).toInt()}% C1 | ⏱ ${sec}s) -> PUT",
+                        tick,
+                        prev
+                    )) return
                 }
             }
 
@@ -940,21 +1139,23 @@ class SyntheticCandleEngine {
                 if (isBearishOverextended && distToSupport <= revZoneLimit && (syntheticTickRsi <= revRsiLow || consecutiveDownTicks >= revTicksNeeded) && !tick.isBearishImpulse) {
                     val rsiInt = syntheticTickRsi.toInt()
                     val distPct = (distToSupport * 100).toInt()
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.BUY,
-                        "🎯 MT_REVERSAL: Sobreventa Extrema en Soporte (RSI: $rsiInt | Dist S: $distPct% | ⏱ ${sec}s) -> CALL"
-                    )
-                    return
+                        "🎯 MT_REVERSAL: Sobreventa Extrema en Soporte (RSI: $rsiInt | Dist S: $distPct% | ⏱ ${sec}s) -> CALL",
+                        tick,
+                        prev
+                    )) return
                 }
 
                 if (isBullishOverextended && distToResistance <= revZoneLimit && (syntheticTickRsi >= revRsiHigh || consecutiveUpTicks >= revTicksNeeded) && !tick.isBullishImpulse) {
                     val rsiInt = syntheticTickRsi.toInt()
                     val distPct = (distToResistance * 100).toInt()
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.SELL,
-                        "🎯 MT_REVERSAL: Sobrecompra Extrema en Resistencia (RSI: $rsiInt | Dist R: $distPct% | ⏱ ${sec}s) -> PUT"
-                    )
-                    return
+                        "🎯 MT_REVERSAL: Sobrecompra Extrema en Resistencia (RSI: $rsiInt | Dist R: $distPct% | ⏱ ${sec}s) -> PUT",
+                        tick,
+                        prev
+                    )) return
                 }
             }
 
@@ -970,22 +1171,24 @@ class SyntheticCandleEngine {
                 val isBreakoutBullish = !isBullishExhausted && consecutiveGreenCandles <= 2 &&
                         prev.isGreen && prev.bodyRatio >= breakoutBodyRatio && prev.upperWickRatio <= breakoutWickRatio && distToSupport in 0.05f..0.32f
                 if (isBreakoutBullish && (tick.isBullishImpulse || consecutiveUpTicks >= 1) && !tick.isBearishImpulse && syntheticTickRsi <= 75.0) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.BUY,
-                        "🎯 MT_CHOQUE_PULLBACK: Retest de Breakout Alcista (⏱ ${sec}s) -> CALL"
-                    )
-                    return
+                        "🎯 MT_CHOQUE_PULLBACK: Retest de Breakout Alcista (⏱ ${sec}s) -> CALL",
+                        tick,
+                        prev
+                    )) return
                 }
 
                 // Breakout bajista solo es válido en etapas tempranas (máximo 2 velas rojas), nunca en racha sobreextendida
                 val isBreakoutBearish = !isBearishExhausted && consecutiveRedCandles <= 2 &&
                         prev.isRed && prev.bodyRatio >= breakoutBodyRatio && prev.lowerWickRatio <= breakoutWickRatio && distToResistance in 0.05f..0.32f
                 if (isBreakoutBearish && (tick.isBearishImpulse || consecutiveDownTicks >= 1) && !tick.isBullishImpulse && syntheticTickRsi >= 25.0) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.SELL,
-                        "🎯 MT_CHOQUE_PULLBACK: Retest de Breakout Bajista (⏱ ${sec}s) -> PUT"
-                    )
-                    return
+                        "🎯 MT_CHOQUE_PULLBACK: Retest de Breakout Bajista (⏱ ${sec}s) -> PUT",
+                        tick,
+                        prev
+                    )) return
                 }
             }
 
@@ -999,11 +1202,12 @@ class SyntheticCandleEngine {
                         prev.close > cAnte.open && prev.open <= cAnte.close &&
                         prev.body > cAnte.body * 1.05 && distToSupport <= engulfDistLimit
                 if (isEngulfingCall && !tick.isBearishImpulse && syntheticTickRsi <= 72.0) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.BUY,
-                        "🎯 MT_ENGULFING: Vela Envolvente en Soporte (⏱ ${sec}s) -> CALL"
-                    )
-                    return
+                        "🎯 MT_ENGULFING: Vela Envolvente en Soporte (⏱ ${sec}s) -> CALL",
+                        tick,
+                        prev
+                    )) return
                 }
 
                 // PUT: Vela previa roja envuelve por completo el cuerpo de la vela verde anterior sobre resistencia
@@ -1011,11 +1215,12 @@ class SyntheticCandleEngine {
                         prev.close < cAnte.open && prev.open >= cAnte.close &&
                         prev.body > cAnte.body * 1.05 && distToResistance <= engulfDistLimit
                 if (isEngulfingPut && !tick.isBullishImpulse && syntheticTickRsi >= 28.0) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.SELL,
-                        "🎯 MT_ENGULFING: Vela Envolvente en Resistencia (⏱ ${sec}s) -> PUT"
-                    )
-                    return
+                        "🎯 MT_ENGULFING: Vela Envolvente en Resistencia (⏱ ${sec}s) -> PUT",
+                        tick,
+                        prev
+                    )) return
                 }
             }
 
@@ -1026,22 +1231,24 @@ class SyntheticCandleEngine {
                 val isFalseBreakoutCall = prev.lowerWickRatio >= 0.35f && prev.close >= dynamicSupportPrice &&
                         distToSupport <= trapDistLimit && !tick.isBearishImpulse && syntheticTickRsi <= 68.0
                 if (isFalseBreakoutCall) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.BUY,
-                        "🎯 MT_FALSE_BREAKOUT: Trampa en Soporte (Mecha: ${(prev.lowerWickRatio*100).toInt()}% | ⏱ ${sec}s) -> CALL"
-                    )
-                    return
+                        "🎯 MT_FALSE_BREAKOUT: Trampa en Soporte (Mecha: ${(prev.lowerWickRatio*100).toInt()}% | ⏱ ${sec}s) -> CALL",
+                        tick,
+                        prev
+                    )) return
                 }
 
                 // Trampa alcista en resistencia: la vela penetró la resistencia pero cerró abajo dejando mecha superior >= 35%
                 val isFalseBreakoutPut = prev.upperWickRatio >= 0.35f && prev.close <= dynamicResistancePrice &&
                         distToResistance <= trapDistLimit && !tick.isBullishImpulse && syntheticTickRsi >= 32.0
                 if (isFalseBreakoutPut) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.SELL,
-                        "🎯 MT_FALSE_BREAKOUT: Trampa en Resistencia (Mecha: ${(prev.upperWickRatio*100).toInt()}% | ⏱ ${sec}s) -> PUT"
-                    )
-                    return
+                        "🎯 MT_FALSE_BREAKOUT: Trampa en Resistencia (Mecha: ${(prev.upperWickRatio*100).toInt()}% | ⏱ ${sec}s) -> PUT",
+                        tick,
+                        prev
+                    )) return
                 }
             }
 
@@ -1053,11 +1260,12 @@ class SyntheticCandleEngine {
                 val isHealthyPullback = (prev.isRed && prev.bodyRatio <= 0.48f) || prev.lowerWickRatio >= 0.22f || consecutiveDownTicks in 1..2
                 val turningUp = (consecutiveUpTicks >= (if (isYolo) 1 else 2) || tick.isBullishImpulse) && tick.velocity > 0f
                 if (isHealthyPullback && turningUp) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.BUY,
-                        "🎯 MT_PULLBACK: Continuación Alcista tras Retroceso Sano (Dist R: ${(distToResistance*100).toInt()}% | ⏱ ${sec}s) -> CALL"
-                    )
-                    return
+                        "🎯 MT_PULLBACK: Continuación Alcista tras Retroceso Sano (Dist R: ${(distToResistance*100).toInt()}% | ⏱ ${sec}s) -> CALL",
+                        tick,
+                        prev
+                    )) return
                 }
             }
 
@@ -1066,11 +1274,12 @@ class SyntheticCandleEngine {
                 val isHealthyPullback = (prev.isGreen && prev.bodyRatio <= 0.48f) || prev.upperWickRatio >= 0.22f || consecutiveUpTicks in 1..2
                 val turningDown = (consecutiveDownTicks >= (if (isYolo) 1 else 2) || tick.isBearishImpulse) && tick.velocity < 0f
                 if (isHealthyPullback && turningDown) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.SELL,
-                        "🎯 MT_PULLBACK: Continuación Bajista tras Retroceso Sano (Dist S: ${(distToSupport*100).toInt()}% | ⏱ ${sec}s) -> PUT"
-                    )
-                    return
+                        "🎯 MT_PULLBACK: Continuación Bajista tras Retroceso Sano (Dist S: ${(distToSupport*100).toInt()}% | ⏱ ${sec}s) -> PUT",
+                        tick,
+                        prev
+                    )) return
                 }
             }
 
@@ -1081,11 +1290,12 @@ class SyntheticCandleEngine {
                 distToResistance >= trendFreeSpace && prev.isGreen && prev.bodyRatio >= momentumBodyRatio && syntheticTickRsi <= 75.0) {
                 val strongGreenMomentum = (tick.isBullishImpulse || consecutiveUpTicks >= 1 || tick.velocity > 0f) && !tick.isBearishImpulse
                 if (strongGreenMomentum) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.BUY,
-                        "🎯 MT_MOMENTUM: Impulso Alcista Temprano (Dist R: ${(distToResistance*100).toInt()}% | ⏱ ${sec}s) -> CALL"
-                    )
-                    return
+                        "🎯 MT_MOMENTUM: Impulso Alcista Temprano (Dist R: ${(distToResistance*100).toInt()}% | ⏱ ${sec}s) -> CALL",
+                        tick,
+                        prev
+                    )) return
                 }
             }
 
@@ -1093,11 +1303,12 @@ class SyntheticCandleEngine {
                 distToSupport >= trendFreeSpace && prev.isRed && prev.bodyRatio >= momentumBodyRatio && syntheticTickRsi >= 25.0) {
                 val strongRedMomentum = (tick.isBearishImpulse || consecutiveDownTicks >= 1 || tick.velocity < 0f) && !tick.isBullishImpulse
                 if (strongRedMomentum) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.SELL,
-                        "🎯 MT_MOMENTUM: Impulso Bajista Temprano (Dist S: ${(distToSupport*100).toInt()}% | ⏱ ${sec}s) -> PUT"
-                    )
-                    return
+                        "🎯 MT_MOMENTUM: Impulso Bajista Temprano (Dist S: ${(distToSupport*100).toInt()}% | ⏱ ${sec}s) -> PUT",
+                        tick,
+                        prev
+                    )) return
                 }
             }
 
@@ -1115,22 +1326,24 @@ class SyntheticCandleEngine {
                 if (hasTradableChannel && !isBullishExhausted && consecutiveGreenCandles <= 1 &&
                     distToSupport <= rangeDistLimit && prev.lowerWickRatio >= rangeWickRatio && syntheticTickRsi <= 65.0 &&
                     (tick.isBullishImpulse || consecutiveUpTicks >= (if (isYolo) 1 else 2)) && tick.velocity > 0f) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.BUY,
-                        "🎯 MT_RANGE: Rebote en Soporte Lateral (Dist S: ${(distToSupport*100).toInt()}% | Mecha: ${(prev.lowerWickRatio*100).toInt()}% | ⏱ ${sec}s) -> CALL"
-                    )
-                    return
+                        "🎯 MT_RANGE: Rebote en Soporte Lateral (Dist S: ${(distToSupport*100).toInt()}% | Mecha: ${(prev.lowerWickRatio*100).toInt()}% | ⏱ ${sec}s) -> CALL",
+                        tick,
+                        prev
+                    )) return
                 }
 
                 // Rechazo en resistencia: requiere canal operable, mecha de rechazo superior y empuje bajista activo
                 if (hasTradableChannel && !isBearishExhausted && consecutiveRedCandles <= 1 &&
                     distToResistance <= rangeDistLimit && prev.upperWickRatio >= rangeWickRatio && syntheticTickRsi >= 35.0 &&
                     (tick.isBearishImpulse || consecutiveDownTicks >= (if (isYolo) 1 else 2)) && tick.velocity < 0f) {
-                    onSignalGenerated?.invoke(
+                    if (dispatchSniperSignal(
                         TradeAction.SELL,
-                        "🎯 MT_RANGE: Rechazo en Resistencia Lateral (Dist R: ${(distToResistance*100).toInt()}% | Mecha: ${(prev.upperWickRatio*100).toInt()}% | ⏱ ${sec}s) -> PUT"
-                    )
-                    return
+                        "🎯 MT_RANGE: Rechazo en Resistencia Lateral (Dist R: ${(distToResistance*100).toInt()}% | Mecha: ${(prev.upperWickRatio*100).toInt()}% | ⏱ ${sec}s) -> PUT",
+                        tick,
+                        prev
+                    )) return
                 }
             }
         }

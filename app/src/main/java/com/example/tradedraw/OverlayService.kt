@@ -1516,7 +1516,11 @@ class OverlayService : Service() {
             txtStreak.text = "· " + (analysis?.streakBadge ?: "1D ⚪")
 
             // Stats & Martingala
-            txtStats.text = "W: ${riskManager.totalWins} | L: ${riskManager.totalLosses}"
+            txtStats.text = if (riskManager.totalVoids > 0) {
+                "W: ${riskManager.totalWins} | L: ${riskManager.totalLosses} | T: ${riskManager.totalVoids}"
+            } else {
+                "W: ${riskManager.totalWins} | L: ${riskManager.totalLosses}"
+            }
             txtWinrate.text = " (%.1f%%)".format(Locale.US, riskManager.getWinRate())
             txtMartingale.text = " " + riskManager.getMartingaleStatusBadge(tradingEngine.autonomousSubMode)
 

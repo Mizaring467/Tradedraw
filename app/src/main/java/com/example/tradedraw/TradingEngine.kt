@@ -351,15 +351,15 @@ class TradingEngine(
             val pendingConfidence = riskManager.pendingTradeConfidence
             val tradeStartMs = riskManager.pendingTradeStartTime
 
-            // Capturar el precio de cierre en la ventana de expiración (:58 - :02) tras al menos 40s de trade
-            if (elapsedSec >= 40 && (analysis.candleSecond in 0..2 || analysis.candleSecond in 58..59)) {
+            // Capturar el precio de cierre en la ventana de expiración tras al menos 40s de trade
+            if (elapsedSec >= 40 && (analysis.candleSecond in 1..5)) {
                 if (pendingTradeRecordedCandleCloseY == 0f && analysis.currentPriceY > 0f) {
                     pendingTradeRecordedCandleCloseY = analysis.currentPriceY
                 }
             }
 
-            // Capturar el precio de cierre al expirar la vela (:58-:02) tras al menos 45s de trade
-            if (elapsedSec >= 45 && (analysis.candleSecond in 0..2 || analysis.candleSecond in 58..59)) {
+            // Capturar el precio de cierre al expirar la vela tras al menos 45s de trade
+            if (elapsedSec >= 45 && (analysis.candleSecond in 1..5)) {
                 if (pendingTradeRecordedCandleCloseY == 0f && analysis.currentPriceY > 0f) {
                     pendingTradeRecordedCandleCloseY = analysis.currentPriceY
                 }
@@ -437,24 +437,29 @@ class TradingEngine(
                             riskManager.recordTradeVoid()
                             autoDrawEngine.clearTradeEntry()
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
+                            OverlayService.instance?.updateHUDView()
                         } else if (finalWin) {
-                            if (riskManager.resolvePendingTradeWin()) {
-                                TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN", tradeStartMs)
-                                adaptiveLearningEngine.recordTradeOutcome(true, context)
-                                autoDrawEngine.clearTradeEntry()
-                                emitHapticAndAudioFeedback()
-                                Toast.makeText(context, "🎉 OPERACIÓN GANADA (+1 W)", Toast.LENGTH_LONG).show()
-                                onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
+                            val resolved = riskManager.resolvePendingTradeWin()
+                            if (!resolved) {
+                                riskManager.recordTradeWin(force = true)
                             }
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN", tradeStartMs)
+                            adaptiveLearningEngine.recordTradeOutcome(true, context)
+                            autoDrawEngine.clearTradeEntry()
+                            emitHapticAndAudioFeedback()
+                            Toast.makeText(context, "🎉 OPERACIÓN GANADA (+1 W)", Toast.LENGTH_LONG).show()
+                            onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
                         } else {
-                            if (riskManager.resolvePendingTradeLoss()) {
-                                TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS", tradeStartMs)
-                                adaptiveLearningEngine.recordTradeOutcome(false, context)
-                                autoDrawEngine.clearTradeEntry()
-                                emitHapticAndAudioFeedback()
-                                Toast.makeText(context, "⚠️ OPERACIÓN PERDIDA (+1 L)", Toast.LENGTH_LONG).show()
-                                onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, false)
+                            val resolved = riskManager.resolvePendingTradeLoss()
+                            if (!resolved) {
+                                riskManager.recordTradeLoss(force = true)
                             }
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS", tradeStartMs)
+                            adaptiveLearningEngine.recordTradeOutcome(false, context)
+                            autoDrawEngine.clearTradeEntry()
+                            emitHapticAndAudioFeedback()
+                            Toast.makeText(context, "⚠️ OPERACIÓN PERDIDA (+1 L)", Toast.LENGTH_LONG).show()
+                            onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, false)
                         }
                         isTradeResolving.set(false)
                         lastTradeResolutionTime = System.currentTimeMillis()
@@ -475,8 +480,8 @@ class TradingEngine(
 
             if (localSignal != null && !riskManager.hasPendingTrade) {
                 val sec = analysis.candleSecond
-                val isTimingVetoed = sec in 15..55 || analysis.isTimingVetoed
-                val isStrictTimingWindow = sec in 58..59 || sec in 0..3 || analysis.isSniperTimingWindow || analysis.isSniperZeroSecondWindow
+                val isTimingVetoed = sec !in 1..5 || analysis.isTimingVetoed
+                val isStrictTimingWindow = sec in 1..5
                 val isChoppy = syntheticCandleEngine.isChoppinessDetected() || analysis.isMicroRangeChoppy
                 val isTickVelocityConfirmed = when (localSignal) {
                     TradeAction.BUY -> !analysis.isBearishImpulse || analysis.tickVelocityNormalized >= -0.08f
@@ -561,7 +566,7 @@ class TradingEngine(
             val tf = syntheticEngine?.timeframe ?: CandleTimeframe.M1
             val ts = latestTick?.timestampMs ?: System.currentTimeMillis()
             val inTimingWindow = if (analysis.candleSecond > 0 && tf == CandleTimeframe.M1) {
-                analysis.candleSecond in 58..59
+                analysis.candleSecond in 1..5
             } else {
                 tf.isSniperTimingWindow(ts)
             }
@@ -571,7 +576,7 @@ class TradingEngine(
                 val remMin = cycleRem / 60
                 val remSec = cycleRem % 60
                 val remStr = if (tf == CandleTimeframe.M5) "%d:%02d".format(Locale.US, remMin, remSec) else ":%02ds".format(Locale.US, remSec)
-                return Pair(null, "⏳ Francotirador en espera: timing estricto :58s-:59s [${tf.label}] (restante: $remStr)")
+                return Pair(null, "⏳ Francotirador en espera: timing estricto :01s-:05s [${tf.label}] (restante: $remStr)")
             }
 
             val candleList = analysis.candleList
@@ -654,24 +659,24 @@ class TradingEngine(
             val isStrictTimingWindow = MarketTickFilters.isStrictTimingWindow(sec) // :58 a :03
             val isTimingVetoed = MarketTickFilters.isTimingVetoed(sec) // :06 a :57
             val isInstitutionalTrap = analysis.isFalseBreakoutCall || analysis.isFalseBreakoutPut
-            val isSniperPullbackTrigger = (sec in 1..3 || analysis.isSniperPullbackWindow) &&
+            val isSniperPullbackTrigger = (sec in 1..5 || analysis.isSniperPullbackWindow) &&
                 (analysis.isPullbackAgainstSignalCall || analysis.isPullbackAgainstSignalPut || analysis.isPullbackSniperCall || analysis.isPullbackSniperPut)
 
             // Veto universal de entrada tardía (:06 a :57)
             if (isTimingVetoed && !isInstitutionalTrap) {
-                return Pair(null, "⏳ Entrada tardía - Veto Timing Estricto (:06-:57): Fuera de ventana sniper :00 (:58-:03) (⏱ ${sec}s)")
+                return Pair(null, "⏳ Entrada tardía - Veto Timing Estricto: Fuera de ventana sniper :01-:05 (⏱ ${sec}s)")
             }
 
-            // Veto de entrada si está fuera de la ventana estricta :58-:03 (salvo trampas institucionales)
+            // Veto de entrada si está fuera de la ventana estricta :01-:05 (salvo trampas institucionales)
             if (!isStrictTimingWindow && !isInstitutionalTrap && !isSniperPullbackTrigger) {
-                return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper :00 (:58-:03)")
+                return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper :01-:05")
             }
 
-            val isSniperPullbackCallTrigger = (sec in 1..3 || analysis.isSniperPullbackWindow) &&
+            val isSniperPullbackCallTrigger = (sec in 1..5 || analysis.isSniperPullbackWindow) &&
                 (analysis.isPullbackAgainstSignalCall || (analysis.candleList.size >= 2 && analysis.candleList[1].type == CandleType.GREEN && analysis.candleList[1].bodyHeight >= 15f && analysis.currentPriceY >= analysis.candleList[1].bodyTopY - 3f && analysis.currentPriceY <= analysis.candleList[1].bodyTopY + analysis.candleList[1].bodyHeight * 0.55f)) &&
                 !analysis.isDojiOrLowVolume
 
-            val isSniperPullbackPutTrigger = (sec in 1..3 || analysis.isSniperPullbackWindow) &&
+            val isSniperPullbackPutTrigger = (sec in 1..5 || analysis.isSniperPullbackWindow) &&
                 (analysis.isPullbackAgainstSignalPut || (analysis.candleList.size >= 2 && analysis.candleList[1].type == CandleType.RED && analysis.candleList[1].bodyHeight >= 15f && analysis.currentPriceY <= analysis.candleList[1].bodyBottomY + 3f && analysis.currentPriceY >= analysis.candleList[1].bodyBottomY - analysis.candleList[1].bodyHeight * 0.55f)) &&
                 !analysis.isDojiOrLowVolume
 
@@ -1198,7 +1203,7 @@ class TradingEngine(
             }
         }
 
-        val isFavorable = !riskManager.hasPendingTrade && (autonomousSubMode == AutonomousSubMode.YOLO || (!syntheticCandleEngine.cachedChoppiness && analysis?.isMarketSideways != true))
+        val isFavorable = !riskManager.hasPendingTrade && !syntheticCandleEngine.cachedChoppiness && analysis?.isMarketSideways != true
         return EngineReasoning(pattern, prob, srStatus, plan, isFavorable)
     }
 
@@ -1642,8 +1647,8 @@ class TradingEngine(
             }
         }
 
-        // Ventana Sniper Quirúrgica: :58-:59 en SNIPER, :58-:03 en otros modos conforme a master_traders_skill
-        val inWindow = if (isSniper) sec in 58..59 else (sec in 58..59 || sec in 0..3)
+        // Ventana Sniper Quirúrgica: :01-:05 conforme a master_traders_skill
+        val inWindow = sec in 1..5
         if (!inWindow) {
             Log.d("TradingEngine", "Headless bloqueado fuera de ventana timing sniper (⏱ ${sec}s | SNIPER=$isSniper | YOLO=$isYolo)")
             return
@@ -1655,7 +1660,7 @@ class TradingEngine(
                 reasonDescription.contains("MT_CONFIRM") ||
                 reasonDescription.contains("MT_ENGULFING") ||
                 reasonDescription.contains("QUANT_CRYPTO")
-        if (syntheticCandleEngine.isChoppinessDetected() && !isRejectionOrBounce && !isYolo) {
+        if (syntheticCandleEngine.isChoppinessDetected() && !isRejectionOrBounce) {
             Log.d("TradingEngine", "Headless bloqueado por Filtro Anti-Choppy (<0.05% y ticks alternantes)")
             return
         }
@@ -1901,8 +1906,15 @@ class TradingEngine(
                 if (isTie) {
                     riskManager.recordTradeVoid()
                     Toast.makeText(context, "[HEADLESS] ⚪ Empate / Orden cancelada", Toast.LENGTH_SHORT).show()
+                    OverlayService.instance?.updateHUDView()
                 } else if (finalWin) {
                     if (riskManager.resolvePendingTradeWin()) {
+                        adaptiveLearningEngine.recordTradeOutcome(true, context)
+                        emitHapticAndAudioFeedback()
+                        Toast.makeText(context, "[HEADLESS] 🎉 GANADA (+1 W) [$method]", Toast.LENGTH_SHORT).show()
+                        onTradeExecutedListener?.invoke(pendingAction, true)
+                    } else {
+                        riskManager.recordTradeWin(force = true)
                         adaptiveLearningEngine.recordTradeOutcome(true, context)
                         emitHapticAndAudioFeedback()
                         Toast.makeText(context, "[HEADLESS] 🎉 GANADA (+1 W) [$method]", Toast.LENGTH_SHORT).show()
@@ -1910,6 +1922,12 @@ class TradingEngine(
                     }
                 } else {
                     if (riskManager.resolvePendingTradeLoss()) {
+                        adaptiveLearningEngine.recordTradeOutcome(false, context)
+                        emitHapticAndAudioFeedback()
+                        Toast.makeText(context, "[HEADLESS] ⚠️ PERDIDA (+1 L) [$method]", Toast.LENGTH_SHORT).show()
+                        onTradeExecutedListener?.invoke(pendingAction, false)
+                    } else {
+                        riskManager.recordTradeLoss(force = true)
                         adaptiveLearningEngine.recordTradeOutcome(false, context)
                         emitHapticAndAudioFeedback()
                         Toast.makeText(context, "[HEADLESS] ⚠️ PERDIDA (+1 L) [$method]", Toast.LENGTH_SHORT).show()

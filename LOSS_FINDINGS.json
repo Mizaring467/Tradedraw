@@ -1,0 +1,114 @@
+{
+  "metadata": {
+    "source_file": "loops/journal/trade_journal_device_all.csv",
+    "analysis_timestamp": "2026-10-03T21:43:45.683436Z",
+    "total_trades_analyzed": 212,
+    "total_losses": 114,
+    "total_wins": 81,
+    "total_ties": 17,
+    "win_rate_gross": 41.54
+  },
+  "loss_category_breakdown": {
+    "SIGNAL_FAILURE": {
+      "loss_count": 48,
+      "percentage_of_losses": 42.11
+    },
+    "REGIME_FAILURE": {
+      "loss_count": 38,
+      "percentage_of_losses": 33.33
+    },
+    "EXECUTION_FAILURE": {
+      "loss_count": 25,
+      "percentage_of_losses": 21.93
+    },
+    "LABEL_FAILURE": {
+      "loss_count": 2,
+      "percentage_of_losses": 1.75
+    },
+    "DATA_FAILURE": {
+      "loss_count": 1,
+      "percentage_of_losses": 0.88
+    }
+  },
+  "top_5_loss_causes": [
+    {
+      "rank": 1,
+      "cause": "Operativa en rango lateral comprimido (Chop/Ruido Gaussiano sin ventaja)",
+      "count": 38,
+      "pct_of_losses": 33.33
+    },
+    {
+      "rank": 2,
+      "cause": "Venta en Soporte / Inversi\u00f3n Err\u00f3nea de Se\u00f1al por Autoaprendizaje",
+      "count": 34,
+      "pct_of_losses": 29.82
+    },
+    {
+      "rank": 3,
+      "cause": "Desfase de expiraci\u00f3n por entrada en frontera (:58-:59)",
+      "count": 23,
+      "pct_of_losses": 20.18
+    },
+    {
+      "rank": 4,
+      "cause": "Ausencia de ventaja predictiva matem\u00e1tica (WR baseline < breakeven 54.6%)",
+      "count": 9,
+      "pct_of_losses": 7.89
+    },
+    {
+      "rank": 5,
+      "cause": "Compra en Resistencia / Inversi\u00f3n Err\u00f3nea de Se\u00f1al por Autoaprendizaje",
+      "count": 5,
+      "pct_of_losses": 4.39
+    }
+  ],
+  "evidence_summary": {
+    "timing_boundary_rollover": {
+      "description": "P\u00e9rdidas por entrada en segundos :58 y :59 con desalineaci\u00f3n de expiraci\u00f3n de vela",
+      "sample_size_n": 23,
+      "win_count": 0,
+      "loss_count": 23,
+      "win_rate_pct": 0.0,
+      "p_value_vs_50pct": 1.192e-07,
+      "robustness": "ESTAD\u00cdSTICAMENTE S\u00d3LIDA"
+    },
+    "sideways_chop_in_yolo": {
+      "description": "P\u00e9rdidas por operar en rango lateral ruidoso con filtro anti-chop desactivado en modo YOLO",
+      "sample_size_n": 41,
+      "signatures_in_sideways": 41,
+      "pct_sideways": 100.0,
+      "robustness": "ESTAD\u00cdSTICAMENTE S\u00d3LIDA"
+    },
+    "payout_math_drag_and_no_edge": {
+      "description": "P\u00e9rdidas acumulativas debidas a ausencia de edge (WR 41.27%) con penalizaci\u00f3n matem\u00e1tica de payout (0.83 requiere 54.64%)",
+      "sample_size_n": 189,
+      "observed_wr_pct": 41.27,
+      "wilson_ci_95": [
+        34.49,
+        48.39
+      ],
+      "ev_per_trade": -0.2448,
+      "robustness": "ESTAD\u00cdSTICAMENTE S\u00d3LIDA"
+    },
+    "adaptive_anti_pattern_inversion": {
+      "description": "Inversi\u00f3n err\u00f3nea de se\u00f1ales por AdaptiveLearningEngine vendiendo soportes y comprando resistencias",
+      "total_inversions_state": 2558,
+      "observed_sell_losses": 70,
+      "sell_wr_pct": 37.5,
+      "robustness": "MODERADA / CORROBORADA POR TELEMETR\u00cdA"
+    },
+    "data_and_label_integrity_failures": {
+      "description": "P\u00e9rdidas falsas por Diff=0.0 (LABEL) y registros corruptos con saldo 1.00 COP (DATA)",
+      "data_failure_count": 5,
+      "label_failure_count": 2,
+      "total_affected": 7,
+      "robustness": "ESTAD\u00cdSTICAMENTE S\u00d3LIDA (Verificaci\u00f3n determinista en CSV)"
+    }
+  },
+  "limits_of_determination": [
+    "No se dispone de capturas de micro-ticks a nivel de milisegundo para cada trade individual para medir el slippage exacto del broker.",
+    "No se puede saber si los 2 registros de LABEL_FAILURE fueron empates t\u00e9cnicos (push) o rechazos por desconexi\u00f3n del broker sin telemetr\u00eda de red del servidor de Binomo.",
+    "La correlaci\u00f3n exacta de cada una de las 2,558 inversiones adaptativas pasadas no qued\u00f3 registrada trade por trade en el CSV simple (solo el acumulador total en adaptive_learning_state.json)."
+  ],
+  "strategy_modification_statement": "CONFIRMACI\u00d3N EXPL\u00cdCITA: NO se modific\u00f3 ninguna estrategia, ning\u00fan par\u00e1metro, ning\u00fan umbral, ning\u00fan indicador ni ninguna regla de se\u00f1al BUY/SELL. El an\u00e1lisis es 100% de diagn\u00f3stico y auditor\u00eda forense."
+}

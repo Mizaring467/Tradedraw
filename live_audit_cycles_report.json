@@ -1,0 +1,29 @@
+[
+  {
+    "cycle_num": 1,
+    "detect_timestamp": "2026-10-06 14:10:59",
+    "detect_epoch_ms": 1791313859521,
+    "balance_before": 39272737.28,
+    "analysis": {
+      "currentPriceY": 641.8674,
+      "dynamicResistanceY": 0.0,
+      "dynamicSupportY": 0.0,
+      "dynamicResistancePrice": 641.867344215,
+      "dynamicSupportPrice": 641.867344115,
+      "callPower": 32,
+      "putPower": 78,
+      "isMarketSideways": false,
+      "trend": "DOWNTREND",
+      "candleCount": 60,
+      "streak": "TREND 🔴"
+    },
+    "screenshot_placed": "audit_cycle_1_placed.png",
+    "logs_at_trigger": "--------- beginning of main\n10-06 14:10:58.383 I/TradeDraw( 6613): âš¡ Gesto tÃ¡ctil en (540.0, 1340.0) despachado y confirmado en 176ms",
+    "settle_timestamp": "2026-10-06 14:12:11",
+    "settle_epoch_ms": 1791313931735,
+    "balance_after": 39172736.0,
+    "screenshot_settled": "audit_cycle_1_settled.png",
+    "journal_row": "1791313211490,2026-10-06T14:00:11,AUTO_ADAPTIVE,CONSERVATIVE,BUY,0.98,641.87,1.00,39372736.00,LOSS,39272737.28,72,UPTREND,0.01,0.19,0.00,NEUTRAL,TRENDING,11,LOSS,\"SALDO (-) PÃ©rdida confirmada tras liquidaciÃ³n: Diff=-99998.71999999881 COP (72s)\"\n1791313930628,2026-10-06T14:12:10,AUTO_ADAPTIVE,CONSERVATIVE,SELL,0.98,641.87,2.00,39272737.28,LOSS,39172736.00,72,DOWNTREND,0.07,0.08,-0.00,NEUTRAL,TRENDING,10,LOSS,\"SALDO (-) PÃ©rdida confirmada tras liquidaciÃ³n: Diff=-100001.28000000119 COP (72s)\"",
+    "logs_at_settle": "--------- beginning of main\n10-06 14:10:58.383 I/TradeDraw( 6613): âš¡ Gesto tÃ¡ctil en (540.0, 1340.0) despachado y confirmado en 176ms"
+  }
+]

@@ -1,0 +1,51 @@
+======================================================================
+[2026-10-09 18:57:38] INICIANDO SESION DE MONITOREO EN VIVO (25 MINUTOS)
+Dispositivo: UGU8KFUKM7E6CE8D | Duración objetivo: 25 min (1500s)
+Estrategia activa: Opción D (Anti-Contra-Tendencia + Matriz Confluencia >= 80 pts)
+======================================================================
+Saldo inicial: 39,329,735.68 COP
+Marcador base: 0W / 0L
+Captura inicial guardada: live_25m_session_start.png
+----------------------------------------------------------------------
+⏱ [2026-10-09 19:02:58 :58s] Trend: UPTREND (Call:86% Put:32%) | Price:641.867300 [S:641.867312 R:641.867313] | Bal:39,329,736 | Restante:19m40s
+⏱ [2026-10-09 19:05:58 :58s] Trend: UPTREND (Call:76% Put:32%) | Price:641.867300 [S:641.867312 R:641.867313] | Bal:39,329,736 | Restante:16m40s
+⏱ [2026-10-09 19:07:58 :58s] Trend: UPTREND (Call:68% Put:32%) | Price:641.867300 [S:641.867313 R:641.867313] | Bal:39,329,736 | Restante:14m40s
+⏱ [2026-10-09 19:08:58 :58s] Trend: UPTREND (Call:76% Put:32%) | Price:641.867300 [S:641.867313 R:641.867313] | Bal:39,329,736 | Restante:13m40s
+⏱ [2026-10-09 19:10:58 :58s] Trend: UPTREND (Call:86% Put:32%) | Price:641.867300 [S:641.867314 R:641.867315] | Bal:39,329,736 | Restante:11m40s
+⏱ [2026-10-09 19:11:58 :58s] Trend: UPTREND (Call:86% Put:32%) | Price:641.867300 [S:641.867314 R:641.867315] | Bal:39,329,736 | Restante:10m40s
+⏱ [2026-10-09 19:13:58 :58s] Trend: UPTREND (Call:68% Put:32%) | Price:641.867300 [S:641.867314 R:641.867314] | Bal:39,329,736 | Restante:8m40s
+⏱ [2026-10-09 19:15:58 :58s] Trend: UPTREND (Call:86% Put:32%) | Price:641.867300 [S:641.867314 R:641.867314] | Bal:39,329,736 | Restante:6m41s
+⏱ [2026-10-09 19:16:58 :58s] Trend: UPTREND (Call:86% Put:32%) | Price:641.867300 [S:641.867314 R:641.867314] | Bal:39,329,736 | Restante:5m40s
+
+⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡
+[2026-10-09 19:18:04] ¡TRADE #1 EJECUTADO EN VIVO!
+   Saldo antes: 39,329,735.68 COP
+   Señal: 🎯 MT_ENGULFING: Vela Envolvente en Resistencia (⏱ 1s) -> PUT)
+   Captura: live_25m_trade_1_placed.png
+
+🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁
+[2026-10-09 19:19:08] ¡TRADE #1 LIQUIDADO TRAS 60s!
+   Saldo antes:  39,329,735.68 COP
+   Saldo después: 39,412,736.00 COP
+   Diff:         +83,000.32 COP
+   Resultado:    WIN
+   Journal tail: 1791591545825,2026-10-09T19:19:05,AUTO_ADAPTIVE,CONSERVATIVE,SELL,0.85,641.87,1.00,39329735.68,WIN,39412736.00,62,DOWNTREND,0.09,0.17,0.00,NEUTRAL,TRENDING,4,WIN,"SALDO (+) Ganancia acreditada por Binomo: Diff=+83000.3200000003 COP (62s)"
+   Captura:      live_25m_trade_1_settled.png
+🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁
+
+⏱ [2026-10-09 19:19:58 :58s] Trend: DOWNTREND (Call:32% Put:86%) | Price:641.867300 [S:641.867314 R:641.867315] | Bal:39,412,736 | Restante:2m40s
+
+======================================================================
+[2026-10-09 19:22:38] SESIÓN DE MONITOREO DE 25 MINUTOS COMPLETADA
+======================================================================
+Resumen de la Sesión:
+  - Operaciones ejecutadas: 1
+  - Victorias (WIN):        1
+  - Derrotas (LOSS):        0
+  - Neutro (VOID):          0
+  - Win Rate de sesión:     100.0%
+  - Saldo inicial:          39,329,735.68 COP
+  - Saldo final:            39,412,736.00 COP
+  - P&L Neto sesión:        +83,000.32 COP
+Reporte detallado guardado en: loops/journal/live/live_session_25m_report.json
+======================================================================

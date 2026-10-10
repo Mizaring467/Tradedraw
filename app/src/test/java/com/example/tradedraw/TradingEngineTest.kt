@@ -241,11 +241,11 @@ class TradingEngineTest {
         val mechaWithPullback = VisionAnalysisResult(
             isRejectionCall = true,
             isPullbackSniperCall = true,
-            candleSecond = 58
+            candleSecond = 2
         )
         val (actionWithPullback, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, mechaWithPullback)
         assertEquals("Mecha con pullback sniper debe gatillar CALL", TradeAction.BUY, actionWithPullback)
-        assertTrue("La razón debe incluir el segundo 58s", reason.contains("58s"))
+        assertTrue("La razón debe incluir el segundo 2s", reason.contains("2s"))
     }
 
     @Test
@@ -501,7 +501,7 @@ class TradingEngineTest {
             consecutiveCount = 3,
             lastCandles = listOf(CandleType.GREEN),
             tickVelocityNormalized = -0.02f, // Micro-desaceleración / giro bajista
-            candleSecond = 59
+            candleSecond = 2
         )
 
         val (actionPut, reasonPut) = TradingEngine.evaluateStrategySignalWithReason(
@@ -516,31 +516,36 @@ class TradingEngineTest {
 
     @Test
     fun testStrictTimingWindowAndVetoFilters() {
-        // 1. Probar ventana estricta :58 a :03 conforme a master_traders_skill
+        // 1. Probar ventana estricta :01 a :05 (se elimina :58/:59/:00 por desfase de expiración)
         assertFalse("Segundo 57 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(57))
-        assertTrue("Segundo 58 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(58))
-        assertTrue("Segundo 59 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(59))
-        assertTrue("Segundo 00 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(0))
+        assertFalse("Segundo 58 debe estar vetado (desfase de expiración)", MarketTickFilters.isStrictTimingWindow(58))
+        assertFalse("Segundo 59 debe estar vetado (desfase de expiración)", MarketTickFilters.isStrictTimingWindow(59))
+        assertFalse("Segundo 00 no debe estar en ventana (vela sin estabilizar)", MarketTickFilters.isStrictTimingWindow(0))
         assertTrue("Segundo 01 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(1))
         assertTrue("Segundo 02 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(2))
         assertTrue("Segundo 03 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(3))
-        assertFalse("Segundo 04 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(4))
-        assertFalse("Segundo 05 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(5))
+        assertTrue("Segundo 04 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(4))
+        assertTrue("Segundo 05 debe estar en ventana", MarketTickFilters.isStrictTimingWindow(5))
         assertFalse("Segundo 06 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(6))
+        assertFalse("Segundo 07 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(7))
         assertFalse("Segundo 30 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(30))
         assertFalse("Segundo 56 no debe estar en ventana", MarketTickFilters.isStrictTimingWindow(56))
 
-        // 2. Probar veto estricto :06 a :57 conforme a master_traders_skill
+        // 2. Probar veto estricto: todo lo que no sea :01-:05 queda vetado
         assertTrue("Segundo 06 debe estar vetado", MarketTickFilters.isTimingVetoed(6))
+        assertTrue("Segundo 07 debe estar vetado", MarketTickFilters.isTimingVetoed(7))
         assertTrue("Segundo 15 debe estar vetado", MarketTickFilters.isTimingVetoed(15))
         assertTrue("Segundo 30 debe estar vetado", MarketTickFilters.isTimingVetoed(30))
         assertTrue("Segundo 55 debe estar vetado", MarketTickFilters.isTimingVetoed(55))
         assertTrue("Segundo 57 debe estar vetado", MarketTickFilters.isTimingVetoed(57))
-        assertFalse("Segundo 00 no debe estar vetado", MarketTickFilters.isTimingVetoed(0))
-        assertFalse("Segundo 58 no debe estar vetado", MarketTickFilters.isTimingVetoed(58))
-        assertFalse("Segundo 59 no debe estar vetado", MarketTickFilters.isTimingVetoed(59))
+        assertTrue("Segundo 00 debe estar vetado", MarketTickFilters.isTimingVetoed(0))
+        assertTrue("Segundo 58 debe estar vetado", MarketTickFilters.isTimingVetoed(58))
+        assertTrue("Segundo 59 debe estar vetado", MarketTickFilters.isTimingVetoed(59))
+        assertFalse("Segundo 01 no debe estar vetado", MarketTickFilters.isTimingVetoed(1))
         assertFalse("Segundo 02 no debe estar vetado", MarketTickFilters.isTimingVetoed(2))
         assertFalse("Segundo 03 no debe estar vetado", MarketTickFilters.isTimingVetoed(3))
+        assertFalse("Segundo 04 no debe estar vetado", MarketTickFilters.isTimingVetoed(4))
+        assertFalse("Segundo 05 no debe estar vetado", MarketTickFilters.isTimingVetoed(5))
 
         // 3. Probar evaluación en TradingEngine con segundo vetado (:30s)
         val vetoAnalysis = VisionAnalysisResult(
@@ -555,9 +560,9 @@ class TradingEngineTest {
         assertNull("Operación en segundo :30 debe ser vetada", actionVeto)
         assertTrue("Razón debe indicar veto de timing :15-:55", reasonVeto.contains("Veto Timing Estricto") || reasonVeto.contains("Entrada tardía"))
 
-        // 4. Probar evaluación en TradingEngine con segundo permitido (:59s)
+        // 4. Probar evaluación en TradingEngine con segundo permitido (:02s)
         val validAnalysis = VisionAnalysisResult(
-            candleSecond = 59,
+            candleSecond = 2,
             isRejectionCall = true,
             touchesSupport = true
         )
@@ -565,7 +570,7 @@ class TradingEngineTest {
             AutoTradeStrategy.AUTO_ADAPTIVE,
             validAnalysis
         )
-        assertEquals("Operación en segundo :59 debe ser permitida", TradeAction.BUY, actionValid)
+        assertEquals("Operación en segundo :02 debe ser permitida", TradeAction.BUY, actionValid)
     }
 
     @Test
@@ -594,7 +599,7 @@ class TradingEngineTest {
 
         // Evaluar señal en TradingEngine ante mercado choppy: debe ser suprimida
         val analysis = VisionAnalysisResult(
-            candleSecond = 0,
+            candleSecond = 2,
             isRejectionCall = true,
             touchesSupport = true
         )
@@ -649,7 +654,7 @@ class TradingEngineTest {
         AutoTradeAccessibilityService.isSyntheticOrOTC = true
 
         val analysis = VisionAnalysisResult(
-            candleSecond = 58,
+            candleSecond = 2,
             touchesSupport = true,
             hasBottomRejectionWick = true
         )
@@ -671,17 +676,17 @@ class TradingEngineTest {
         )
 
         val (actionOutside, reasonOutside) = TradingEngine.evaluateSniperConfluences(analysisOutside, null, null)
-        assertNull("Fuera de :58-:59s no debe disparar", actionOutside)
+        assertNull("Fuera de :01-:03s no debe disparar", actionOutside)
         assertTrue("Razón debe mencionar timing estricto", reasonOutside.contains("timing estricto"))
 
         val analysisInside = VisionAnalysisResult(
-            candleSecond = 58,
+            candleSecond = 2,
             touchesSupport = true,
             hasBottomRejectionWick = true,
             tickVelocityNormalized = 0.05f
         )
         val (actionInside, reasonInside) = TradingEngine.evaluateSniperConfluences(analysisInside, null, null)
-        assertEquals("En :58s con soporte y mecha debe emitir BUY", TradeAction.BUY, actionInside)
+        assertEquals("En :02s con soporte y mecha debe emitir BUY", TradeAction.BUY, actionInside)
         assertTrue("Razón debe ser FRANCOTIRADOR CALL", reasonInside.contains("FRANCOTIRADOR [CALL"))
     }
 
@@ -692,7 +697,7 @@ class TradingEngineTest {
 
         // CALL Confluence
         val analysisCall = VisionAnalysisResult(
-            candleSecond = 59,
+            candleSecond = 3,
             touchesSupport = true,
             hasBottomRejectionWick = true,
             tickVelocityNormalized = 0.02f
@@ -703,7 +708,7 @@ class TradingEngineTest {
 
         // PUT Confluence
         val analysisPut = VisionAnalysisResult(
-            candleSecond = 58,
+            candleSecond = 2,
             touchesResistance = true,
             hasTopRejectionWick = true,
             tickVelocityNormalized = -0.02f
@@ -731,7 +736,7 @@ class TradingEngineTest {
 
         // S/R y mecha presentes, pero micro-velocidad adversa (bajista en soporte CALL)
         val analysisAdverse = VisionAnalysisResult(
-            candleSecond = 58,
+            candleSecond = 2,
             touchesSupport = true,
             hasBottomRejectionWick = true,
             tickVelocityNormalized = -0.05f,
@@ -760,7 +765,7 @@ class TradingEngineTest {
 
         // En Headless no hay candleList visual
         val analysisHeadless = VisionAnalysisResult(
-            candleSecond = 58,
+            candleSecond = 2,
             touchesSupport = true,
             hasBottomRejectionWick = false,
             candleList = emptyList(),
@@ -777,7 +782,7 @@ class TradingEngineTest {
         AutoTradeAccessibilityService.isSyntheticOrOTC = false
 
         val analysis = VisionAnalysisResult(
-            candleSecond = 58,
+            candleSecond = 2,
             touchesSupport = true,
             hasBottomRejectionWick = true,
             tickVelocityNormalized = 0.04f
@@ -789,24 +794,26 @@ class TradingEngineTest {
 
     @Test
     fun testCandleTimeframe_TimingWindowCycle() {
-        // M1: 60s
-        val tsM1_58 = 58000L // 58s
+        // M1: ventana sniper exclusiva :01-:05
+        val tsM1_02 = 2000L // 02s
         val tsM1_30 = 30000L // 30s
-        assertTrue("Segundo 58 debe ser sniper window para M1", CandleTimeframe.M1.isSniperTimingWindow(tsM1_58))
+        assertTrue("Segundo 02 debe ser sniper window para M1", CandleTimeframe.M1.isSniperTimingWindow(tsM1_02))
         assertFalse("Segundo 30 no debe ser sniper window para M1", CandleTimeframe.M1.isSniperTimingWindow(tsM1_30))
 
         // M5: 300s
         val tsM5_298 = 298000L // 4m 58s (segundo 298 de 300)
         val tsM5_58 = 58000L   // 58s (apenas minuto 1 de 5)
-        assertTrue("Segundo 298 debe ser sniper window para M5", CandleTimeframe.M5.isSniperTimingWindow(tsM5_298))
+        assertFalse("Segundo 298 NO debe ser sniper window para M5 (ventana es :01-:05)", CandleTimeframe.M5.isSniperTimingWindow(tsM5_298))
         assertFalse("Segundo 58 en M5 NO debe ser sniper window", CandleTimeframe.M5.isSniperTimingWindow(tsM5_58))
 
-        // Test de ventana estándar (:58-:03)
-        val tsM1_02 = 2000L  // 02s
+        // Test de ventana estándar exclusiva :01-:05
         val tsM1_05 = 5000L  // 05s
+        val tsM1_07 = 7000L  // 07s
+        val tsM1_58 = 58000L // 58s
         assertTrue("Segundo 02 debe ser standard timing window para M1", CandleTimeframe.M1.isStandardTimingWindow(tsM1_02))
-        assertTrue("Segundo 58 debe ser standard timing window para M1", CandleTimeframe.M1.isStandardTimingWindow(tsM1_58))
-        assertFalse("Segundo 05 NO debe ser standard timing window para M1 (:58-:03)", CandleTimeframe.M1.isStandardTimingWindow(tsM1_05))
+        assertTrue("Segundo 05 debe ser standard timing window para M1 (:01-:05)", CandleTimeframe.M1.isStandardTimingWindow(tsM1_05))
+        assertFalse("Segundo 58 NO debe ser standard timing window para M1", CandleTimeframe.M1.isStandardTimingWindow(tsM1_58))
+        assertFalse("Segundo 07 NO debe ser standard timing window para M1 (:01-:05)", CandleTimeframe.M1.isStandardTimingWindow(tsM1_07))
     }
 
     @Test

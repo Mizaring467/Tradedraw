@@ -1,0 +1,562 @@
+{
+  "metadata": {
+    "validation_engine_version": "1.0.0-audited",
+    "payout_ratio": 0.83,
+    "breakeven_winrate": 0.5464480874316939,
+    "timestamp": "2026-10-03T15:45:00Z"
+  },
+  "observed_telemetry": {
+    "metadata": {
+      "data_source": "OBSERVED_DEVICE_CLEAN",
+      "dataset_id": "trade_journal_device_all_clean",
+      "start_time": "2026-09-10T11:51:10",
+      "end_time": "2026-09-16T17:44:52",
+      "sample_count": 205,
+      "strategy_version": "TradeDraw_v1.0_Sanitized",
+      "parameters": {
+        "martingale_inverted": 2558,
+        "tfi_active": false
+      },
+      "execution_model": "Real_Binomo_Device_Clicks",
+      "seed": 0
+    },
+    "data_integrity": {
+      "is_valid": true,
+      "total_records": 205,
+      "clean_records": 205,
+      "corrupt_records": 0,
+      "error_count": 0,
+      "warning_count": 0,
+      "issues": [],
+      "stats": {}
+    },
+    "temporal_integrity": {
+      "is_valid": true,
+      "is_monotonic": true,
+      "alignment_rate": 1.0,
+      "avg_tick_interval_ms": 1000.0,
+      "max_tick_interval_ms": 1000.0,
+      "irregular_intervals_count": 0,
+      "issues": []
+    },
+    "lookahead_audit": {
+      "passed": true,
+      "has_feature_leakage": false,
+      "has_fractal_timing_leakage": false,
+      "has_settlement_timing_leakage": false,
+      "violations": []
+    },
+    "statistical_report": {
+      "total_trades": 205,
+      "resolved_trades": 189,
+      "wins": 78,
+      "losses": 111,
+      "voids": 16,
+      "win_rate": 0.4126984126984127,
+      "win_rate_ci_wilson_95": [
+        0.3449302487050733,
+        0.48394470964347425
+      ],
+      "expected_value": -0.24476190476190476,
+      "expected_value_ci_95": [
+        -0.3706349206349206,
+        -0.11888888888888888
+      ],
+      "breakeven_winrate": 0.5464480874316939,
+      "p_value_vs_breakeven": 0.9998893967776769,
+      "z_stat_vs_breakeven": -3.6934793917404893,
+      "max_drawdown_pct": 92.54237288135633,
+      "longest_losing_streak": 10,
+      "longest_winning_streak": 5,
+      "bootstrap_ev_positive_prob": 0.0,
+      "validation_status": "VALID_FOR_RESEARCH",
+      "warnings": []
+    },
+    "walk_forward_report": null,
+    "overall_status": "VALIDATED_OBSERVED_TELEMETRY",
+    "divergence_warning": null
+  },
+  "observed_by_action": {
+    "BUY_CALL": {
+      "total_trades": 87,
+      "resolved_trades": 77,
+      "wins": 36,
+      "losses": 41,
+      "voids": 10,
+      "win_rate": 0.4675324675324675,
+      "win_rate_ci_wilson_95": [
+        0.3603009616194051,
+        0.5778495735271391
+      ],
+      "expected_value": -0.1444155844155844,
+      "expected_value_ci_95": [
+        -0.3345454545454546,
+        0.04571428571428572
+      ],
+      "breakeven_winrate": 0.5464480874316939,
+      "p_value_vs_breakeven": 0.9178840079098668,
+      "z_stat_vs_breakeven": -1.3909783757516834,
+      "max_drawdown_pct": 27.433796913698,
+      "longest_losing_streak": 8,
+      "longest_winning_streak": 4,
+      "bootstrap_ev_positive_prob": 0.0635,
+      "validation_status": "VALID_FOR_RESEARCH",
+      "warnings": []
+    },
+    "SELL_PUT": {
+      "total_trades": 118,
+      "resolved_trades": 112,
+      "wins": 42,
+      "losses": 70,
+      "voids": 6,
+      "win_rate": 0.375,
+      "win_rate_ci_wilson_95": [
+        0.2908879005368533,
+        0.4674024036397675
+      ],
+      "expected_value": -0.31375000000000003,
+      "expected_value_ci_95": [
+        -0.47714285714285715,
+        -0.15035714285714283
+      ],
+      "breakeven_winrate": 0.5464480874316939,
+      "p_value_vs_breakeven": 0.9998661127307791,
+      "z_stat_vs_breakeven": -3.6446321314357597,
+      "max_drawdown_pct": 70.28000000000031,
+      "longest_losing_streak": 18,
+      "longest_winning_streak": 5,
+      "bootstrap_ev_positive_prob": 0.0,
+      "validation_status": "VALID_FOR_RESEARCH",
+      "warnings": []
+    }
+  },
+  "holdout_final_25pct": {
+    "metadata": {
+      "data_source": "OBSERVED_HOLDOUT_FINAL_25",
+      "dataset_id": "device_journal_holdout_25pct",
+      "start_time": "2026-09-14",
+      "end_time": "2026-09-16",
+      "sample_count": 48,
+      "strategy_version": "Holdout_Untouched",
+      "parameters": {},
+      "execution_model": "Real_Device",
+      "seed": 0
+    },
+    "data_integrity": {
+      "is_valid": true,
+      "total_records": 48,
+      "clean_records": 48,
+      "corrupt_records": 0,
+      "error_count": 0,
+      "warning_count": 0,
+      "issues": [],
+      "stats": {}
+    },
+    "temporal_integrity": {
+      "is_valid": true,
+      "is_monotonic": true,
+      "alignment_rate": 1.0,
+      "avg_tick_interval_ms": 1000.0,
+      "max_tick_interval_ms": 1000.0,
+      "irregular_intervals_count": 0,
+      "issues": []
+    },
+    "lookahead_audit": {
+      "passed": true,
+      "has_feature_leakage": false,
+      "has_fractal_timing_leakage": false,
+      "has_settlement_timing_leakage": false,
+      "violations": []
+    },
+    "statistical_report": {
+      "total_trades": 48,
+      "resolved_trades": 48,
+      "wins": 16,
+      "losses": 32,
+      "voids": 0,
+      "win_rate": 0.3333333333333333,
+      "win_rate_ci_wilson_95": [
+        0.2167680053425214,
+        0.47459861155933625
+      ],
+      "expected_value": -0.38999999999999996,
+      "expected_value_ci_95": [
+        -0.61875,
+        -0.123125
+      ],
+      "breakeven_winrate": 0.5464480874316939,
+      "p_value_vs_breakeven": 0.9984906610150422,
+      "z_stat_vs_breakeven": -2.965829492454556,
+      "max_drawdown_pct": 39.625554912179226,
+      "longest_losing_streak": 10,
+      "longest_winning_streak": 4,
+      "bootstrap_ev_positive_prob": 0.001,
+      "validation_status": "VALID_FOR_RESEARCH",
+      "warnings": []
+    },
+    "walk_forward_report": null,
+    "overall_status": "HOLDOUT_EVALUATED",
+    "divergence_warning": null
+  },
+  "train_set_75pct": {
+    "metadata": {
+      "data_source": "HISTORICAL_TRAIN_75",
+      "dataset_id": "device_journal_train_75pct",
+      "start_time": "2026-09-10",
+      "end_time": "2026-09-14",
+      "sample_count": 141,
+      "strategy_version": "Train_75",
+      "parameters": {},
+      "execution_model": "Real_Device",
+      "seed": 0
+    },
+    "data_integrity": {
+      "is_valid": true,
+      "total_records": 141,
+      "clean_records": 141,
+      "corrupt_records": 0,
+      "error_count": 0,
+      "warning_count": 0,
+      "issues": [],
+      "stats": {}
+    },
+    "temporal_integrity": {
+      "is_valid": true,
+      "is_monotonic": true,
+      "alignment_rate": 1.0,
+      "avg_tick_interval_ms": 1000.0,
+      "max_tick_interval_ms": 1000.0,
+      "irregular_intervals_count": 0,
+      "issues": []
+    },
+    "lookahead_audit": {
+      "passed": true,
+      "has_feature_leakage": false,
+      "has_fractal_timing_leakage": false,
+      "has_settlement_timing_leakage": false,
+      "violations": []
+    },
+    "statistical_report": {
+      "total_trades": 141,
+      "resolved_trades": 141,
+      "wins": 62,
+      "losses": 79,
+      "voids": 0,
+      "win_rate": 0.4397163120567376,
+      "win_rate_ci_wilson_95": [
+        0.3604658879427399,
+        0.5221643895232319
+      ],
+      "expected_value": -0.1953191489361702,
+      "expected_value_ci_95": [
+        -0.35106382978723405,
+        -0.0525531914893617
+      ],
+      "breakeven_winrate": 0.5464480874316939,
+      "p_value_vs_breakeven": 0.9945477990759919,
+      "z_stat_vs_breakeven": -2.545747543702559,
+      "max_drawdown_pct": 60.13958125623168,
+      "longest_losing_streak": 8,
+      "longest_winning_streak": 5,
+      "bootstrap_ev_positive_prob": 0.005,
+      "validation_status": "VALID_FOR_RESEARCH",
+      "warnings": []
+    },
+    "walk_forward_report": null,
+    "overall_status": "HISTORICAL_TRAIN",
+    "divergence_warning": null
+  },
+  "excluded_records_audit": [
+    {
+      "row_index": 0,
+      "record": {
+        "timestamp": "1789059070095",
+        "iso_date": "2026-09-10T11:51:10",
+        "strategy": "AUTO_ADAPTIVE",
+        "submode": "CONSERVATIVE",
+        "action": "SELL",
+        "confidence": "1.00",
+        "price_y": "1265.00",
+        "stake": "1.00",
+        "base_balance": "44961812.48",
+        "result": "LOSS",
+        "settled_balance": "44961812.48",
+        "duration_sec": "63",
+        "reason": "SIN ACREDITACI\u00d3N TRAS 62s (Diff=0.0 -> P\u00e9rdida)"
+      },
+      "reason": "DECLARED_LOSS_WITHOUT_BALANCE_CHANGE: delta=0.0"
+    },
+    {
+      "row_index": 1,
+      "record": {
+        "timestamp": "1789059603561",
+        "iso_date": "2026-09-10T12:00:03",
+        "strategy": "AUTO_ADAPTIVE",
+        "submode": "CONSERVATIVE",
+        "action": "SELL",
+        "confidence": "1.00",
+        "price_y": "1084.33",
+        "stake": "2.00",
+        "base_balance": "44961812.48",
+        "result": "LOSS",
+        "settled_balance": "44961812.48",
+        "duration_sec": "62",
+        "reason": "SIN ACREDITACI\u00d3N TRAS 62s (Diff=0.0 -> P\u00e9rdida)"
+      },
+      "reason": "DECLARED_LOSS_WITHOUT_BALANCE_CHANGE: delta=0.0"
+    },
+    {
+      "row_index": 12,
+      "record": {
+        "timestamp": "1789080600323",
+        "iso_date": "2026-09-10T17:50:00",
+        "strategy": "AUTO_ADAPTIVE",
+        "submode": "YOLO",
+        "action": "SELL",
+        "confidence": "1.00",
+        "price_y": "1682.00",
+        "stake": "1.00",
+        "base_balance": "1.00",
+        "result": "WIN",
+        "settled_balance": "44907811.84",
+        "duration_sec": "63",
+        "reason": "SALDO (+) Ganancia acreditada por Binomo: Diff=+4.490781084E7 COP"
+      },
+      "reason": "CORRUPT_BALANCE_UI_GLITCH: base=1.0, settled=44907811.84"
+    },
+    {
+      "row_index": 44,
+      "record": {
+        "timestamp": "1789097402449",
+        "iso_date": "2026-09-10T22:30:02",
+        "strategy": "AUTO_ADAPTIVE",
+        "submode": "YOLO",
+        "action": "BUY",
+        "confidence": "1.00",
+        "price_y": "1085.50",
+        "stake": "1.00",
+        "base_balance": "44463810.56",
+        "result": "LOSS",
+        "settled_balance": "1.00",
+        "duration_sec": "62",
+        "reason": "SALDO (-) P\u00e9rdida debitada por Binomo: Diff=-4.446380956E7 COP"
+      },
+      "reason": "CORRUPT_BALANCE_UI_GLITCH: base=44463810.56, settled=1.0"
+    },
+    {
+      "row_index": 201,
+      "record": {
+        "timestamp": "1789233063495",
+        "iso_date": "2026-09-12T12:11:03",
+        "strategy": "AUTO_ADAPTIVE",
+        "submode": "YOLO",
+        "action": "SELL",
+        "confidence": "1.00",
+        "price_y": "1244.50",
+        "stake": "1.00",
+        "base_balance": "1.00",
+        "result": "TIE",
+        "settled_balance": "1.00",
+        "duration_sec": "61",
+        "reason": "ORDEN NO PROCESADA (Diff=0.0 -> Saldo inalterado)"
+      },
+      "reason": "CORRUPT_BALANCE_UI_GLITCH: base=1.0, settled=1.0"
+    },
+    {
+      "row_index": 202,
+      "record": {
+        "timestamp": "1789233243438",
+        "iso_date": "2026-09-12T12:14:03",
+        "strategy": "AUTO_ADAPTIVE",
+        "submode": "YOLO",
+        "action": "SELL",
+        "confidence": "1.00",
+        "price_y": "1164.00",
+        "stake": "1.00",
+        "base_balance": "1.00",
+        "result": "WIN",
+        "settled_balance": "43246812.16",
+        "duration_sec": "62",
+        "reason": "SALDO (+) Ganancia acreditada por Binomo: Diff=+4.324681116E7 COP"
+      },
+      "reason": "CORRUPT_BALANCE_UI_GLITCH: base=1.0, settled=43246812.16"
+    },
+    {
+      "row_index": 204,
+      "record": {
+        "timestamp": "1789233482393",
+        "iso_date": "2026-09-12T12:18:02",
+        "strategy": "AUTO_ADAPTIVE",
+        "submode": "YOLO",
+        "action": "BUY",
+        "confidence": "1.00",
+        "price_y": "1200.00",
+        "stake": "1.00",
+        "base_balance": "1.00",
+        "result": "WIN",
+        "settled_balance": "43329812.48",
+        "duration_sec": "61",
+        "reason": "SALDO (+) Ganancia acreditada por Binomo: Diff=+4.332981148E7 COP"
+      },
+      "reason": "CORRUPT_BALANCE_UI_GLITCH: base=1.0, settled=43329812.48"
+    }
+  ],
+  "old_simulations_audited": {
+    "reversion_sr": {
+      "metadata": {
+        "data_source": "SYNTHETIC",
+        "dataset_id": "crypto_idx_fast_synthetic_10k_rev",
+        "start_time": "2026-09-16",
+        "end_time": "2026-09-16",
+        "sample_count": 12,
+        "strategy_version": "quant_crypto_idx_model.py:Reversion_SR",
+        "parameters": {
+          "z_score": 2.1,
+          "tfi": 0.4,
+          "distance_ratio": 0.2
+        },
+        "execution_model": "Instantaneous_Zero_Latency_Tautological_Drift",
+        "seed": 42
+      },
+      "data_integrity": {
+        "is_valid": true,
+        "total_records": 12,
+        "clean_records": 12,
+        "corrupt_records": 0,
+        "error_count": 0,
+        "warning_count": 0,
+        "issues": [],
+        "stats": {}
+      },
+      "temporal_integrity": {
+        "is_valid": true,
+        "is_monotonic": true,
+        "alignment_rate": 1.0,
+        "avg_tick_interval_ms": 1000.0,
+        "max_tick_interval_ms": 1000.0,
+        "irregular_intervals_count": 0,
+        "issues": []
+      },
+      "lookahead_audit": {
+        "passed": true,
+        "has_feature_leakage": false,
+        "has_fractal_timing_leakage": false,
+        "has_settlement_timing_leakage": false,
+        "violations": []
+      },
+      "statistical_report": {
+        "total_trades": 12,
+        "resolved_trades": 12,
+        "wins": 11,
+        "losses": 1,
+        "voids": 0,
+        "win_rate": 0.9166666666666666,
+        "win_rate_ci_wilson_95": [
+          0.6461207538435416,
+          0.9851348630051799
+        ],
+        "expected_value": 0.6774999999999999,
+        "expected_value_ci_95": [
+          0.3725,
+          0.83
+        ],
+        "breakeven_winrate": 0.5464480874316939,
+        "p_value_vs_breakeven": 0.004996244979159942,
+        "z_stat_vs_breakeven": 2.576089078382003,
+        "max_drawdown_pct": 1.6911889058007803,
+        "longest_losing_streak": 1,
+        "longest_winning_streak": 11,
+        "bootstrap_ev_positive_prob": 1.0,
+        "validation_status": "INSUFFICIENT_SAMPLE",
+        "warnings": [
+          "Muestra resuelta insuficiente (N=12 < 30). El resultado no es estad\u00edsticamente accionable."
+        ]
+      },
+      "walk_forward_report": null,
+      "overall_status": "INSUFFICIENT_SAMPLE_SYNTHETIC_BIAS",
+      "divergence_warning": "\ud83d\udea8 ADVERTENCIA DE DIVERGENCIA CR\u00cdTICA: Existe una discrepancia de 50.4 puntos porcentuales entre la simulaci\u00f3n (91.7%) y la realidad observada (41.3%).\nCausa probable: Sesgo de datos sint\u00e9ticos, bug de microestructura en producci\u00f3n o latencia de ejecuci\u00f3n no modelada.\nREGLA: Prohibido manipular par\u00e1metros para 'forzar' coincidencia artificial."
+    },
+    "continuation": {
+      "metadata": {
+        "data_source": "SYNTHETIC",
+        "dataset_id": "crypto_idx_fast_synthetic_10k_cont",
+        "start_time": "2026-09-16",
+        "end_time": "2026-09-16",
+        "sample_count": 338,
+        "strategy_version": "quant_crypto_idx_model.py:Continuation",
+        "parameters": {
+          "z_score": 1.5,
+          "tfi": 0.3,
+          "free_space": 0.35
+        },
+        "execution_model": "Instantaneous_Zero_Latency_Tautological_Drift",
+        "seed": 42
+      },
+      "data_integrity": {
+        "is_valid": true,
+        "total_records": 338,
+        "clean_records": 338,
+        "corrupt_records": 0,
+        "error_count": 0,
+        "warning_count": 0,
+        "issues": [],
+        "stats": {}
+      },
+      "temporal_integrity": {
+        "is_valid": true,
+        "is_monotonic": true,
+        "alignment_rate": 1.0,
+        "avg_tick_interval_ms": 1000.0,
+        "max_tick_interval_ms": 1000.0,
+        "irregular_intervals_count": 0,
+        "issues": []
+      },
+      "lookahead_audit": {
+        "passed": true,
+        "has_feature_leakage": false,
+        "has_fractal_timing_leakage": false,
+        "has_settlement_timing_leakage": false,
+        "violations": []
+      },
+      "statistical_report": {
+        "total_trades": 338,
+        "resolved_trades": 338,
+        "wins": 282,
+        "losses": 56,
+        "voids": 0,
+        "win_rate": 0.834319526627219,
+        "win_rate_ci_wilson_95": [
+          0.7909712086535139,
+          0.8701540132720125
+        ],
+        "expected_value": 0.5268047337278107,
+        "expected_value_ci_95": [
+          0.4510059171597633,
+          0.6026035502958579
+        ],
+        "breakeven_winrate": 0.5464480874316939,
+        "p_value_vs_breakeven": 1.0704823240297974e-26,
+        "z_stat_vs_breakeven": 10.630874046713052,
+        "max_drawdown_pct": 19.71414489896448,
+        "longest_losing_streak": 56,
+        "longest_winning_streak": 282,
+        "bootstrap_ev_positive_prob": 1.0,
+        "validation_status": "VALID_FOR_RESEARCH",
+        "warnings": []
+      },
+      "walk_forward_report": null,
+      "overall_status": "DATA_INVALID_TAUTOLOGICAL_DRIFT",
+      "divergence_warning": "\ud83d\udea8 ADVERTENCIA DE DIVERGENCIA CR\u00cdTICA: Existe una discrepancia de 42.2 puntos porcentuales entre la simulaci\u00f3n (83.4%) y la realidad observada (41.3%).\nCausa probable: Sesgo de datos sint\u00e9ticos, bug de microestructura en producci\u00f3n o latencia de ejecuci\u00f3n no modelada.\nREGLA: Prohibido manipular par\u00e1metros para 'forzar' coincidencia artificial."
+    }
+  },
+  "comparison_tables": {
+    "reversion_vs_observed": "==================================================================================\n\ud83d\udcca COMPARACI\u00d3N METODOL\u00d3GICA: SIMULACI\u00d3N vs TELEMETR\u00cdA OBSERVADA\n==================================================================================\nM\u00e9trica                        | SIMULATION             | OBSERVED              \n----------------------------------------------------------------------------------\nFuente de Datos                | SYNTHETIC              | OBSERVED_DEVICE_CLEAN \nDataset ID                     | crypto_idx_fast_synthetic_10k_rev | trade_journal_device_all_clean\nTrades Totales (N)             | 12                     | 205                   \nTrades Resueltos               | 12                     | 189                   \nVictorias / Derrotas           | 11 W / 1 L             | 78 W / 111 L          \nTIEs / Voids                   | 0                      | 16                    \nWin Rate Observado             | 91.67%                 | 41.27%                \nIC Wilson 95%                  | [64.6%, 98.5%]         | [34.5%, 48.4%]        \nEsperanza Matem\u00e1tica (EV)      | +0.6775                | -0.2448               \nMax Drawdown                   | 1.69%                  | 92.54%                \nPeor Racha P\u00e9rdidas            | 1                      | 10                    \nVeredicto Metodol\u00f3gico         | INSUFFICIENT_SAMPLE_SYNTHETIC_BIAS | VALIDATED_OBSERVED_TELEMETRY\n==================================================================================\n\ud83d\udea8 ADVERTENCIA DE DIVERGENCIA CR\u00cdTICA: Existe una discrepancia de 50.4 puntos porcentuales entre la simulaci\u00f3n (91.7%) y la realidad observada (41.3%).\nCausa probable: Sesgo de datos sint\u00e9ticos, bug de microestructura en producci\u00f3n o latencia de ejecuci\u00f3n no modelada.\nREGLA: Prohibido manipular par\u00e1metros para 'forzar' coincidencia artificial.",
+    "continuation_vs_observed": "==================================================================================\n\ud83d\udcca COMPARACI\u00d3N METODOL\u00d3GICA: SIMULACI\u00d3N vs TELEMETR\u00cdA OBSERVADA\n==================================================================================\nM\u00e9trica                        | SIMULATION             | OBSERVED              \n----------------------------------------------------------------------------------\nFuente de Datos                | SYNTHETIC              | OBSERVED_DEVICE_CLEAN \nDataset ID                     | crypto_idx_fast_synthetic_10k_cont | trade_journal_device_all_clean\nTrades Totales (N)             | 338                    | 205                   \nTrades Resueltos               | 338                    | 189                   \nVictorias / Derrotas           | 282 W / 56 L           | 78 W / 111 L          \nTIEs / Voids                   | 0                      | 16                    \nWin Rate Observado             | 83.43%                 | 41.27%                \nIC Wilson 95%                  | [79.1%, 87.0%]         | [34.5%, 48.4%]        \nEsperanza Matem\u00e1tica (EV)      | +0.5268                | -0.2448               \nMax Drawdown                   | 19.71%                 | 92.54%                \nPeor Racha P\u00e9rdidas            | 56                     | 10                    \nVeredicto Metodol\u00f3gico         | DATA_INVALID_TAUTOLOGICAL_DRIFT | VALIDATED_OBSERVED_TELEMETRY\n==================================================================================\n\ud83d\udea8 ADVERTENCIA DE DIVERGENCIA CR\u00cdTICA: Existe una discrepancia de 42.2 puntos porcentuales entre la simulaci\u00f3n (83.4%) y la realidad observada (41.3%).\nCausa probable: Sesgo de datos sint\u00e9ticos, bug de microestructura en producci\u00f3n o latencia de ejecuci\u00f3n no modelada.\nREGLA: Prohibido manipular par\u00e1metros para 'forzar' coincidencia artificial."
+  },
+  "walk_forward_audit": {
+    "total_oos_trades": 27,
+    "reported_simple_avg_winrate": 0.8031746031746032,
+    "actual_weighted_winrate": 0.7037037037037037,
+    "verdict": "INSUFFICIENT_SAMPLE_COLLAPSE"
+  }
+}

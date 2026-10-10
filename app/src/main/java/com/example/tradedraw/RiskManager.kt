@@ -17,6 +17,12 @@ class RiskManager(context: Context? = null) {
         null
     }
 
+    init {
+        try {
+            prefs?.edit()?.remove("session_total_wins")?.remove("session_total_losses")?.apply()
+        } catch (_: Exception) {}
+    }
+
     companion object {
         const val MAX_PENDING_TRADE_TIMEOUT_SEC = 85L
         const val DEFAULT_COOLDOWN_SECONDS = 10
@@ -192,18 +198,10 @@ class RiskManager(context: Context? = null) {
     var currentWins: Int = 0
 
     @Volatile
-    var totalWins: Int = prefs?.getInt("session_total_wins", 0) ?: 0
-        set(value) {
-            field = value
-            prefs?.edit()?.putInt("session_total_wins", value)?.apply()
-        }
+    var totalWins: Int = 0
 
     @Volatile
-    var totalLosses: Int = prefs?.getInt("session_total_losses", 0) ?: 0
-        set(value) {
-            field = value
-            prefs?.edit()?.putInt("session_total_losses", value)?.apply()
-        }
+    var totalLosses: Int = 0
 
     @Volatile
     var lastTradeTime: Long = 0L
@@ -495,6 +493,7 @@ class RiskManager(context: Context? = null) {
         totalVoids += safeCount
         lastTradeTime = System.currentTimeMillis()
         clearPendingTrade()
+        OverlayService.instance?.updateHUDView()
     }
 
     @Synchronized

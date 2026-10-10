@@ -424,6 +424,15 @@ class TradeDrawHttpBridge(
                 "priceFrozen": ${ws?.isPriceFrozen() ?: false},
                 "recentPriceRangeRatio": ${ws?.recentPriceRangeRatio() ?: -1.0},
                 "rawFrames": ${rawFramesJson(ws)}
+            },
+            "engine": {
+                "signalsGenerated": ${synthetic.signalsGenerated},
+                "lastSignalTimestampMs": ${synthetic.lastSignalTimestampMs},
+                "lastSignalAction": "${escapeJson(synthetic.lastSignalAction)}",
+                "evaluatedCount": ${synthetic.evaluatedCount},
+                "suppressedByConfluence": ${synthetic.suppressedByConfluence},
+                "suppressedByChop": ${synthetic.suppressedByChop},
+                "suppressedByMicroCompression": ${synthetic.suppressedByMicroCompression}
             }
         }""".trimIndent()
     }

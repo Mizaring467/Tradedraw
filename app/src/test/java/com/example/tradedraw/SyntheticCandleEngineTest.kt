@@ -108,9 +108,9 @@ class SyntheticCandleEngineTest {
             lastSignalReason = reason
         }
 
-        // En la vela actual, ticks bajistas confirmando rechazo cerca de la resistencia en segundo 59 (:59s)
-        val sniperTime = now + 59000L
-        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 185.0, timestampMs = sniperTime - 2000L))
+        // En la vela actual, ticks bajistas confirmando rechazo cerca de la resistencia en la ventana sniper :01-:03 (segundo 2)
+        val sniperTime = now + 2000L
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 185.0, timestampMs = sniperTime - 1500L))
         engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 184.0, timestampMs = sniperTime - 1000L))
         val tickTurn = MarketTick(
             asset = "CRYPTO_IDX",
@@ -609,9 +609,9 @@ class SyntheticCandleEngineTest {
             signalReason = reason
         }
 
-        // 3. Tick en ventana sniper (:59s) confirmando rebote alcista en soporte
-        val sniperTime = now + 59000L
-        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 104.0, timestampMs = sniperTime - 2000L))
+        // 3. Tick en ventana sniper (:01-:03, segundo 2) confirmando rebote alcista en soporte
+        val sniperTime = now + 2000L
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 104.0, timestampMs = sniperTime - 1500L))
         engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 104.5, timestampMs = sniperTime - 1000L))
         val sniperTick = MarketTick(
             asset = "CRYPTO_IDX",
@@ -955,9 +955,9 @@ class SyntheticCandleEngineTest {
             signalReason = reason
         }
 
-        // 3. Tick en ventana sniper :59s confirmando rechazo
-        val sniperTime = now + 59000L
-        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 104.0, timestampMs = sniperTime - 2000L))
+        // 3. Tick en ventana sniper :01-:03 (segundo 2) confirmando rechazo
+        val sniperTime = now + 2000L
+        engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 104.0, timestampMs = sniperTime - 1500L))
         engine.onNewTick(MarketTick(asset = "CRYPTO_IDX", price = 104.5, timestampMs = sniperTime - 1000L))
         val sniperTick = MarketTick(
             asset = "CRYPTO_IDX",
@@ -970,6 +970,99 @@ class SyntheticCandleEngineTest {
 
         assertEquals("Bajo estrategia SUPPORT_RESISTANCE debe ejecutarse MT_REJECTION en soporte", TradeAction.BUY, signalEmitted)
         assertTrue("La señal debe ser MT_REJECTION", signalReason.contains("MT_REJECTION"))
+    }
+
+    @Test
+    fun testOptionD_AntiCounterTrendFilter() {
+        val engine = SyntheticCandleEngine()
+
+        // 1. Simular UPTREND
+        engine.detectedTrend = TrendDirection.UPTREND
+
+        val candleNormal = SyntheticCandle(
+            open = 100.0, high = 110.0, low = 95.0, close = 108.0,
+            openTimeMs = 1000L
+        ) // upperWick = (110 - 108) / 15 = 2/15 = 13.3%
+
+        // SELL en UPTREND sin excepción debe ser VETADO
+        assertFalse(
+            "Venta en UPTREND con mecha pequeña debe ser vetada",
+            engine.isTrendDirectionAllowed(TradeAction.SELL, "MT_REJECTION: Test", candleNormal)
+        )
+
+        // BUY en UPTREND debe estar PERMITIDO
+        assertTrue(
+            "Compra a favor de UPTREND debe estar permitida",
+            engine.isTrendDirectionAllowed(TradeAction.BUY, "MT_MOMENTUM: Test", candleNormal)
+        )
+
+        // SELL en UPTREND con patrón MT_3_VELAS_AGOT debe estar PERMITIDO por excepción cuantitativa
+        assertTrue(
+            "Venta en UPTREND permitida por Agotamiento de 3 velas",
+            engine.isTrendDirectionAllowed(TradeAction.SELL, "MT_3_VELAS_AGOT: Agotamiento", candleNormal)
+        )
+
+        // SELL en UPTREND con mecha superior >= 50% debe estar PERMITIDO por fuerte rechazo
+        val candleBigUpperWick = SyntheticCandle(
+            open = 100.0, high = 110.0, low = 98.0, close = 102.0,
+            openTimeMs = 1000L
+        ) // upperWick = (110 - 102) / 12 = 8/12 = 66.7% >= 50%
+        assertTrue(
+            "Venta en UPTREND permitida si mecha de rechazo es >= 50%",
+            engine.isTrendDirectionAllowed(TradeAction.SELL, "MT_REJECTION: Test", candleBigUpperWick)
+        )
+
+        // 2. Simular DOWNTREND
+        engine.detectedTrend = TrendDirection.DOWNTREND
+
+        // BUY en DOWNTREND sin excepción debe ser VETADO
+        assertFalse(
+            "Compra en DOWNTREND con mecha pequeña debe ser vetada",
+            engine.isTrendDirectionAllowed(TradeAction.BUY, "MT_REJECTION: Test", candleNormal)
+        )
+
+        // BUY en DOWNTREND con mecha inferior >= 50% debe estar PERMITIDO
+        val candleBigLowerWick = SyntheticCandle(
+            open = 108.0, high = 110.0, low = 98.0, close = 106.0,
+            openTimeMs = 1000L
+        ) // lowerWick = (106 - 98) / 12 = 8/12 = 66.7% >= 50%
+        assertTrue(
+            "Compra en DOWNTREND permitida si mecha inferior de soporte es >= 50%",
+            engine.isTrendDirectionAllowed(TradeAction.BUY, "MT_REJECTION: Test", candleBigLowerWick)
+        )
+    }
+
+    @Test
+    fun testOptionD_QuantitativeConfluenceMatrixScores() {
+        val engine = SyntheticCandleEngine()
+        engine.detectedTrend = TrendDirection.UPTREND
+
+        val candleWithTrend = SyntheticCandle(
+            open = 100.0, high = 110.0, low = 99.0, close = 109.0,
+            openTimeMs = 1000L
+        ) // body = 9, range = 11, bodyRatio = 0.81, upperWick = 1/11 = 9% <= 18%
+
+        val tickImpulse = MarketTick(
+            asset = "CRYPTO_IDX", price = 109.5, timestampMs = 59000L,
+            velocity = 0.05f, isBullishImpulse = true
+        )
+
+        // Señal a favor de tendencia (Trend: +35, Headroom: +25, Body: +25, Tick: +15 = 100 pts)
+        val score = engine.calculateConfluenceScore(TradeAction.BUY, "MT_MOMENTUM: Test", tickImpulse, candleWithTrend)
+        assertTrue("Confluencia a favor de tendencia debe ser >= 80 pts (obtenido: $score)", score >= 80)
+
+        // Verificar que dispatchSniperSignal despacha la señal con score enriquecido
+        var dispatchedAction: TradeAction? = null
+        var dispatchedReason = ""
+        engine.onSignalGenerated = { action, reason ->
+            dispatchedAction = action
+            dispatchedReason = reason
+        }
+
+        val accepted = engine.dispatchSniperSignal(TradeAction.BUY, "MT_MOMENTUM: Test", tickImpulse, candleWithTrend)
+        assertTrue("dispatchSniperSignal debe retornar true", accepted)
+        assertEquals(TradeAction.BUY, dispatchedAction)
+        assertTrue("Razón debe contener etiqueta de confluencia", dispatchedReason.contains("[Confluencia:"))
     }
 }
 
