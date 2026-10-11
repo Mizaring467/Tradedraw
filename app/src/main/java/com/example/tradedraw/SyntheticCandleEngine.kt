@@ -888,6 +888,23 @@ class SyntheticCandleEngine {
             return false
         }
 
+        // R2 (Ronda 4): anti-contra-tendencia estricto. Operar contra un flujo direccional
+        // confirmado degrada el WR (UPTREND+SELL y DOWNTREND+BUY son los peores buckets).
+        // Se permite la contra-tendencia SOLO si el setup es de reversión explícita en un
+        // extremo (razón con REJECTION/BOUNCE/AGOT/REVERSAL/FALSE_BREAKOUT/ENGULFING/RANGE/Clímax).
+        val isReversalSetup = reason.contains("REJECTION") || reason.contains("BOUNCE") ||
+                reason.contains("AGOT") || reason.contains("REVERSAL") ||
+                reason.contains("FALSE_BREAKOUT") || reason.contains("ENGULFING") ||
+                reason.contains("RANGE") || reason.contains("Clímax")
+        val isCounterTrend =
+            (action == TradeAction.BUY && detectedTrend == TrendDirection.DOWNTREND) ||
+            (action == TradeAction.SELL && detectedTrend == TrendDirection.UPTREND)
+        if (isCounterTrend && !isReversalSetup) {
+            suppressedByConfluence++
+            Log.d(TAG, "⛔ R2 veto contra-tendencia: $action contra $detectedTrend sin setup de reversión ($reason)")
+            return false
+        }
+
         // 2. Matriz Cuantitativa de Confluencia
         val score = calculateConfluenceScore(action, reason, tick, prev)
         val isYolo = (subMode == AutonomousSubMode.YOLO)
@@ -897,6 +914,18 @@ class SyntheticCandleEngine {
             suppressedByConfluence++
             Log.d(TAG, "⚠️ Señal $action suprimida por confluencia insuficiente: $score pts < $requiredScore pts mín ($reason)")
             return false
+        }
+
+        // R3 (Ronda 4): los toques DIRECTOS a extremos (dist<=0.15) en continuación sufren
+        // falsos rompimientos (WR bajo). Se exige zona media (0.16-0.35) para momentum/continuación.
+        if (!isReversalSetup) {
+            val stuckAtEdge = if (action == TradeAction.BUY) distanceToResistanceRatio <= 0.15f
+                              else distanceToSupportRatio <= 0.15f
+            if (stuckAtEdge) {
+                suppressedByConfluence++
+                Log.d(TAG, "⛔ R3 veto extremo pegado: $action con obstáculo a ${(if (action == TradeAction.BUY) distanceToResistanceRatio else distanceToSupportRatio) * 100}% ($reason)")
+                return false
+            }
         }
 
         val enrichedReason = "$reason [Confluencia: ${score}pts]"

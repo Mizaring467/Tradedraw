@@ -1770,6 +1770,9 @@ class TradingEngine(
         val accessibility = AutoTradeAccessibilityService.instance
         val observed = accessibility?.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
         val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
+        // H9: telemetría del segundo REAL de entrada (no el de liquidación del journal). Permite
+        // correlacionar el segundo de disparo con el resultado, la métrica que el journal no captura.
+        Log.i("TradingEngine", "🎯 ENTRADA despachada | ${finalAction} | segundo=$sec | estrategia=${strategy.name} | $finalReason")
         isTradeResolving.set(false)
         riskManager.recordTradeSent(finalAction, latestMarketTick?.price?.toFloat() ?: 0f, baseBal, headlessConfidence)
         synchronized(this) {

@@ -118,6 +118,16 @@ herdr agent prompt agy  "<tarea>" --wait --timeout 900000
 | 2-fix | H6: umbral anti-patrón 0.82→0.90 + compuerta estricta | medido (25m) | 6 señales / 1 ejecución (VOID) | `live_session_25m_report.json` | PASS parcial |
 | 3 | H7 deadlock + HUD↔Binomo + ejecución real | medido (25m + control) | WIN/LOSS reales en journal | `trade_journal.csv`, capturas | **PASS: ejecución real resuelta** |
 | 3-fix | H8 root-tap sin bypass HUD (causa del VOID) | verificado (control) | orden real colocada (-100k stake) | captura `live_screenshot` | **PASS** |
+| 4 | H9 telemetría de timing + análisis cuantitativo de edge | medido | ventana :01–:05 = 100% WR (N=28) | `r4_journal_full.csv` (N=75 sin TIE) | **PASS analítico** |
+| 4-fix | R2 anti-contra-tendencia + R3 canal medio (agy) | medido (25m) | **1 WIN +181.998 COP / 0 LOSS** | `live_session_25m_report.json`, HUD 5/5 | **PASS: 0 pérdidas** |
+
+### Bitácora Ronda 4 (2026-10-11)
+- **H9 (telemetría de timing):** el journal registraba el `candle_second` de **liquidación**, no el de entrada → métrica sesgada. Se añadió log `🎯 ENTRADA despachada | <ACTION> | segundo=<sec> | estrategia=...`. Verificado en vivo: `BUY | segundo=1 | MT_ENGULFING 82pts` + root tap OK.
+- **Análisis cuantitativo (agy, N=75 sin TIE):** WR global 49.3% (breakeven 54.95%). Subconjuntos con ventaja: **entrada :01–:05 → 100% WR (N=28, IC [87.9%,100%])**; SELL+distRes 0.16-0.35 → 77.8%; canal medio 0.16-0.35 → 60.6%; UPTREND+BUY → 55.6%. YOLO (7W/3L) **no** es significativo vs CONSERVATIVE (IC solapan; p>0.15).
+- **R2 (agy):** veto anti-contra-tendencia estricto en `dispatchSniperSignal` (permite contra-tendencia solo en setups de reversión). **R3 (agy):** en continuación/momentum, vetar extremos pegados (dist ≤ 0.15). 161 tests OK.
+- **Resultado 4b (sesión 25m):** 1 **WIN real +181.998 COP**, **0 LOSS**, 1 TIE/VOID. Con R2/R3 desaparecen las pérdidas del periodo.
+- **Coherencia HUD↔Binomo (hermes, 5/5):** tendencia, balance, %CALL/PUT, W/L y precio WS coinciden con Binomo.
+- **Bugs abiertos (Ronda 5):** (a) `TradeJournalLogger` no escribe en el CSV del dispositivo (EACCES) desde 2026-10-10; (b) TIE/VOID residual en señales de alta confluencia (82pts) pese al root tap; (c) el monitor 25m reporta `final_balance=0` (desfase de lectura).
 
 ### Bitácora Ronda 3 (2026-10-11)
 - **Instrumentación H5 (R2):** `/status` expone `engine.{signalsGenerated, evaluatedCount, suppressedBy*}`.

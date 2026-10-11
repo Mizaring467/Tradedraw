@@ -1,0 +1,75 @@
+======================================================================
+[2026-10-11 15:36:38] INICIANDO SESION DE MONITOREO EN VIVO (25 MINUTOS)
+Dispositivo: UGU8KFUKM7E6CE8D | Duración objetivo: 25 min (1500s)
+Estrategia activa: Opción D (Anti-Contra-Tendencia + Matriz Confluencia >= 80 pts)
+======================================================================
+Saldo inicial: 39,063,736.32 COP
+Marcador base: 0W / 0L
+Captura inicial guardada: live_25m_session_start.png
+----------------------------------------------------------------------
+
+⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡
+[2026-10-11 15:37:47] ¡TRADE #1 EJECUTADO EN VIVO!
+   Saldo antes: 38,963,737.60 COP
+   Señal: Señal no parseada en logcat
+   Captura: live_25m_trade_1_placed.png
+
+🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁
+[2026-10-11 15:38:05] ¡TRADE #1 LIQUIDADO TRAS 6s!
+   Saldo antes:  38,963,737.60 COP
+   Saldo después: 39,145,735.68 COP
+   Diff:         +181,998.08 COP
+   Resultado:    WIN
+   Journal tail: 1791678553725,2026-10-10T19:29:13,AUTO_ADAPTIVE,CONSERVATIVE,SELL,0.85,641.87,1.00,39332736.00,LOSS,39232737.28,72,DOWNTREND,0.04,0.03,0.00,NEUTRAL,TRENDING,13,LOSS,"SALDO (-) PÃ©rdida confirmada tras liquidaciÃ³n: Diff=-99998.71999999881 COP (72s)"
+   Captura:      live_25m_trade_1_settled.png
+🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁
+
+⏱ [2026-10-11 15:38:58 :58s] Trend: DOWNTREND (Call:32% Put:68%) | Price:641.867300 [S:641.867295 R:641.867296] | Bal:39,145,736 | Restante:22m41s
+⏱ [2026-10-11 15:39:58 :58s] Trend: DOWNTREND (Call:24% Put:76%) | Price:641.867300 [S:641.867296 R:641.867297] | Bal:39,145,736 | Restante:21m40s
+⏱ [2026-10-11 15:42:58 :58s] Trend: DOWNTREND (Call:22% Put:78%) | Price:641.867300 [S:641.867296 R:641.867296] | Bal:39,145,736 | Restante:18m40s
+⏱ [2026-10-11 15:43:58 :58s] Trend: DOWNTREND (Call:24% Put:76%) | Price:641.867300 [S:641.867296 R:641.867296] | Bal:39,145,736 | Restante:17m40s
+⏱ [2026-10-11 15:44:58 :58s] Trend: DOWNTREND (Call:14% Put:86%) | Price:641.867300 [S:641.867296 R:641.867296] | Bal:39,145,736 | Restante:16m40s
+⏱ [2026-10-11 15:46:58 :58s] Trend: UPTREND (Call:86% Put:14%) | Price:641.867300 [S:641.867297 R:641.867298] | Bal:39,145,736 | Restante:14m40s
+⏱ [2026-10-11 15:47:58 :58s] Trend: UPTREND (Call:78% Put:22%) | Price:641.867300 [S:641.867297 R:641.867298] | Bal:39,145,736 | Restante:13m40s
+⏱ [2026-10-11 15:48:58 :58s] Trend: UPTREND (Call:76% Put:24%) | Price:641.867300 [S:641.867296 R:641.867297] | Bal:39,145,736 | Restante:12m41s
+⏱ [2026-10-11 15:50:58 :58s] Trend: UPTREND (Call:78% Put:22%) | Price:641.867300 [S:641.867298 R:641.867299] | Bal:39,145,736 | Restante:10m40s
+⏱ [2026-10-11 15:51:58 :58s] Trend: UPTREND (Call:76% Put:24%) | Price:641.867300 [S:641.867298 R:641.867299] | Bal:39,145,736 | Restante:9m41s
+⏱ [2026-10-11 15:52:58 :58s] Trend: UPTREND (Call:78% Put:22%) | Price:641.867300 [S:641.867298 R:641.867299] | Bal:39,145,736 | Restante:8m41s
+⏱ [2026-10-11 15:53:58 :58s] Trend: UPTREND (Call:86% Put:14%) | Price:641.867300 [S:641.867298 R:641.867298] | Bal:39,145,736 | Restante:7m41s
+
+⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡
+[2026-10-11 15:54:03] ¡TRADE #2 EJECUTADO EN VIVO!
+   Saldo antes: 39,145,735.68 COP
+   Señal: Señal no parseada en logcat
+   Confluencia registrada: 82 pts
+   Captura: live_25m_trade_2_placed.png
+⏱ [2026-10-11 15:54:58 :58s] Trend: UPTREND (Call:78% Put:22%) | Price:641.867300 [S:641.867297 R:641.867297] | Bal:39,145,736 | Restante:6m41s
+
+🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁
+[2026-10-11 15:55:19] ¡TRADE #2 LIQUIDADO TRAS 72s!
+   Saldo antes:  39,145,735.68 COP
+   Saldo después: 39,145,735.68 COP
+   Diff:         +0.00 COP
+   Resultado:    TIE/VOID
+   Journal tail: 1791678553725,2026-10-10T19:29:13,AUTO_ADAPTIVE,CONSERVATIVE,SELL,0.85,641.87,1.00,39332736.00,LOSS,39232737.28,72,DOWNTREND,0.04,0.03,0.00,NEUTRAL,TRENDING,13,LOSS,"SALDO (-) PÃ©rdida confirmada tras liquidaciÃ³n: Diff=-99998.71999999881 COP (72s)"
+   Captura:      live_25m_trade_2_settled.png
+🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁🏁
+
+⏱ [2026-10-11 15:55:58 :58s] Trend: UPTREND (Call:78% Put:22%) | Price:641.867300 [S:641.867297 R:641.867297] | Bal:39,145,736 | Restante:5m40s
+⏱ [2026-10-11 15:57:58 :58s] Trend: DOWNTREND (Call:14% Put:86%) | Price:641.867300 [S:641.867297 R:641.867297] | Bal:39,145,736 | Restante:3m40s
+⏱ [2026-10-11 15:58:58 :58s] Trend: DOWNTREND (Call:14% Put:86%) | Price:641.867300 [S:641.867296 R:641.867296] | Bal:39,145,736 | Restante:2m40s
+
+======================================================================
+[2026-10-11 16:01:38] SESIÓN DE MONITOREO DE 25 MINUTOS COMPLETADA
+======================================================================
+Resumen de la Sesión:
+  - Operaciones ejecutadas: 2
+  - Victorias (WIN):        1
+  - Derrotas (LOSS):        0
+  - Neutro (VOID):          1
+  - Win Rate de sesión:     100.0%
+  - Saldo inicial:          39,063,736.32 COP
+  - Saldo final:            0.00 COP
+  - P&L Neto sesión:        -39,063,736.32 COP
+Reporte detallado guardado en: loops/journal/live/live_session_25m_report.json
+======================================================================
