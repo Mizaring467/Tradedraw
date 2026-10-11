@@ -166,8 +166,12 @@ class TradeDrawHttpBridge(
                     }
                     "/reset_stats" -> {
                         overlayService.riskManager.resetStats()
+                        // Ronda 3: limpiar también el estado adaptativo persistido (firmas de
+                        // anti-patrón y rachas). Sin esto, sesiones previas dejan bloqueado el
+                        // motor por "continuación con pérdidas previas" aunque las stats se reseteen.
+                        overlayService.tradingEngine.adaptiveLearningEngine.reset(overlayService)
                         overlayService.updateHUDView()
-                        sendJsonResponse(output, 200, """{"success":true,"message":"Estadísticas reseteadas"}""")
+                        sendJsonResponse(output, 200, """{"success":true,"message":"Estadísticas y aprendizaje reseteados"}""")
                     }
                     "/resume" -> {
                         overlayService.riskManager.resetStreakOnly()

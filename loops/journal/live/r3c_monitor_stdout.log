@@ -1,0 +1,46 @@
+======================================================================
+[2026-10-11 00:24:41] INICIANDO SESION DE MONITOREO EN VIVO (25 MINUTOS)
+Dispositivo: UGU8KFUKM7E6CE8D | Duración objetivo: 25 min (1500s)
+Estrategia activa: Opción D (Anti-Contra-Tendencia + Matriz Confluencia >= 80 pts)
+======================================================================
+Saldo inicial: 39,298,736.64 COP
+Marcador base: 0W / 0L
+Captura inicial guardada: live_25m_session_start.png
+----------------------------------------------------------------------
+⏱ [2026-10-11 00:25:58 :58s] Trend: DOWNTREND (Call:22% Put:78%) | Price:641.867300 [S:641.867297 R:641.867297] | Bal:39,298,737 | Restante:23m42s
+⏱ [2026-10-11 00:26:58 :58s] Trend: DOWNTREND (Call:14% Put:86%) | Price:641.867300 [S:641.867296 R:641.867296] | Bal:39,298,737 | Restante:22m42s
+⏱ [2026-10-11 00:27:58 :58s] Trend: DOWNTREND (Call:14% Put:86%) | Price:641.867300 [S:641.867296 R:641.867296] | Bal:39,298,737 | Restante:21m42s
+⏱ [2026-10-11 00:28:58 :58s] Trend: DOWNTREND (Call:14% Put:86%) | Price:641.867300 [S:641.867295 R:641.867296] | Bal:39,298,737 | Restante:20m43s
+⏱ [2026-10-11 00:29:58 :58s] Trend: DOWNTREND (Call:24% Put:76%) | Price:641.867300 [S:641.867293 R:641.867295] | Bal:39,298,737 | Restante:19m42s
+⏱ [2026-10-11 00:30:58 :58s] Trend: DOWNTREND (Call:14% Put:86%) | Price:641.867300 [S:641.867293 R:641.867294] | Bal:39,298,737 | Restante:18m42s
+⏱ [2026-10-11 00:31:58 :58s] Trend: DOWNTREND (Call:24% Put:76%) | Price:641.867300 [S:641.867292 R:641.867294] | Bal:39,298,737 | Restante:17m43s
+⏱ [2026-10-11 00:32:58 :58s] Trend: DOWNTREND (Call:22% Put:78%) | Price:641.867300 [S:641.867292 R:641.867293] | Bal:39,298,737 | Restante:16m42s
+⏱ [2026-10-11 00:33:58 :58s] Trend: DOWNTREND (Call:24% Put:76%) | Price:641.867300 [S:641.867293 R:641.867294] | Bal:39,298,737 | Restante:15m42s
+⏱ [2026-10-11 00:35:58 :58s] Trend: DOWNTREND (Call:14% Put:86%) | Price:641.867300 [S:641.867293 R:641.867294] | Bal:39,298,737 | Restante:13m42s
+⏱ [2026-10-11 00:36:58 :58s] Trend: DOWNTREND (Call:14% Put:86%) | Price:641.867300 [S:641.867294 R:641.867294] | Bal:39,298,737 | Restante:12m42s
+⏱ [2026-10-11 00:37:58 :58s] Trend: DOWNTREND (Call:22% Put:78%) | Price:641.867300 [S:641.867294 R:641.867294] | Bal:39,298,737 | Restante:11m43s
+⏱ [2026-10-11 00:38:58 :58s] Trend: UPTREND (Call:86% Put:14%) | Price:641.867300 [S:641.867294 R:641.867294] | Bal:39,298,737 | Restante:10m42s
+⏱ [2026-10-11 00:39:58 :58s] Trend: UPTREND (Call:86% Put:14%) | Price:641.867300 [S:641.867293 R:641.867294] | Bal:39,298,737 | Restante:9m42s
+⏱ [2026-10-11 00:40:58 :58s] Trend: UPTREND (Call:86% Put:14%) | Price:641.867300 [S:641.867294 R:641.867294] | Bal:39,298,737 | Restante:8m42s
+⏱ [2026-10-11 00:41:58 :58s] Trend: UPTREND (Call:78% Put:22%) | Price:641.867300 [S:641.867294 R:641.867294] | Bal:39,298,737 | Restante:7m42s
+⏱ [2026-10-11 00:42:58 :58s] Trend: UPTREND (Call:86% Put:14%) | Price:641.867300 [S:641.867294 R:641.867294] | Bal:39,298,737 | Restante:6m43s
+⏱ [2026-10-11 00:43:58 :58s] Trend: SIDEWAYS (Call:62% Put:38%) | Price:641.867300 [S:641.867294 R:641.867294] | Bal:39,298,737 | Restante:5m42s
+⏱ [2026-10-11 00:44:58 :58s] Trend: SIDEWAYS (Call:38% Put:62%) | Price:641.867300 [S:641.867294 R:641.867294] | Bal:39,298,737 | Restante:4m42s
+⏱ [2026-10-11 00:45:58 :58s] Trend: UPTREND (Call:78% Put:22%) | Price:641.867300 [S:641.867294 R:641.867294] | Bal:39,298,737 | Restante:3m43s
+⏱ [2026-10-11 00:46:58 :58s] Trend: SIDEWAYS (Call:38% Put:62%) | Price:641.867300 [S:641.867294 R:641.867294] | Bal:39,298,737 | Restante:2m42s
+⏱ [2026-10-11 00:47:58 :58s] Trend: SIDEWAYS (Call:62% Put:38%) | Price:641.867300 [S:641.867294 R:641.867294] | Bal:39,298,737 | Restante:1m42s
+⏱ [2026-10-11 00:48:58 :58s] Trend: UPTREND (Call:68% Put:32%) | Price:641.867300 [S:641.867294 R:641.867295] | Bal:39,298,737 | Restante:0m42s
+
+======================================================================
+[2026-10-11 00:49:41] SESIÓN DE MONITOREO DE 25 MINUTOS COMPLETADA
+======================================================================
+Resumen de la Sesión:
+  - Operaciones ejecutadas: 0
+  - Victorias (WIN):        0
+  - Derrotas (LOSS):        0
+  - Neutro (VOID):          0
+  - Saldo inicial:          39,298,736.64 COP
+  - Saldo final:            39,298,736.64 COP
+  - P&L Neto sesión:        +0.00 COP
+Reporte detallado guardado en: loops/journal/live/live_session_25m_report.json
+======================================================================

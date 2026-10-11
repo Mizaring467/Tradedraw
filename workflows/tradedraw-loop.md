@@ -115,15 +115,18 @@ herdr agent prompt agy  "<tarea>" --wait --timeout 900000
 | 1 | H1+H2+H3 | medido (25m) | 0 trades (N=0) | `live_session_25m_report.json` | FAIL: sobre-veto |
 | 1-fix | chop selectivo + TFI preservado + ventana :01–:05 | medido (25m) | **100% (N=1, WIN)** +83.000 COP | `live_session_25m_report.json` | **PASS funcional** |
 | 2 | Telemetría H5 + activos + causa de 0 ejecuciones | medido (25m) | 8 señales / **0 ejecuciones** | `r2_engine_samples.jsonl`, logcat | FAIL: veto por anti-patrón (similitud laxa) |
-| 2-fix | H6: umbral anti-patrón 0.82→0.90 + compuerta estricta de contexto | medido (25m) | 6 señales / **1 ejecución (VOID)** | `live_session_25m_report.json` | PASS parcial: ya ejecuta; orden VOID |
+| 2-fix | H6: umbral anti-patrón 0.82→0.90 + compuerta estricta | medido (25m) | 6 señales / 1 ejecución (VOID) | `live_session_25m_report.json` | PASS parcial |
+| 3 | H7 deadlock + HUD↔Binomo + ejecución real | medido (25m + control) | WIN/LOSS reales en journal | `trade_journal.csv`, capturas | **PASS: ejecución real resuelta** |
+| 3-fix | H8 root-tap sin bypass HUD (causa del VOID) | verificado (control) | orden real colocada (-100k stake) | captura `live_screenshot` | **PASS** |
 
-### Bitácora Ronda 2 (2026-10-09)
-- **Instrumentación H5:** `/status` expone `engine.{signalsGenerated, evaluatedCount, suppressedByConfluence, suppressedByChop, suppressedByMicroCompression}`.
-- **Hallazgo de activo (agy):** `Z-CRY/IDX` es el único RIC 24/7 y su feed oscila ~4e-10 (near-static/mean-reverting). Forex (EUR/GBP, USD/CHF) sí es real pero solo días hábiles. Breakeven con payout 82% = 54.95%.
-- **Causa raíz de 0 ejecuciones (R2):** `AdaptiveLearningEngine` vetaba con similitud ≥ 0.82 sobre firmas de contexto flojo (acción+tendencia+S/R+régimen ≈ 0.82 por defecto en feed plano). 8 señales → 0 ejecuciones.
-- **Fix H6:** umbral 0.90 + `isTightlyMatchingContext` (misma acción/tendencia/régimen y S/R ±0.10). Auditoría agy: **PASS**.
-- **Resultado R2-fix:** 6 señales, 1 ejecución real (BUY @ 641.87, 69s) pero `TIE/VOID` → **la orden no fue procesada por Binomo** (saldo inalterado). Pendiente: accionamiento/calibración/timing del gesto.
-- **Frecuencia aún baja:** ~1 trade/25 min; N insuficiente para validar edge (skill exige N≥30, Wilson LCL>55%).
+### Bitácora Ronda 3 (2026-10-11)
+- **Instrumentación H5 (R2):** `/status` expone `engine.{signalsGenerated, evaluatedCount, suppressedBy*}`.
+- **H6 (R2-fix):** umbral anti-patrón 0.82→0.90 + `isTightlyMatchingContext`. Auditoría agy: PASS.
+- **H7 (R3):** deadlock del veto "continuación con ≥2 pérdidas contra S/R extremo". En `Z-CRY/IDX` los ratios S/R son ambos ~0 (feed plano) → toda orden parecía "pegada al extremo" → bloqueo perpetuo (las señales vetadas nunca generaban el WIN que baja la racha). Fix: exigir `hasMeaningfulChannel` (distSup+distRes ≥ 0.35). Auditoría agy: PASS.
+- **H8 (R3-fix, causa del VOID):** el root tap (`su -c input tap`) NO hacía bypass del HUD; el HUD flotante cubre los botones de Binomo, así que el tap aterrizaba en el overlay y la orden no se registraba. Fix: `performClick` root ahora llama `temporarilyBypassHUD` como la ruta de accesibilidad. **Verificado en control: la orden se coloca (balance −100.000 stake + marcador en gráfico).**
+- **Coherencia HUD↔Binomo (objetivo del usuario):** el HUD ahora deriva tendencia/patrón/probabilidad/plan SOLO del motor WebSocket (no de visión stale). Verificado: HUD `BAJISTA / 14% CALL / 86% PUT` = `/status` `DOWNTREND / callPower 14 / putPower 86` = Binomo. Plan ya no muestra `:58s` sino `ventana :01s - :05s`.
+- **Ejecución real confirmada:** journal del dispositivo con WIN +82.001 COP y LOSS −100.000/72s tras el root tap.
+- **Pendiente:** subir frecuencia (feed plano genera ~1–4 señales/25 min) y acumular N≥30 para validar edge (Wilson LCL>55%).
 
 ### Bitácora Ronda 1-fix (2026-10-09)
 - **Implementador:** agy (antigravity cli) · **Auditor:** agy · **Tester:** hermes.

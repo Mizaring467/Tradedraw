@@ -1,0 +1,7 @@
+﻿adb.exe : cat: /sdcard/h.xml: No such file or directory
+En línea: 1 Carácter: 400
++ ... ct-Object -Last 1; & adb -s $S shell "cat /sdcard/h.xml" 2>&1 | Out-F ...
++                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (cat: /sdcard/h....le or directory:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

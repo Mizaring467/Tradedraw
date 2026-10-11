@@ -1,0 +1,59 @@
+{
+            "app": "TradeDraw",
+            "mode": "AUTONOMOUS",
+            "strategy": "AUTO_ADAPTIVE",
+            "accessibilityActive": false,
+            "balance": 0.0,
+            "analysis": {
+                "currentPriceY": 641.8673,
+                "dynamicResistanceY": 0.0,
+                "dynamicSupportY": 0.0,
+                "dynamicResistancePrice": 641.867293515,
+                "dynamicSupportPrice": 641.867293455,
+                "callPower": 14,
+                "putPower": 86,
+                "isMarketSideways": false,
+                "trend": "DOWNTREND",
+                "candleCount": 34,
+                "streak": "TREND 🔴"
+            },
+            "risk": {
+                "totalWins": 0,
+                "totalLosses": 0,
+                "winRate": 0.0,
+                "currentLossStreak": 0,
+                "martingaleStatus": "[M0 | $1.0]",
+                "investmentAmount": 1.0,
+                "hasPendingTrade": true,
+                "remainingCooldown": 0
+            },
+            "activeSignal": null,
+            "feed": {
+                "source": "websocket",
+                "lastTickAgeMs": 285,
+                "activeAsset": "Z-CRY/IDX",
+                "ws_active_asset": "Z-CRY/IDX",
+                "connected": true,
+                "isFresh": true,
+                "tickSource": "socket",
+                "rawSocketMessages": 5025,
+                "socketTicks": 5024,
+                "journalWrites": 0,
+                "lastJournalWriteMs": -1,
+                "journalError": "FileNotFoundException: /storage/emulated/0/Android/data/com.example.tradedraw/files/TradeDraw_Audits/trade_journal.csv: open failed: EACCES (Permission denied)",
+                "journalDuplicatesRejected": 0,
+                "journalRotations": 0,
+                "priceFrozen": false,
+                "recentPriceRangeRatio": 2.181136175966295E-10,
+                "rawFrames": ["{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-11T06:35:54.500060Z\",\"provider_time\":\"2026-10-11T06:35:54.498000Z\",\"rate\":641.86729347,\"created_at_with_millis\":\"2026-10-11T06:35:54.499000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.86729348,\"created_at\":\"2026-10-11T06:35:55.000000Z\",\"bid\":641.86729346,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}","{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-11T06:35:54.899883Z\",\"provider_time\":\"2026-10-11T06:35:54.898000Z\",\"rate\":641.867293485,\"created_at_with_millis\":\"2026-10-11T06:35:54.899000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.8672935,\"created_at\":\"2026-10-11T06:35:55.000000Z\",\"bid\":641.86729347,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}","{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-11T06:35:55.300971Z\",\"provider_time\":\"2026-10-11T06:35:55.299000Z\",\"rate\":641.867293465,\"created_at_with_millis\":\"2026-10-11T06:35:55.300000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.86729347,\"created_at\":\"2026-10-11T06:35:56.000000Z\",\"bid\":641.86729346,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}"]
+            },
+            "engine": {
+                "signalsGenerated": 3,
+                "lastSignalTimestampMs": 1791700505828,
+                "lastSignalAction": "SELL",
+                "evaluatedCount": 429,
+                "suppressedByConfluence": 13,
+                "suppressedByChop": 0,
+                "suppressedByMicroCompression": 0
+            }
+        }

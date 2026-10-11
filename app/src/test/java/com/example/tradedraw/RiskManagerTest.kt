@@ -57,6 +57,34 @@ class RiskManagerTest {
         assertEquals("El timestamp del pendiente debe resetearse", 0L, riskManager.pendingTradeStartTime)
     }
 
+    /**
+     * Regresion: el HUD decia "Operativa reanudada" pero el bot seguia bloqueado por el Trailing Profit Lock,
+     * porque resetStreakOnly() no reiniciaba la linea base de sesion (sessionStart/Peak). Obligaba a
+     * cerrar y reabrir la app.
+     */
+    @Test
+    fun testResetStreakOnly_liftsTrailingProfitLock() {
+        riskManager.minPeakProfitToLock = 80_000.0
+        val sub = AutonomousSubMode.CONSERVATIVE
+
+        AutoTradeAccessibilityService.latestObservedBalance = 39_422_735.0 // fija sessionStart
+        assertTrue("Debe operar al inicio de la sesion", riskManager.canExecuteTrade(sub).first)
+
+        AutoTradeAccessibilityService.latestObservedBalance = 39_504_736.0 // pico +82,001
+        riskManager.canExecuteTrade(sub)
+
+        AutoTradeAccessibilityService.latestObservedBalance = 39_404_736.0 // devuelve > 40% del pico
+        val (blocked, reason) = riskManager.canExecuteTrade(sub)
+        assertFalse("El Trailing Lock debe bloquear tras devolver el pico", blocked)
+        assertTrue("La razon debe nombrar el Trailing Lock", reason.contains("Trailing"))
+
+        riskManager.resetStreakOnly()
+
+        val (resumed, reasonAfter) = riskManager.canExecuteTrade(sub)
+        assertTrue("Tras reanudar debe poder operar: $reasonAfter", resumed)
+        assertFalse("El flag del lock debe limpiarse", riskManager.trailingProfitLockTriggered)
+    }
+
     @Test
     fun testTradePendingBlocksDuplicateExecution() {
         riskManager.recordTradeSent(TradeAction.BUY, entryPriceY = 250f, baseBalance = 50000.0)

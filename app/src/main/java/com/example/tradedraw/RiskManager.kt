@@ -317,8 +317,11 @@ class RiskManager(context: Context? = null) {
                         val allowedRetracement = peakProfit * trailingProfitRetracementRatio
                         val trailingFloor = sessionPeakBalance - allowedRetracement
                         if (currentBal < trailingFloor) {
+                            // Loguear solo en la transicion: canExecuteTrade se consulta desde el HUD cada ~400ms
+                            if (!trailingProfitLockTriggered) {
+                                android.util.Log.w("RiskManager", "TRAILING PROFIT LOCK: Beneficio asegurado. Pico: +${peakProfit.toInt()} COP, Suelo: $trailingFloor")
+                            }
                             trailingProfitLockTriggered = true
-                            android.util.Log.w("RiskManager", "TRAILING PROFIT LOCK: Beneficio asegurado. Pico: +${peakProfit.toInt()} COP, Suelo: $trailingFloor")
                             return Pair(false, "Trailing Profit Lock: Ganancia asegurada (+${peakProfit.toInt()} COP pico)")
                         }
                     }
@@ -451,6 +454,13 @@ class RiskManager(context: Context? = null) {
         currentLossStreak = 0
         currentWins = 0
         lastTradeTime = 0L
+        consecutiveVoids = 0
+        // Reanudar = nueva linea base de sesion. Sin esto, el Trailing Profit Lock y el Stop Loss de
+        // sesion (calculados contra sessionStart/Peak) seguian bloqueando aunque la UI dijera "reanudada".
+        val bal = AutoTradeAccessibilityService.latestObservedBalance
+        sessionStartBalance = if (bal > 0.0) bal else 0.0
+        sessionPeakBalance = sessionStartBalance
+        trailingProfitLockTriggered = false
         clearPendingTrade()
     }
 
@@ -687,6 +697,11 @@ class RiskManager(context: Context? = null) {
         totalVoids = 0
         consecutiveVoids = 0
         lastTradeTime = 0L
+        // Misma linea base que resetStreakOnly(): sin esto el Trailing Lock sobrevive al reinicio
+        val bal = AutoTradeAccessibilityService.latestObservedBalance
+        sessionStartBalance = if (bal > 0.0) bal else 0.0
+        sessionPeakBalance = sessionStartBalance
+        trailingProfitLockTriggered = false
         clearPendingTrade()
     }
 }

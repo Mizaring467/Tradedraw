@@ -1404,7 +1404,7 @@ class OverlayService : Service() {
             v.alpha = hudAlpha
 
             val isAccessConnected = AutoTradeAccessibilityService.instance != null || AutoTradeAccessibilityService.isAccessibilityPermissionGranted(this)
-            val (canTradeStatus, _) = riskManager.canExecuteTrade(tradingEngine.autonomousSubMode)
+            val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(tradingEngine.autonomousSubMode)
 
             when (tradingEngine.mode) {
                 AutoTradeMode.AUTONOMOUS -> {
@@ -1425,8 +1425,19 @@ class OverlayService : Service() {
                             txtMode.text = "[PAUSA TP]"
                             txtMode.setTextColor(Color.parseColor("#facc15"))
                         } else {
-                            txtMode.text = "[COOLDOWN]"
-                            txtMode.setTextColor(Color.parseColor("#fb923c"))
+                            // El motivo real viene de RiskManager: antes todo bloqueo no-SL/TP se rotulaba "COOLDOWN"
+                            val (label, color) = when {
+                                blockReason.contains("Trailing", ignoreCase = true) -> "[PAUSA TRAILING]" to "#facc15"
+                                blockReason.contains("Sesion", ignoreCase = true) || blockReason.contains("Sesión", ignoreCase = true) -> "[PAUSA SL SESIÓN]" to "#f87171"
+                                blockReason.contains("Equity", ignoreCase = true) -> "[STOP EQUITY]" to "#ef4444"
+                                blockReason.contains("VOID", ignoreCase = true) -> "[PAUSA VOID]" to "#f97316"
+                                blockReason.contains("Tilt", ignoreCase = true) -> "[ANTI-TILT]" to "#f97316"
+                                blockReason.contains("Saldo", ignoreCase = true) || blockReason.contains("Cantidad", ignoreCase = true) -> "[SALDO]" to "#ef4444"
+                                blockReason.contains("Martingala M1", ignoreCase = true) -> "[ESPERA SETUP A+]" to "#38bdf8"
+                                else -> "[COOLDOWN]" to "#fb923c"
+                            }
+                            txtMode.text = label
+                            txtMode.setTextColor(Color.parseColor(color))
                         }
                     } else {
                         if (tradingEngine.autonomousSubMode == AutonomousSubMode.SNIPER) {
@@ -1481,8 +1492,14 @@ class OverlayService : Service() {
                     } else {
                         riskManager.resetStreakOnly()
                     }
-                    updateHUDView()
-                    Toast.makeText(this@OverlayService, "▶️ Operativa reanudada (Límites reseteados)", Toast.LENGTH_SHORT).show()
+                    updateHUDView(force = true)
+                    // Verificar el resultado real en vez de anunciar "reanudada" a ciegas
+                    val (okNow, reasonNow) = riskManager.canExecuteTrade(tradingEngine.autonomousSubMode)
+                    Toast.makeText(
+                        this@OverlayService,
+                        if (okNow) "▶️ Operativa reanudada (Límites reseteados)" else "⛔ Sigue bloqueado: $reasonNow",
+                        Toast.LENGTH_LONG
+                    ).show()
                 } else if (tradingEngine.mode == AutoTradeMode.DISABLED && tradingEngine.autonomousSubMode == AutonomousSubMode.SNIPER && tradingEngine.sniperShutdownReason != null) {
                     riskManager.resetSniperSession()
                     tradingEngine.sniperShutdownReason = null
@@ -1593,7 +1610,9 @@ class OverlayService : Service() {
                 val (diagStr, diagColor) = when (wsState) {
                     WebSocketState.CONNECTED -> {
                         val priceStr = if (latestTick != null) formatDynamicPrice(latestTick.price) else "..."
-                        Pair("🟢 WS Activo ($friendlyAsset): $priceStr (0ms) | Headless", Color.parseColor("#22c55e"))
+                        // Antes la latencia estaba fija en "0ms": ahora es la edad real del ultimo tick
+                        val tickAgeMs = if (latestTick != null) (System.currentTimeMillis() - latestTick.timestampMs).coerceAtLeast(0L) else 0L
+                        Pair("🟢 WS Activo ($friendlyAsset): $priceStr (${tickAgeMs}ms) | Headless", Color.parseColor("#22c55e"))
                     }
                     WebSocketState.CONNECTING -> {
                         Pair("🟡 WS: Conectando a Binomo...", Color.parseColor("#facc15"))
@@ -1695,12 +1714,9 @@ class OverlayService : Service() {
             val reasoning = tradingEngine.getEngineReasoning()
 
             val wsTrend = tradingEngine.syntheticCandleEngine.detectedTrend
-            val trendDir = when {
-                wsTrend != TrendDirection.SIDEWAYS -> wsTrend
-                analysis != null && analysis.trend != TrendDirection.SIDEWAYS -> analysis.trend
-                analysis != null -> analysis.trend
-                else -> wsTrend
-            }
+            // Ronda 3: en Headless la tendencia del HUD DEBE venir del motor WS (fuente única),
+            // no de `analysis` (visión retirada, potencialmente stale) para no contradecir a Binomo.
+            val trendDir = wsTrend
             when (trendDir) {
                 TrendDirection.UPTREND -> {
                     txtTrendBadge?.text = "📈 Tendencia: ALCISTA"

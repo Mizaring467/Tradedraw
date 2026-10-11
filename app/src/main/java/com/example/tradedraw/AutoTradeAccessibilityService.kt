@@ -124,6 +124,25 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             y: Float,
             onResult: ((Boolean, String?) -> Unit)? = null
         ) {
+            // Ronda 3: en este dispositivo (root) Binomo FILTRA los eventos sintéticos de
+            // dispatchGesture (el tap se "confirma" pero la orden no se registra → VOID),
+            // mientras que `input tap` vía root SÍ coloca la orden. Por eso el root tap es
+            // la vía PRIMARIA y la accesibilidad el fallback (antes era al revés).
+            if (hasRootAccess()) {
+                Log.i("TradeDraw", "Tap primario vía ROOT en ($x, $y) — dispositivo root detectado")
+                // H8: el HUD flotante cubre los botones de Binomo; `input tap` a nivel sistema
+                // aterrizaría en el overlay. Hay que volver el HUD NO-TÁCTIL igual que hace la
+                // ruta de accesibilidad, o la orden no se registra (VOID).
+                val overlay = OverlayService.instance
+                if (overlay != null && overlay.isPointInsideHUD(x, y)) {
+                    overlay.temporarilyBypassHUD(350L) {
+                        executeRootTap(x, y, onResult)
+                    }
+                } else {
+                    executeRootTap(x, y, onResult)
+                }
+                return
+            }
             val inst = instance
             if (inst != null) {
                 inst.performClickAt(x, y) { success, err ->
@@ -141,6 +160,27 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             }
         }
 
+        @Volatile private var rootAccessKnown: Boolean? = null
+
+        /**
+         * Ronda 3: detecta (una sola vez, cacheado) si el dispositivo tiene `su` disponible.
+         * En dispositivos root se prioriza `input tap` porque Binomo bloquea los gestos de accesibilidad.
+         */
+        fun hasRootAccess(): Boolean {
+            rootAccessKnown?.let { return it }
+            val result = try {
+                val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+                val out = p.inputStream.bufferedReader().readText() + p.errorStream.bufferedReader().readText()
+                p.waitFor()
+                out.contains("uid=0")
+            } catch (e: Exception) {
+                false
+            }
+            rootAccessKnown = result
+            Log.i("TradeDraw", "Detección de root: $result")
+            return result
+        }
+
         fun executeRootTap(
             x: Float,
             y: Float,
@@ -152,7 +192,11 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                     val exit = p.waitFor()
                     if (exit == 0) {
                         Log.i("TradeDraw", "⚡ Tap ejecutado con éxito vía ROOT en ($x, $y)")
-                        onGestureClickListener?.invoke(x, y)
+                        // Ronda 3: el callback puede tocar vistas (HUD); debe correr en el hilo
+                        // principal o Android lanza CalledFromWrongThreadException.
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            try { onGestureClickListener?.invoke(x, y) } catch (e: Exception) {}
+                        }
                         onResult?.invoke(true, null)
                     } else {
                         Log.w("TradeDraw", "Root tap falló con código $exit")
@@ -168,12 +212,19 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         fun autoHealAccessibility() {
             Thread {
                 try {
+                    // Ronda 3: un simple "put" del mismo valor NO hace que MIUI reenlace el servicio
+                    // (el valor ya estaba puesto y el sistema lo ignora). Se fuerza un TOGGLE REAL:
+                    // primero se vacía/desactiva y luego se re-registra, lo que dispara el rebind.
                     val p = Runtime.getRuntime().exec(arrayOf(
                         "su", "-c",
-                        "settings put secure enabled_accessibility_services com.example.tradedraw/.AutoTradeAccessibilityService; settings put secure accessibility_enabled 1"
+                        "settings put secure enabled_accessibility_services ''; " +
+                        "settings put secure accessibility_enabled 0; " +
+                        "sleep 1; " +
+                        "settings put secure enabled_accessibility_services com.example.tradedraw/.AutoTradeAccessibilityService; " +
+                        "settings put secure accessibility_enabled 1"
                     ))
                     p.waitFor()
-                    Log.i("TradeDraw", "Auto-heal accessibility invocado vía root")
+                    Log.i("TradeDraw", "Auto-heal accessibility invocado vía root (toggle real)")
                 } catch (e: Exception) {
                     Log.e("TradeDraw", "Error en autoHealAccessibility", e)
                 }
@@ -313,6 +364,10 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     ) {
         val path = Path().apply {
             moveTo(x, y)
+            // Ronda 3: un Path con solo moveTo puede no registrar un TAP real en algunos
+            // brokers (MIUI/Binomo). Se añade un lineTo al mismo punto para forzar un
+            // "press-and-release" determinista en las coordenadas exactas.
+            lineTo(x, y)
         }
         val stroke = GestureDescription.StrokeDescription(path, 0, 80)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()

@@ -285,6 +285,9 @@ class TradingEngine(
         }
         callPower = callPower.coerceIn(15, 95)
         putPower = putPower.coerceIn(15, 95)
+        // Termometro coherente: CALL + PUT = 100. Antes cada lado se ajustaba por separado y sumaban
+        // hasta 118% (p.ej. 32% CALL / 86% PUT). El lado dominante manda; el otro es su complemento.
+        if (callPower >= putPower) putPower = 100 - callPower else callPower = 100 - putPower
 
         val streak = when {
             syntheticCandleEngine.consecutiveUpTicks >= 2 -> "${syntheticCandleEngine.consecutiveUpTicks}T 🟢"
@@ -1118,43 +1121,46 @@ class TradingEngine(
         val sup = syntheticCandleEngine.dynamicSupportPrice
         val res = syntheticCandleEngine.dynamicResistancePrice
 
+        // Ronda 3: en Headless (WebSocket puro) la ÚNICA fuente de verdad es el motor sintético.
+        // `latestAnalysisResult` proviene de la ruta de visión (retirada) y puede quedar STALE,
+        // mostrando una tendencia/patrón que ya no coincide con el feed WS ni con Binomo.
+        // Se deriva la tendencia SIEMPRE del motor sintético para que el HUD sea coherente.
+
         // 1. Régimen de Mercado y Patrón Detectado
         val regimeResult = MarketRegimeClassifier.classify(analysis, syntheticCandleEngine)
         val basePattern = when {
-            analysis?.isFalseBreakoutCall == true || analysis?.isFalseBreakoutPut == true -> "⚡ Trampa Institucional / Fakeout S/R"
-            analysis?.isRejectionCall == true || analysis?.isRejectionPut == true || analysis?.hasBottomRejectionWick == true || analysis?.hasTopRejectionWick == true -> "🕯️ Mecha de Rechazo en Nivel S/R"
-            analysis?.isEngulfingCall == true || analysis?.isEngulfingPut == true -> "⚡ Vela Envolvente de Reversión"
-            analysis?.is3VelasCall == true || analysis?.is3VelasPut == true || analysis?.isExhaustion3CandlesCall == true || analysis?.isExhaustion3CandlesPut == true -> "📉 Agotamiento de 3 Velas Consecutivas"
-            analysis?.isChoqueCall == true || analysis?.isChoquePut == true || analysis?.isChoquePullbackCall == true || analysis?.isChoquePullbackPut == true -> "🎯 Choque con Nivel Roto (Pullback / Retest)"
-            analysis?.isValidBreakoutCall == true || analysis?.isValidBreakoutPut == true -> "💥 Breakout Validado (>50% fuera de nivel)"
-            analysis?.trend == TrendDirection.UPTREND -> "📈 Flujo Continuo Alcista (Higher Highs)"
-            analysis?.trend == TrendDirection.DOWNTREND -> "📉 Flujo Continuo Bajista (Lower Lows)"
-            wsTrend == TrendDirection.UPTREND -> "📈 Tendencia Alcista en Velas Sintéticas 1m"
-            wsTrend == TrendDirection.DOWNTREND -> "📉 Tendencia Bajista en Velas Sintéticas 1m"
-            analysis?.isMarketSideways == true -> "📊 Rango Lateral / Dojis de Indecisión"
-            wsTrend == TrendDirection.SIDEWAYS -> "📊 Rango Lateral Cuantitativo / Esperando Expansión"
+            wsTrend == TrendDirection.UPTREND -> "📈 Flujo Continuo Alcista (Higher Highs)"
+            wsTrend == TrendDirection.DOWNTREND -> "📉 Flujo Continuo Bajista (Lower Lows)"
+            syntheticCandleEngine.cachedChoppiness || wsTrend == TrendDirection.SIDEWAYS -> "📊 Rango Lateral Cuantitativo / Esperando Expansión"
             else -> "🔍 Monitoreando Acción del Precio"
         }
         val pattern = "${regimeResult.regime.hudBadge} | $basePattern"
 
-        // 2. Probabilidad Estimada
-        val prob = when {
-            analysis != null -> {
-                val base = if (analysis.trend == TrendDirection.UPTREND) analysis.signalPowerCall else if (analysis.trend == TrendDirection.DOWNTREND) analysis.signalPowerPut else 50
-                val conf = Math.max(analysis.confluenceScoreCall, analysis.confluenceScorePut)
-                Math.max(base, conf).coerceIn(50, 96)
+        // 2. Probabilidad Estimada (derivada del motor WS, coherente con el termómetro)
+        val prob = when (wsTrend) {
+            TrendDirection.UPTREND -> 86
+            TrendDirection.DOWNTREND -> 86
+            else -> {
+                val distS = syntheticCandleEngine.distanceToSupportRatio
+                val distR = syntheticCandleEngine.distanceToResistanceRatio
+                when {
+                    distS <= 0.20f -> 62
+                    distR <= 0.20f -> 62
+                    else -> 50
+                }
             }
-            tick != null -> {
-                val vel = Math.abs(tick.velocity)
-                val trendBonus = if (wsTrend != TrendDirection.SIDEWAYS) 12 else 0
-                val baseVel = if (vel > 0.0003f) 78 else if (vel > 0.0001f) 68 else 58
-                (baseVel + trendBonus).coerceIn(55, 92)
-            }
-            else -> 65
         }
 
         // 3. Estado del Filtro S/R
+        // Ronda 3: coherencia HUD↔Binomo. La tendencia de referencia es SIEMPRE la del motor WS
+        // (analysis puede venir de la ruta de visión retirada y quedar desincronizada).
+        val trendNow = wsTrend
         val srStatus = when {
+            // Coherencia con la cascada de vetos: no anunciar "CALL optimo" mientras el plan dice PUT
+            analysis != null && analysis.touchesSupport && trendNow == TrendDirection.DOWNTREND ->
+                "🟡 En Soporte con tendencia bajista: PUT vetado (riesgo de rebote)"
+            analysis != null && analysis.touchesResistance && trendNow == TrendDirection.UPTREND ->
+                "🟡 En Resistencia con tendencia alcista: CALL vetado (riesgo de rechazo)"
             analysis != null -> {
                 if (analysis.touchesSupport) "🟢 Toque Directo en Soporte [CALL Óptimo]"
                 else if (analysis.touchesResistance) "🔴 Toque Directo en Resistencia [PUT Óptimo]"
@@ -1186,18 +1192,22 @@ class TradingEngine(
                 else if (distR <= 0.25f) "🛡️ Anti-Chop Activo · Cerca de Resistencia (${(distR * 100).toInt()}%): Buscando Mecha Rechazo PUT"
                 else "🛡️ Filtro Anti-Chop Activo: Consolidación/CHOP elevado. Esperando extremos S/R o ruptura."
             }
-            analysis?.trend == TrendDirection.UPTREND || wsTrend == TrendDirection.UPTREND -> {
-                "🎯 Plan: Buscar retroceso leve a soporte para ejecutar CALL al segundo :58s - :01s."
+            trendNow == TrendDirection.DOWNTREND && syntheticCandleEngine.distanceToSupportRatio <= 0.15f ->
+                "⛔ Venta vetada sobre soporte: esperando rebote o ruptura confirmada."
+            trendNow == TrendDirection.UPTREND && syntheticCandleEngine.distanceToResistanceRatio <= 0.15f ->
+                "⛔ Compra vetada bajo resistencia: esperando rechazo o ruptura confirmada."
+            trendNow == TrendDirection.UPTREND -> {
+                "🎯 Plan: Buscar retroceso leve a soporte para ejecutar CALL en la ventana :01s - :05s."
             }
-            analysis?.trend == TrendDirection.DOWNTREND || wsTrend == TrendDirection.DOWNTREND -> {
-                "🎯 Plan: Buscar retroceso leve a resistencia para ejecutar PUT al segundo :58s - :01s."
+            trendNow == TrendDirection.DOWNTREND -> {
+                "🎯 Plan: Buscar retroceso leve a resistencia para ejecutar PUT en la ventana :01s - :05s."
             }
             else -> {
                 val distS = syntheticCandleEngine.distanceToSupportRatio
                 val distR = syntheticCandleEngine.distanceToResistanceRatio
                 when {
-                    distS <= 0.30f -> "🎯 Plan: Cerca de Soporte (${(distS * 100).toInt()}%). Esperando gatillo CALL al segundo :58s - :03s."
-                    distR <= 0.30f -> "🎯 Plan: Cerca de Resistencia (${(distR * 100).toInt()}%). Esperando gatillo PUT al segundo :58s - :03s."
+                    distS <= 0.30f -> "🎯 Plan: Cerca de Soporte (${(distS * 100).toInt()}%). Esperando gatillo CALL en la ventana :01s - :05s."
+                    distR <= 0.30f -> "🎯 Plan: Cerca de Resistencia (${(distR * 100).toInt()}%). Esperando gatillo PUT en la ventana :01s - :05s."
                     else -> "🎯 Plan: Esperando confirmación de nivel S/R o impulso direccional de ticks."
                 }
             }
@@ -1219,7 +1229,7 @@ class TradingEngine(
 
         val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(autonomousSubMode)
         if (!canTradeStatus && !riskManager.hasPendingTrade && mode == AutoTradeMode.AUTONOMOUS) {
-            val requiresManualResume = blockReason.contains("Stop Loss", ignoreCase = true) || blockReason.contains("Take Profit", ignoreCase = true) || blockReason.contains("Límite", ignoreCase = true)
+            val requiresManualResume = blockReason.contains("Stop Loss", ignoreCase = true) || blockReason.contains("Take Profit", ignoreCase = true) || blockReason.contains("Límite", ignoreCase = true) || blockReason.contains("Trailing", ignoreCase = true) || blockReason.contains("VOID", ignoreCase = true)
             return if (requiresManualResume) "🛑 $blockReason · Toca [MODO] para reanudar" else "⏳ $blockReason"
         }
 
@@ -1598,6 +1608,7 @@ class TradingEngine(
      * Utiliza las cotizaciones puras del WebSocket y pulsa las coordenadas calibradas con Accesibilidad.
      */
     fun executeHeadlessTrade(action: TradeAction, reasonDescription: String) {
+        Log.d("TradingEngine", "➡️ executeHeadlessTrade INICIO: $action | $reasonDescription")
         // GUARD DE FRESCURA DEL FEED (fail-closed, fuente única = WebSocket).
         // Sin tick reciente (<5000 ms) o sin conexión, se veta la operación: no se degrada
         // a ninguna otra fuente (la captura de pantalla fue retirada por consumo de batería).

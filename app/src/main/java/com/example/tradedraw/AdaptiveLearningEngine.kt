@@ -193,7 +193,13 @@ class AdaptiveLearningEngine {
                           analysis.isRejectionCall || analysis.isRejectionPut || analysis.isFalseBreakoutCall || analysis.isFalseBreakoutPut
 
         // 1. Filtro por sesgo adaptativo de pérdidas consecutivas
-        if (isContinuation && consecutiveContinuationLosses >= 2) {
+        // H7: en activos near-static (Crypto IDX) el canal S/R es micrométrico, así que
+        // distanceToSupport/ResistanceRatio son AMBOS ~0 y cualquier orden parece "pegada al
+        // extremo opuesto". Eso producía un bloqueo permanente (las órdenes bloqueadas nunca
+        // generaban el WIN que baja la racha). Se exige un canal con ancho real para vetar.
+        val channelWidth = analysis.distanceToSupportRatio + analysis.distanceToResistanceRatio
+        val hasMeaningfulChannel = channelWidth >= 0.35f
+        if (isContinuation && consecutiveContinuationLosses >= 2 && hasMeaningfulChannel) {
             // Bloquear continuación si estamos peligrosamente cerca de la barrera opuesta
             if ((candidateAction == TradeAction.BUY && analysis.distanceToResistanceRatio < 0.22f) ||
                 (candidateAction == TradeAction.SELL && analysis.distanceToSupportRatio < 0.22f)) {
@@ -204,7 +210,7 @@ class AdaptiveLearningEngine {
             }
         }
 
-        if (isReversion && consecutiveReversionLosses >= 2) {
+        if (isReversion && consecutiveReversionLosses >= 2 && hasMeaningfulChannel) {
             // Bloquear reversión si el mercado tiene fuerte momentum direccional
             if ((candidateAction == TradeAction.BUY && (analysis.hasStrongMomentumDown || analysis.isBearishImpulse)) ||
                 (candidateAction == TradeAction.SELL && (analysis.hasStrongMomentumUp || analysis.isBullishImpulse))) {
