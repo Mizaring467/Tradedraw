@@ -1,0 +1,4 @@
+timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason
+1791779461392,2026-10-12T04:31:01,REPLAY,BACKTEST,BUY,1.00,1039.24,1.00,0.00,LOSS,0.00,60,SIDEWAYS,0.50,0.50,0.00,NEUTRAL,REPLAY,1,LOSS,PRECIO (-) Tick WS: Entry=1039.2415 vs Close=1039.1985
+1791779521390,2026-10-12T04:32:01,REPLAY,BACKTEST,BUY,1.00,1039.20,1.00,0.00,LOSS,0.00,60,SIDEWAYS,0.50,0.50,0.00,NEUTRAL,REPLAY,1,LOSS,PRECIO (-) Tick WS: Entry=1039.1985 vs Close=1038.7155
+1791779581194,2026-10-12T04:33:01,REPLAY,BACKTEST,BUY,1.00,1038.72,1.00,0.00,LOSS,0.00,60,SIDEWAYS,0.50,0.50,0.00,NEUTRAL,REPLAY,1,LOSS,PRECIO (-) Tick WS: Entry=1038.7155 vs Close=1038.496
