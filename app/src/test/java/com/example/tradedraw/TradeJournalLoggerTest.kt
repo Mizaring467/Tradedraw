@@ -242,6 +242,88 @@ class TradeJournalLoggerTest {
     }
 
     @Test
+    fun testLogTrade_fallsBackToInternalWhenExternalDirIsNotWritable() {
+        // Causa raíz del fallo tras reinstalar: Android cambia el UID (u0_a158 -> u0_a179) y el
+        // directorio externo heredado queda con el propietario antiguo (Permission denied).
+        // Simulamos un directorio externo no utilizable: la ruta existe pero es un FICHERO.
+        val root = tempDir("journal_externo_ro")
+        File(root, "TradeDraw_Audits").writeText("bloqueador de directorio")
+        val internal = tempDir("journal_externo_ro_int")
+        val ctx = FakeContext(root, internal)
+
+        val ok = TradeJournalLogger.logTrade(
+            context = ctx, strategy = "S", submode = "M", action = "BUY", confidence = 0.5f,
+            priceY = 1f, stake = 1.0, baseBalance = 1.0, result = "WIN", settledBalance = 2.0,
+            durationSec = 62, reason = "fallback por externo no escribible", tradeStartMs = 555_000L
+        )
+
+        assertTrue("Debe persistir pese al externo no escribible", ok)
+        val internalFile = File(internal, "TradeDraw_Audits/trade_journal.csv")
+        assertTrue("El CSV debe existir en el almacenamiento interno", internalFile.exists())
+        assertTrue("La fila debe estar persistida en el interno",
+            internalFile.readText().contains("fallback por externo no escribible"))
+        assertFalse("No debe crearse CSV en la ruta externa bloqueada",
+            File(root, "TradeDraw_Audits/trade_journal.csv").exists())
+    }
+
+    @Test
+    fun testLogTrade_retriesInInternalWhenExternalWriterFails() {
+        // El externo pasa canWrite() pero FileWriter falla (Permission denied real en dispositivo).
+        // Se simula con trade_journal.csv ocupado por un DIRECTORIO: abrir el fichero lanza IOException.
+        val root = tempDir("journal_write_fail")
+        val dir = File(root, "TradeDraw_Audits").apply { mkdirs() }
+        File(dir, "trade_journal.csv").mkdirs()
+        val internal = tempDir("journal_write_fail_int")
+        val ctx = FakeContext(root, internal)
+
+        val ok = TradeJournalLogger.logTrade(
+            context = ctx, strategy = "S", submode = "M", action = "SELL", confidence = 0.5f,
+            priceY = 1f, stake = 1.0, baseBalance = 1.0, result = "LOSS", settledBalance = 0.0,
+            durationSec = 62, reason = "reintento interno", tradeStartMs = 666_000L
+        )
+
+        assertTrue("El fallo del FileWriter externo no debe perder la evidencia", ok)
+        val internalFile = File(internal, "TradeDraw_Audits/trade_journal.csv")
+        assertTrue("El reintento debe escribir en el almacenamiento interno", internalFile.exists())
+        assertTrue("La fila debe contener la evidencia recuperada",
+            internalFile.readText().contains("reintento interno"))
+    }
+
+    @Test
+    fun testLogTrade_syncsInternalRecordsWhenExternalPermissionsRecover() {
+        // 1) Externo no escribible -> evidencia acumulada internamente.
+        val root = tempDir("journal_sync")
+        val blocker = File(root, "TradeDraw_Audits").apply { writeText("bloqueador") }
+        val internal = tempDir("journal_sync_int")
+        val ctx = FakeContext(root, internal)
+
+        assertTrue(TradeJournalLogger.logTrade(
+            context = ctx, strategy = "S", submode = "M", action = "BUY", confidence = 0.5f,
+            priceY = 1f, stake = 1.0, baseBalance = 1.0, result = "WIN", settledBalance = 2.0,
+            durationSec = 62, reason = "acumulado interno", tradeStartMs = 777_000L
+        ))
+
+        // 2) Permisos externos recuperados (el bloqueador desaparece).
+        blocker.delete()
+        assertTrue(TradeJournalLogger.logTrade(
+            context = ctx, strategy = "S", submode = "M", action = "SELL", confidence = 0.5f,
+            priceY = 1f, stake = 1.0, baseBalance = 2.0, result = "LOSS", settledBalance = 1.0,
+            durationSec = 62, reason = "posterior externo", tradeStartMs = 888_000L
+        ))
+
+        val externalFile = File(root, "TradeDraw_Audits/trade_journal.csv")
+        assertTrue("Debe existir el CSV externo", externalFile.exists())
+        val text = externalFile.readText()
+        assertTrue("Los registros internos deben sincronizarse al externo",
+            text.contains("acumulado interno"))
+        assertTrue("La nueva fila debe escribirse en el externo", text.contains("posterior externo"))
+        assertEquals("La cabecera no debe duplicarse", 1,
+            text.lineSequence().count { it.startsWith("timestamp,iso_date") })
+        assertFalse("El interno se limpia solo tras confirmar la copia",
+            File(internal, "TradeDraw_Audits/trade_journal.csv").exists())
+    }
+
+    @Test
     fun testLogTrade_rotatesJournalWhenOverSizeLimit() {
         // Punto 3: el journal crece sin límite en el dispositivo. Al pasar de 2 MB debe rotar
         // a trade_journal_<timestamp>.csv y empezar uno nuevo con cabecera.

@@ -107,21 +107,28 @@ object TradeJournalLogger {
         tradeStartMs: Long = 0L
     ): Boolean {
         try {
-            // getExternalFilesDir puede devolver null (almacenamiento externo no montado):
-            // en ese caso la evidencia de auditoría se perdería en silencio, así que se
-            // escala al almacenamiento interno antes de rendirse.
-            val externalDir = context.getExternalFilesDir(null)
-            val dir = if (externalDir != null) {
-                File(externalDir, "TradeDraw_Audits")
+            // getExternalFilesDir puede devolver null (almacenamiento externo no montado) o apuntar a
+            // un directorio heredado de una instalación anterior cuyo UID ya no es el nuestro: en
+            // ambos casos la evidencia de auditoría se perdería en silencio, así que se escala al
+            // almacenamiento interno antes de rendirse.
+            val internalDir = File(context.filesDir, "TradeDraw_Audits")
+            val externalRoot = context.getExternalFilesDir(null)
+            val externalDir = externalRoot?.let { File(it, "TradeDraw_Audits") }
+            val externalUsable = externalDir != null && isWritableDir(externalDir)
+            val dir = if (externalUsable) {
+                externalDir!!
             } else {
-                Log.e(TAG, "getExternalFilesDir(null) devolvió null: usando almacenamiento interno")
-                File(context.filesDir, "TradeDraw_Audits")
-            }
-            if (!dir.exists() && !dir.mkdirs()) {
-                Log.e(TAG, "No se pudo crear el directorio de auditoría: ${dir.absolutePath}")
+                if (externalDir == null) {
+                    Log.e(TAG, "getExternalFilesDir(null) devolvió null: usando almacenamiento interno")
+                } else {
+                    Log.e(TAG, "Externo no escribible (${externalDir.absolutePath}): usando almacenamiento interno")
+                }
+                internalDir
             }
 
             synchronized(lock) {
+                // Permisos externos recuperados: vaciar primero lo acumulado internamente.
+                if (externalUsable) syncInternalToExternal(internalDir, dir)
                 // Guarda de idempotencia: el mismo trade y acción no puede registrarse dos veces aunque
                 // la liquidación se dispare duplicada.
                 //
@@ -144,54 +151,38 @@ object TradeJournalLogger {
                     Log.w(TAG, "Registro sin tradeStartMs: guarda de idempotencia desactivada para $action")
                 }
 
-                val file = File(dir, JOURNAL_NAME)
-                rotateIfNeeded(dir, file)
-
-                val writeHeader = !file.exists() || file.length() == 0L
-                FileWriter(file, true).use { writer ->
-                    if (writeHeader) {
-                        writer.write(HEADER)
+                try {
+                    val file = File(dir, JOURNAL_NAME)
+                    val line = buildLine(action, result, reason, strategy, submode, confidence, priceY,
+                        stake, baseBalance, settledBalance, durationSec, trend, distSupportRatio,
+                        distResistanceRatio, tickVelocity, impulse, marketRegime, candleSecond,
+                        adaptiveStatus)
+                    // La escritura en el externo puede fallar aunque canWrite() dijera true: el directorio
+                    // heredado de una instalación previa cambia de propietario con el UID nuevo de Android
+                    // y FileWriter lanza Permission denied. Reintento inmediato en interno para no perder
+                    // la evidencia (ni la firma de idempotencia, que solo se fija al persistir).
+                    try {
+                        writeRow(dir, file, line)
+                    } catch (e: Exception) {
+                        if (e !is java.io.IOException && e !is SecurityException) throw e
+                        if (dir.canonicalPath != internalDir.canonicalPath) {
+                            Log.e(TAG, "Fallo al escribir en ${file.absolutePath} (${e.javaClass.simpleName}): reintentando en almacenamiento interno", e)
+                            writeRow(internalDir, File(internalDir, JOURNAL_NAME), line)
+                        } else {
+                            throw e
+                        }
                     }
-                    val now = System.currentTimeMillis()
-                    val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(now))
-                    val cleanReason = reason.replace(",", ";").replace("\n", " ").take(140)
-                    val line = String.format(
-                        Locale.US,
-                        "%d,%s,%s,%s,%s,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\"\n",
-                        now,
-                        isoDate,
-                        strategy,
-                        submode,
-                        action,
-                        confidence,
-                        priceY,
-                        stake.toDouble(),
-                        baseBalance.toDouble(),
-                        result,
-                        settledBalance.toDouble(),
-                        durationSec,
-                        trend,
-                        distSupportRatio,
-                        distResistanceRatio,
-                        tickVelocity,
-                        impulse,
-                        marketRegime,
-                        candleSecond,
-                        adaptiveStatus,
-                        cleanReason
-                    )
-                    writer.write(line)
-                    writer.flush()
-                }
-                // La firma se fija SOLO tras persistir en disco: si la escritura falla, el reintento
-                // del mismo trade debe seguir permitido o la evidencia se perdería para siempre.
-                pendingSignature?.let {
-                    lastSignature = it
+                    // La firma se fija SOLO tras persistir en disco: si la escritura falla, el reintento
+                    // del mismo trade debe seguir permitido o la evidencia se perdería para siempre.
+                    pendingSignature?.let {
+                        lastSignature = it
+                    }
+                    writeCount++
+                    lastWriteMs = System.currentTimeMillis()
+                    lastError = ""
+                } finally {
                     pendingSignature = null
                 }
-                writeCount++
-                lastWriteMs = System.currentTimeMillis()
-                lastError = ""
             }
             Log.d(TAG, "Trade journal registrado: $action -> $result ($reason) [Trend=$trend, Sup=$distSupportRatio, Res=$distResistanceRatio, Vel=$tickVelocity]")
             return true
@@ -200,6 +191,87 @@ object TradeJournalLogger {
             lastError = "${e.javaClass.simpleName}: ${e.message}"
             Log.e(TAG, "FALLO AL PERSISTIR EVIDENCIA DE AUDITORÍA (trade $action $result): $lastError", e)
             return false
+        }
+    }
+
+    /**
+     * Comprueba que el directorio de auditoría es realmente escribible: debe existir (o poder crearse),
+     * ser un directorio y admitir escritura. Un directorio heredado de una instalación anterior
+     * retiene el UID antiguo y `canWrite()` devuelve false aunque la ruta pertenezca a la app.
+     */
+    private fun isWritableDir(dir: File): Boolean = runCatching {
+        if (dir.exists()) dir.isDirectory && dir.canWrite()
+        else dir.mkdirs() && dir.canWrite()
+    }.getOrDefault(false)
+
+    /**
+     * Sincroniza los registros acumulados internamente hacia el almacenamiento externo cuando los
+     * permisos se recuperan. El interno se anexa al final del externo y se borra solo tras confirmar
+     * que la copia quedó persistida: en ningún caso se puede perder la evidencia de auditoría.
+     */
+    private fun syncInternalToExternal(internalDir: File, externalDir: File) {
+        if (internalDir.canonicalPath == externalDir.canonicalPath) {
+            Log.w(TAG, "syncInternalToExternal omitido: directorios interno y externo coinciden (${internalDir.canonicalPath})")
+            return
+        }
+        val source = File(internalDir, JOURNAL_NAME)
+        if (!source.exists() || source.length() == 0L) return
+        try {
+            val target = File(externalDir, JOURNAL_NAME)
+            val text = source.readText()
+            val firstLine = text.lineSequence().first()
+            // Si el destino no existe (o está vacío) se copia también la cabecera del origen.
+            val payload = if (!target.exists() || target.length() == 0L) text else {
+                text.removePrefix(firstLine).removePrefix("\n")
+            }
+            if (payload.isEmpty()) return
+            FileWriter(target, true).use { it.write(payload) }
+            if (source.delete()) {
+                Log.i(TAG, "Registros internos sincronizados al almacenamiento externo (${payload.length} bytes)")
+            } else {
+                // delete() falló (p.ej. archivo abierto): truncar para no duplicar en el siguiente sync.
+                try {
+                    FileWriter(source, false).use { }
+                    Log.w(TAG, "source no borrado: truncado a 0 bytes para evitar duplicados")
+                } catch (e2: Exception) {
+                    Log.e(TAG, "No se pudo truncar el journal interno: ${e2.message}", e2)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "No se pudo sincronizar el journal interno al externo: ${e.javaClass.simpleName}: ${e.message}", e)
+        }
+    }
+
+    /** Construye la fila CSV con el esquema fijo del HEADER. */
+    private fun buildLine(
+        action: String, result: String, reason: String, strategy: String, submode: String,
+        confidence: Float, priceY: Float, stake: Number, baseBalance: Number,
+        settledBalance: Number, durationSec: Long, trend: String, distSupportRatio: Float,
+        distResistanceRatio: Float, tickVelocity: Float, impulse: String, marketRegime: String,
+        candleSecond: Int, adaptiveStatus: String
+    ): String {
+        val now = System.currentTimeMillis()
+        val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(now))
+        val cleanReason = reason.replace(",", ";").replace("\n", " ").take(140)
+        return String.format(
+            Locale.US,
+            "%d,%s,%s,%s,%s,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\"\n",
+            now, isoDate, strategy, submode, action, confidence, priceY, stake.toDouble(),
+            baseBalance.toDouble(), result, settledBalance.toDouble(), durationSec, trend,
+            distSupportRatio, distResistanceRatio, tickVelocity, impulse, marketRegime,
+            candleSecond, adaptiveStatus, cleanReason
+        )
+    }
+
+    /** Rota si procede y escribe la fila. Lanza IOException/SecurityException si el disco la rechaza. */
+    private fun writeRow(dir: File, file: File, line: String) {
+        if (!dir.exists()) dir.mkdirs()
+        rotateIfNeeded(dir, file)
+        val writeHeader = !file.exists() || file.length() == 0L
+        FileWriter(file, true).use { writer ->
+            if (writeHeader) writer.write(HEADER)
+            writer.write(line)
+            writer.flush()
         }
     }
 

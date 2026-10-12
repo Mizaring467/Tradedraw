@@ -120,6 +120,17 @@ herdr agent prompt agy  "<tarea>" --wait --timeout 900000
 | 3-fix | H8 root-tap sin bypass HUD (causa del VOID) | verificado (control) | orden real colocada (-100k stake) | captura `live_screenshot` | **PASS** |
 | 4 | H9 telemetría de timing + análisis cuantitativo de edge | medido | ventana :01–:05 = 100% WR (N=28) | `r4_journal_full.csv` (N=75 sin TIE) | **PASS analítico** |
 | 4-fix | R2 anti-contra-tendencia + R3 canal medio (agy) | medido (25m) | **1 WIN +181.998 COP / 0 LOSS** | `live_session_25m_report.json`, HUD 5/5 | **PASS: 0 pérdidas** |
+| 5 | Fix journal (DSH) + validación de auditoría | medido (25m) | 2 WIN / 1 LOSS, **0 TIE** | journal interno (u0_a179) | **PASS: journal persistente** |
+| 5-fix | Endurecer journal (colisión/duplicados/firma) | 164 tests OK | — | `r5_fix_agy.md` | aplicado |
+
+### Bitácora Ronda 5 (2026-10-11)
+- **Nuevo agente: DeepSeek Harness (DSH)** — DeepSeek V4.1 Flash, integrado vía tarea pegada en su GUI.
+- **Causa raíz del journal roto:** al reinstalar la app, Android asigna **UID nuevo** (`u0_a179`); el directorio externo `/sdcard/Android/data/<pkg>/files/TradeDraw_Audits/` **retiene el UID viejo** (`u0_a158`) → `FileWriter` da `Permission denied` (EACCES). El código solo caía a almacenamiento interno si `externalDir == null`.
+- **Fix DSH:** `isWritableDir()` + fallback a `context.filesDir` + reintento en catch (`IOException`/`SecurityException`) + `syncInternalToExternal()`.
+- **Fix agy (endurecimiento):** guardas de `canonicalPath` (colisión interno==externo), truncado a 0 si `delete()` falla, `pendingSignature` limpiado en `finally`, `isWritableDir` con `runCatching`.
+- **Verificación en dispositivo:** journal interno `u0_a179` con HEADER + 3 filas reales (LOSS −99.998, WIN +83.000, LOSS −100.001); externo intacto; dedupe activo. **0 TIEs.**
+- **H9 verificado:** `ENTRADA despachada | BUY | segundo=2 | MT_ENGULFING 82pts`. Ojo: el buffer de logcat rota rápido (~3000 líneas/min) → capturar en streaming, no al final.
+- **Lección:** el journal externo depende del UID; tras reinstalar, el fallback a interno es la salvaguarda correcta.
 
 ### Bitácora Ronda 4 (2026-10-11)
 - **H9 (telemetría de timing):** el journal registraba el `candle_second` de **liquidación**, no el de entrada → métrica sesgada. Se añadió log `🎯 ENTRADA despachada | <ACTION> | segundo=<sec> | estrategia=...`. Verificado en vivo: `BUY | segundo=1 | MT_ENGULFING 82pts` + root tap OK.
