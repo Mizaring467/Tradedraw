@@ -1,0 +1,18 @@
+--------- beginning of main
+10-11 21:32:05.350 I/TradingEngine( 2135): 🎯 ENTRADA despachada | BUY | segundo=4 | estrategia=AUTO_ADAPTIVE | 🎯 MT_REVERSAL: Sobreventa Extrema en Soporte (RSI: 20 | Dist S: 8% | ⏱ 4s) -> CALL [Confluencia: 82pts]
+10-11 21:32:05.458 I/TradeDraw( 2135): Detección de root: true
+10-11 21:32:05.458 I/TradeDraw( 2135): Tap primario vía ROOT en (249.84, 1340.8) — dispositivo root detectado
+10-11 21:32:06.465 I/TradeDraw( 2135): ⚡ Tap ejecutado con éxito vía ROOT en (249.84, 1340.8)
+10-11 21:42:02.020 I/TradingEngine( 2135): 🎯 ENTRADA despachada | SELL | segundo=1 | estrategia=AUTO_ADAPTIVE | 🎯 MT_3_VELAS_AGOT: Agotamiento 3 Velas Verdes en Resistencia (C3 <= 45% C1 | ⏱ 1s) -> PUT [Confluencia: 80pts]
+10-11 21:42:02.021 I/TradeDraw( 2135): Tap primario vía ROOT en (540.0, 1340.8) — dispositivo root detectado
+10-11 21:42:02.709 I/TradeDraw( 2135): ⚡ Tap ejecutado con éxito vía ROOT en (540.0, 1340.8)
+10-11 21:43:17.894 E/TradeJournalLogger( 2135): Externo no escribible (/storage/emulated/0/Android/data/com.example.tradedraw/files/TradeDraw_Audits): usando almacenamiento interno
+10-11 21:43:18.590 E/TradeJournalLogger( 2135): Externo no escribible (/storage/emulated/0/Android/data/com.example.tradedraw/files/TradeDraw_Audits): usando almacenamiento interno
+10-11 21:43:18.591 W/TradeJournalLogger( 2135): Registro duplicado rechazado (mismo trade): 1791772922020
+10-11 22:05:02.281 I/TradingEngine( 2135): 🎯 ENTRADA despachada | SELL | segundo=1 | estrategia=AUTO_ADAPTIVE | 🎯 MT_3_VELAS_AGOT: Agotamiento 3 Velas Verdes en Resistencia (C3 <= 45% C1 | ⏱ 1s) -> PUT [Confluencia: 90pts]
+10-11 22:05:02.282 I/TradeDraw( 2135): Tap primario vía ROOT en (540.0, 1340.8) — dispositivo root detectado
+10-11 22:05:02.669 I/TradeDraw( 2135): ⚡ Tap ejecutado con éxito vía ROOT en (540.0, 1340.8)
+10-11 22:06:18.208 E/TradeJournalLogger( 2135): Externo no escribible (/storage/emulated/0/Android/data/com.example.tradedraw/files/TradeDraw_Audits): usando almacenamiento interno
+10-11 22:06:18.782 E/TradeJournalLogger( 2135): Externo no escribible (/storage/emulated/0/Android/data/com.example.tradedraw/files/TradeDraw_Audits): usando almacenamiento interno
+10-11 22:06:18.783 W/TradeJournalLogger( 2135): Registro duplicado rechazado (mismo trade): 1791774302282
+10-11 22:09:59.717 I/TradeDraw(11343): AutoTradeAccessibilityService connected

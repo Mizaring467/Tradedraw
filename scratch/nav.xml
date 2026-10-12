@@ -1,0 +1,7 @@
+﻿adb.exe : cat: /sdcard/nav.xml: No such file or directory
+En línea: 1 Carácter: 150
++ ... " 2>&1 | Out-Null; & adb -s $S shell cat /sdcard/nav.xml 2>&1 | Out-F ...
++                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (cat: /sdcard/na...le or directory:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

@@ -610,10 +610,13 @@ class TradingEngine(
             // Confluencia 4 (Micro-velocidad a favor y sin vela sobreextendida):
             val velNorm = analysis.tickVelocityNormalized
             val tickVel = latestTick?.velocity ?: 0f
-            val velCallFavor = (velNorm > 0.0001f || tickVel > 0.0001f || analysis.isBullishImpulse) &&
-                !analysis.isBearishImpulse && velNorm >= -0.0001f && tickVel >= -0.0001f
-            val velPutFavor = (velNorm < -0.0001f || tickVel < -0.0001f || analysis.isBearishImpulse) &&
-                !analysis.isBullishImpulse && velNorm <= 0.0001f && tickVel <= 0.0001f
+            // Ronda 7-fix: umbral relativo a la escala del precio (IDX ~641, ETH ~1049).
+            val tickPriceRef = latestTick?.price ?: 0.0
+            val vThresh = if (tickPriceRef > 0.0) (tickPriceRef * 0.00004).toFloat() else 0.0001f
+            val velCallFavor = (velNorm > vThresh || tickVel > vThresh || analysis.isBullishImpulse) &&
+                !analysis.isBearishImpulse && velNorm >= -vThresh && tickVel >= -vThresh
+            val velPutFavor = (velNorm < -vThresh || tickVel < -vThresh || analysis.isBearishImpulse) &&
+                !analysis.isBullishImpulse && velNorm <= vThresh && tickVel <= vThresh
 
             val isOverextendedCall = (syntheticEngine?.isBullishOverextended == true) ||
                 (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.GREEN)

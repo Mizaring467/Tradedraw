@@ -302,6 +302,17 @@ class TradeDrawHttpBridge(
                         }
                         sendJsonResponse(output, 200, """{"success":true,"menuExpanded":${overlayService.isMenuExpanded}}""")
                     }
+                    "/asset" -> {
+                        // Ronda 7: cambia el activo del WebSocket en caliente (SOLUSD-OTC, XAU/USD-HSFX2...).
+                        // El setter usa SharedPreferences de la app, así que no choca con SELinux.
+                        val name = params["name"]?.trim() ?: ""
+                        if (name.isBlank()) {
+                            sendJsonResponse(output, 400, """{"success":false,"error":"Parámetro 'name' requerido"}""")
+                        } else {
+                            overlayService.binomoWebSocketClient?.updateActiveAsset(name)
+                            sendJsonResponse(output, 200, """{"success":true,"asset":"$name"}""")
+                        }
+                    }
                     "/nodes" -> {
                         val access = AutoTradeAccessibilityService.instance
                         if (access != null) {

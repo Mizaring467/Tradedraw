@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="ws_device_id">6ea8d0bfcda61f1a3967edb3e7a69f35</string>
+    <string name="ws_active_asset">SOLUSD-OTC</string>
+    <string name="ws_cookie_header">locale=es; user_timezone=America%2FBogota; __exponea_etc__=7d77ff46-76a0-4ffd-bf3d-83d531964ee3; __exponea_time2__=1.0759801864624023; userId=; user_language=es; oauth_result=%7B%22data%22%3A%7B%22authtoken%22%3A%22efb656b4-746e-4d50-b016-eae142cc8623%22%2C%22user_id%22%3A%22181881095%22%2C%22action%22%3A%22authorized%22%7D%7D; device_type=web; device_id=6ea8d0bfcda61f1a3967edb3e7a69f35; g_state={&quot;i_l&quot;:0,&quot;i_ll&quot;:1791692595297,&quot;i_e&quot;:{&quot;enable_itp_optimization&quot;:24},&quot;i_et&quot;:1791692595297}; authtoken=fc4b2c42-77f9-4bd9-b6ea-ffb4ef7184f2</string>
+    <string name="ws_auth_token">fc4b2c42-77f9-4bd9-b6ea-ffb4ef7184f2</string>
+    <string name="ws_endpoint_url">wss://as.binomo.com</string>
+</map>

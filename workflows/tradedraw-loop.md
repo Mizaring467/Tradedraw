@@ -123,6 +123,17 @@ herdr agent prompt agy  "<tarea>" --wait --timeout 900000
 | 5 | Fix journal (DSH) + validación de auditoría | medido (25m) | 2 WIN / 1 LOSS, **0 TIE** | journal interno (u0_a179) | **PASS: journal persistente** |
 | 5-fix | Endurecer journal (colisión/duplicados/firma) | 164 tests OK | — | `r5_fix_agy.md` | aplicado |
 | 6 | H10 segundo de entrada + logcat 16M + auditoría de edge | medido (25m) | **0 trades** (397 evaluadas) | `r6_*`, `r6_journal.csv` | FAIL: sobre-filtrado |
+| 7 | **Migración a activo volátil (ETHUSD-OTC)** + umbrales por escala | medido (25m) | **15 señales, 2 trades (1W/1L), 0 TIE** | journal interno, `r7_samples.jsonl` | **PASS: mecánica completa** |
+| 7-fix | Escala (lastPrice reset, mapeo RIC, umbrales HUD/engine) | 164 tests OK | — | `r7_audit_agy.md` | aplicado |
+
+### Bitácora Ronda 7 (2026-10-11)
+- **Migración de activo (hito):** de `Z-CRY/IDX` (línea muerta, rango rel **4e-10**) a **`ETHUSD-OTC`** (Ethereum OTC, rango rel **6.2e-5** → **×160.000 más volátil**). Descubrimiento vía catálogo `assets.preferences_pb` (147 activos) — los RICs reales llevan sufijo `2`/`-OTC` (no los que probamos al inicio).
+- **Cómo se cambia el activo:** en la UI de Binomo (selector "Activo") el bot lo sigue por accesibilidad; o vía el nuevo endpoint `/asset?name=<RIC>`. Persiste en `ws_active_asset`.
+- **Nuevo endpoint:** `/asset?name=` en `TradeDrawHttpBridge.kt`.
+- **Ajuste clave:** los umbrales de micro-impulso pasaron de **absolutos** (válidos solo para IDX ~641) a **relativos a la escala** del precio (`scale*0.00008`), porque ETH ~1049 y SOL ~32 tienen escalas muy distintas. Aplicado en `BinomoWebSocketClient`, `TradingEngine` (confluencia) y HUD (`OverlayService`).
+- **Resultado sesión 7 (25 min, ETHUSD-OTC):** **15 señales** (vs 0-4 con IDX), **2 órdenes reales ejecutadas** (`BUY @ 1047.02 → WIN +80.000`; `BUY @ 1048.52 → LOSS −100.000`), **0 TIEs**, journal interno y H9/H10 alineados (`candle_second` = 1 y 3, el segundo de entrada). Patrones reales detectados: `MT_REJECTION Mecha 88%`, `Confluencia 100pts` (imposibles en la línea muerta).
+- **Correcciones de escala (agy detectó 4):** (a) `updateActiveAsset` ahora **resetea lastPrice/smoothedVelocity** (evita pico artificial de ~400 USD al cambiar de activo); (b) mapeo pantalla→RIC completo (Ethereum/Bitcoin/Solana/Litecoin/XAU); (c) umbrales de HUD y confluencia relativos a la escala.
+- **Estado:** 164 tests OK, commit aplicado. WR de la muestra ETH 50% (N=2, insuficiente); la **mecánica ya funciona end-to-end** sobre un activo con señal real. Pendiente: acumular N≥30 para medir edge.
 
 ### Bitácora Ronda 6 (2026-10-11)
 - **Hallazgo operativo:** el buffer de logcat era **64 KiB** → rotaba en ~30s y H9 "desaparecía". Subido a **16 MiB** (`adb logcat -G 16M`).

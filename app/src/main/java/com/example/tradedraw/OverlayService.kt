@@ -1581,16 +1581,19 @@ class OverlayService : Service() {
                 val tick = tradingEngine.latestMarketTick
                 val trend = tradingEngine.syntheticCandleEngine.detectedTrend
                 val vel = tick?.velocity ?: 0f
+                // Ronda 7-fix: umbral de impulso RELATIVO a la escala del precio (IDX ~641, ETH ~1049).
+                val priceRef = tick?.price ?: 0.0
+                val velThresh = if (priceRef > 0.0) (priceRef * 0.00004).toFloat() else 0.0001f
                 val dirStr = when {
                     trend == TrendDirection.UPTREND -> "▲ ALCISTA"
                     trend == TrendDirection.DOWNTREND -> "▼ BAJISTA"
-                    vel > 0.0001f -> "▲ IMPULSO CALL"
-                    vel < -0.0001f -> "▼ IMPULSO PUT"
+                    vel > velThresh -> "▲ IMPULSO CALL"
+                    vel < -velThresh -> "▼ IMPULSO PUT"
                     else -> "━ NEUTRO"
                 }
                 val color = when {
-                    trend == TrendDirection.UPTREND || vel > 0.0001f -> Color.parseColor("#22c55e")
-                    trend == TrendDirection.DOWNTREND || vel < -0.0001f -> Color.parseColor("#ef4444")
+                    trend == TrendDirection.UPTREND || vel > velThresh -> Color.parseColor("#22c55e")
+                    trend == TrendDirection.DOWNTREND || vel < -velThresh -> Color.parseColor("#ef4444")
                     else -> Color.parseColor("#38bdf8")
                 }
                 val priceStr = if (tick != null) formatDynamicPrice(tick.price) else "---"

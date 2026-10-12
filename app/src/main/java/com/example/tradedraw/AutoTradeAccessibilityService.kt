@@ -496,11 +496,25 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                     onAssetUpdatedListener?.invoke(assetCandidate, isSyn)
                     try {
                         OverlayService.instance?.binomoWebSocketClient?.let { ws ->
+                            // Ronda 7-fix: mapeo completo pantalla -> RIC real de Binomo. Antes solo
+                            // cubría IDX/EUR/GBP/JPY; "Ethereum (OTC)" caía al else y producía el RIC
+                            // inválido "Ethereum(OTC)" en vez de "ETHUSD-OTC", rompiendo el feed.
                             val formattedRic = when {
                                 upper.contains("IDX") -> "Z-CRY/IDX"
-                                upper.contains("EUR/USD") -> "EUR/USD"
-                                upper.contains("GBP/USD") -> "GBP/USD"
-                                upper.contains("USD/JPY") -> "USD/JPY"
+                                upper.contains("ETH") -> "ETHUSD-OTC"
+                                upper.contains("BTC") && upper.contains("CASH") -> "BCHUSD-OTC"
+                                upper.contains("BTC") -> "BTCUSD-OTC"
+                                upper.contains("SOL") -> "SOLUSD-OTC"
+                                upper.contains("LTC") -> "LTCUSD-OTC"
+                                upper.contains("XRP") -> "XRPUSD-OTC"
+                                upper.contains("ADA") -> "ADAUSD-OTC"
+                                upper.contains("DOT") -> "DOTUSD-OTC"
+                                upper.contains("LINK") -> "LINKUSD-OTC"
+                                upper.contains("DOGE") -> "DOGEUSD-OTC"
+                                upper.contains("XAU") || upper.contains("GOLD") -> "XAU/USD"
+                                upper.contains("EUR/USD") -> "Z-EUR/USD2"
+                                upper.contains("GBP/USD") -> "Z-GBP/USD2"
+                                upper.contains("USD/JPY") -> "Z-USD/JPY2"
                                 else -> assetCandidate.replace(" ", "")
                             }
                             ws.updateActiveAsset(formattedRic)

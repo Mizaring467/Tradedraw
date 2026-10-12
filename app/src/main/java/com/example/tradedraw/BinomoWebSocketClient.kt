@@ -34,6 +34,12 @@ class BinomoWebSocketClient(private val context: Context) {
         if (clean.isNotBlank() && activeAsset != clean) {
             Log.i(TAG, "Sincronizando activo activo de WebSocket: $activeAsset -> $clean")
             activeAsset = clean
+            // Ronda 7-fix: al cambiar de activo la escala del precio cambia (IDX ~641 -> ETH ~1049).
+            // Sin resetear lastPrice, el primer tick del nuevo activo produce un (price-lastPrice)
+            // artificial de ~400 USD que dispara un falso impulso y envenena la velocidad suavizada.
+            lastPrice = 0.0
+            lastPriceTimeMs = 0L
+            smoothedVelocity = 0f
             val ws = webSocket
             if (ws != null && isConnected) {
                 subscribeToAsset(ws, clean)
@@ -588,10 +594,14 @@ class BinomoWebSocketClient(private val context: Context) {
                 smoothedVelocity = (alpha * velocity) + ((1f - alpha) * smoothedVelocity)
             }
 
-            // Umbrales de micro-impulso: evalúa tanto el impulso instantáneo como la velocidad suavizada
+            // Umbrales de micro-impulso. Ronda 7: se hacen RELATIVOS a la escala del precio
+            // (porcentaje del precio), porque el sistema pasa a operar activos con escalas muy
+            // distintas (IDX ~641, SOL ~32.7, ORO ~4205). Los umbrales absolutos previos solo
+            // eran válidos para IDX. Se conserva la rama IDX por su paso sub-micro natural.
             val isIdx = asset.contains("IDX", ignoreCase = true)
-            val impulseThreshold = if (isIdx) 0.000008f else 0.0003f
-            val minVelThreshold = if (isIdx) 0.000003f else 0.0001f
+            val scale = if (lastPrice > 0.0) lastPrice else price
+            val impulseThreshold = if (isIdx) 0.000008f else (scale * 0.00008).toFloat()   // ~0.008%
+            val minVelThreshold = if (isIdx) 0.000003f else (scale * 0.00003).toFloat()    // ~0.003%
             val effectiveVel = if (Math.abs(velocity) > minVelThreshold) velocity else smoothedVelocity
             if (effectiveVel > impulseThreshold) isBullish = true
             else if (effectiveVel < -impulseThreshold) isBearish = true

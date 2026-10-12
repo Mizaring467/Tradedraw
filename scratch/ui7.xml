@@ -1,0 +1,7 @@
+﻿adb.exe : cat: /sdcard/ui7.xml: No such file or directory
+En línea: 1 Carácter: 344
++ ... ct -Last 1; & adb -s $S shell "su -c 'cat /sdcard/ui7.xml'" 2>&1 | Ou ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (cat: /sdcard/ui...le or directory:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
