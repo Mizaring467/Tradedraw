@@ -8,3 +8,4 @@
 10-12 01:25:03.227 I/TradeDraw( 2251): Tap primario vía ROOT en (249.84, 1340.8) — dispositivo root detectado
 10-12 01:25:03.397 I/TradeDraw( 2251): ⚡ Tap ejecutado con éxito vía ROOT en (249.84, 1340.8)
 10-12 01:26:15.517 E/TradeJournalLogger( 2251): Externo no escribible (/storage/emulated/0/Android/data/com.example.tradedraw/files/TradeDraw_Audits): usando almacenamiento interno
+10-12 01:41:03.051 W/TradingEngine( 2251): ⛔ Headless Trade BUY VETADO por precio congelado: el emisor entrega ticks pero el rango del precio es ~0 (activo plano)
