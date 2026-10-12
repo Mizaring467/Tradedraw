@@ -1,0 +1,6 @@
+allprojects {
+    tasks.withType(Test) {
+        maxHeapSize = "384m"
+        jvmArgs "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1"
+    }
+}

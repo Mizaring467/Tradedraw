@@ -135,7 +135,7 @@ class Candle:
 
 
 def load_ticks(path):
-    """Devuelve [(ts_ms, price)] ordenado por tiempo. Rechaza filas malformadas."""
+    """Devuelve ([(ts_ms, price)], dup_count) ordenado por tiempo y deduplicado."""
     ticks = []
     bad = 0
     with open(path, newline="", encoding="utf-8-sig") as fh:
@@ -154,16 +154,53 @@ def load_ticks(path):
                 continue
             ticks.append((ts, price))
     ticks.sort(key=lambda t: t[0])
+
+    # Deduplicar timestamps: conservar solo el primer tick por ts
+    dedup = []
+    seen = set()
+    dup_count = 0
+    for ts, price in ticks:
+        if ts in seen:
+            dup_count += 1
+        else:
+            seen.add(ts)
+            dedup.append((ts, price))
+
     if bad:
         print(f"  aviso: {bad} filas descartadas en {path}", file=sys.stderr)
-    return ticks
+    return dedup, dup_count
+
+
+def get_gap_cooldown_windows(ticks):
+    """Encuentra huecos > 10 s y devuelve [(gap_start_ts, cooldown_end_ts)]."""
+    windows = []
+    for i in range(1, len(ticks)):
+        gap = ticks[i][0] - ticks[i - 1][0]
+        if gap > 10_000:
+            # Hueco detectado: cooldown de 120s tras el final del hueco
+            windows.append((ticks[i - 1][0], ticks[i][0] + 120_000))
+    return windows
+
+
+def is_in_cooldown(ts, windows):
+    """Comprueba si un timestamp cae en la ventana de hueco o su enfriamiento post-hueco (120s)."""
+    for start, end in windows:
+        if start < ts <= end:
+            return True
+    return False
 
 
 def build_candles(ticks):
-    """Agrupa ticks en velas de CANDLE_MS. Espejo de SyntheticCandleEngine.onNewTick."""
+    """Agrupa ticks en velas de CANDLE_MS. Reinicia el estado ante huecos > 10 s."""
     candles = []
     current = None
+    prev_ts = None
     for ts, price in ticks:
+        if prev_ts is not None and (ts - prev_ts) > 10_000:
+            # Hueco > 10 s: reiniciar el motor de velas
+            if current is not None:
+                candles.append(current)
+            current = None
         bucket = (ts // CANDLE_MS) * CANDLE_MS
         if current is None or current.open_time_ms != bucket:
             if current is not None:
@@ -171,6 +208,7 @@ def build_candles(ticks):
             current = Candle(bucket, price)
         else:
             current.update(price)
+        prev_ts = ts
     if current is not None:
         candles.append(current)
     return candles
@@ -227,13 +265,13 @@ def load_signals(path):
     return signals
 
 
-def simulate_price_mode(ticks, candles):
+def simulate_price_mode(ticks, candles, cooldown_windows=None):
     """Una entrada por vela, en su primer tick dentro de la ventana :01-:05.
 
-    Dirección tomada del tick (alcista -> BUY). Es una línea base optimista: sirve
-    para medir el VEREDICTO, no para atribuir edge a la estrategia.
+    Descarta entradas que caigan en períodos de enfriamiento por huecos > 10 s (120 s).
     """
     signals = []
+    cooldown_windows = cooldown_windows or []
     for idx, candle in enumerate(candles):
         # Primer tick de esta vela dentro de la ventana sniper.
         in_window = [t for t in ticks if t[0] // CANDLE_MS * CANDLE_MS == candle.open_time_ms
@@ -241,6 +279,8 @@ def simulate_price_mode(ticks, candles):
         if not in_window:
             continue
         entry_ts, entry_price = in_window[0]
+        if is_in_cooldown(entry_ts, cooldown_windows):
+            continue
         prev_close = candles[idx - 1].close if idx > 0 else None
         if prev_close is None:
             action = "BUY"
@@ -347,7 +387,16 @@ def self_test():
     assert rows[0]["result"] == "TIE", rows[0]
     assert rows[0]["price_y"] == "641.87"
 
-    print("self-test OK: 18 aserciones")
+    # Verificación de robustez ante huecos (> 10s -> reinicio de velas y cooldown de 120s)
+    gap_ticks = [(base, 100.0), (base + 15_000, 102.0)]
+    windows = get_gap_cooldown_windows(gap_ticks)
+    assert len(windows) == 1, windows
+    assert is_in_cooldown(base + 15_000 + 60_000, windows) is True
+    assert is_in_cooldown(base + 15_000 + 125_000, windows) is False
+    gap_candles = build_candles(gap_ticks)
+    assert len(gap_candles) == 2, len(gap_candles)
+
+    print("self-test OK: 22 aserciones")
 
 
 def main():
@@ -356,6 +405,8 @@ def main():
     ap.add_argument("--mode", choices=("price", "signals"), default="price")
     ap.add_argument("--signals", help="CSV de señales (ts,action) para --mode signals")
     ap.add_argument("--out", default="data/ticks/replay_trades.csv")
+    ap.add_argument("--solo-conteo", action="store_true",
+                    help="Imprime solo N de trades, calidad y descartes sin WR/EV/PnL")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
 
@@ -370,11 +421,18 @@ def main():
         ap.error("falta al menos un CSV de ticks (o usa --self-test)")
 
     all_rows = []
+    total_dups = 0
+    total_gaps = 0
+    total_discarded_by_gap = 0
+
     for path in paths:
-        ticks = load_ticks(path)
+        ticks, dup_count = load_ticks(path)
+        total_dups += dup_count
         if not ticks:
             print(f"  {path}: sin ticks válidos, se omite", file=sys.stderr)
             continue
+        cooldown_windows = get_gap_cooldown_windows(ticks)
+        total_gaps += len(cooldown_windows)
         candles = build_candles(ticks)
         span_min = (ticks[-1][0] - ticks[0][0]) / 60000.0
 
@@ -382,15 +440,31 @@ def main():
             if not args.signals:
                 ap.error("--mode signals requiere --signals <csv>")
             price_by_ts = {ts: price for ts, price in ticks}
-            signals = [(ts, act, price_by_ts.get(ts, ticks[0][1]))
-                       for ts, act in load_signals(args.signals)]
+            raw_sigs = load_signals(args.signals)
+            signals = []
+            for ts, act in raw_sigs:
+                if is_in_cooldown(ts, cooldown_windows):
+                    total_discarded_by_gap += 1
+                    continue
+                signals.append((ts, act, price_by_ts.get(ts, ticks[0][1])))
         else:
-            signals = simulate_price_mode(ticks, candles)
+            signals = simulate_price_mode(ticks, candles, cooldown_windows)
 
         rows = run(ticks, signals)
         all_rows.extend(rows)
-        print(f"  {path}: ticks={len(ticks)} velas={len(candles)} "
-              f"ventana={span_min:.1f}min señales={len(signals)}")
+        if not args.solo_conteo:
+            print(f"  {path}: ticks={len(ticks)} velas={len(candles)} "
+                  f"ventana={span_min:.1f}min señales={len(signals)}")
+
+    if args.solo_conteo:
+        print("--- CONTEO DE REPLAY (--solo-conteo) ---")
+        print(f"Archivos analizados   : {len(paths)}")
+        print(f"Trades generados      : {len(all_rows)}")
+        print(f"Huecos > 10 s         : {total_gaps}")
+        print(f"TS duplicados         : {total_dups}")
+        print(f"Entradas vetadas post-hueco: {total_discarded_by_gap}")
+        print("ESTADO: Conteo finalizado. Cero métricas de rendimiento (WR/EV/PnL) calculadas.")
+        return
 
     all_rows.sort(key=lambda r: r["timestamp"])
     write_csv(args.out, all_rows)

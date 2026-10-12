@@ -27,6 +27,16 @@ class ReplayBacktestTest {
 
     data class RawTick(val ts: Long, val ric: String, val price: Double)
 
+    data class SignalSnapshot(
+        val tick: RawTick,
+        val action: TradeAction,
+        val reason: String,
+        val trend: String,
+        val distSupportRatio: Float,
+        val distResistanceRatio: Float,
+        val isChop: Boolean
+    )
+
     data class SimulatedTrade(
         val timestamp: Long,
         val isoDate: String,
@@ -48,11 +58,12 @@ class ReplayBacktestTest {
         val marketRegime: String,
         val candleSecond: Int,
         val adaptiveStatus: String,
-        val reason: String
+        val reason: String,
+        val source: String = ""
     )
 
     private fun loadTicks(file: File): List<RawTick> {
-        val ticks = mutableListOf<RawTick>()
+        val rawTicks = mutableListOf<RawTick>()
         file.forEachLine { line ->
             val trim = line.trim()
             if (trim.isNotEmpty() && !trim.startsWith("ts") && !trim.startsWith("#")) {
@@ -61,13 +72,23 @@ class ReplayBacktestTest {
                     val ts = parts[0].toLongOrNull()
                     val ric = parts[1].trim()
                     val price = parts[2].toDoubleOrNull()
-                    if (ts != null && price != null) {
-                        ticks.add(RawTick(ts, ric, price))
+                    if (ts != null && price != null && price > 0.0) {
+                        rawTicks.add(RawTick(ts, ric, price))
                     }
                 }
             }
         }
-        return ticks.sortedBy { it.ts }
+        val sorted = rawTicks.sortedBy { it.ts }
+        // Deduplicar timestamps conservando solo el primer tick de cada ts
+        val deduplicated = mutableListOf<RawTick>()
+        var lastTs = Long.MIN_VALUE
+        for (t in sorted) {
+            if (t.ts != lastTs) {
+                deduplicated.add(t)
+                lastTs = t.ts
+            }
+        }
+        return deduplicated
     }
 
     /**
@@ -109,24 +130,50 @@ class ReplayBacktestTest {
         strategy: AutoTradeStrategy,
         subMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE
     ): List<SimulatedTrade> {
-        val engine = SyntheticCandleEngine()
-        engine.currentStrategy = strategy
-        engine.subMode = subMode
-
-        val pendingSignals = mutableListOf<Triple<RawTick, TradeAction, String>>()
+        val pendingSignals = mutableListOf<SignalSnapshot>()
         var lastExecutedCandleMinute = -1L
-        engine.onSignalGenerated = { action, reason ->
-            val lastTick = ticks.lastOrNull { it.ts == engine.lastSignalTimestampMs } ?: ticks.first()
-            val candleMinute = lastTick.ts / 60_000L
-            if (candleMinute != lastExecutedCandleMinute) {
-                lastExecutedCandleMinute = candleMinute
-                pendingSignals.add(Triple(lastTick, action, reason))
+        var cooldownUntilTs = 0L
+
+        fun createEngine(): SyntheticCandleEngine {
+            val eng = SyntheticCandleEngine()
+            eng.currentStrategy = strategy
+            eng.subMode = subMode
+            eng.onSignalGenerated = { action, reason ->
+                val lastTick = ticks.lastOrNull { it.ts == eng.lastSignalTimestampMs } ?: ticks.first()
+                val candleMinute = lastTick.ts / 60_000L
+                // Descartar si el tick cae en el enfriamiento de 120s tras un hueco > 10s
+                // o si la vela de este minuto ya fue operada (1 orden por vela máx)
+                if (lastTick.ts >= cooldownUntilTs && candleMinute != lastExecutedCandleMinute) {
+                    lastExecutedCandleMinute = candleMinute
+                    pendingSignals.add(
+                        SignalSnapshot(
+                            tick = lastTick,
+                            action = action,
+                            reason = reason,
+                            trend = eng.detectedTrend.name,
+                            distSupportRatio = eng.distanceToSupportRatio,
+                            distResistanceRatio = eng.distanceToResistanceRatio,
+                            isChop = eng.isChoppinessDetected()
+                        )
+                    )
+                }
             }
+            return eng
         }
 
+        var currentEngine = createEngine()
         var prevTs = 0L
         var prevPrice = 0.0
+
         for (raw in ticks) {
+            // Detectar hueco > 10 s entre el tick previo y el actual
+            if (prevTs > 0L && (raw.ts - prevTs) > 10_000L) {
+                // Reiniciar el motor y aplicar veto de entrada en los 120s posteriores al final del hueco
+                cooldownUntilTs = raw.ts + 120_000L
+                currentEngine = createEngine()
+                prevPrice = 0.0
+            }
+
             val dtMs = if (prevTs > 0L) raw.ts - prevTs else 0L
             val dtSec = dtMs / 1000.0
             val velocity = if (dtSec > 0.0 && prevPrice > 0.0) ((raw.price - prevPrice) / dtSec).toFloat() else 0f
@@ -146,7 +193,7 @@ class ReplayBacktestTest {
                 smoothedVelocity = velocity
             )
 
-            engine.onNewTick(tick)
+            currentEngine.onNewTick(tick)
             prevTs = raw.ts
             prevPrice = raw.price
         }
@@ -155,7 +202,10 @@ class ReplayBacktestTest {
         var balance = 1000.0
         val stake = 1.0
 
-        for ((entryTick, action, reason) in pendingSignals) {
+        for (sig in pendingSignals) {
+            val entryTick = sig.tick
+            val action = sig.action
+            val reason = sig.reason
             val exitPrice = priceAt(ticks, entryTick.ts + 60_000L)
             val (result, _) = resolveTrade(entryTick.price, exitPrice, action)
 
@@ -182,12 +232,12 @@ class ReplayBacktestTest {
                     result = result,
                     settledBalance = settledBalance,
                     durationSec = 60L,
-                    trend = engine.detectedTrend.name,
-                    distSupportRatio = engine.distanceToSupportRatio,
-                    distResistanceRatio = engine.distanceToResistanceRatio,
+                    trend = sig.trend,
+                    distSupportRatio = sig.distSupportRatio,
+                    distResistanceRatio = sig.distResistanceRatio,
                     tickVelocity = entryTick.price.toFloat(),
                     impulse = "NEUTRAL",
-                    marketRegime = if (engine.isChoppinessDetected()) "CHOP" else "TRENDING",
+                    marketRegime = if (sig.isChop) "CHOP" else "TRENDING",
                     candleSecond = candleSec,
                     adaptiveStatus = result,
                     reason = reason
@@ -202,16 +252,16 @@ class ReplayBacktestTest {
     private fun writeJournalCsv(trades: List<SimulatedTrade>, outFile: File) {
         outFile.parentFile?.mkdirs()
         FileWriter(outFile, false).use { writer ->
-            writer.write("timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason\n")
+            writer.write("timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason,source\n")
             for (t in trades) {
                 val cleanReason = t.reason.replace(",", ";").replace("\n", " ").take(140)
                 val line = String.format(
                     Locale.US,
-                    "%d,%s,%s,%s,%s,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\"\n",
+                    "%d,%s,%s,%s,%s,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\",%s\n",
                     t.timestamp, t.isoDate, t.strategy, t.submode, t.action.name, t.confidence,
                     t.entryPrice, t.stake, t.baseBalance, t.result, t.settledBalance, t.durationSec,
                     t.trend, t.distSupportRatio, t.distResistanceRatio, t.tickVelocity, t.impulse,
-                    t.marketRegime, t.candleSecond, t.adaptiveStatus, cleanReason
+                    t.marketRegime, t.candleSecond, t.adaptiveStatus, cleanReason, t.source
                 )
                 writer.write(line)
             }
@@ -220,45 +270,74 @@ class ReplayBacktestTest {
 
     private fun resolveFile(path: String): File {
         val f = File(path)
+        if (f.isAbsolute) return f
         if (f.exists()) return f
         val parent = File("..", path)
         if (parent.exists()) return parent
+        val currentDir = File(".").canonicalFile
+        if (currentDir.name == "app") {
+            return File("..", path)
+        }
         return f
     }
 
     @Test
     fun testReplayBacktestAutoAdaptive() {
+        val dirEnv = System.getenv("BACKTEST_DIR") ?: System.getProperty("BACKTEST_DIR")
         val csvEnv = System.getenv("BACKTEST_CSV") ?: System.getProperty("BACKTEST_CSV")
-        assumeTrue("BACKTEST_CSV no está definida o vacía: omitiendo replay", !csvEnv.isNullOrBlank())
+        assumeTrue("BACKTEST_CSV o BACKTEST_DIR debe estar definido", !dirEnv.isNullOrBlank() || !csvEnv.isNullOrBlank())
 
-        val csvFile = resolveFile(csvEnv!!)
-        assumeTrue("Archivo BACKTEST_CSV no existe (${csvFile.absolutePath}): omitiendo replay", csvFile.exists())
+        val filesToProcess = mutableListOf<File>()
+        if (!dirEnv.isNullOrBlank()) {
+            val dir = resolveFile(dirEnv)
+            assumeTrue("Directorio BACKTEST_DIR no existe: ${dir.absolutePath}", dir.exists() && dir.isDirectory)
+            val csvFiles = dir.listFiles { _, name -> name.endsWith(".csv", ignoreCase = true) }?.sortedBy { it.name } ?: emptyList()
+            assumeTrue("No hay archivos CSV en ${dir.absolutePath}", csvFiles.isNotEmpty())
+            filesToProcess.addAll(csvFiles)
+        } else {
+            val csvFile = resolveFile(csvEnv!!)
+            assumeTrue("Archivo BACKTEST_CSV no existe (${csvFile.absolutePath}): omitiendo replay", csvFile.exists())
+            filesToProcess.add(csvFile)
+        }
 
-        val ticks = loadTicks(csvFile)
-        assertTrue("El archivo de ticks debe contener al menos 10 ticks", ticks.size >= 10)
-
+        val t0Env = System.getenv("BACKTEST_T0") ?: System.getProperty("BACKTEST_T0")
+        val t0Val = t0Env?.toLongOrNull()
         val outEnv = System.getenv("BACKTEST_OUT") ?: System.getProperty("BACKTEST_OUT") ?: "build/backtest_out.csv"
-        val outFile = File(outEnv)
+        val outFile = resolveFile(outEnv)
 
         println("=== INICIANDO BACKTEST REPLAY FIEL (AUTO_ADAPTIVE) ===")
-        println("Ticks cargados: ${ticks.size} desde ${csvFile.absolutePath}")
-        println("Rango temporal: ${Date(ticks.first().ts)} hasta ${Date(ticks.last().ts)}")
+        println("Archivos a procesar: ${filesToProcess.size}")
 
-        val trades = runBacktestOnStrategy(ticks, AutoTradeStrategy.AUTO_ADAPTIVE)
-        writeJournalCsv(trades, outFile)
+        val allTrades = mutableListOf<SimulatedTrade>()
+        for ((idx, f) in filesToProcess.withIndex()) {
+            val allTicks = loadTicks(f)
+            val ticks = if (t0Val != null && t0Val > 0L) allTicks.filter { it.ts <= t0Val } else allTicks
+            if (ticks.size < 10) continue
 
-        println("Señales generadas (Motor Kotlin real): ${trades.size}")
-        val wins = trades.count { it.result == "WIN" }
-        val losses = trades.count { it.result == "LOSS" }
-        val ties = trades.count { it.result == "TIE" }
+            val trades = runBacktestOnStrategy(ticks, AutoTradeStrategy.AUTO_ADAPTIVE)
+            val labeledTrades = trades.map { it.copy(source = f.name) }
+            allTrades.addAll(labeledTrades)
+            if (filesToProcess.size > 1 && (idx + 1) % 25 == 0) {
+                println("Procesados ${idx + 1}/${filesToProcess.size} archivos (trades acumulados: ${allTrades.size})...")
+            }
+        }
+
+        writeJournalCsv(allTrades, outFile)
+
+        println("Señales generadas (Motor Kotlin real): ${allTrades.size}")
+        val wins = allTrades.count { it.result == "WIN" }
+        val losses = allTrades.count { it.result == "LOSS" }
+        val ties = allTrades.count { it.result == "TIE" }
         val nonTies = wins + losses
         val wr = if (nonTies > 0) (wins.toDouble() / nonTies * 100.0) else 0.0
 
         println(String.format(Locale.US, "Resultado: W=%d, L=%d, TIE=%d | WR=%.2f%%", wins, losses, ties, wr))
         println("Archivo de salida simulado: ${outFile.absolutePath}")
 
-        for ((idx, t) in trades.withIndex()) {
-            println("Trade #${idx + 1}: ${t.isoDate} | ${t.action} @ ${t.entryPrice} -> ${t.result} (${t.reason})")
+        if (filesToProcess.size <= 5) {
+            for ((idx, t) in allTrades.withIndex()) {
+                println("Trade #${idx + 1}: ${t.isoDate} | ${t.action} @ ${t.entryPrice} -> ${t.result} (${t.reason}) [${t.source}]")
+            }
         }
     }
 
@@ -269,8 +348,11 @@ class ReplayBacktestTest {
         val csvFile = resolveFile(csvEnv!!)
         assumeTrue("Archivo no existe: omitiendo reporte", csvFile.exists())
 
-        val ticks = loadTicks(csvFile)
-        println("=== REPORTE MULTIESTRATEGIA DE REPLAY KOTLIN ===")
+        val t0Env = System.getenv("BACKTEST_T0") ?: System.getProperty("BACKTEST_T0")
+        val t0Val = t0Env?.toLongOrNull()
+        val allTicks = loadTicks(csvFile)
+        val ticks = if (t0Val != null && t0Val > 0L) allTicks.filter { it.ts <= t0Val } else allTicks
+        println("=== REPORTE MULTIESTRATEGIA DE REPLAY KOTLIN ===" + (if (t0Val != null) " (filtrado hasta T0=$t0Val)" else ""))
         for (strategy in AutoTradeStrategy.values()) {
             val trades = runBacktestOnStrategy(ticks, strategy)
             val wins = trades.count { it.result == "WIN" }

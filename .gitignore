@@ -35,3 +35,7 @@ trade_sell.jpg
 
 # Python caches
 __pycache__/
+
+# R10: ticks crudos y series nulas (no versionar, solo local)
+data/ticks/*_2026-*.csv
+data/null/

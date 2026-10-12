@@ -209,6 +209,31 @@ def evaluate(path: str, payout: float, result_col: str, time_col: str, min_n: in
     return lines, verdict
 
 
+def count_only(path: str, result_col: str = "result", time_col: str = "timestamp", min_n: int = MIN_N_HOLDOUT) -> list:
+    """Modo --solo-conteo: Reporta únicamente conteos sin calcular WR, EV, PnL ni Wilson."""
+    decided, ties = load_trades(path, result_col, time_col)
+    n_total = len(decided)
+    cut = int(n_total * HOLDOUT_SPLIT)
+    n_dev = cut
+    n_hold = n_total - cut
+    pct = (n_hold / min_n * 100.0) if min_n > 0 else 100.0
+
+    lines = [
+        "--- CONTEO DE TRADES (--solo-conteo) ---",
+        f"Archivo            : {path}",
+        f"Trades sin TIE     : {n_total}",
+        f"Trades TIE         : {ties}",
+        f"Desarrollo (70%)   : {n_dev}",
+        f"Holdout (30%)      : {n_hold}",
+        f"Objetivo holdout   : N >= {min_n} (Progreso: {n_hold}/{min_n} = {pct:.1f}%)",
+    ]
+    if n_hold < min_n:
+        lines.append(f"ESTADO: Confirmación en curso ({n_hold} de {min_n} trades necesarios). Cero métricas calculadas.")
+    else:
+        lines.append(f"ESTADO: Muestra suficiente (N={n_hold} >= {min_n}). Listo para evaluación final única.")
+    return lines
+
+
 def self_test() -> None:
     """Autochequeo con valores calculables a mano. Sin frameworks de test."""
     b = breakeven_win_rate(0.83)
@@ -260,6 +285,8 @@ def main() -> None:
     ap.add_argument("--time-col", default="timestamp")
     ap.add_argument("--min-n", type=int, default=MIN_N_HOLDOUT,
                     help="N mínimo del holdout para poder emitir veredicto")
+    ap.add_argument("--solo-conteo", action="store_true",
+                    help="Imprime solo N de trades sin calcular WR, EV, PnL ni Wilson")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
 
@@ -270,7 +297,10 @@ def main() -> None:
     if not args.csv:
         ap.error("falta el CSV (o usa --self-test)")
 
-    lines, _ = evaluate(args.csv, args.payout, args.result_col, args.time_col, args.min_n)
+    if args.solo_conteo:
+        lines = count_only(args.csv, args.result_col, args.time_col, args.min_n)
+    else:
+        lines, _ = evaluate(args.csv, args.payout, args.result_col, args.time_col, args.min_n)
     print("\n".join(lines))
 
 
