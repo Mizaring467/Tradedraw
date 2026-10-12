@@ -1,0 +1,4 @@
+﻿timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason
+1791767236566,2026-10-11T20:07:16,AUTO_ADAPTIVE,CONSERVATIVE,BUY,0.85,641.87,1.00,39142735.36,LOSS,39042736.64,72,UPTREND,0.06,0.19,0.00,NEUTRAL,TRENDING,12,LOSS,"SALDO (-) P├®rdida confirmada tras liquidaci├│n: Diff=-99998.71999999881 COP (72s)"
+1791767706095,2026-10-11T20:15:06,AUTO_ADAPTIVE,CONSERVATIVE,BUY,0.85,641.87,2.00,39042736.64,WIN,39125736.96,62,UPTREND,0.50,0.00,-0.00,NEUTRAL,CHOP,5,WIN,"SALDO (+) Ganancia acreditada por Binomo: Diff=+83000.3200000003 COP (62s)"
+1791768136970,2026-10-11T20:22:16,AUTO_ADAPTIVE,CONSERVATIVE,BUY,0.85,641.87,1.00,39125736.96,LOSS,39025735.68,72,UPTREND,0.12,0.13,-0.00,NEUTRAL,TRENDING,10,LOSS,"SALDO (-) P├®rdida confirmada tras liquidaci├│n: Diff=-100001.28000000119 COP (72s)"

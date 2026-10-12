@@ -122,6 +122,15 @@ herdr agent prompt agy  "<tarea>" --wait --timeout 900000
 | 4-fix | R2 anti-contra-tendencia + R3 canal medio (agy) | medido (25m) | **1 WIN +181.998 COP / 0 LOSS** | `live_session_25m_report.json`, HUD 5/5 | **PASS: 0 pérdidas** |
 | 5 | Fix journal (DSH) + validación de auditoría | medido (25m) | 2 WIN / 1 LOSS, **0 TIE** | journal interno (u0_a179) | **PASS: journal persistente** |
 | 5-fix | Endurecer journal (colisión/duplicados/firma) | 164 tests OK | — | `r5_fix_agy.md` | aplicado |
+| 6 | H10 segundo de entrada + logcat 16M + auditoría de edge | medido (25m) | **0 trades** (397 evaluadas) | `r6_*`, `r6_journal.csv` | FAIL: sobre-filtrado |
+
+### Bitácora Ronda 6 (2026-10-11)
+- **Hallazgo operativo:** el buffer de logcat era **64 KiB** → rotaba en ~30s y H9 "desaparecía". Subido a **16 MiB** (`adb logcat -G 16M`).
+- **H10 (segundo de entrada):** campo `pendingTradeEntryCandleSecond` + `pendingTradeReason` en `RiskManager`, persistido en el journal. **agy detectó que faltaba la ruta `executeAutonomousTrade` (L1482)** → corregido (pasa `analysis.candleSecond` y la razón).
+- **Auditoría de edge (agy, N=78 sin TIE):** WR global 48.7% (< breakeven 54.95%). Subconjuntos con ventaja: **SELL + resistencia media 0.15-0.35 → 77.8% (N=9)**; BUY + soporte medio → 63.6% (N=11); DOWNTREND + resistencia media → 58.3% (N=12).
+- **Sesión 6 (25m, CONSERVATIVE + R2/R3):** **0 trades** — 397 evaluadas, 10 suprimidas por confluencia. Los filtros R2/R3 + ventana :01-:05 + confluencia ≥80 son demasiado estrictos para un feed near-static.
+- **Conclusión estructural:** con el activo `Z-CRY/IDX` (línea muerta) el sistema oscila entre **sobre-vetar (0 trades)** y **operar sin edge (WR ~49%)**. El cuello de botella es el **ACTIVO**, no la lógica.
+- **Próxima fase (Ronda 7):** migrar la operativa a un **activo volátil real** (Forex en horario de mercado o BTC) para tener frecuencia + edge medible con N≥30.
 
 ### Bitácora Ronda 5 (2026-10-11)
 - **Nuevo agente: DeepSeek Harness (DSH)** — DeepSeek V4.1 Flash, integrado vía tarea pegada en su GUI.

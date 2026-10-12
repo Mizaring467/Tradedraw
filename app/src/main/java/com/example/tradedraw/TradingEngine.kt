@@ -1479,7 +1479,7 @@ class TradingEngine(
         val observed = accessibility?.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
         val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
         isTradeResolving.set(false)
-        riskManager.recordTradeSent(action, analysis.currentPriceY, baseBal, confidence)
+        riskManager.recordTradeSent(action, analysis.currentPriceY, baseBal, confidence, analysis.candleSecond, reasonDescription)
         // Despacho táctil único con verificación y fallback ROOT transparente
         AutoTradeAccessibilityService.performClick(x, y) { success, error ->
             if (!success) {
@@ -1774,7 +1774,7 @@ class TradingEngine(
         // correlacionar el segundo de disparo con el resultado, la métrica que el journal no captura.
         Log.i("TradingEngine", "🎯 ENTRADA despachada | ${finalAction} | segundo=$sec | estrategia=${strategy.name} | $finalReason")
         isTradeResolving.set(false)
-        riskManager.recordTradeSent(finalAction, latestMarketTick?.price?.toFloat() ?: 0f, baseBal, headlessConfidence)
+        riskManager.recordTradeSent(finalAction, latestMarketTick?.price?.toFloat() ?: 0f, baseBal, headlessConfidence, sec, finalReason)
         synchronized(this) {
             lastExecutedCandleEpochMinute = currentCandleEpochMinute
         }
@@ -1912,7 +1912,10 @@ class TradingEngine(
                         else -> "NEUTRAL"
                     },
                     marketRegime = if (syntheticCandleEngine.isChoppinessDetected()) "CHOP" else "TRENDING",
-                    candleSecond = sec,
+                    // H10: se persiste el segundo REAL de ENTRADA (capturado al enviar la orden),
+                    // no el de liquidación. Si por alguna ruta no se capturó (-1), se usa el actual.
+                    candleSecond = if (riskManager.pendingTradeEntryCandleSecond >= 0)
+                        riskManager.pendingTradeEntryCandleSecond else sec,
                     adaptiveStatus = journalResult,
                     tradeStartMs = pendingTradeStartMs
                 )

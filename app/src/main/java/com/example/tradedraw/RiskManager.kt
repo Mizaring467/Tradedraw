@@ -236,6 +236,12 @@ class RiskManager(context: Context? = null) {
 
     @Volatile
     var pendingTradeConfidence: Float = 0.0f
+
+    // H10 (Ronda 6): segundo del reloj (0-59) en que se ENVIÓ la orden. El journal guardaba el
+    // segundo de LIQUIDACIÓN (sesgado); este campo permite auditar el timing real de entrada.
+    var pendingTradeEntryCandleSecond: Int = -1
+    // H10: etiqueta de la estrategia/razón que originó la señal (para correlacionar setup -> resultado).
+    var pendingTradeReason: String = ""
         internal set
 
     @Volatile
@@ -470,7 +476,7 @@ class RiskManager(context: Context? = null) {
     }
 
     @Synchronized
-    fun recordTradeSent(action: TradeAction, entryPriceY: Float = 0f, baseBalance: Double = 0.0, confidence: Float = 0.0f) {
+    fun recordTradeSent(action: TradeAction, entryPriceY: Float = 0f, baseBalance: Double = 0.0, confidence: Float = 0.0f, entryCandleSecond: Int = -1, reason: String = "") {
         val now = System.currentTimeMillis()
         lastTradeTime = now
         hasPendingTrade = true
@@ -479,6 +485,8 @@ class RiskManager(context: Context? = null) {
         pendingTradeEntryPriceY = entryPriceY
         pendingTradeBaseBalance = baseBalance
         pendingTradeConfidence = confidence
+        pendingTradeEntryCandleSecond = entryCandleSecond
+        pendingTradeReason = reason
     }
 
     @Synchronized
@@ -494,6 +502,8 @@ class RiskManager(context: Context? = null) {
         pendingTradeEntryPriceY = 0f
         pendingTradeBaseBalance = 0.0
         pendingTradeConfidence = 0.0f
+        pendingTradeEntryCandleSecond = -1
+        pendingTradeReason = ""
     }
 
     @Synchronized
