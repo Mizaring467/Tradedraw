@@ -1,0 +1,59 @@
+{
+            "app": "TradeDraw",
+            "mode": "AUTONOMOUS",
+            "strategy": "AUTO_ADAPTIVE",
+            "accessibilityActive": true,
+            "balance": 3.808573696E7,
+            "analysis": {
+                "currentPriceY": 1050.0024,
+                "dynamicResistanceY": 0.0,
+                "dynamicSupportY": 0.0,
+                "dynamicResistancePrice": 1050.1645,
+                "dynamicSupportPrice": 1049.9175,
+                "callPower": 16,
+                "putPower": 84,
+                "isMarketSideways": false,
+                "trend": "DOWNTREND",
+                "candleCount": 26,
+                "streak": "TREND 🔴"
+            },
+            "risk": {
+                "totalWins": 1,
+                "totalLosses": 1,
+                "winRate": 50.0,
+                "currentLossStreak": 1,
+                "martingaleStatus": "[M1 | $2.0]",
+                "investmentAmount": 2.0,
+                "hasPendingTrade": false,
+                "remainingCooldown": 0
+            },
+            "activeSignal": null,
+            "feed": {
+                "source": "websocket",
+                "lastTickAgeMs": 447,
+                "activeAsset": "ETHUSD-OTC",
+                "ws_active_asset": "ETHUSD-OTC",
+                "connected": true,
+                "isFresh": true,
+                "tickSource": "socket",
+                "rawSocketMessages": 2063,
+                "socketTicks": 2062,
+                "journalWrites": 2,
+                "lastJournalWriteMs": 764241,
+                "journalError": "",
+                "journalDuplicatesRejected": 0,
+                "journalRotations": 0,
+                "priceFrozen": false,
+                "recentPriceRangeRatio": 3.6190390022869634E-4,
+                "rawFrames": ["{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-12T06:38:57.102276Z\",\"provider_time\":\"2026-10-12T06:38:57.101000Z\",\"rate\":1050.0025,\"created_at_with_millis\":\"2026-10-12T06:38:57.102000Z\",\"precision\":8,\"repeat\":0,\"ask\":1050.0025,\"created_at\":\"2026-10-12T06:38:58.000000Z\",\"bid\":1050.0025,\"ric\":\"ETHUSD-OTC\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}","{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-12T06:38:58.002600Z\",\"provider_time\":\"2026-10-12T06:38:57.101000Z\",\"rate\":1050.0025,\"created_at_with_millis\":\"2026-10-12T06:38:58.002000Z\",\"precision\":8,\"repeat\":1,\"ask\":1050.0025,\"created_at\":\"2026-10-12T06:38:59.000000Z\",\"bid\":1050.0025,\"ric\":\"ETHUSD-OTC\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}","{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-12T06:38:58.902219Z\",\"provider_time\":\"2026-10-12T06:38:58.101000Z\",\"rate\":1050.0025,\"created_at_with_millis\":\"2026-10-12T06:38:58.902000Z\",\"precision\":8,\"repeat\":2,\"ask\":1050.0025,\"created_at\":\"2026-10-12T06:38:59.000000Z\",\"bid\":1050.0025,\"ric\":\"ETHUSD-OTC\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}"]
+            },
+            "engine": {
+                "signalsGenerated": 20,
+                "lastSignalTimestampMs": 1791786965086,
+                "lastSignalAction": "BUY",
+                "evaluatedCount": 161,
+                "suppressedByConfluence": 22,
+                "suppressedByChop": 0,
+                "suppressedByMicroCompression": 0
+            }
+        }

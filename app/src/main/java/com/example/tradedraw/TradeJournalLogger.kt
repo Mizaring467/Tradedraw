@@ -255,8 +255,8 @@ object TradeJournalLogger {
         val cleanReason = reason.replace(",", ";").replace("\n", " ").take(140)
         return String.format(
             Locale.US,
-            "%d,%s,%s,%s,%s,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\"\n",
-            now, isoDate, strategy, submode, action, confidence, priceY, stake.toDouble(),
+            "%d,%s,%s,%s,%s,%.2f,%s,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\"\n",
+            now, isoDate, strategy, submode, action, confidence, formatDynamicPrice(priceY.toDouble()), stake.toDouble(),
             baseBalance.toDouble(), result, settledBalance.toDouble(), durationSec, trend,
             distSupportRatio, distResistanceRatio, tickVelocity, impulse, marketRegime,
             candleSecond, adaptiveStatus, cleanReason

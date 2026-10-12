@@ -24,6 +24,10 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             internal set
 
         @Volatile
+        var lastBalanceReadMs: Long = 0L
+            internal set
+
+        @Volatile
         var isDemoAccount: Boolean = true
             internal set
 
@@ -460,6 +464,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                 return latestObservedBalance
             }
             latestObservedBalance = found
+            lastBalanceReadMs = System.currentTimeMillis()
             return found
         }
         return if (latestObservedBalance > 0.0) latestObservedBalance else null

@@ -64,6 +64,28 @@ class TradeJournalLoggerTest {
     }
 
     @Test
+    fun testLogTrade_preservesDynamicPricePrecision() {
+        val root = tempDir("journal_price_precision")
+        val ctx = FakeContext(root, tempDir("journal_price_precision_int"))
+        val prices = listOf(1049.37f, 641.86728657f)
+
+        prices.forEachIndexed { index, price ->
+            assertTrue(TradeJournalLogger.logTrade(
+                context = ctx, strategy = "S", submode = "M", action = "BUY", confidence = 0.5f,
+                priceY = price, stake = 1.0, baseBalance = 10.0, result = "WIN",
+                settledBalance = 11.0, durationSec = 62, reason = "precision", tradeStartMs = 900_000L + index
+            ))
+        }
+
+        val priceFields = File(root, "TradeDraw_Audits/trade_journal.csv").readLines()
+            .drop(1).map { it.split(',')[6] }
+        assertEquals(formatDynamicPrice(prices[0].toDouble()), priceFields[0])
+        assertTrue("El precio dinámico debe conservar al menos seis decimales", priceFields[1].contains('.'))
+        assertTrue(priceFields[1].substringAfter('.').length >= 6)
+        assertFalse("El precio no debe quedar truncado a dos decimales", priceFields[1] == "641.87")
+    }
+
+    @Test
     fun testLogTrade_appendsInsteadOfTruncating() {
         val root = tempDir("journal_append")
         val ctx = FakeContext(root, tempDir("journal_append_int"))

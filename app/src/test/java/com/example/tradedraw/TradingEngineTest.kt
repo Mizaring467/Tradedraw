@@ -6,6 +6,22 @@ import org.junit.Test
 class TradingEngineTest {
 
     @Test
+    fun tieJournalResult_countsOnlyFreshBalanceAsVoid() {
+        val riskManager = RiskManager().apply { resetStats() }
+        val now = System.currentTimeMillis()
+        assertTrue(TradingEngine.isBalanceFresh(instanceAvailable = true, lastReadMs = now - 1000L, nowMs = now))
+        assertFalse(TradingEngine.isBalanceFresh(instanceAvailable = false, lastReadMs = now - 1000L, nowMs = now))
+        assertEquals("TIE", TradingEngine.tieJournalResult(isTie = true, saldoFresco = true))
+        TradingEngine.recordTieVoidIfFresh(riskManager, saldoFresco = true)
+        assertEquals(1, riskManager.totalVoids)
+        assertEquals("TIE_INCIERTO", TradingEngine.tieJournalResult(isTie = true, saldoFresco = false))
+        TradingEngine.recordTieVoidIfFresh(riskManager, saldoFresco = false)
+        assertEquals("La rama incierta no debe añadir voids, W ni L", 1, riskManager.totalVoids)
+        assertEquals(0, riskManager.totalWins)
+        assertEquals(0, riskManager.totalLosses)
+    }
+
+    @Test
     fun testMasterComboPrioritization_falseBreakoutOverAll() {
         // Cuando coexisten un patrón débil (3 velas) y una trampa institucional (Falso Rompimiento),
         // MT_MASTER_COMBO debe priorizar Falso Rompimiento.

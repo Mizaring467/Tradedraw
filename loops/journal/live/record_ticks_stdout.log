@@ -1,0 +1,7 @@
+cookie len=535 rics=ETHUSD-OTC,SOLUSD-OTC,BTCUSD-OTC minutos=240
+RIC ETHUSD-OTC -> C:\Users\heidy\Tradedraw\data\ticks\ETHUSD-OTC_2026-10-12.csv
+RIC SOLUSD-OTC -> C:\Users\heidy\Tradedraw\data\ticks\SOLUSD-OTC_2026-10-12.csv
+RIC BTCUSD-OTC -> C:\Users\heidy\Tradedraw\data\ticks\BTCUSD-OTC_2026-10-12.csv
+[ETHUSD-OTC] WS abierto, suscribiendo
+[SOLUSD-OTC] WS abierto, suscribiendo
+[BTCUSD-OTC] WS abierto, suscribiendo

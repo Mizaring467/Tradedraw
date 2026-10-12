@@ -536,6 +536,16 @@ class TradingEngine(
     }
 
     companion object {
+        internal fun tieJournalResult(isTie: Boolean, saldoFresco: Boolean): String? =
+            if (!isTie) null else if (saldoFresco) "TIE" else "TIE_INCIERTO"
+
+        internal fun isBalanceFresh(instanceAvailable: Boolean, lastReadMs: Long, nowMs: Long): Boolean =
+            instanceAvailable && nowMs - lastReadMs < 3000L
+
+        internal fun recordTieVoidIfFresh(riskManager: RiskManager, saldoFresco: Boolean) {
+            if (saldoFresco) riskManager.recordTradeVoid()
+        }
+
         fun evaluateStrategySignal(
             strategy: AutoTradeStrategy,
             analysis: VisionAnalysisResult,
@@ -1831,6 +1841,11 @@ class TradingEngine(
         if (!isExpired) return
 
         val baseBalance = snapshot.baseBalance
+        val saldoFresco = isBalanceFresh(
+            AutoTradeAccessibilityService.instance != null,
+            AutoTradeAccessibilityService.lastBalanceReadMs,
+            System.currentTimeMillis()
+        )
         val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance()
             ?: AutoTradeAccessibilityService.latestObservedBalance
 
@@ -1887,7 +1902,7 @@ class TradingEngine(
                 distanceToResistanceRatio = syntheticCandleEngine.distanceToResistanceRatio,
                 candleSecond = sec
             )
-            val journalResult = if (isTie) "TIE" else if (finalWin) "WIN" else "LOSS"
+            val journalResult = tieJournalResult(isTie, saldoFresco) ?: if (finalWin) "WIN" else "LOSS"
 
             handler.post {
                 autoDrawEngine.clearTradeEntry()
@@ -1924,8 +1939,9 @@ class TradingEngine(
                 )
 
                 if (isTie) {
-                    riskManager.recordTradeVoid()
-                    Toast.makeText(context, "[HEADLESS] ⚪ Empate / Orden cancelada", Toast.LENGTH_SHORT).show()
+                    recordTieVoidIfFresh(riskManager, saldoFresco)
+                    val mensaje = if (saldoFresco) "[HEADLESS] ⚪ Empate / Orden cancelada" else "[HEADLESS] ⚪ Empate incierto / saldo no fresco"
+                    Toast.makeText(context, mensaje, Toast.LENGTH_SHORT).show()
                     OverlayService.instance?.updateHUDView()
                 } else if (finalWin) {
                     if (riskManager.resolvePendingTradeWin()) {
