@@ -40,6 +40,23 @@ class OverlayService : Service() {
     }
 
     private lateinit var windowManager: WindowManager
+
+    /**
+     * Margen lateral del HUD en px para la orientacion ACTUAL. Se recalcula en cada llamada
+     * (no se cachea) porque `resources.displayMetrics` cambia al rotar.
+     */
+    private fun hudSideMarginPx(): Int = (HUD_SIDE_MARGIN_DP * resources.displayMetrics.density).toInt()
+
+    /**
+     * Ancho del HUD en px para la orientacion ACTUAL: pantalla menos dos margenes laterales.
+     * Ronda 11 (T8, landscape): se usa tanto al crear la ventana como en `onConfigurationChanged`,
+     * para que al rotar el ancho se recalcule y los botones sigan dentro de la pantalla.
+     */
+    private fun hudWidthPx(): Int {
+        val metrics = resources.displayMetrics
+        return (metrics.widthPixels - (2 * hudSideMarginPx()))
+            .coerceAtLeast((200 * metrics.density).toInt())
+    }
     private lateinit var canvasView: View
     internal lateinit var drawingView: CustomDrawingView
     private lateinit var canvasParams: WindowManager.LayoutParams
@@ -293,11 +310,16 @@ class OverlayService : Service() {
                 windowManager.updateViewLayout(menuView, menuParams)
             }
 
-            // 3. Reposicionar HUD dentro de los nuevos bordes
+            // 3. Reposicionar y REDIMENSIONAR el HUD dentro de los nuevos bordes.
+            // Ronda 11 (T8, landscape): antes solo se corregia x/y si el HUD caia fuera, pero el
+            // ANCHO no se recalculaba: quedaba fijado al de la orientacion de arranque. Al pasar a
+            // horizontal la pantalla logica pasa de 720 a 1600 px y el HUD conservaba el ancho de
+            // portrait, dejando el chip de plegado a medio camino en vez del borde derecho.
             hudParams?.let { params ->
                 val view = hudView ?: return@let
                 val metrics = resources.displayMetrics
-                if (params.x > metrics.widthPixels - 100) params.x = 40
+                params.width = hudWidthPx()
+                params.x = hudSideMarginPx()
                 if (params.y > metrics.heightPixels - 100) params.y = 120
                 windowManager.updateViewLayout(view, params)
             }
@@ -1051,16 +1073,12 @@ class OverlayService : Service() {
         // fijos; con el offset x=50 la ventana terminaba fuera del borde derecho y el botón de
         // plegado quedaba inalcanzable. Ahora el ancho se calcula contra la pantalla real y los
         // TextView `match_parent` envuelven el texto.
-        val metrics = resources.displayMetrics
-        val sideMarginPx = (HUD_SIDE_MARGIN_DP * metrics.density).toInt()
-        val hudWidthPx = (metrics.widthPixels - (2 * sideMarginPx))
-            .coerceAtLeast((200 * metrics.density).toInt())
         hudParams = WindowManager.LayoutParams(
-            hudWidthPx, WindowManager.LayoutParams.WRAP_CONTENT,
+            hudWidthPx(), WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = sideMarginPx; y = 50
+            x = hudSideMarginPx(); y = 50
         }
 
         val hudPrefs = getSharedPreferences("TradeDraw_HUDConfig", Context.MODE_PRIVATE)

@@ -386,7 +386,27 @@ Corrección: `onNewTick` detecta el cambio de activo (comparando `tick.asset`) y
 
 > ⚠ **TOCA DECISIÓN DE TRADING — SÍ, indirectamente.** Limpiar el buffer al cambiar de activo altera los valores que el motor sintético deriva de `recentTickPrices` (momentum, medias, z-score de 60 ticks, `recentPriceBounds`). Antes, tras un cambio de activo, esos indicadores arrastraban precios de la escala anterior durante hasta 120 ticks. **No se cambió ningún umbral**: se dejó de alimentar los indicadores con datos de otro instrumento. Es una corrección de integridad, no de estrategia.
 
-Evidencia: `t8_landscape_01.png` … `t8_landscape_03.png`, `t8_fix_botkey.png`.
+**Bug nuevo 3 — al rotar, el ancho del HUD NO se recalculaba.** Este es el defecto de landscape de raíz, y explica por qué el chip de plegado parecía inalcanzable en horizontal.
+
+`OverlayService.onConfigurationChanged` sí reprocesaba el lienzo (`MATCH_PARENT`) y sí corregía la `x`/`y` del HUD si caía fuera de pantalla, pero **nunca tocaba `hudParams.width`**: quedaba congelado en el valor calculado al arrancar el servicio.
+
+Medición en dispositivo (el eje lógico de la app pasa de 720 a 670 px al rotar en este POCO X6 Pro):
+
+| Momento | `mAttrs` del HUD | Ancho útil | ¿Cabe? |
+| :--- | :--- | ---: | :--- |
+| Portrait (arranque) | `(48,50)(624xwrap)` | 624 de 720 | Sí |
+| Landscape **con el bug** | `(48,50)(624xwrap)` | **624 de 670** | **No: x+ancho = 672 > 670, desborda** |
+| Landscape **corregido** | `(48,50)(574xwrap)` | 574 = 670 − 2×48 | Sí |
+
+Con `x = 48` y ancho 624, el borde derecho cae en 672 sobre una pantalla de 670: el botón de plegado y parte del contenido quedaban **fuera del área visible**, no solo mal posicionados. Eso convierte el "chip inalcanzable en landscape" en un desbordamiento real de ventana, no en un problema de coordenadas de tap.
+
+Corrección: se extraen `hudWidthPx()` y `hudSideMarginPx()`, que leen `resources.displayMetrics` en cada llamada (no cachean), y `onConfigurationChanged` reasigna `params.width` y `params.x` además de corregir la `y`. El cálculo de creación de la ventana usa los mismos helpers, así que no hay dos fórmulas que puedan divergir.
+
+**Nota metodológica:** la rotación por `settings put system user_rotation 1` dejó de aplicarse durante la sesión (MIUI la ignora con el instalador de paquetes en primer plano y el servicio en estado inconsistente). Para medir se forzó la geometría con `wm size 1600x720`, lo que provoca que el compositor renderice en negro (captura inservible) pero **no afecta a `dumpsys window`**, que es de donde sale toda la evidencia de esta tabla: la medida de `mAttrs` es del gestor de ventanas, no de la captura. `wm size`/`wm density` se resetearon después; el dispositivo quedó en `cur=720x1600` y `ROTATION_0`.
+
+> ⚠ **NO toca decisión de trading.** Es geometría de ventana exclusivamente; ningún cálculo de precio, umbral o veto depende del ancho del HUD.
+
+Evidencia: `t8_landscape_01.png` … `t8_landscape_03.png`, `t8_fix_botkey.png`, y la tabla de `mAttrs` de arriba (medida directa de `dumpsys window`, no captura).
 
 
 ---
