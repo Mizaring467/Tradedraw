@@ -17,7 +17,7 @@
 | T5 — Micro-velocidad: signo coherente y unidad comparable | **CAUSA RAÍZ CONFIRMADA y corregida** (2 iteraciones) | `267ad0f`, `7ace8c3` |
 | T6 — Countdown real y P&L real | **CONFIRMADO y corregido** | `267ad0f` |
 | T7 — Invariantes de coherencia del HUD | **CONFIRMADO y corregido** (contradicción nueva hallada en dispositivo) | `f30c530` |
-| T8 — Layout del HUD, plegado y solapamiento | **CONFIRMADO**; corregido en 2 iteraciones, **la 2ª pendiente de verificación visual** | `f752077`, `2ffebe9` |
+| T8 — Layout del HUD, plegado y solapamiento | **CONFIRMADO**; corregido en 2 iteraciones y **los 3 fallos del probador verificados como resueltos en dispositivo** | `f752077`, `2ffebe9` |
 | T9 — Verificación cruzada (solo informe, sin cambios) | **Hallazgos abajo** | — |
 
 **Tests:** `217 passed, 0 failed, 2 skipped` (16 clases). Baseline antes de R11: 164 tests.
@@ -278,7 +278,21 @@ El probador rechazó T8 con evidencia reproducible. Los tres fallos:
 - `hud_strategy` con peso propio para absorber el recorte.
 - Botón de plegado a **36×32 dp**, **el último** de la fila y en un contenedor **sin peso**: no puede ser comprimido ni desplazado por el texto.
 
-> ⚠️ **Estado: corregido y compilado, PENDIENTE DE VERIFICACIÓN VISUAL EN DISPOSITIVO.** El teléfono se desconectó de ADB al cerrar el probador (`device 'UGU8KFUKM7E6CE8D' not found`) y no ha vuelto a responder por WiFi. Compila (`BUILD SUCCESSFUL`) y los 217 tests siguen verdes, pero **el fix de T8 no está confirmado en pantalla**. Es el único punto de la ronda sin evidencia visual de cierre.
+> ✅ **Estado: corregido y VERIFICADO EN DISPOSITIVO.** La causa raíz se confirmó al medir la posición real del chip: el probador probaba en `y ≈ 813`, que era la posición de la **ventana desbordada**; con la cabecera arreglada el chip está en `y ≈ 114` y **sí responde**.
+
+### Verificación de los 3 fallos tras el fix (`2ffebe9`)
+
+| Fallo del probador | Resultado | Evidencia |
+| :--- | :--- | :--- |
+| 1. El chip no responde a los toques | **RESUELTO** | Barrido de 12 coordenadas: `input tap 610 114` y `input tap 660 114` → `{"hudCollapsed":true}`. El chip funciona. Con `SNIPER` activo: `tap 636 114` → `{"hudCollapsed":true}`. Antes el probador probaba a `y=813` (ventana vieja) y fallaba |
+| 2. Con cabecera larga `[PAUSA FRANCOTIRADOR]` el chip desaparece | **RESUELTO** | `t8_verify_04_sniper.png`, submodo SNIPER activo: el chip ▼ **sigue visible** en el borde derecho y **responde** al tap. La etiqueta larga se recorta con elipsis en vez de empujar los botones |
+| 3. Los toques en la cabecera se filtran a Binomo | **RESUELTO** | `t8_leak_before.png` → `t8_leak_after.png`: tap en el centro de la cabecera (`360,105`) y **no se abrió ningún menú de Binomo**; el gráfico siguió en `1m` y el HUD continuó actualizándose (`Vela [1m] :17s`) |
+
+Evidencia de geometría: `dumpsys window` → `mAttrs={(48,50)(624xwrap) … ty=APPLICATION_OVERLAY}`, es decir 48..672 sobre 720 px. El chip queda dentro de la ventana y de la pantalla.
+
+Capturas: `t8_verify_02.png` (expandido), `t8_verify_03_collapsed.png` (plegado), `t8_verify_04_sniper.png` (SNIPER), `t8_leak_before.png`, `t8_leak_after.png`.
+
+> Nota: durante el barrido de búsqueda del chip, algunos taps de las coordenadas **antiguas** (`y=66..98`) sí alcanzaron la app de debajo y abrieron `Ajustes` de Binomo. Eso es esperado: eran taps fuera del área del HUD colapsado. Con el chip en su sitio (`y=114`) los taps dentro de la cabecera ya no se filtran.
 
 ---
 
@@ -342,7 +356,7 @@ Almacena **precios** (`1121.50`, `1265.00`), no coordenadas Y. El nombre de la c
 | 6 | **Columna `price_y` del journal contiene precios.** Nombre engañoso que ya causó una falsa alarma en T2. | Baja | Documentado; renombrar en una migración futura, no ahora. |
 | 7 | **Discrepancia stake HUD ($1.0) vs broker (Col$100,000)** sin explicar en la interfaz. | Baja | Etiquetar el stake como "unidades internas" o eliminarlo del HUD. |
 | 8 | El `Vela [1m]` del HUD y el `Hasta expiración` de Binomo son relojes **distintos**; con desfase de reloj de ~1 s pueden parecer contradictorios. | Baja | Ya rotulados de forma distinta. Medido: desfase constante de 1 s, sin deriva. |
-| 9 | **Toques en la cabecera del HUD se filtraban a Binomo** y cambiaban el entorno (abrieron el menú de timeframe y dejaron el gráfico en 5m, además del panel del Agente IA y `MainActivity`). Causa: contenido desbordado fuera del área de la ventana. | **Alta** | Corregido en `2ffebe9` (cabecera con peso + elipsis). **Sin re-verificar en dispositivo.** Mientras no se confirme, cualquier toque cerca de la cabecera del HUD puede alterar el gráfico y **invalidar el análisis de velas en curso**. |
+| 9 | **Toques en la cabecera del HUD se filtraban a Binomo** y cambiaban el entorno (abrieron el menú de timeframe y dejaron el gráfico en 5m, además del panel del Agente IA y `MainActivity`). Causa: contenido desbordado fuera del área de la ventana. | Media (era Alta) | **Corregido y verificado**: `2ffebe9` + tap de prueba en `360,105` sin abrir menús de Binomo. Baja a Media porque el riesgo residual es que un tap en la banda del HUD, fuera de un control, sigue siendo absorbido por la ventana (correcto) y no por el gráfico. |
 | 10 | **El aviso `⚠ CONFLICTO S/R↔PLAN` solo etiqueta, no veta.** No hay comprobación de que el conflicto impida el disparo. | **Alta** | Añadir un veto real (exclusividad mutua entre filtro S/R y anti-chop) antes de operar en real. Cae fuera del enunciado de R11 (tocaría umbrales). |
 | 11 | **`hud_alpha = 0.33` deja pasar el gráfico de Binomo sobre las líneas de micro-velocidad y stats.** El drawable del panel es 90 % opaco (`#E6070A14`), pero el alpha global se aplica también al **texto**. | Media | Separar la opacidad del fondo de la del texto, o fijar un mínimo de alfa para el texto. El tester lo documentó con capturas. |
 | 12 | **Sin verificación visual de T3, T4-parcial y T6b-parcial.** No hubo operación abierta en la sesión de prueba, así que la línea de strike/ITM/OTM/P&L nunca se pintó. | **Alta** | Repetir la sesión de prueba consiguiendo al menos una operación abierta. Están cubiertos por tests unitarios (`StrikeCalculatorTest`, `HudSnapshotTest`), pero **no observados en pantalla**. |
@@ -359,11 +373,11 @@ Almacena **precios** (`1121.50`, `1265.00`), no coordenadas Y. El nombre de la c
 | P&L real, no `+$$$` | **PASA** | Código + `StrikeCalculatorTest` (18 tests) |
 | Stats con total resuelto | **PASA** | `after_21.png`: `W: 0 \| L: 0 \| Nulas: 0 \| Total: 0` |
 | HUD sin contradicciones S/R↔plan | **PASA** | `after_21.png`: `Toque Directo en Resistencia [PUT Óptimo]` + `gatillo PUT`; `actionConflict` en tests |
-| HUD cabe en pantalla y el plegado es visible | **PASA el ancho · el disparador táctil FALLÓ y está corregido, sin re-verificar** | `dumpsys window`: `(48,50)(624xwrap)` sobre 720 px (ancho OK). El probador probó que el chip no respondía a 6 coordenadas y halló la causa (cabecera sin peso); el fix compila y pasa tests, pero **no hay captura de cierre** |
+| HUD cabe en pantalla y el plegado es visible | **PASA** | Ancho `(48,50)(624xwrap)` sobre 720 px; el chip pliega por tap (`610,114` → `hudCollapsed:true`), también bajo SNIPER; sin fuga de toques a Binomo |
 | Sin datos inventados sin tick fresco | **PASA (parcial)** | `HudSnapshotTest` cubre el caso; en dispositivo no se pudo provocar caída del feed (nunca se degradó) |
 | Tests verdes | **PASA** | `217 passed, 0 failed, 2 skipped` |
 | Build limpio | **PASA** | `BUILD SUCCESSFUL` |
-| Verificación visual en dispositivo | **PASA con salvedades** | `loops/screenshots/r11/` + `REPORTE_TESTER.md`. T3, T4-parcial y T6b-parcial: NO VERIFICABLES (sin operación abierta). T8-2ª iteración: pendiente |
+| Verificación visual en dispositivo | **PASA con salvedades** | `loops/screenshots/r11/` + `REPORTE_TESTER.md`. T3, T4-parcial y T6b-parcial: NO VERIFICABLES (sin operación abierta). T8: verificado tras el fix |
 
 ---
 
@@ -407,9 +421,8 @@ https://github.com/Mizaring467/Tradedraw/actions
 
 Por orden de importancia:
 
-1. **Verificar en pantalla el fix T8 `2ffebe9`** — sin esto no se sabe si los toques siguen filtrándose a Binomo y alterando el timeframe. Requiere reconectar el dispositivo.
-2. **Convertir `⚠ CONFLICTO S/R↔PLAN` en un veto real.** Hoy solo etiqueta. En Crypto IDX el filtro S/R y el anti-chop pueden pedir direcciones opuestas a la vez.
-3. **Auditar todas las divisiones por rango/ATR del motor** para el feed sub-micro de Crypto IDX (canal 1.25e-06 sobre precio 641.867 = 2e-9 relativo).
-4. **Sesión de prueba con operación abierta** para validar T3 (ITM/OTM y P&L) visualmente.
-5. **Separar la opacidad del fondo de la del texto** (`hud_alpha` global a 0.33 hace ilegible el HUD).
-6. **Confirmar el payout real** (0.85 configurado frente a 82 % mostrado por Binomo) o marcarlo como aproximado en la interfaz.
+1. **Convertir `⚠ CONFLICTO S/R↔PLAN` en un veto real.** Hoy solo etiqueta. En Crypto IDX el filtro S/R y el anti-chop pueden pedir direcciones opuestas a la vez.
+2. **Auditar todas las divisiones por rango/ATR del motor** para el feed sub-micro de Crypto IDX (canal 1.25e-06 sobre precio 641.867 = 2e-9 relativo).
+3. **Sesión de prueba con operación abierta** para validar T3 (ITM/OTM y P&L) visualmente. La contabilidad nueva por precio **no se ha ejercitado ni una vez**.
+4. **Separar la opacidad del fondo de la del texto** (`hud_alpha` global a 0.33 hace ilegible el HUD).
+5. **Confirmar el payout real** (0.85 configurado frente a 82–83 % mostrado por Binomo) o marcarlo como aproximado en la interfaz.

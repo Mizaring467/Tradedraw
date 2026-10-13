@@ -990,13 +990,22 @@ class OverlayService : Service() {
             }
     }
 
+    // Ronda 11 (T8): la opacidad del HUD se aplica SOLO al fondo del panel.
+    // Antes se aplicaba a la vista completa (`hudView.alpha = hudAlpha`), lo que atenuaba tambien
+    // el TEXTO: con hud_alpha = 0.33 las etiquetas del grafico de Binomo se transparentaban a
+    // traves de las lineas de micro-velocidad y de estadisticas y el HUD quedaba ilegible.
+    // El panel ahora puede ser tan transparente como se quiera sin perder legibilidad del texto.
+    private fun applyHudAlpha() {
+        hudView?.background?.mutate()?.alpha = (hudAlpha * 255).toInt().coerceIn(0, 255)
+    }
+
     private fun setHUDOpacity(alpha: Float) {
         hudAlpha = alpha.coerceIn(0.15f, 1.0f)
         getSharedPreferences("TradeDraw_HUDConfig", Context.MODE_PRIVATE)
             .edit()
             .putFloat("hud_alpha", hudAlpha)
             .apply()
-        hudView?.alpha = hudAlpha
+        applyHudAlpha()
         updateHUDView()
     }
 
@@ -1057,7 +1066,7 @@ class OverlayService : Service() {
         val hudPrefs = getSharedPreferences("TradeDraw_HUDConfig", Context.MODE_PRIVATE)
         hudAlpha = hudPrefs.getFloat("hud_alpha", 0.70f)
         isHudCollapsed = hudPrefs.getBoolean("hud_collapsed", true)
-        hudView?.alpha = hudAlpha
+        applyHudAlpha()
 
         val sliderContainer = hudView?.findViewById<View>(R.id.hud_opacity_slider_container)
         val seekOpacity = hudView?.findViewById<SeekBar>(R.id.hud_seek_opacity)
@@ -1071,7 +1080,7 @@ class OverlayService : Service() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 val pct = (progress + 20).coerceIn(20, 100)
                 hudAlpha = pct / 100f
-                hudView?.alpha = hudAlpha
+                applyHudAlpha()
                 txtOpacityVal?.text = "$pct%"
                 hudView?.findViewById<TextView>(R.id.hud_btn_opacity)?.text = " 👁️ $pct% "
             }
@@ -1427,7 +1436,8 @@ class OverlayService : Service() {
             btnOpacity?.text = " 👁️ ${(hudAlpha * 100).toInt()}% "
             btnCollapse?.text = if (isHudCollapsed) "▼" else "▲"
             detailsContainer?.visibility = if (isHudCollapsed) View.GONE else View.VISIBLE
-            v.alpha = hudAlpha
+            // La opacidad ya se aplico al fondo en applyHudAlpha(); no se toca `v.alpha` para no
+            // atenuar el texto (ver comentario de applyHudAlpha).
 
             val isAccessConnected = AutoTradeAccessibilityService.instance != null || AutoTradeAccessibilityService.isAccessibilityPermissionGranted(this)
             val (canTradeStatus, blockReason) = riskManager.canExecuteTrade(tradingEngine.autonomousSubMode)
