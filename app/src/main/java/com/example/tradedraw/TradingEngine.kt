@@ -1240,19 +1240,22 @@ class TradingEngine(
         }
 
         // 3. Estado del Filtro S/R
-        // Ronda 11 (T4): fuente ÚNICA el motor sintético. Antes se consultaba `analysis`
-        // (ruta de visión retirada) primero, así que el filtro podía anunciar
-        // "Toque Directo en Soporte [CALL Óptimo]" mientras el precio WS estaba lejos del soporte
-        // y el plan de acción decía PUT: el HUD se contradecía consigo mismo.
+        // Ronda 11 (T7): fuente ÚNICA y normalización ÚNICA. Antes este bloque calculaba la
+        // distancia como posición dentro del canal `(res - sup)`, mientras el plan de acción, los
+        // vetos y `distanceToSupportRatio` la calculaban dividiendo por el ATR. Dos métricas
+        // distintas con el mismo nombre: con ATR pequeño el HUD podía anunciar a la vez
+        // "Toque Directo en Soporte [CALL Óptimo]" (5% del canal) y "Cerca de Resistencia (7%):
+        // Buscando Mecha Rechazo PUT" (distancia/ATR). Contradicción observada en dispositivo.
+        // Ahora se usan los ratios del motor sintético, los MISMOS que deciden el trading.
+        val distSRatio = syntheticCandleEngine.distanceToSupportRatio
+        val distRRatio = syntheticCandleEngine.distanceToResistanceRatio
         val trendNow = wsTrend
         val srStatus = if (sup > 0.0 && res > 0.0 && tick != null) {
-            val range = (res - sup).coerceAtLeast(0.00001)
-            val distS = ((tick.price - sup) / range).coerceIn(0.0, 1.0)
             when {
-                distS <= 0.15 -> "🟢 Toque Directo en Soporte [CALL Óptimo]"
-                distS >= 0.85 -> "🔴 Toque Directo en Resistencia [PUT Óptimo]"
-                distS <= 0.30 -> "🟢 Cerca de Soporte (${(distS * 100).toInt()}% canal)"
-                distS >= 0.70 -> "🔴 Cerca de Resistencia (${((1.0 - distS) * 100).toInt()}% canal)"
+                distSRatio <= 0.15f -> "🟢 Toque Directo en Soporte [CALL Óptimo]"
+                distRRatio <= 0.15f -> "🔴 Toque Directo en Resistencia [PUT Óptimo]"
+                distSRatio <= 0.30f -> "🟢 Cerca de Soporte (${(distSRatio * 100).toInt()}%)"
+                distRRatio <= 0.30f -> "🔴 Cerca de Resistencia (${(distRRatio * 100).toInt()}%)"
                 else -> "⚪ Centro del Canal S/R (Neutral)"
             }
         } else {

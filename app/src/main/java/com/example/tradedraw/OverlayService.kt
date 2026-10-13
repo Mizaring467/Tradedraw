@@ -1038,19 +1038,20 @@ class OverlayService : Service() {
     private fun setupHUDWindow() {
         val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
         hudView = LayoutInflater.from(this).inflate(R.layout.layout_trading_hud, null)
-        // Ronda 11 (T8): el HUD usaba ancho WRAP_CONTENT. Con textos largos (WS Activo + descartes,
-        // plan de acción) la ventana crecía más allá del borde derecho y el botón de plegado quedaba
-        // fuera de pantalla. Se fija un ancho máximo real: el panel ya no puede desbordar y los
-        // TextView `match_parent` envuelven el texto en varias líneas.
-        val screenWidthPx = resources.displayMetrics.widthPixels
-        val hudWidthPx = screenWidthPx - (HUD_SIDE_MARGIN_DP * resources.displayMetrics.density).toInt()
-            .coerceAtLeast((240 * resources.displayMetrics.density).toInt())
+        // Ronda 11 (T8): el HUD usaba ancho WRAP_CONTENT y el contenedor de detalles mide 260dp
+        // fijos; con el offset x=50 la ventana terminaba fuera del borde derecho y el botón de
+        // plegado quedaba inalcanzable. Ahora el ancho se calcula contra la pantalla real y los
+        // TextView `match_parent` envuelven el texto.
+        val metrics = resources.displayMetrics
+        val sideMarginPx = (HUD_SIDE_MARGIN_DP * metrics.density).toInt()
+        val hudWidthPx = (metrics.widthPixels - (2 * sideMarginPx))
+            .coerceAtLeast((200 * metrics.density).toInt())
         hudParams = WindowManager.LayoutParams(
             hudWidthPx, WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 50; y = 50
+            x = sideMarginPx; y = 50
         }
 
         val hudPrefs = getSharedPreferences("TradeDraw_HUDConfig", Context.MODE_PRIVATE)
@@ -1794,8 +1795,18 @@ class OverlayService : Service() {
             txtSrFilter?.text = "🛡️ Filtro S/R: ${reasoning.srFilterStatus}"
             txtSrFilter?.setTextColor(if (reasoning.srFilterStatus.contains("Toque") || reasoning.srFilterStatus.contains("Libre")) Color.parseColor("#4ade80") else Color.parseColor("#cbd5e1"))
 
-            txtPlannedAction?.text = reasoning.actionPlan
-            txtPlannedAction?.setTextColor(if (reasoning.actionPlan.contains("CALL")) Color.parseColor("#4ade80") else if (reasoning.actionPlan.contains("PUT")) Color.parseColor("#f87171") else Color.parseColor("#facc15"))
+            // Ronda 11 (T7): si el filtro S/R y el plan de acción piden direcciones opuestas, se
+            // avisa en la propia línea del plan en vez de mostrar dos consejos contradictorios.
+            val srPlanConflict = HudCoherence.actionConflict(reasoning.srFilterStatus, reasoning.actionPlan)
+            txtPlannedAction?.text = if (srPlanConflict) "⚠ CONFLICTO S/R↔PLAN · ${reasoning.actionPlan}" else reasoning.actionPlan
+            txtPlannedAction?.setTextColor(
+                when {
+                    srPlanConflict -> Color.parseColor("#fb923c")
+                    reasoning.actionPlan.contains("CALL") -> Color.parseColor("#4ade80")
+                    reasoning.actionPlan.contains("PUT") -> Color.parseColor("#f87171")
+                    else -> Color.parseColor("#facc15")
+                }
+            )
 
             // Tarjeta de Señal Operativa (Semiautomático / Autónomo)
             val cardSignal = v.findViewById<LinearLayout>(R.id.hud_signal_card)

@@ -144,4 +144,28 @@ class HudSnapshotTest {
         assertTrue(HudCoherence.srStatusIsCoherent("⚪ Centro del Canal S/R (Neutral)", distToSupportRatio = 0.50f))
         assertTrue(HudCoherence.srStatusIsCoherent("—", distToSupportRatio = 0.50f))
     }
+
+    @Test
+    fun toqueDeSoporteYBusquedaDeRechazoPut_esContradiccion() {
+        // Caso observado en dispositivo (R11): el filtro S/R anunciaba
+        // "Toque Directo en Soporte [CALL Óptimo]" mientras el plan pedía mecha de rechazo PUT.
+        // Origen: dos normalizaciones distintas de la misma distancia (canal vs ATR).
+        assertTrue(
+            "CALL sobre soporte y PUT sobre resistencia no pueden coexistir",
+            HudCoherence.actionConflict(
+                "🟢 Toque Directo en Soporte [CALL Óptimo]",
+                "🛡️ Anti-Chop Activo · Cerca de Resistencia (7%): Buscando Mecha Rechazo PUT"
+            )
+        )
+    }
+
+    @Test
+    fun toqueDeSoporteYBusquedaDeRechazoCall_esCoherente() {
+        assertFalse(
+            HudCoherence.actionConflict(
+                "🟢 Toque Directo en Soporte [CALL Óptimo]",
+                "🛡️ Anti-Chop Activo · Cerca de Soporte (5%): Buscando Mecha Rechazo CALL"
+            )
+        )
+    }
 }

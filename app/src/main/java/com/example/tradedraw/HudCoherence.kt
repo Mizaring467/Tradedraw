@@ -62,4 +62,23 @@ object HudCoherence {
     /** Marca textual de conflicto para el HUD; vacía si no hay conflicto. */
     fun conflictBadge(hud: HudSnapshot): String =
         if (isIncoherent(hud)) "⚠ contra-tendencia" else ""
+
+    /**
+     * true si el estado del filtro S/R y el plan de acción piden direcciones OPUESTAS.
+     *
+     * Caso real detectado en dispositivo durante R11: el filtro anunciaba
+     * "Toque Directo en Soporte [CALL Óptimo]" mientras el plan buscaba mecha de rechazo en
+     * resistencia para un PUT. La causa era doble normalización de la distancia S/R (ancho de canal
+     * frente a ATR), ya corregida en `getEngineReasoning`; esta comprobación evita que la
+     * contradicción vuelva a colarse sin que nadie la vea.
+     */
+    fun actionConflict(srStatus: String, actionPlan: String): Boolean {
+        val srWantsCall = srStatus.contains("CALL Óptimo", ignoreCase = true)
+        val srWantsPut = srStatus.contains("PUT Óptimo", ignoreCase = true)
+        val planWantsPut = actionPlan.contains("PUT", ignoreCase = true)
+        val planWantsCall = actionPlan.contains("CALL", ignoreCase = true)
+        if (srWantsCall && planWantsPut && !planWantsCall) return true
+        if (srWantsPut && planWantsCall && !planWantsPut) return true
+        return false
+    }
 }
