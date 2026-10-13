@@ -266,6 +266,29 @@ Verificado en `dumpsys window` tras la corrección: `mAttrs={(48,50)(624xwrap) �
 **2. Desfase de reloj.**
 `date` del dispositivo `15:01:07` frente al host `15:01:08` → **≈1 s**. El `Vela [1m] :59s` del HUD concordaba con `Hasta expiración 00:57` de Binomo dentro de ±2 s, que es lo esperable siendo **relojes distintos** (ciclo de vela frente a expiración de la orden). No se detectó desincronización.
 
+**2b. Verificación del reloj de vela, medida (no estimada).**
+Serie de 3 capturas con la hora del dispositivo anotada en el momento de cada una. El reloj de vela del HUD debe cumplir `HUD = 60 − segundo`:
+
+| Captura | Hora dispositivo | Segundo | HUD `Vela [1m]` | Esperado | Desfase |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `clock_01.png` | 15:42:05 | 05 | `:56s` | 55 | +1 s |
+| `clock_03.png` | 15:42:26 | 26 | `:35s` | 34 | +1 s |
+
+Desfase **constante de 1 s**, que es el retardo de refresco del bucle del HUD (throttle de 400 ms más el ciclo de pintado). **No hay deriva acumulada**: el offset es el mismo en dos muestras separadas 21 s. El contador de vela es correcto.
+
+**2c. El detector de conflicto T7 dispara en producción.**
+`clock_03.png` captura el aviso funcionando con datos reales:
+
+```
+🛡️ Filtro S/R: 🔴 Toque Directo en Resistencia [PUT Óptimo]
+⚠ CONFLICTO S/R↔PLAN · 🛡️ Anti-Chop Activo · Cerca de Soporte (15%): Buscando Mecha Rechazo CALL
+[86% CALL | 14% PUT]
+```
+
+El filtro pide PUT (precio en resistencia) y el plan anti-chop pide CALL (precio cerca de soporte). **Es una contradicción real del motor sintético**, no un problema de presentación: las dos ramas consultan `distanceToResistanceRatio` y `distanceToSupportRatio` y ambas se declaran satisfechas a la vez. En **Crypto IDX**, con un canal de ~1.25e-06 sobre un precio de 641.867 (2e-9 relativo), ambas distancias pueden caer por debajo de su umbral simultáneamente porque el ATR normalizador es del mismo orden que el ruido del propio feed. El HUD ahora lo **declara** en vez de mostrar los dos consejos opuestos como si fueran compatibles.
+
+**Esto NO se corrige en R11**: tocar los umbrales de proximidad S/R sería cambiar la lógica de decisión, expresamente excluido por el enunciado de la ronda. Queda como **riesgo #4** (ver abajo), agravado: no es que la métrica sea inestable, es que **el filtro anti-chop puede pedir la dirección contraria al filtro S/R y ambos llegar a la fase de disparo**.
+
 **3. Payout asumido.**
 `RiskManager.sorosPayoutRate` por defecto **0.85**, no 0.83. `Binomo` mostró `82%` en la cabecera del activo. Por tanto el P&L estimado del HUD puede diferir del liquidado real entre 0.82 y 0.85 según el activo. **El P&L del HUD ahora usa el valor configurado**, que es la mejor estimación disponible, pero **no es una lectura del broker**: no hay forma de leer el payout real desde la app. Riesgo pendiente abajo.
 
@@ -290,7 +313,7 @@ Almacena **precios** (`1121.50`, `1265.00`), no coordenadas Y. El nombre de la c
 | 1 | **Contabilidad histórica de R9/R10 posiblemente afectada** por la resolución de operaciones en dominio de píxel (T3). No se corrige retroactivamente. | **Alta** | Tratar todo `WIN/LOSS` anterior a `d54ec03` como no fiable. Re-empezar la cuenta de confirmación desde cero. |
 | 2 | **P&L del HUD es una estimación** con payout configurado (0.85) frente al real de Binomo (82 % en pantalla). No hay lectura del payout desde la app. | Media | Mostrar el P&L como aproximado, o leer el payout por visión/OCR. |
 | 3 | **Posición vertical de la línea de strike aproximada** en headless: el eje de precios no está en el árbol de accesibilidad (verificado, 29 108 bytes de dump sin etiquetas de precio). | Media | OCR del eje por visión. Afecta **solo al dibujo**; el cálculo ITM/OTM y el P&L usan precios. |
-| 4 | **Crypto IDX tiene un feed de rango sub-micro** (4.5e-10 relativo en 60 ticks). Cualquier métrica normalizada por el ancho de canal (T7) o por bps (T5) es inestable en ese activo. | Media | Ya corregido en T5/T7, pero **otras métricas del motor podrían tener el mismo problema**: auditar todas las divisiones por rango/ATR antes de confiar en Crypto IDX para decisiones. |
+| 4 | **Crypto IDX tiene un feed de rango sub-micro** (2.5e-10 relativo medido en vivo). Cualquier métrica normalizada por el ancho de canal (T7) o por bps (T5) es inestable en ese activo. **Agravado tras la medición de T9:** el filtro S/R y el filtro anti-chop pueden declararse satisfechos A LA VEZ pidiendo direcciones opuestas (`clock_03.png`), porque las dos distancias caen bajo su umbral simultáneamente al ser el ATR normalizador del orden del ruido del feed. | **Alta** | Ya corregido en T5/T7 **a nivel de presentación**: el HUD lo declara con `⚠ CONFLICTO S/R↔PLAN`. **La contradicción en el motor NO se corrige** (exigiría tocar umbrales de proximidad, excluido por el enunciado de R11). Antes de confiar en Crypto IDX para decisiones reales: auditar todas las divisiones por rango/ATR del motor y añadir un veto de exclusividad mutua entre ambos filtros. |
 | 5 | **Muestra insuficiente para validar.** Conjunto de confirmación post-T0: N = 15 ≪ 200 preregistrados. | Alta | No se puede afirmar que la corrección mejore el rendimiento. Cualquier conclusión de edge sigue siendo "no demostrado". |
 | 6 | **Columna `price_y` del journal contiene precios.** Nombre engañoso que ya causó una falsa alarma en T2. | Baja | Documentado; renombrar en una migración futura, no ahora. |
 | 7 | **Discrepancia stake HUD ($1.0) vs broker (Col$100,000)** sin explicar en la interfaz. | Baja | Etiquetar el stake como "unidades internas" o eliminarlo del HUD. |
