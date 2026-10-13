@@ -1129,9 +1129,82 @@ class TradingEngine(
         }
     }
 
-    fun getEngineReasoning(): EngineReasoning {
-        val analysis = latestAnalysisResult
+    /**
+     * Construye la instantánea inmutable que pinta el HUD (Ronda 11, T4).
+     *
+     * Fuente única: feed WebSocket + motor sintético + RiskManager. NUNCA `latestAnalysisResult`,
+     * que viene de la ruta de visión retirada y en headless queda con los valores por defecto
+     * (termómetro 50/50, racha vacía) disfrazados de medición real.
+     *
+     * Devuelve `null` en los campos de medida cuando no hay dato: el HUD pinta "—", no un valor
+     * por defecto. `hasFreshTick` es la puerta: sin tick fresco no hay termómetro, ni racha, ni
+     * velocidad viva.
+     */
+    fun buildHudSnapshot(ws: BinomoWebSocketClient?): HudSnapshot {
         val tick = latestMarketTick
+        val assetLabel = ws?.activeAsset ?: "Z-CRY/IDX"
+        val friendly = if (assetLabel.contains("CRY")) "Crypto IDX" else assetLabel
+
+        val connected = ws?.isConnected ?: false
+        val tickAgeMs = ws?.lastTickAgeMs ?: Long.MAX_VALUE
+        val hasFreshTick = connected && tick != null && tickAgeMs < BinomoWebSocketClient.DEFAULT_FRESHNESS_MS
+
+        // Solo se derivan probabilidades/racha con tick fresco: un valor cacheado de hace minutos
+        // no es una medición, es un recuerdo.
+        val freshAnalysis = if (hasFreshTick && tick != null) buildAnalysisFromSyntheticEngine(tick) else null
+        val velocityLive = hasFreshTick && tickAgeMs < VELOCITY_LIVE_WINDOW_MS
+
+        val pendingAction = if (riskManager.hasPendingTrade) riskManager.pendingTradeAction else null
+        val entryPrice = riskManager.pendingTradeEntryPrice
+        val moneyness = if (pendingAction != null && entryPrice > 0.0 && hasFreshTick && tick != null) {
+            StrikeCalculator.moneyness(pendingAction, entryPrice, tick.price)
+        } else null
+
+        return HudSnapshot(
+            assetLabel = assetLabel,
+            friendlyAsset = friendly,
+            hasFreshTick = hasFreshTick,
+            price = tick?.price ?: 0.0,
+            tickAgeMs = if (tickAgeMs == Long.MAX_VALUE) -1L else tickAgeMs,
+            wsState = ws?.currentState ?: WebSocketState.DISCONNECTED,
+            tickSource = ws?.lastTickSource ?: "none",
+            rejectedForeignAssetTicks = ws?.rejectedForeignAssetTicks ?: 0L,
+            rejectedSanityJumpTicks = ws?.rejectedSanityJumpTicks ?: 0L,
+            trend = syntheticCandleEngine.detectedTrend,
+            streakBadge = freshAnalysis?.streakBadge?.takeIf { it.isNotBlank() },
+            callPct = freshAnalysis?.signalPowerCall,
+            putPct = freshAnalysis?.signalPowerPut,
+            velocity = tick?.velocity ?: 0f,
+            smoothedVelocity = tick?.smoothedVelocity ?: 0f,
+            velocityIsLive = velocityLive,
+            patternName = "",
+            probabilityPct = -1,
+            srFilterStatus = "",
+            actionPlan = "",
+            totalWins = riskManager.totalWins,
+            totalLosses = riskManager.totalLosses,
+            totalVoids = riskManager.totalVoids,
+            winRate = riskManager.getWinRate().toDouble(),
+            martingaleBadge = riskManager.getMartingaleStatusBadge(autonomousSubMode),
+            cooldownRemainingSec = riskManager.getRemainingCooldown(autonomousSubMode).toLong(),
+            hasPendingTrade = riskManager.hasPendingTrade,
+            pendingAction = pendingAction,
+            pendingElapsedSec = if (riskManager.hasPendingTrade)
+                (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000 else 0L,
+            pendingEntryPrice = entryPrice,
+            pendingMoneyness = moneyness
+        )
+    }
+
+    /** Ventana en la que una micro-velocidad sigue considerándose actual (alineada con el feed). */
+    private val VELOCITY_LIVE_WINDOW_MS = 3200L
+
+    fun getEngineReasoning(): EngineReasoning {
+        val tick = latestMarketTick
+        // Ronda 11 (T4): el razonamiento se deriva del tick ACTUAL, no de `latestAnalysisResult`
+        // (ruta de visión retirada que en headless queda con los valores por defecto). Si no hay
+        // tick todavía, se cae al último análisis disponible para no dejar el panel vacío.
+        val analysis = if (tick != null) buildAnalysisFromSyntheticEngine(tick) else latestAnalysisResult
         val wsTrend = syntheticCandleEngine.detectedTrend
         val sup = syntheticCandleEngine.dynamicSupportPrice
         val res = syntheticCandleEngine.dynamicResistancePrice
@@ -1167,38 +1240,37 @@ class TradingEngine(
         }
 
         // 3. Estado del Filtro S/R
-        // Ronda 3: coherencia HUD↔Binomo. La tendencia de referencia es SIEMPRE la del motor WS
-        // (analysis puede venir de la ruta de visión retirada y quedar desincronizada).
+        // Ronda 11 (T4): fuente ÚNICA el motor sintético. Antes se consultaba `analysis`
+        // (ruta de visión retirada) primero, así que el filtro podía anunciar
+        // "Toque Directo en Soporte [CALL Óptimo]" mientras el precio WS estaba lejos del soporte
+        // y el plan de acción decía PUT: el HUD se contradecía consigo mismo.
         val trendNow = wsTrend
-        val srStatus = when {
-            // Coherencia con la cascada de vetos: no anunciar "CALL optimo" mientras el plan dice PUT
-            analysis != null && analysis.touchesSupport && trendNow == TrendDirection.DOWNTREND ->
-                "🟡 En Soporte con tendencia bajista: PUT vetado (riesgo de rebote)"
-            analysis != null && analysis.touchesResistance && trendNow == TrendDirection.UPTREND ->
-                "🟡 En Resistencia con tendencia alcista: CALL vetado (riesgo de rechazo)"
-            analysis != null -> {
-                if (analysis.touchesSupport) "🟢 Toque Directo en Soporte [CALL Óptimo]"
-                else if (analysis.touchesResistance) "🔴 Toque Directo en Resistencia [PUT Óptimo]"
-                else if (analysis.isNearSupportZone) "🟢 Cerca de Soporte (${(analysis.distanceToSupportRatio * 100).toInt()}% canal)"
-                else if (analysis.isNearResistanceZone) "🔴 Cerca de Resistencia (${(analysis.distanceToResistanceRatio * 100).toInt()}% canal)"
-                else "⚪ Centro del Canal S/R (Neutral)"
+        val srStatus = if (sup > 0.0 && res > 0.0 && tick != null) {
+            val range = (res - sup).coerceAtLeast(0.00001)
+            val distS = ((tick.price - sup) / range).coerceIn(0.0, 1.0)
+            when {
+                distS <= 0.15 -> "🟢 Toque Directo en Soporte [CALL Óptimo]"
+                distS >= 0.85 -> "🔴 Toque Directo en Resistencia [PUT Óptimo]"
+                distS <= 0.30 -> "🟢 Cerca de Soporte (${(distS * 100).toInt()}% canal)"
+                distS >= 0.70 -> "🔴 Cerca de Resistencia (${((1.0 - distS) * 100).toInt()}% canal)"
+                else -> "⚪ Centro del Canal S/R (Neutral)"
             }
-            sup > 0.0 && res > 0.0 && tick != null -> {
-                val range = (res - sup).coerceAtLeast(0.00001)
-                val distS = ((tick.price - sup) / range).coerceIn(0.0, 1.0)
-                if (distS <= 0.30) "🟢 Cerca de Soporte Cuantitativo (${(distS * 100).toInt()}%)"
-                else if (distS >= 0.70) "🔴 Cerca de Resistencia Cuantitativa (${((1.0 - distS) * 100).toInt()}%)"
-                else "⚪ Rango Central (Dist S: ${(distS * 100).toInt()}%)"
-            }
-            else -> "⚪ Calculando niveles S/R..."
+        } else {
+            "—"
         }
 
         // 4. Plan de Acción Táctico
         val plan = when {
             riskManager.hasPendingTrade -> {
+                // Ronda 11 (T6): cuenta atrás REAL de expiración, sustituyendo el literal
+                // "Liquidando en vela :00s" que se mostraba fijo durante toda la operación y no
+                // correspondía a ningún instante concreto.
                 val elapsed = (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000
+                val remaining = (timeframe.seconds - elapsed).coerceAtLeast(0L)
                 val act = if (riskManager.pendingTradeAction == TradeAction.BUY) "CALL ▲" else "PUT ▼"
-                "⏳ Trade Activo: $act (${elapsed}s transcurridos) · Liquidando en vela :00s"
+                val entry = riskManager.pendingTradeEntryPrice
+                val entryStr = if (entry > 0.0) StrikeCalculator.formatPrice(entry) else "—"
+                "⏳ Trade Activo: $act · Strike $entryStr · Hasta exp: ${remaining}s"
             }
             (syntheticCandleEngine.cachedChoppiness && autonomousSubMode != AutonomousSubMode.YOLO) -> {
                 val distS = syntheticCandleEngine.distanceToSupportRatio

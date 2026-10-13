@@ -1527,21 +1527,26 @@ class OverlayService : Service() {
                 AutoTradeStrategy.COMBINED -> "Combinada"
             }
 
-            val analysis = tradingEngine.latestAnalysisResult
+            // Ronda 11 (T4): el HUD NO lee `latestAnalysisResult` (ruta de visión retirada, con
+            // valores por defecto que parecían mediciones). El motor entrega una instantánea
+            // inmutable de la fuente viva; aquí solo se pinta, y sin dato se pinta "—".
+            val hud = tradingEngine.buildHudSnapshot(binomoWebSocketClient)
 
             // Radar de Racha
-            txtStreak.text = "· " + (analysis?.streakBadge ?: "1D ⚪")
+            txtStreak.text = "· " + (hud.streakBadge ?: "—")
 
             // Stats & Martingala
-            txtStats.text = if (riskManager.totalVoids > 0) {
-                "W: ${riskManager.totalWins} | L: ${riskManager.totalLosses} | T: ${riskManager.totalVoids}"
-            } else {
-                "W: ${riskManager.totalWins} | L: ${riskManager.totalLosses}"
-            }
+            // Stats: T6 — "Nulas" (VOID) es la etiqueta correcta de `totalVoids`; "T:" se confundía
+            // con "Trades" o "Ties". Se muestra el TOTAL real de operaciones resueltas.
+            val totalResueltas = riskManager.totalWins + riskManager.totalLosses + riskManager.totalVoids
+            txtStats.text = "W: ${riskManager.totalWins} | L: ${riskManager.totalLosses} | Nulas: ${riskManager.totalVoids} | Total: $totalResueltas"
             txtWinrate.text = " (%.1f%%)".format(Locale.US, riskManager.getWinRate())
             txtMartingale.text = " " + riskManager.getMartingaleStatusBadge(tradingEngine.autonomousSubMode)
 
-            // Temporizador de Vela (1m o 5m)
+            // Temporizador de Vela (1m o 5m).
+            // Ronda 11 (T6): se etiqueta explícitamente como RELOJ DE VELA para que no se confunda
+            // con la expiración de la operación, que es un contador independiente que arranca al
+            // abrir el trade (ver `Hasta exp` en el plan de acción).
             val sec = java.util.Calendar.getInstance().get(java.util.Calendar.SECOND)
             val min = java.util.Calendar.getInstance().get(java.util.Calendar.MINUTE)
             val (timerText, timerColor) = if (tradingEngine.timeframe == CandleTimeframe.M5) {
@@ -1549,12 +1554,12 @@ class OverlayService : Service() {
                 val rem5m = 300 - totalSecIn5m
                 val remMin = rem5m / 60
                 val remSecInMin = rem5m % 60
-                val str = " ⏱️ [5m] %d:%02d".format(Locale.US, remMin, remSecInMin)
+                val str = " ⏱️ Vela [5m] %d:%02d".format(Locale.US, remMin, remSecInMin)
                 val color = if (rem5m <= 5 || rem5m in 28..32) Color.parseColor("#4ade80") else Color.parseColor("#facc15")
                 Pair(str, color)
             } else {
                 val remainingSec = (60 - sec) % 60
-                val str = " ⏱️ [1m] :%02ds".format(Locale.US, remainingSec)
+                val str = " ⏱️ Vela [1m] :%02ds".format(Locale.US, remainingSec)
                 val color = if (remainingSec in 0..5 || remainingSec in 28..32) Color.parseColor("#4ade80") else Color.parseColor("#facc15")
                 Pair(str, color)
             }
@@ -1569,53 +1574,49 @@ class OverlayService : Service() {
             val wsState = binomoWebSocketClient?.currentState ?: WebSocketState.DISCONNECTED
             val frames = 0L
 
-            // Termómetro de Señal (% CALL vs % PUT)
-            if (analysis != null) {
-                val callPct = analysis.signalPowerCall
-                val putPct = analysis.signalPowerPut
-                val bars = (callPct / 10).coerceIn(1, 9)
-                val visualBar = "█".repeat(bars) + "░".repeat(10 - bars)
-                txtPower.text = "[ $callPct% CALL $visualBar $putPct% PUT ]"
-                txtPower.setTextColor(if (callPct >= 62) Color.parseColor("#22c55e") else if (putPct >= 62) Color.parseColor("#ef4444") else Color.parseColor("#38bdf8"))
-            } else if (isHeadless) {
-                val tick = tradingEngine.latestMarketTick
-                val trend = tradingEngine.syntheticCandleEngine.detectedTrend
-                val vel = tick?.velocity ?: 0f
-                // Ronda 7-fix: umbral de impulso RELATIVO a la escala del precio (IDX ~641, ETH ~1049).
-                val priceRef = tick?.price ?: 0.0
-                val velThresh = if (priceRef > 0.0) (priceRef * 0.00004).toFloat() else 0.0001f
-                val dirStr = when {
-                    trend == TrendDirection.UPTREND -> "▲ ALCISTA"
-                    trend == TrendDirection.DOWNTREND -> "▼ BAJISTA"
-                    vel > velThresh -> "▲ IMPULSO CALL"
-                    vel < -velThresh -> "▼ IMPULSO PUT"
+            // Termómetro de Señal (% CALL vs % PUT).
+            // Ronda 11 (T4): SOLO se pinta si hay tick fresco. Sin medición se muestra el estado del
+            // feed, nunca un 50/50 por defecto que parecería un análisis real.
+            val callPct = hud.callPct
+            val putPct = hud.putPct
+            if (hud.hasFreshTick && callPct != null && putPct != null) {
+                txtPower.text = hud.thermometroTexto
+                txtPower.setTextColor(
+                    if (callPct >= 62) Color.parseColor("#22c55e")
+                    else if (putPct >= 62) Color.parseColor("#ef4444")
+                    else Color.parseColor("#38bdf8")
+                )
+            } else {
+                val priceStr = if (hud.price > 0.0) formatDynamicPrice(hud.price) else "---"
+                val dirStr = when (hud.trend) {
+                    TrendDirection.UPTREND -> "▲ ALCISTA"
+                    TrendDirection.DOWNTREND -> "▼ BAJISTA"
                     else -> "━ NEUTRO"
                 }
-                val color = when {
-                    trend == TrendDirection.UPTREND || vel > velThresh -> Color.parseColor("#22c55e")
-                    trend == TrendDirection.DOWNTREND || vel < -velThresh -> Color.parseColor("#ef4444")
-                    else -> Color.parseColor("#38bdf8")
-                }
-                val priceStr = if (tick != null) formatDynamicPrice(tick.price) else "---"
-                val assetLabel = binomoWebSocketClient?.activeAsset ?: "Z-CRY/IDX"
-                val friendlyAsset = if (assetLabel.contains("CRY")) "Crypto IDX" else assetLabel
-                txtPower.text = "[ WS ($friendlyAsset): $dirStr ($priceStr) ]"
-                txtPower.setTextColor(color)
-            } else {
-                txtPower.text = "[ 50% CALL █████░░░░░ 50% PUT ]"
-                txtPower.setTextColor(Color.parseColor("#94a3b8"))
+                txtPower.text = "[ WS (${hud.friendlyAsset}): $dirStr ($priceStr) ]"
+                txtPower.setTextColor(
+                    when (hud.trend) {
+                        TrendDirection.UPTREND -> Color.parseColor("#22c55e")
+                        TrendDirection.DOWNTREND -> Color.parseColor("#ef4444")
+                        else -> Color.parseColor("#38bdf8")
+                    }
+                )
             }
 
             if (isHeadless) {
                 val latestTick = tradingEngine.latestMarketTick
-                val assetLabel = binomoWebSocketClient?.activeAsset ?: "Z-CRY/IDX"
-                val friendlyAsset = if (assetLabel.contains("CRY")) "Crypto IDX" else assetLabel
+                val friendlyAsset = hud.friendlyAsset
                 val (diagStr, diagColor) = when (wsState) {
                     WebSocketState.CONNECTED -> {
-                        val priceStr = if (latestTick != null) formatDynamicPrice(latestTick.price) else "..."
-                        // Antes la latencia estaba fija en "0ms": ahora es la edad real del ultimo tick
-                        val tickAgeMs = if (latestTick != null) (System.currentTimeMillis() - latestTick.timestampMs).coerceAtLeast(0L) else 0L
-                        Pair("🟢 WS Activo ($friendlyAsset): $priceStr (${tickAgeMs}ms) | Headless", Color.parseColor("#22c55e"))
+                        val priceStr = if (hud.price > 0.0) formatDynamicPrice(hud.price) else "..."
+                        // Latencia real del último tick (antes estaba fija en "0ms").
+                        val tickAgeMs = if (hud.tickAgeMs >= 0L) hud.tickAgeMs else 0L
+                        // T1: ticks descartados por activo ajeno / salto implausible. Si hay
+                        // descartes, se muestran: son la prueba visible de la guarda de integridad.
+                        val discardTag = if (hud.rejectedForeignAssetTicks > 0L || hud.rejectedSanityJumpTicks > 0L) {
+                            " | ⛔ ajenos:${hud.rejectedForeignAssetTicks} saltos:${hud.rejectedSanityJumpTicks}"
+                        } else ""
+                        Pair("🟢 WS Activo ($friendlyAsset): $priceStr (${tickAgeMs}ms)$discardTag | Headless", Color.parseColor("#22c55e"))
                     }
                     WebSocketState.CONNECTING -> {
                         Pair("🟡 WS: Conectando a Binomo...", Color.parseColor("#facc15"))
@@ -1636,38 +1637,45 @@ class OverlayService : Service() {
                 txtDiag.text = diagStr
                 txtDiag.setTextColor(diagColor)
 
-                // Actualizar micro-velocidad con decaimiento suave (ventana de 3.2s alineada con paquetes WebSocket)
+                // Micro-velocidad. Ronda 11 (T5): dos defectos corregidos.
+                //  1) El signo lo manda SIEMPRE `vel`. Antes `tick.isBullishImpulse` tenía prioridad
+                //     en la etiqueta, así que con vel negativa el HUD escribía "▲ Impulso Alcista" en
+                //     rojo: flecha y color en contradicción (visto en dispositivo: -13403.387/s ▲).
+                //  2) Unidad normalizada en puntos básicos por segundo (bps/s) en vez de unidades
+                //     absolutas, que no son comparables entre activos de escala distinta.
                 val tick = latestTick
-                if (tick != null) {
-                    val currentTimeMs = System.currentTimeMillis()
-                    val ageMs = currentTimeMs - tick.timestampMs
-                    val isStale = ageMs > 3200L
+                if (tick != null && !hud.velocityIsLive) {
+                    txtTickVelocity?.text = "⚡ Micro-Velocidad: — (feed sin tick fresco)"
+                    txtTickVelocity?.setTextColor(Color.parseColor("#94a3b8"))
+                    txtTickVelocity?.visibility = View.VISIBLE
+                } else if (tick != null) {
                     val rawVel = if (Math.abs(tick.smoothedVelocity) > 0.00001f) tick.smoothedVelocity else tick.velocity
-                    val decayFactor = when {
-                        isStale -> 0f
-                        ageMs > 1800L -> 0.5f // Inercia suave entre 1.8s y 3.2s
-                        else -> 1.0f
-                    }
-                    val vel = rawVel * decayFactor
-                    val isIdx = latestTick.asset.contains("IDX", ignoreCase = true)
-                    val velFormat = if (isIdx) "%+.6f/s" else "%+.3f/s"
-                    val velThreshold = if (isIdx) 0.000005f else 0.00008f
-                    val velStr = String.format(java.util.Locale.US, velFormat, vel)
+                    val priceRef = if (tick.price > 0.0) tick.price else 1.0
+                    // bps/s = (variación de precio por segundo) / precio * 10.000
+                    val bps = (rawVel / priceRef) * 10000.0
+                    val bpsThreshold = 0.5
+                    val velStr = String.format(java.util.Locale.US, "%+.1f bps/s", bps)
                     val impulseStr = when {
-                        isStale || Math.abs(vel) <= velThreshold -> "━ Neutro"
-                        tick.isBullishImpulse || vel > velThreshold -> "▲ Impulso Alcista"
-                        tick.isBearishImpulse || vel < -velThreshold -> "▼ Impulso Bajista"
+                        bps > bpsThreshold -> "▲ Impulso Alcista"
+                        bps < -bpsThreshold -> "▼ Impulso Bajista"
                         else -> "━ Neutro"
                     }
+                    val velColor = when {
+                        bps > bpsThreshold -> Color.parseColor("#4ade80")
+                        bps < -bpsThreshold -> Color.parseColor("#f87171")
+                        else -> Color.parseColor("#94a3b8")
+                    }
                     txtTickVelocity?.text = "⚡ Micro-Velocidad: $velStr $impulseStr"
-                    txtTickVelocity?.setTextColor(if (vel > velThreshold) Color.parseColor("#4ade80") else if (vel < -velThreshold) Color.parseColor("#f87171") else Color.parseColor("#94a3b8"))
+                    txtTickVelocity?.setTextColor(velColor)
                     txtTickVelocity?.visibility = View.VISIBLE
                 }
             } else {
+                // Rama de visión: retirada por batería (`isHeadless` es siempre true). Se conserva
+                // solo como diagnóstico textual, sin leer `latestAnalysisResult`.
                 val diagStr = if (frames == 0L) {
                     "⚠️ Visión: Esperando frame (Toca aquí para reiniciar)"
                 } else {
-                    analysis?.diagnosticSummary ?: "Visión: Procesando frames..."
+                    "Visión: Procesando frames..."
                 }
                 txtDiag.text = "📷 Frames: $frames | $diagStr"
                 txtDiag.setTextColor(if (frames == 0L) Color.parseColor("#facc15") else Color.parseColor("#94a3b8"))
@@ -1720,19 +1728,26 @@ class OverlayService : Service() {
             // Ronda 3: en Headless la tendencia del HUD DEBE venir del motor WS (fuente única),
             // no de `analysis` (visión retirada, potencialmente stale) para no contradecir a Binomo.
             val trendDir = wsTrend
-            when (trendDir) {
-                TrendDirection.UPTREND -> {
-                    txtTrendBadge?.text = "📈 Tendencia: ALCISTA"
-                    txtTrendBadge?.setTextColor(Color.parseColor("#4ade80"))
-                }
-                TrendDirection.DOWNTREND -> {
-                    txtTrendBadge?.text = "📉 Tendencia: BAJISTA"
-                    txtTrendBadge?.setTextColor(Color.parseColor("#f87171"))
-                }
-                else -> {
-                    txtTrendBadge?.text = "📊 Tendencia: LATERAL / RANGO"
-                    txtTrendBadge?.setTextColor(Color.parseColor("#facc15"))
-                }
+            txtTrendBadge?.text = when (trendDir) {
+                TrendDirection.UPTREND -> "📈 Tendencia: ALCISTA"
+                TrendDirection.DOWNTREND -> "📉 Tendencia: BAJISTA"
+                else -> "📊 Tendencia: LATERAL / RANGO"
+            }
+            // Ronda 11 (T7): si la instantánea se contradice consigo misma (p. ej. tendencia ALCISTA
+            // con termómetro de mayoría PUT, o posición abierta contra la tendencia), el HUD lo dice
+            // en lugar de presentar el conflicto como si fuera análisis.
+            val conflict = HudCoherence.conflictBadge(hud)
+            if (conflict.isNotEmpty()) {
+                txtTrendBadge?.text = "${txtTrendBadge?.text} · $conflict"
+                txtTrendBadge?.setTextColor(Color.parseColor("#fb923c"))
+            } else {
+                txtTrendBadge?.setTextColor(
+                    when (trendDir) {
+                        TrendDirection.UPTREND -> Color.parseColor("#4ade80")
+                        TrendDirection.DOWNTREND -> Color.parseColor("#f87171")
+                        else -> Color.parseColor("#facc15")
+                    }
+                )
             }
 
             txtProbBadge?.text = "Prob: ${reasoning.probabilityPct}%"
@@ -1775,10 +1790,38 @@ class OverlayService : Service() {
                 renderIdleSignalCard(cardSignal, txtSignalTitle, txtSignalDesc, txtSignalCountdown)
             }
 
-            if (riskManager.hasPendingTrade) {
-                val elapsed = (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000
-                txtStatus.text = "🤖 Operación en curso (${elapsed}s) · Esperando resultado..."
-                txtStatus.setTextColor(Color.parseColor("#38bdf8"))
+            if (hud.hasPendingTrade) {
+                // Ronda 11 (T6+T8): una SOLA línea de operación en curso. Antes convivían tres
+                // mensajes redundantes ("Operación en curso", "Trade Activo..." y el hint), y el
+                // estado ITM/OTM se pintaba sin P&L real. Aquí van acción, strike, moneyness real y
+                // P&L estimado con el payout configurado.
+                val act = if (hud.pendingAction == TradeAction.BUY) "CALL ▲" else "PUT ▼"
+                val entryStr = if (hud.pendingEntryPrice > 0.0) StrikeCalculator.formatPrice(hud.pendingEntryPrice) else "—"
+                val stateStr = when (hud.pendingMoneyness) {
+                    TradeMoneyness.ITM -> "ITM ✓"
+                    TradeMoneyness.OTM -> "OTM ✗"
+                    TradeMoneyness.TIE -> "ABIERTO"
+                    null -> "SIN DATO"
+                }
+                val pnlStr = hud.pendingMoneyness?.let {
+                    val pnl = StrikeCalculator.estimatedPnl(
+                        it,
+                        riskManager.getCurrentInvestmentAmount(tradingEngine.autonomousSubMode).toDouble(),
+                        riskManager.sorosPayoutRate.toDouble()
+                    )
+                    if (it == TradeMoneyness.TIE) "—"
+                    else if (pnl >= 0) "+${StrikeCalculator.formatMoney(pnl)}" else "-${StrikeCalculator.formatMoney(-pnl)}"
+                } ?: "—"
+                val remainingSec = (tradingEngine.timeframe.seconds - hud.pendingElapsedSec).coerceAtLeast(0L)
+
+                txtStatus.text = "🤖 $act · Strike $entryStr · $stateStr · P&L $pnlStr · Hasta exp ${remainingSec}s"
+                txtStatus.setTextColor(
+                    when (hud.pendingMoneyness) {
+                        TradeMoneyness.ITM -> Color.parseColor("#22c55e")
+                        TradeMoneyness.OTM -> Color.parseColor("#ef4444")
+                        else -> Color.parseColor("#38bdf8")
+                    }
+                )
             } else {
                 val remaining = riskManager.getRemainingCooldown(tradingEngine.autonomousSubMode)
                 if (remaining > 0) {
