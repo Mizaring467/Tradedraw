@@ -39,6 +39,9 @@ class SyntheticCandleEngine {
     private val recentTickPrices = ArrayDeque<Double>(120)
     private var lastTickPrice: Double = 0.0
 
+    /** Activo del último tick procesado: permite detectar el cambio de activo y limpiar el buffer. */
+    private var lastTickAsset: String = ""
+
     // Conteo de ticks sin retroceso
     var consecutiveUpTicks: Int = 0
         private set
@@ -134,6 +137,18 @@ class SyntheticCandleEngine {
         val periodMs = timeframe.durationMs
         val candleMinute = (tick.timestampMs / periodMs) * periodMs
         val active = currentCandle
+
+        // Ronda 11 (T1/T3): el buffer rodante de precios es POR ACTIVO. Si el activo cambia hay que
+        // vaciarlo: `recentPriceBounds()` proyecta el rango visible de la linea de strike, y mezclar
+        // escalas distintas (p.ej. Crypto IDX 641.867 con ETHUSD-OTC ~1048) coloca la linea de strike
+        // en una Y sin sentido (se ancla al borde con flecha, ver t8_landscape_03.png).
+        if (tick.asset.isNotEmpty() && tick.asset != lastTickAsset) {
+            if (lastTickAsset.isNotEmpty()) {
+                synchronized(recentTickPrices) { recentTickPrices.clear() }
+                lastTickPrice = 0.0
+            }
+            lastTickAsset = tick.asset
+        }
 
         // 1. Conteo de ticks sin retroceso (momentum instantáneo)
         if (lastTickPrice > 0.0) {

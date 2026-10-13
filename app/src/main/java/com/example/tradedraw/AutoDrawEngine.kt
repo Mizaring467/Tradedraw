@@ -30,7 +30,7 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
         android.util.Log.d("AutoDrawEngine", "Línea bloqueada manualmente: $key")
         // Cambiar etiqueta visual a [Manual]
         val shapes = drawingView.getShapes()
-        val shape = shapes.find { it.isBotDrawn && it.labelText == key }
+        val shape = shapes.find { it.isBotDrawn && it.botKey == key }
         if (shape != null) {
             shape.isManuallyLocked = true
             drawingView.invalidate()
@@ -41,7 +41,7 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
         manuallyLockedLines.remove(key)
         android.util.Log.d("AutoDrawEngine", "Línea desbloqueada: $key")
         val shapes = drawingView.getShapes()
-        val shape = shapes.find { it.isBotDrawn && it.labelText == key }
+        val shape = shapes.find { it.isBotDrawn && it.botKey == key }
         if (shape != null) {
             shape.isManuallyLocked = false
             drawingView.invalidate()
@@ -134,11 +134,20 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
 
         // Rango visible reciente del motor sintético: fallback de proyección cuando no hay
         // calibración real del eje (Binomo no expone el eje de precios a accesibilidad).
+        // Ronda 11 (T3): el rango solo es válido si el precio de entrada pertenece a SU escala.
+        // Si el activo cambió, comparar el strike con un rango de otro activo produce una Y
+        // arbitraria (la línea se anclaba al borde con flecha, ver t8_landscape_03.png).
         val synthetic = OverlayService.instance?.tradingEngine?.syntheticCandleEngine
         if (synthetic != null) {
             val (lo, hi) = synthetic.recentPriceBounds()
-            if (hi > lo) {
+            val sameScale = hi > lo &&
+                currentEntryPrice in (lo * 0.5)..(hi * 2.0)
+            if (sameScale) {
                 PriceViewportMapper.setVisiblePriceRange(lo, hi, 0f, drawingView.height.toFloat())
+            } else {
+                // Sin calibración fiable no se inventa una Y: se dibuja la línea centrada y sin
+                // flecha de borde, que es honesto sobre la incertidumbre del eje.
+                PriceViewportMapper.reset()
             }
         }
 
@@ -175,7 +184,7 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
         currentStake = 0.0
         currentPayoutRate = 0.0
         val shapes = drawingView.getShapes().toMutableList()
-        shapes.removeAll { it.labelText.contains("BOT_STRIKE_PRICE") || it.tool == TradingTool.STRIKE_PRICE_LINE }
+        shapes.removeAll { it.botKey == "BOT_STRIKE_PRICE" || it.tool == TradingTool.STRIKE_PRICE_LINE }
         drawingView.setShapes(shapes)
     }
 

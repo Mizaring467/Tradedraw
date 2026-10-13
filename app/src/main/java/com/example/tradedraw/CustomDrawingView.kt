@@ -140,8 +140,11 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
 
     fun addOrUpdateBotShape(key: String, shape: DrawShape) {
         shape.isBotDrawn = true
-        shape.labelText = key
-        val idx = shapes.indexOfFirst { it.isBotDrawn && it.labelText == key }
+        // Ronda 11 (T8): la clave va en `botKey`, NO en `labelText`. Antes se hacia
+        // `shape.labelText = key`, y como el lienzo pinta `labelText`, el identificador tecnico
+        // ("BOT_STRIKE_PRICE") aparecia escrito sobre el grafico. Ver DrawShape.botKey.
+        shape.botKey = key
+        val idx = shapes.indexOfFirst { it.isBotDrawn && it.botKey == key }
         if (idx >= 0) {
             shapes[idx] = shape
         } else {
@@ -471,7 +474,7 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
                 isEraserDragging = false
                 // Detectar si se arrastró una línea del bot para bloquearla
                 if (selectedShape != null && selectedShape!!.isBotDrawn && dragMode != DragMode.NONE) {
-                    onBotShapeDragged?.invoke(selectedShape!!.labelText)
+                    onBotShapeDragged?.invoke(selectedShape!!.botKey)
                 }
                 if (selectedShape == null && currentShape != null) {
                     val finishedShape = currentShape!!

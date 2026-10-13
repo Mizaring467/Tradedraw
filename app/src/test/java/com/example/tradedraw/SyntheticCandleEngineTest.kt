@@ -1064,5 +1064,58 @@ class SyntheticCandleEngineTest {
         assertEquals(TradeAction.BUY, dispatchedAction)
         assertTrue("Razón debe contener etiqueta de confluencia", dispatchedReason.contains("[Confluencia:"))
     }
+
+    /**
+     * Ronda 11 (T1/T3): el buffer de precios del motor sintético alimenta la proyección de la
+     * línea de strike. Si el activo cambia y el buffer NO se limpia, `recentPriceBounds()` devuelve
+     * un rango que mezcla escalas (Crypto IDX 641.867 con ETHUSD-OTC ~1048) y la línea de strike
+     * se proyecta a una Y arbitraria.
+     */
+    @Test
+    fun cambioDeActivo_limpiaElBufferDePrecios() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 5L
+
+        // Crypto IDX: escala ~641.867
+        for (i in 0..9) {
+            engine.onNewTick(MarketTick(asset = "Z-CRY/IDX", price = 641.867 + i * 0.001, timestampMs = now + i * 100L))
+        }
+        val (loIdx, hiIdx) = engine.recentPriceBounds()
+        assertTrue("Rango de Crypto IDX debe estar en su escala", loIdx > 600.0 && hiIdx < 700.0)
+        assertTrue("Debe haber rango medible", hiIdx > loIdx)
+
+        // Cambio de activo: ETHUSD-OTC, dos órdenes de magnitud distinto
+        for (i in 0..9) {
+            engine.onNewTick(MarketTick(asset = "ETHUSD-OTC", price = 1048.0 + i * 0.5, timestampMs = now + 2000L + i * 100L))
+        }
+        val (loEth, hiEth) = engine.recentPriceBounds()
+        assertTrue(
+            "Tras el cambio de activo el buffer no debe contener precios de Crypto IDX (min=$loEth)",
+            loEth >= 1000.0
+        )
+        assertTrue("El rango debe ser el de ETHUSD-OTC", hiEth > 1048.0 && hiEth < 1060.0)
+    }
+
+    /**
+     * El mismo activo NO debe limpiar el buffer: el rango acumulado es la base de la proyección.
+     */
+    @Test
+    fun mismoActivo_conservaElBufferDePrecios() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 5L
+
+        for (i in 0..9) {
+            engine.onNewTick(MarketTick(asset = "Z-CRY/IDX", price = 641.867 + i * 0.001, timestampMs = now + i * 100L))
+        }
+        val (loA, hiA) = engine.recentPriceBounds()
+
+        for (i in 0..9) {
+            engine.onNewTick(MarketTick(asset = "Z-CRY/IDX", price = 641.867 + i * 0.001, timestampMs = now + 5000L + i * 100L))
+        }
+        val (loB, hiB) = engine.recentPriceBounds()
+
+        assertEquals("El mínimo debe seguir siendo el del primer bloque", loA, loB, 1e-9)
+        assertEquals("El máximo debe seguir siendo el del primer bloque", hiA, hiB, 1e-9)
+    }
 }
 

@@ -24,6 +24,13 @@ data class DrawShape(
     var labelVisible: Boolean = true,
     var labelText: String = "",
     var isBotDrawn: Boolean = false,
+    /**
+     * Ronda 11 (T8): clave estable de una figura del bot, INDEPENDIENTE de `labelText`.
+     * Antes `addOrUpdateBotShape` sobreescribia `labelText` con la clave interna
+     * ("BOT_STRIKE_PRICE") y el lienzo pinta precisamente `labelText`: el identificador tecnico
+     * acababa visible en pantalla encima de la linea de strike (ver t8_landscape_03.png).
+     */
+    var botKey: String = "",
     var isManuallyLocked: Boolean = false,
     val pathPoints: MutableList<PointF> = mutableListOf()
 ) {
@@ -43,6 +50,7 @@ data class DrawShape(
         json.put("labelVisible", labelVisible)
         json.put("labelText", labelText)
         json.put("isBotDrawn", isBotDrawn)
+        json.put("botKey", botKey)
         if (pathPoints.isNotEmpty()) {
             val pointsArray = JSONArray()
             for (point in pathPoints) {
@@ -73,7 +81,8 @@ data class DrawShape(
                 lineStyle = json.optInt("lineStyle", 0),
                 labelVisible = json.optBoolean("labelVisible", true),
                 labelText = json.optString("labelText", ""),
-                isBotDrawn = json.optBoolean("isBotDrawn", false)
+                isBotDrawn = json.optBoolean("isBotDrawn", false),
+                botKey = json.optString("botKey", "")
             )
             if (json.has("pathPoints")) {
                 val pointsArray = json.getJSONArray("pathPoints")
