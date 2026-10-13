@@ -1,0 +1,591 @@
+{
+  "generado": "2026-10-13T18:33:33Z",
+  "umbrales": {
+    "salto_relativo_pct": 5.0,
+    "ratio_escala_incompatible": 10.0,
+    "velocidad_absurda_abs": 100.0,
+    "velocidad_absurda_rel_pct_s": 1.0,
+    "payout": 0.8091,
+    "breakeven_winrate_pct": 55.28
+  },
+  "ticks": {
+    "ficheros_con_feed": 5,
+    "ficheros_duplicados_ignorados": 99,
+    "total_ticks": 126181,
+    "criterio_i_ric_cambia": {
+      "ficheros": 0,
+      "ticks": 0,
+      "pct": 0.0
+    },
+    "criterio_ii_saltos_gt_5pct": {
+      "ticks": 0,
+      "pct": 0.0
+    },
+    "criterio_iii_solape_escala_incompatible": {
+      "ticks": 125276,
+      "pct": 99.2828
+    },
+    "union_i_ii_iii": {
+      "ticks": 125276,
+      "pct": 99.2828
+    },
+    "detalle_por_fichero": {
+      "C:\\Users\\heidy\\Tradedraw\\data\\null\\eth_null_000.csv": {
+        "fichero": "data\\null\\eth_null_000.csv",
+        "activos": [
+          "ETHUSD-OTC"
+        ],
+        "ticks": 10325,
+        "rango": [
+          "2026-10-12 04:30",
+          "2026-10-12 07:46"
+        ],
+        "criterio_i_ric_cambia": false,
+        "criterio_ii_saltos_gt_5pct": 0,
+        "criterio_ii_pct": 0.0,
+        "peor_salto_relativo_pct": 1.498852259809041,
+        "mediana_precio": 1055.6119
+      },
+      "C:\\Users\\heidy\\Tradedraw\\data\\ticks\\BTCUSD-OTC_2026-10-12.csv": {
+        "fichero": "data\\ticks\\BTCUSD-OTC_2026-10-12.csv",
+        "activos": [
+          "BTCUSD-OTC"
+        ],
+        "ticks": 48910,
+        "rango": [
+          "2026-10-12 05:35",
+          "2026-10-12 12:51"
+        ],
+        "criterio_i_ric_cambia": false,
+        "criterio_ii_saltos_gt_5pct": 0,
+        "criterio_ii_pct": 0.0,
+        "peor_salto_relativo_pct": 0.10332993153954091,
+        "mediana_precio": 100367.84525
+      },
+      "C:\\Users\\heidy\\Tradedraw\\data\\ticks\\ETHUSD-OTC_2026-10-12.csv": {
+        "fichero": "data\\ticks\\ETHUSD-OTC_2026-10-12.csv",
+        "activos": [
+          "ETHUSD-OTC"
+        ],
+        "ticks": 34260,
+        "rango": [
+          "2026-10-12 04:30",
+          "2026-10-12 12:51"
+        ],
+        "criterio_i_ric_cambia": false,
+        "criterio_ii_saltos_gt_5pct": 0,
+        "criterio_ii_pct": 0.0,
+        "peor_salto_relativo_pct": 1.4988502603765375,
+        "mediana_precio": 1063.255
+      },
+      "C:\\Users\\heidy\\Tradedraw\\data\\ticks\\SOLUSD-OTC_2026-10-12.csv": {
+        "fichero": "data\\ticks\\SOLUSD-OTC_2026-10-12.csv",
+        "activos": [
+          "SOLUSD-OTC"
+        ],
+        "ticks": 32228,
+        "rango": [
+          "2026-10-12 05:35",
+          "2026-10-12 12:51"
+        ],
+        "criterio_i_ric_cambia": false,
+        "criterio_ii_saltos_gt_5pct": 0,
+        "criterio_ii_pct": 0.0,
+        "peor_salto_relativo_pct": 0.8147578785549595,
+        "mediana_precio": 32.525
+      },
+      "C:\\Users\\heidy\\Tradedraw\\data\\ticks\\Z-CRY_IDX_2026-10-12.csv": {
+        "fichero": "data\\ticks\\Z-CRY_IDX_2026-10-12.csv",
+        "activos": [
+          "Z-CRY/IDX"
+        ],
+        "ticks": 458,
+        "rango": [
+          "2026-10-12 04:19",
+          "2026-10-12 04:33"
+        ],
+        "criterio_i_ric_cambia": false,
+        "criterio_ii_saltos_gt_5pct": 0,
+        "criterio_ii_pct": 0.0,
+        "peor_salto_relativo_pct": 2.196715753779347e-07,
+        "mediana_precio": 641.8672880424999
+      }
+    }
+  },
+  "solapes_multi_activo": [
+    {
+      "activo_a": "BTCUSD-OTC",
+      "activo_b": "ETHUSD-OTC",
+      "desde": "2026-10-12 05:35",
+      "hasta": "2026-10-12 12:51",
+      "duracion_s": 26160.4,
+      "ratio_medianas": 94.4,
+      "escala_incompatible": true,
+      "ticks_a_en_solape": 48908,
+      "ticks_b_en_solape": 34036
+    },
+    {
+      "activo_a": "BTCUSD-OTC",
+      "activo_b": "SOLUSD-OTC",
+      "desde": "2026-10-12 05:35",
+      "hasta": "2026-10-12 12:51",
+      "duracion_s": 26160.5,
+      "ratio_medianas": 3085.87,
+      "escala_incompatible": true,
+      "ticks_a_en_solape": 48909,
+      "ticks_b_en_solape": 32227
+    },
+    {
+      "activo_a": "ETHUSD-OTC",
+      "activo_b": "SOLUSD-OTC",
+      "desde": "2026-10-12 05:35",
+      "hasta": "2026-10-12 12:51",
+      "duracion_s": 26160.9,
+      "ratio_medianas": 32.69,
+      "escala_incompatible": true,
+      "ticks_a_en_solape": 34037,
+      "ticks_b_en_solape": 32227
+    },
+    {
+      "activo_a": "ETHUSD-OTC",
+      "activo_b": "Z-CRY/IDX",
+      "desde": "2026-10-12 04:30",
+      "hasta": "2026-10-12 04:33",
+      "duracion_s": 177.4,
+      "ratio_medianas": 1.64,
+      "escala_incompatible": false,
+      "ticks_a_en_solape": 223,
+      "ticks_b_en_solape": 431
+    }
+  ],
+  "trades": {
+    "total_filas_journal": 3638,
+    "expuestos_criterio_ii": 0,
+    "expuestos_criterio_iii": 3345,
+    "velocidad_medible": 3374,
+    "velocidad_artefacto_tv_igual_price": 3343,
+    "velocidad_absurda_mayor_100_uds": 3356,
+    "velocidad_absurda_mayor_1pct_precio": 3356,
+    "ejemplos_velocidad": [
+      {
+        "fuente": "data/null_combined_trades.csv",
+        "ts": "2026-10-12 06:02",
+        "tick_velocity": 1046.33,
+        "price_y": 1046.34,
+        "ratio": 1.0
+      },
+      {
+        "fuente": "data/null_combined_trades.csv",
+        "ts": "2026-10-12 07:17",
+        "tick_velocity": 1047.83,
+        "price_y": 1047.84,
+        "ratio": 1.0
+      },
+      {
+        "fuente": "data/null_combined_trades.csv",
+        "ts": "2026-10-12 06:35",
+        "tick_velocity": 1051.44,
+        "price_y": 1051.45,
+        "ratio": 1.0
+      },
+      {
+        "fuente": "data/null_combined_trades.csv",
+        "ts": "2026-10-12 05:54",
+        "tick_velocity": 1052.08,
+        "price_y": 1052.09,
+        "ratio": 1.0
+      },
+      {
+        "fuente": "data/null_combined_trades.csv",
+        "ts": "2026-10-12 06:48",
+        "tick_velocity": 1039.86,
+        "price_y": 1039.87,
+        "ratio": 1.0
+      }
+    ],
+    "activos_con_tick": [
+      "BTCUSD-OTC",
+      "ETHUSD-OTC",
+      "SOLUSD-OTC",
+      "Z-CRY/IDX"
+    ]
+  },
+  "wilson_antes_despues": [
+    {
+      "fuente": "loops/journal/trade_journal_device_all.csv",
+      "antes": {
+        "fuente": "loops/journal/trade_journal_device_all.csv",
+        "n": 195,
+        "wins": 81,
+        "winrate_pct": 41.54,
+        "wilson_lo_pct": 34.85,
+        "wilson_hi_pct": 48.55,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "despues_excluyendo_expuestos": {
+        "fuente": "loops/journal/trade_journal_device_all.csv",
+        "n": 195,
+        "wins": 81,
+        "winrate_pct": 41.54,
+        "wilson_lo_pct": 34.85,
+        "wilson_hi_pct": 48.55,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "excluidos": 0,
+      "sin_ticks_emparejables": 179,
+      "r10_confirmacion_antes": {
+        "fuente": "loops/journal/trade_journal_device_all.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_confirmacion_despues": {
+        "fuente": "loops/journal/trade_journal_device_all.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_excluidos": 0
+    },
+    {
+      "fuente": "loops/journal/trade_journal_live.csv",
+      "antes": {
+        "fuente": "loops/journal/trade_journal_live.csv",
+        "n": 12,
+        "wins": 6,
+        "winrate_pct": 50.0,
+        "wilson_lo_pct": 25.38,
+        "wilson_hi_pct": 74.62,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "despues_excluyendo_expuestos": {
+        "fuente": "loops/journal/trade_journal_live.csv",
+        "n": 12,
+        "wins": 6,
+        "winrate_pct": 50.0,
+        "wilson_lo_pct": 25.38,
+        "wilson_hi_pct": 74.62,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "excluidos": 0,
+      "sin_ticks_emparejables": 11,
+      "r10_confirmacion_antes": {
+        "fuente": "loops/journal/trade_journal_live.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_confirmacion_despues": {
+        "fuente": "loops/journal/trade_journal_live.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_excluidos": 0
+    },
+    {
+      "fuente": "loops/journal/live/trade_journal_live.csv",
+      "antes": {
+        "fuente": "loops/journal/live/trade_journal_live.csv",
+        "n": 30,
+        "wins": 9,
+        "winrate_pct": 30.0,
+        "wilson_lo_pct": 16.66,
+        "wilson_hi_pct": 47.88,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "despues_excluyendo_expuestos": {
+        "fuente": "loops/journal/live/trade_journal_live.csv",
+        "n": 30,
+        "wins": 9,
+        "winrate_pct": 30.0,
+        "wilson_lo_pct": 16.66,
+        "wilson_hi_pct": 47.88,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "excluidos": 0,
+      "sin_ticks_emparejables": 28,
+      "r10_confirmacion_antes": {
+        "fuente": "loops/journal/live/trade_journal_live.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_confirmacion_despues": {
+        "fuente": "loops/journal/live/trade_journal_live.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_excluidos": 0
+    },
+    {
+      "fuente": "data/null_combined_trades.csv",
+      "antes": {
+        "fuente": "data/null_combined_trades.csv",
+        "n": 3309,
+        "wins": 1574,
+        "winrate_pct": 47.57,
+        "wilson_lo_pct": 45.87,
+        "wilson_hi_pct": 49.27,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "despues_excluyendo_expuestos": {
+        "fuente": "data/null_combined_trades.csv",
+        "n": 13,
+        "wins": 7,
+        "winrate_pct": 53.85,
+        "wilson_lo_pct": 29.14,
+        "wilson_hi_pct": 76.79,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "excluidos": 3296,
+      "sin_ticks_emparejables": 0,
+      "r10_confirmacion_antes": {
+        "fuente": "data/null_combined_trades.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_confirmacion_despues": {
+        "fuente": "data/null_combined_trades.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_excluidos": 0
+    },
+    {
+      "fuente": "data/ticks/replay_eth.csv",
+      "antes": {
+        "fuente": "data/ticks/replay_eth.csv",
+        "n": 3,
+        "wins": 0,
+        "winrate_pct": 0.0,
+        "wilson_lo_pct": 0.0,
+        "wilson_hi_pct": 56.15,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "despues_excluyendo_expuestos": {
+        "fuente": "data/ticks/replay_eth.csv",
+        "n": 3,
+        "wins": 0,
+        "winrate_pct": 0.0,
+        "wilson_lo_pct": 0.0,
+        "wilson_hi_pct": 56.15,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "excluidos": 0,
+      "sin_ticks_emparejables": 0,
+      "r10_confirmacion_antes": {
+        "fuente": "data/ticks/replay_eth.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_confirmacion_despues": {
+        "fuente": "data/ticks/replay_eth.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_excluidos": 0
+    },
+    {
+      "fuente": "data/ticks/replay_eth_live.csv",
+      "antes": {
+        "fuente": "data/ticks/replay_eth_live.csv",
+        "n": 47,
+        "wins": 21,
+        "winrate_pct": 44.68,
+        "wilson_lo_pct": 31.41,
+        "wilson_hi_pct": 58.75,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "despues_excluyendo_expuestos": {
+        "fuente": "data/ticks/replay_eth_live.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "excluidos": 47,
+      "sin_ticks_emparejables": 0,
+      "r10_confirmacion_antes": {
+        "fuente": "data/ticks/replay_eth_live.csv",
+        "n": 15,
+        "wins": 8,
+        "winrate_pct": 53.33,
+        "wilson_lo_pct": 30.12,
+        "wilson_hi_pct": 75.19,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "r10_confirmacion_despues": {
+        "fuente": "data/ticks/replay_eth_live.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_excluidos": 15
+    },
+    {
+      "fuente": "data/ticks/replay_trades.csv",
+      "antes": {
+        "fuente": "data/ticks/replay_trades.csv",
+        "n": 3,
+        "wins": 1,
+        "winrate_pct": 33.33,
+        "wilson_lo_pct": 6.15,
+        "wilson_hi_pct": 79.23,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "despues_excluyendo_expuestos": {
+        "fuente": "data/ticks/replay_trades.csv",
+        "n": 3,
+        "wins": 1,
+        "winrate_pct": 33.33,
+        "wilson_lo_pct": 6.15,
+        "wilson_hi_pct": 79.23,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "excluidos": 0,
+      "sin_ticks_emparejables": 0,
+      "r10_confirmacion_antes": {
+        "fuente": "data/ticks/replay_trades.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_confirmacion_despues": {
+        "fuente": "data/ticks/replay_trades.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_excluidos": 0
+    },
+    {
+      "fuente": "workflows/rounds/r10_journal_vivo.csv",
+      "antes": {
+        "fuente": "workflows/rounds/r10_journal_vivo.csv",
+        "n": 10,
+        "wins": 3,
+        "winrate_pct": 30.0,
+        "wilson_lo_pct": 10.78,
+        "wilson_hi_pct": 60.32,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "despues_excluyendo_expuestos": {
+        "fuente": "workflows/rounds/r10_journal_vivo.csv",
+        "n": 8,
+        "wins": 2,
+        "winrate_pct": 25.0,
+        "wilson_lo_pct": 7.15,
+        "wilson_hi_pct": 59.07,
+        "breakeven_pct": 55.28,
+        "veredicto": "SIN EVIDENCIA DE EDGE"
+      },
+      "excluidos": 2,
+      "sin_ticks_emparejables": 0,
+      "r10_confirmacion_antes": {
+        "fuente": "workflows/rounds/r10_journal_vivo.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_confirmacion_despues": {
+        "fuente": "workflows/rounds/r10_journal_vivo.csv",
+        "n": 0,
+        "wins": 0,
+        "winrate_pct": null,
+        "wilson_lo_pct": null,
+        "wilson_hi_pct": null,
+        "veredicto": "SIN MUESTRA"
+      },
+      "r10_excluidos": 0
+    }
+  ],
+  "r10_confirmacion_agregada": {
+    "n_preregistrado_para_evaluar": 200,
+    "antes": {
+      "fuente": "R10 confirmacion",
+      "n": 15,
+      "wins": 8,
+      "winrate_pct": 53.33,
+      "wilson_lo_pct": 30.12,
+      "wilson_hi_pct": 75.19,
+      "breakeven_pct": 55.28,
+      "veredicto": "SIN EVIDENCIA DE EDGE"
+    },
+    "despues_excluyendo_expuestos": {
+      "fuente": "R10 sin expuestos",
+      "n": 0,
+      "wins": 0,
+      "winrate_pct": null,
+      "wilson_lo_pct": null,
+      "wilson_hi_pct": null,
+      "veredicto": "SIN MUESTRA"
+    },
+    "excluidos": 15,
+    "nota": "Analisis POST-HOC / erratum. El preregistro R10 exige N>=200 antes de evaluar; con N menor esto NO es una evaluacion valida de la confirmacion."
+  }
+}
