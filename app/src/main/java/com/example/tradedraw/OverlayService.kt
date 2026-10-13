@@ -1667,8 +1667,8 @@ class OverlayService : Service() {
                 //  1) El signo lo manda SIEMPRE `vel`. Antes `tick.isBullishImpulse` tenía prioridad
                 //     en la etiqueta, así que con vel negativa el HUD escribía "▲ Impulso Alcista" en
                 //     rojo: flecha y color en contradicción (visto en dispositivo: -13403.387/s ▲).
-                //  2) Unidad normalizada en puntos básicos por segundo (bps/s) en vez de unidades
-                //     absolutas, que no son comparables entre activos de escala distinta.
+                //  2) Unidad normalizada como porcentaje del precio por segundo (%/s), en vez de
+                //     unidades absolutas que no son comparables entre activos (IDX ~641 vs SOL ~32).
                 val tick = latestTick
                 if (tick != null && !hud.velocityIsLive) {
                     txtTickVelocity?.text = "⚡ Micro-Velocidad: — (feed sin tick fresco)"
@@ -1676,22 +1676,19 @@ class OverlayService : Service() {
                     txtTickVelocity?.visibility = View.VISIBLE
                 } else if (tick != null) {
                     val rawVel = if (Math.abs(tick.smoothedVelocity) > 0.00001f) tick.smoothedVelocity else tick.velocity
-                    val priceRef = if (tick.price > 0.0) tick.price else 1.0
-                    // bps/s = (variación de precio por segundo) / precio * 10.000
-                    val bps = (rawVel / priceRef) * 10000.0
-                    val bpsThreshold = 0.5
-                    val velStr = String.format(java.util.Locale.US, "%+.1f bps/s", bps)
-                    val impulseStr = when {
-                        bps > bpsThreshold -> "▲ Impulso Alcista"
-                        bps < -bpsThreshold -> "▼ Impulso Bajista"
-                        else -> "━ Neutro"
+                    // Sin umbral fijo: cada activo tiene su propio paso de tick (el índice sintético
+                    // `Z-CRY/IDX` se mueve en el orden de 1e-9 relativo, un cripto real en 1e-4). Un
+                    // umbral en unidades absolutas o en bps dejaba el indicador clavado en "━ Neutro"
+                    // durante toda la sesión. Se informa el signo real y la magnitud con notación
+                    // adaptativa; "Neutro" solo si la velocidad es exactamente cero.
+                    val label = TickVelocityLabel.of(rawVel)
+                    val velStr = TickVelocityLabel.format(rawVel, tick.price)
+                    val velColor = when (label) {
+                        TickVelocityLabel.BULLISH -> Color.parseColor("#4ade80")
+                        TickVelocityLabel.BEARISH -> Color.parseColor("#f87171")
+                        TickVelocityLabel.NEUTRAL -> Color.parseColor("#94a3b8")
                     }
-                    val velColor = when {
-                        bps > bpsThreshold -> Color.parseColor("#4ade80")
-                        bps < -bpsThreshold -> Color.parseColor("#f87171")
-                        else -> Color.parseColor("#94a3b8")
-                    }
-                    txtTickVelocity?.text = "⚡ Micro-Velocidad: $velStr $impulseStr"
+                    txtTickVelocity?.text = "⚡ Micro-Velocidad: $velStr ${TickVelocityLabel.text(label)}"
                     txtTickVelocity?.setTextColor(velColor)
                     txtTickVelocity?.visibility = View.VISIBLE
                 }
