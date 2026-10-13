@@ -135,11 +135,28 @@ class BinomoWebSocketClient(private val context: Context) {
     var onTickListener: ((MarketTick) -> Unit)? = null
     var onStateChangeListener: ((WebSocketState, String?) -> Unit)? = null
 
-    // Tracking de micro-velocidad de ticks
+    // Tracking de micro-velocidad de ticks. Estado POR ACTIVO: mezclar escalas (IDX ~641 vs
+    // ETH ~1049, o el "1.166" de otro activo) producía deltas de ~640 y velocidades de ±1e4/s.
     private var lastPrice: Double = 0.0
     private var lastPriceTimeMs: Long = 0L
+    private var lastPriceAsset: String = ""
     private var smoothedVelocity: Float = 0f
     private val recentTicks = ArrayDeque<MarketTick>(16)
+
+    /** Ticks descartados por pertenecer a un activo distinto del [activeAsset]. */
+    @Volatile
+    var rejectedForeignAssetTicks: Long = 0L
+        private set
+
+    /** Ticks descartados por salto de precio implausible (> [MAX_TICK_JUMP_RATIO]) en el mismo activo. */
+    @Volatile
+    var rejectedSanityJumpTicks: Long = 0L
+        private set
+
+    /** Ticks aceptados desde el arranque (denominador del ratio de rechazo por activo ajeno). */
+    @Volatile
+    var acceptedTicks: Long = 0L
+        private set
 
     var latestTick: MarketTick? = null
         private set
@@ -397,178 +414,53 @@ class BinomoWebSocketClient(private val context: Context) {
      * Procesa y parsea las tramas de texto recibidas por WebSocket o bridge Headless.
      * Soporta múltiples formatos comunes de cotización (JSON de ticks, arrays, socket.io, etc.)
      */
+    /**
+     * Procesa y parsea las tramas de texto recibidas por WebSocket o bridge Headless.
+     *
+     * Ronda 11: el parseo vive en [TickFrameParser] (puro y testeable) y SOLO emite precios del
+     * [activeAsset]. Antes esta funcion aceptaba el primer activo con rate>0 de una trama
+     * multi-activo y el estado de velocidad era global, lo que contaminaba velocidad y HUD
+     * con el precio de otro activo (el "1.166" visto en una sesion de Crypto IDX ~641.86).
+     */
     fun processIncomingMessage(rawText: String, source: String = "headless") {
         try {
-            var payload = rawText.trim()
-
-            // Manejo de prefijos Socket.IO (ej. 42["tick", {...}])
-            if (payload.startsWith("42")) {
-                payload = payload.substring(2)
-            } else if (payload == "2") {
+            val payload = rawText.trim()
+            if (payload == "2") {
                 // Heartbeat ping de Socket.IO -> responder pong "3"
                 webSocket?.send("3")
                 return
             }
 
-            var parsedPrice: Double? = null
-            var assetName: String = activeAsset
-            val nowMs = System.currentTimeMillis()
+            val frame = TickFrameParser.analyze(payload, activeAsset)
+            val parsed = frame.tick
+            if (parsed == null) {
+                // Solo se contabiliza como contaminación si la trama traía precios de OTROS activos.
+                // Una respuesta informativa (phx_reply, heartbeat) no es un incidente de integridad.
+                if (frame.hadForeignAsset) rejectedForeignAssetTicks++
+                return
+            }
 
-            if (payload.startsWith("{")) {
-                val json = JSONObject(payload)
-
-                // 1. Formatos con contenedor "data" (Objetos o Arrays con "assets" o directos)
-                if (json.has("data")) {
-                    val dataObj = json.optJSONObject("data")
-                    if (dataObj != null) {
-                        val assetsArr = dataObj.optJSONArray("assets")
-                        if (assetsArr != null && assetsArr.length() > 0) {
-                            for (i in 0 until assetsArr.length()) {
-                                val assetObj = assetsArr.optJSONObject(i) ?: continue
-                                val r = if (assetObj.has("rate")) assetObj.optDouble("rate") else if (assetObj.has("price")) assetObj.optDouble("price") else Double.NaN
-                                val ric = assetObj.optString("ric", "")
-                                if (!r.isNaN() && r > 0.0) {
-                                    if (parsedPrice == null || ric.equals(activeAsset, ignoreCase = true)) {
-                                        parsedPrice = r
-                                        if (ric.isNotEmpty()) assetName = ric
-                                        if (ric.equals(activeAsset, ignoreCase = true)) break
-                                    }
-                                }
-                            }
-                        } else {
-                            if (dataObj.has("rate")) parsedPrice = dataObj.getDouble("rate")
-                            else if (dataObj.has("price")) parsedPrice = dataObj.getDouble("price")
-                            if (dataObj.has("ric")) assetName = dataObj.getString("ric")
-                        }
-                    } else {
-                        val dataArr = json.optJSONArray("data")
-                        if (dataArr != null && dataArr.length() > 0) {
-                            for (i in 0 until dataArr.length()) {
-                                val item = dataArr.optJSONObject(i) ?: continue
-                                val assetsArr = item.optJSONArray("assets")
-                                if (assetsArr != null && assetsArr.length() > 0) {
-                                    for (j in 0 until assetsArr.length()) {
-                                        val assetObj = assetsArr.optJSONObject(j) ?: continue
-                                        val r = if (assetObj.has("rate")) assetObj.optDouble("rate") else if (assetObj.has("price")) assetObj.optDouble("price") else Double.NaN
-                                        val ric = assetObj.optString("ric", "")
-                                        if (!r.isNaN() && r > 0.0) {
-                                            if (parsedPrice == null || ric.equals(activeAsset, ignoreCase = true)) {
-                                                parsedPrice = r
-                                                if (ric.isNotEmpty()) assetName = ric
-                                                if (ric.equals(activeAsset, ignoreCase = true)) break
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    val r = if (item.has("rate")) item.optDouble("rate") else if (item.has("price")) item.optDouble("price") else Double.NaN
-                                    val ric = item.optString("ric", "")
-                                    if (!r.isNaN() && r > 0.0) {
-                                        if (parsedPrice == null || ric.equals(activeAsset, ignoreCase = true)) {
-                                            parsedPrice = r
-                                            if (ric.isNotEmpty()) assetName = ric
-                                            if (ric.equals(activeAsset, ignoreCase = true)) break
-                                        }
-                                    }
-                                }
-                                if (parsedPrice != null && assetName.equals(activeAsset, ignoreCase = true)) break
-                            }
-                        }
-                    }
-                }
-
-                // 2. Formato con "assets" en raíz
-                if (parsedPrice == null && json.has("assets")) {
-                    val assetsArr = json.optJSONArray("assets")
-                    if (assetsArr != null && assetsArr.length() > 0) {
-                        for (i in 0 until assetsArr.length()) {
-                            val assetObj = assetsArr.optJSONObject(i) ?: continue
-                            val r = if (assetObj.has("rate")) assetObj.optDouble("rate") else if (assetObj.has("price")) assetObj.optDouble("price") else Double.NaN
-                            val ric = assetObj.optString("ric", "")
-                            if (!r.isNaN() && r > 0.0) {
-                                if (parsedPrice == null || ric.equals(activeAsset, ignoreCase = true)) {
-                                    parsedPrice = r
-                                    if (ric.isNotEmpty()) assetName = ric
-                                    if (ric.equals(activeAsset, ignoreCase = true)) break
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 3. Formatos directos en la raíz: {"rate": ...} o {"price": ...} o {"close": ...}
-                if (parsedPrice == null) {
-                    if (json.has("rate")) parsedPrice = json.getDouble("rate")
-                    else if (json.has("price")) parsedPrice = json.getDouble("price")
-                    else if (json.has("close")) parsedPrice = json.getDouble("close")
-                    if (json.has("ric")) assetName = json.getString("ric")
-                }
-            } else if (payload.startsWith("[")) {
-                val arr = JSONArray(payload)
-                if (arr.length() >= 2 && arr.optString(0).contains("tick", ignoreCase = true)) {
-                    val tickObj = arr.optJSONObject(1)
-                    if (tickObj != null) {
-                        parsedPrice = tickObj.optDouble("rate", tickObj.optDouble("price", 0.0))
-                        if (tickObj.has("ric")) assetName = tickObj.getString("ric")
-                    }
-                }
-                // Frame Phoenix v2 posicional: [join_ref, ref, topic, event, payload].
-                // El precio viaja en payload["response"]["data"][*]["assets"][*].
-                if (parsedPrice == null && arr.length() >= 5) {
-                    val phxPayload = arr.optJSONObject(4)
-                    val phxData = phxPayload?.optJSONArray("data")
-                        ?: phxPayload?.optJSONObject("response")?.optJSONArray("data")
-                    if (phxData != null) {
-                        for (i in 0 until phxData.length()) {
-                            val item = phxData.optJSONObject(i) ?: continue
-                            val assets = item.optJSONArray("assets") ?: continue
-                            for (j in 0 until assets.length()) {
-                                val a = assets.optJSONObject(j) ?: continue
-                                val r = if (a.has("rate")) a.optDouble("rate") else a.optDouble("price", Double.NaN)
-                                val ric = a.optString("ric", "")
-                                if (!r.isNaN() && r > 0.0 && (parsedPrice == null || ric.equals(activeAsset, ignoreCase = true))) {
-                                    parsedPrice = r
-                                    if (ric.isNotEmpty()) assetName = ric
-                                }
-                            }
-                        }
-                    }
+            // Guarda de cordura del mismo activo: un salto relativo mayor que MAX_TICK_JUMP_RATIO
+            // no es mercado, es mezcla de activos o trama corrupta. Se descarta y se contabiliza.
+            if (lastPrice > 0.0 && lastPriceAsset.equals(parsed.asset, ignoreCase = true)) {
+                val jumpRatio = Math.abs(parsed.price - lastPrice) / lastPrice
+                if (jumpRatio > MAX_TICK_JUMP_RATIO) {
+                    rejectedSanityJumpTicks++
+                    Log.w(
+                        TAG,
+                        "Tick descartado por salto implausible en ${parsed.asset}: $lastPrice -> ${parsed.price}"
+                    )
+                    return
                 }
             }
 
-            // 4. Extractor Regex de respaldo si parsedPrice sigue en null
-            if (parsedPrice == null || parsedPrice <= 0.0) {
-                // Si el payload contiene el activo activo (ej. Z-CRY/IDX), buscar preferentemente el bloque asociado
-                val activeBlock = Regex("""\{[^{}]*"ric"\s*:\s*"${Regex.escape(activeAsset)}"[^{}]*\}""").find(payload)?.value
-                    ?: Regex("""\{[^{}]*"rate"\s*:\s*[0-9.]+[^{}]*"ric"\s*:\s*"${Regex.escape(activeAsset)}"[^{}]*\}""").find(payload)?.value
-                    ?: payload
-
-                val rateMatch = Regex(""""rate"\s*:\s*([0-9.]+)""").find(activeBlock)
-                val priceMatch = if (rateMatch == null) Regex(""""price"\s*:\s*([0-9.]+)""").find(activeBlock) else null
-                val matchedVal = rateMatch?.groupValues?.getOrNull(1) ?: priceMatch?.groupValues?.getOrNull(1)
-                if (matchedVal != null) {
-                    val p = matchedVal.toDoubleOrNull()
-                    if (p != null && p > 0.0) {
-                        parsedPrice = p
-                    }
-                }
-
-                val ricMatch = Regex(""""ric"\s*:\s*"([^"]+)"""").find(activeBlock)
-                if (ricMatch != null) {
-                    val matchedRic = ricMatch.groupValues[1]
-                    if (matchedRic.isNotEmpty()) {
-                        assetName = matchedRic
-                    }
-                }
+            if (currentState != WebSocketState.CONNECTED) {
+                updateState(WebSocketState.CONNECTED, "Conexion activa con broker (0ms)")
             }
-
-            if (parsedPrice != null && parsedPrice > 0.0) {
-                if (currentState != WebSocketState.CONNECTED) {
-                    updateState(WebSocketState.CONNECTED, "Conexión activa con broker (0ms)")
-                }
-                lastTickSource = source
-                if (source == "socket") socketTicks++
-                emitTick(assetName, parsedPrice, nowMs)
-            }
+            lastTickSource = source
+            if (source == "socket") socketTicks++
+            acceptedTicks++
+            emitTick(parsed.asset, parsed.price, System.currentTimeMillis())
         } catch (e: Exception) {
             // Mensaje informativo o frame no relacionado a precios
         }
@@ -578,6 +470,14 @@ class BinomoWebSocketClient(private val context: Context) {
         var velocity = 0f
         var isBullish = false
         var isBearish = false
+
+        // Al cambiar de activo el delta entre escalas no es mercado: se reinicia la inercia para
+        // que el primer tick del activo nuevo no invente una velocidad de cientos de unidades/s.
+        if (!lastPriceAsset.equals(asset, ignoreCase = true)) {
+            lastPrice = 0.0
+            lastPriceTimeMs = 0L
+            smoothedVelocity = 0f
+        }
 
         if (lastPrice > 0.0 && lastPriceTimeMs > 0L) {
             val dtMs = (timestampMs - lastPriceTimeMs).coerceAtLeast(10L)
@@ -611,6 +511,7 @@ class BinomoWebSocketClient(private val context: Context) {
 
         lastPrice = price
         lastPriceTimeMs = timestampMs
+        lastPriceAsset = asset
 
         val tick = MarketTick(
             asset = asset,
@@ -658,5 +559,11 @@ class BinomoWebSocketClient(private val context: Context) {
     companion object {
         /** Umbral único de frescura del feed WebSocket: 5000 ms. */
         const val DEFAULT_FRESHNESS_MS = 5000L
+
+        /**
+         * Salto relativo máximo aceptado entre dos ticks consecutivos del MISMO activo.
+         * 5%: por encima de eso no es mercado intradía de 60s, es mezcla de activos o corrupción.
+         */
+        const val MAX_TICK_JUMP_RATIO = 0.05
     }
 }
