@@ -398,6 +398,8 @@ A esto se añade que el probador **no consiguió que se abriera ninguna operaci�
 **Commits (directo a `main`, sin PR):**
 
 ```
+57f7587  fix(hud): T8 verificado en dispositivo + opacidad solo en el fondo (R11)
+3f96071  docs(r11): incorpora el informe del probador y cierra los veredictos con sus salvedades
 2ffebe9  fix(hud): T8 causa unica de los 3 fallos de layout - cabecera sin peso desbordaba la ventana (R11)
 390fc86  docs(r11): medicion del reloj de vela y conflicto S/R real documentado
 55d160a  docs(r11): informe final de la ronda 11 con veredictos por tarea, evidencia y riesgos
@@ -410,12 +412,12 @@ ebe3681  audit(r11): T2 impacto de la contaminacion entre activos sobre R9/R10 (
 37f6d32  fix(ws): T1 integridad de datos - parser fail-closed por activo + velocidad/estado por RIC (R11)
 ```
 
+**Empujado a `main`:** `f829734..57f7587` (fast-forward, 14 commits: los 12 de R11 más 2 de R10 que ya estaban en la rama de trabajo). CI `Build APK` en `main`: **completed / success** (1m8s).
+
 `PREREGISTRO_R10.md` **no fue modificado** en ningún commit de esta ronda (verificado: su último commit sigue siendo `da15cc9`, de R10).
 
 **APK de depuración (artefacto `TradeDraw-debug` de GitHub Actions):**
 https://github.com/Mizaring467/Tradedraw/actions
-
----
 
 ## Qué queda abierto para la próxima ronda
 
