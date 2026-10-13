@@ -522,6 +522,10 @@ A esto se añade que el probador **no consiguió que se abriera ninguna operaci�
 **Commits (directo a `main`, sin PR):**
 
 ```
+487f9fc  fix(landscape): el ancho del HUD no se recalculaba al rotar (R11, 3er bug)
+0d03cae  docs(r11): cierra T2 con evidencia antes/despues y verifica la liquidacion de T3
+4738d55  fix(landscape): 2 bugs hallados al verificar el HUD en horizontal + T2 corregido (R11)
+b5bcde3  docs(r11): cierra el informe con el push a main y el estado de CI
 57f7587  fix(hud): T8 verificado en dispositivo + opacidad solo en el fondo (R11)
 3f96071  docs(r11): incorpora el informe del probador y cierra los veredictos con sus salvedades
 2ffebe9  fix(hud): T8 causa unica de los 3 fallos de layout - cabecera sin peso desbordaba la ventana (R11)
@@ -536,7 +540,9 @@ ebe3681  audit(r11): T2 impacto de la contaminacion entre activos sobre R9/R10 (
 37f6d32  fix(ws): T1 integridad de datos - parser fail-closed por activo + velocidad/estado por RIC (R11)
 ```
 
-**Empujado a `main`:** `f829734..57f7587` (fast-forward, 14 commits: los 12 de R11 más 2 de R10 que ya estaban en la rama de trabajo). CI `Build APK` en `main`: **completed / success** (1m8s).
+**Empujado a `main`:** `f829734..487f9fc` (fast-forward; los 16 commits de R11 más 2 de R10 que ya estaban en la rama de trabajo). `origin/main == 487f9fc`.
+
+**CI `Build APK` en `main`:** `completed / success` en cada push. Última ejecución verificada: run `38480733031`, SHA `487f9fc`.
 
 `PREREGISTRO_R10.md` **no fue modificado** en ningún commit de esta ronda (verificado: su último commit sigue siendo `da15cc9`, de R10).
 
@@ -547,8 +553,10 @@ https://github.com/Mizaring467/Tradedraw/actions
 
 Por orden de importancia:
 
-1. **Convertir `⚠ CONFLICTO S/R↔PLAN` en un veto real.** Hoy solo etiqueta. En Crypto IDX el filtro S/R y el anti-chop pueden pedir direcciones opuestas a la vez.
-2. **Auditar todas las divisiones por rango/ATR del motor** para el feed sub-micro de Crypto IDX (canal 1.25e-06 sobre precio 641.867 = 2e-9 relativo).
-3. **Sesión de prueba con operación abierta** para validar T3 (ITM/OTM y P&L) visualmente. La contabilidad nueva por precio **no se ha ejercitado ni una vez**.
-4. **Separar la opacidad del fondo de la del texto** (`hud_alpha` global a 0.33 hace ilegible el HUD).
-5. **Confirmar el payout real** (0.85 configurado frente a 82–83 % mostrado por Binomo) o marcarlo como aproximado en la interfaz.
+1. **Convertir `⚠ CONFLICTO S/R↔PLAN` en un veto real.** Hoy solo etiqueta. En Crypto IDX el filtro S/R y el anti-chop pueden pedir direcciones opuestas a la vez (captura `clock_03.png`: `Toque Directo en Resistencia [PUT Óptimo]` frente a `Cerca de Soporte (15%) … CALL`, con `[86% CALL | 14% PUT]`).
+2. **Auditar todas las divisiones por rango/ATR del motor** para el feed sub-micro de Crypto IDX (canal 1.25e-06 sobre precio 641.867 = 2e-9 relativo). Esta es la misma familia de fallo que produjo T7.
+3. **Auditar el resto del estado por activo.** T1 arregló el parser y T3 el buffer del motor sintético. `recentTickPrices` era **uno** de varios buffers; falta revisar si queda algún otro acumulador que no se resetee al cambiar de instrumento (candidatos: buffers de `VisionAnalyzer`, historial de `RiskManager`).
+4. **Sesión de prueba con operación abierta** para validar la **presentación visual** del strike (chip ITM/OTM y P&L en pantalla). La liquidación ya está verificada contra el journal (WIN/LOSS/TIE persistidos), pero el chip no se ha visto.
+5. **Separar la opacidad del fondo de la del texto** (`hud_alpha` global a 0.33 hace ilegible el HUD).
+6. **Confirmar el payout real** (0.85 configurado frente a 82–83 % mostrado por Binomo) o marcarlo como aproximado en la interfaz.
+7. **Persistir `hud_visible`** en `TradeDraw_HUDConfig` junto a `hud_collapsed`/`hud_alpha`: hoy el HUD arranca invisible y hay que activarlo por HTTP.
