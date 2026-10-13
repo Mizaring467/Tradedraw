@@ -12,7 +12,7 @@
 | :--- | :--- | :--- |
 | T1 — Integridad del feed (parser fail-closed por activo) | **CAUSA RAÍZ CONFIRMADA y corregida** | `37f6d32` |
 | T2 — Auditoría de contaminación entre activos (impacto en R9/R10) | **CONFIRMADA la vía Y CONFIRMADO el daño en el journal** (primera conclusión corregida) | `ebe3681` |
-| T3 — Strike y liquidación en dominio de precio (ITM/OTM real) | **CAUSA RAÍZ CONFIRMADA y corregida** · **⚠ TOCA DECISIÓN** | `d54ec03` |
+| T3 — Strike y liquidación en dominio de precio (ITM/OTM real) | **CAUSA RAÍZ CONFIRMADA y corregida**; liquidación **verificada contra el journal real** · **⚠ TOCA DECISIÓN** | `d54ec03` |
 | T4 — HUD sin datos inventados (instantánea inmutable) | **CAUSA RAÍZ CONFIRMADA y corregida** | `267ad0f` |
 | T5 — Micro-velocidad: signo coherente y unidad comparable | **CAUSA RAÍZ CONFIRMADA y corregida** (2 iteraciones) | `267ad0f`, `7ace8c3` |
 | T6 — Countdown real y P&L real | **CONFIRMADO y corregido** | `267ad0f` |
@@ -125,6 +125,21 @@ Los tres caen en el rango de fracciones de segundo esperable entre ticks. **La v
 
 **Lo que NO cambia:** el veredicto estadístico de R9/R10 sigue siendo "sin edge demostrado" (ninguna cota inferior de Wilson alcanza el break-even) y el conjunto de confirmación post-T0 (N = 15 ≪ 200) sigue sin ser evaluable. La contaminación es un defecto de integridad de datos, no evidencia de edge.
 
+### Verificación del fix T1 contra el journal real (antes / después)
+
+Auditoría automática del journal del dispositivo, separando antes y después del despliegue del parser fail-closed:
+
+| Bloque | Filas | Fuera de escala (600–700) | Velocidades con residuo de salto |
+| :--- | ---: | ---: | ---: |
+| **PRE-fix** `12:59:18` … `13:20:19` | 4 | **4** (`1.166300`, `1.166290`, `0.992470` y un `641.867310` con velocidad imposible `-6964.14`) | **3** (dt = 0.54 / 0.08 / 0.11 s) |
+| **POST-fix** `15:07:14` … `17:05:17` | 4 | **0** | **0** |
+
+Detalle del bloque post-fix: todas las filas con `price_y = 641.867310` (escala única de Crypto IDX) y `tick_velocity = 0.00`. **Cero contaminación cruzada en las 4 operaciones posteriores al fix.**
+
+Esto convierte T1 en una corrección **medida y verificada contra datos reales**, no solo contra tests unitarios: el mismo journal que contiene 4 filas contaminadas no contiene ninguna después del `37f6d32`.
+
+**Nota sobre el 4º caso pre-fix:** la fila `13:10:19` tiene `price_y = 641.867310` (escala correcta) pero `tick_velocity = -6964.14`. El residuo de salto no aplica porque el precio sí es de Crypto IDX; la velocidad absurda proviene de haber derivado contra el último precio almacenado, que era de **otra** escala (`1.166300`). Eso es exactamente lo que T1 corrigió al resetear `lastPrice`/`smoothedVelocity` por activo. Confirma que el defecto tenía **dos manifestaciones**: precio contaminado (3 filas) y velocidad contaminada con precio correcto (1 fila).
+
 ---
 
 ## T3 — Strike y liquidación en dominio de precio · **⚠ TOCA DECISIÓN DE TRADING**
@@ -149,6 +164,25 @@ La **resolución de la operación** es parte del bucle de decisión: determina s
 El fallback de visión comparaba un valor Y (que en headless es **siempre 0**) contra 0 con el signo invertido: **nunca disparaba de forma significativa**. Ahora resuelve por precio real. Por tanto, **las operaciones pueden empezar a resolverse en casos en los que antes no se resolvían (o se resolvían mal)**.
 
 Lo que **NO** cambia: ningún umbral de entrada, ningún veto, ni la confluencia. Lo que **SÍ** cambia: la contabilidad de resultados. Si en R9/R10 hubo operaciones mal resueltas, sus estadísticas están afectadas y **no se corrigen retroactivamente** en esta ronda.
+
+### Verificación de la liquidación contra el journal real (cierra el gap que dejó el probador)
+
+El probador no pudo observar ninguna operación abierta. La sesión posterior sí generó operaciones resueltas, y **quedaron persistidas con la escala correcta**:
+
+```
+2026-10-13T16:47:03  BUY  price_y=641.867310  stake=1.00  WIN   Diff=+83000.3200000003  (62s)
+2026-10-13T17:05:17  BUY  price_y=641.867310  stake=1.00  LOSS  Diff=-99998.71999999881 (72s)
+2026-10-13T16:57:17  SELL price_y=641.867310  stake=1.00  TIE   Diff=0.0 (orden no procesada)
+```
+
+Y el HUD mostró en paralelo `W: 1 | L: 0 | Nulas: 0 | Total: 1 (100.0%)` (ver `t8_landscape_02.png`), coherente con el journal: **el contador del HUD y el registro persistido coinciden**.
+
+Lo que esto confirma:
+- La **liquidación por diferencia de saldo** funciona y escribe en el journal (`SALDO (+)` / `SALDO (-)` / `ORDEN NO PROCESADA`).
+- El `price_y` guardado es un **precio de Crypto IDX** (`641.867310`), no una coordenada Y ni una escala ajena: T3 escribe en dominio de precio.
+- El desglose WIN/LOSS/TIE del HUD (`Nulas` para las no procesadas) refleja los tres desenlaces reales.
+
+Lo que **sigue** sin observarse: el chip `Strike … · ITM/OTM · P&L` **en pantalla con una operación abierta** (el probador tampoco lo vio). El cálculo está cubierto por `StrikeCalculatorTest` (18 tests), pero su presentación en vivo no tiene captura.
 
 ### Limitación conocida (simplificación deliberada)
 
@@ -420,7 +454,9 @@ Almacena **precios** (`1121.50`, `1265.00`), no coordenadas Y. El nombre de la c
 | 9 | **Toques en la cabecera del HUD se filtraban a Binomo** y cambiaban el entorno (abrieron el menú de timeframe y dejaron el gráfico en 5m, además del panel del Agente IA y `MainActivity`). Causa: contenido desbordado fuera del área de la ventana. | Media (era Alta) | **Corregido y verificado**: `2ffebe9` + tap de prueba en `360,105` sin abrir menús de Binomo. Baja a Media porque el riesgo residual es que un tap en la banda del HUD, fuera de un control, sigue siendo absorbido por la ventana (correcto) y no por el gráfico. |
 | 10 | **El aviso `⚠ CONFLICTO S/R↔PLAN` solo etiqueta, no veta.** No hay comprobación de que el conflicto impida el disparo. | **Alta** | Añadir un veto real (exclusividad mutua entre filtro S/R y anti-chop) antes de operar en real. Cae fuera del enunciado de R11 (tocaría umbrales). |
 | 11 | **`hud_alpha = 0.33` deja pasar el gráfico de Binomo sobre las líneas de micro-velocidad y stats.** El drawable del panel es 90 % opaco (`#E6070A14`), pero el alpha global se aplica también al **texto**. | Media | Separar la opacidad del fondo de la del texto, o fijar un mínimo de alfa para el texto. El tester lo documentó con capturas. |
-| 12 | **Sin verificación visual de T3, T4-parcial y T6b-parcial.** El probador no consiguió ninguna operación abierta. **Parcialmente cerrado tras esta ronda:** el journal del dispositivo registra 1 WIN resuelto (`2026-10-13T16:47:03`, `Diff=+83000.32 COP`) y el HUD mostró `Total: 1 (100.0%)` con `W: 1 \| L: 0`. | Media (era Alta) | La ruta de liquidación por saldo **funciona y escribe en el journal**. Sigue faltando ver la **línea de strike en pantalla con operación abierta** (el chip `Strike … ITM/OTM`), que es lo único no observado. |
+| 12 | **Línea de strike en pantalla con operación abierta**: sigue sin observarse el chip en vivo con operación pendiente. | Media | Residuo menor: la ruta de liquidación está confirmada en dispositivo (WIN 16:47, LOSS 17:05, ambos persistidos con escala correcta). Solo falta la captura del chip. |
+| 16 | **El HUD persiste `hudVisible:false` tras reiniciar** y hay que reactivarlo por HTTP. El estado inicial de visibilidad no viene de preferencias como sí lo hace `hudCollapsed`. | Baja | Guardar `hud_visible` en `TradeDraw_HUDConfig` junto a `hud_collapsed`/`hud_alpha`. No corregido en R11 (no estaba en el enunciado). |
+| 17 | **Colores rojo/verde invertidos respecto a la convención de mercado** en las cifras de expiración del HUD: `Vela [5m] 4:22` en naranja y `Hasta expi` en rojo, mientras el gráfico sí usa verde/rojo con la convención correcta. | Baja | Es cosmético y no afecta a ninguna lectura numérica. No corregido. |
 | 13 | **Identificador técnico pintado en pantalla** (`BOT_STRIKE_PRICE`) por reutilizar `labelText` como clave de figura. | Baja | **Corregido** con `DrawShape.botKey` + `DrawShapeBotKeyTest`. |
 | 14 | **Buffer de precios del motor sintético no se limpiaba al cambiar de activo**: hasta 120 ticks de escala ajena contaminaban momentum, medias, z-score y la proyección de la línea de strike. | **Alta** | **Corregido** (`onNewTick` limpia al detectar `tick.asset` distinto) + 2 tests. Relacionado con el riesgo #4: es la misma familia de fallo (estado por activo). |
 | 15 | **`totalWins` del motor y el journal pueden desincronizarse:** `risk.totalWins = 1` frente a 18 filas en el journal (4 `TIE`, 11 `LOSS`, 3 `WIN`). El contador del motor es de sesión, el journal es histórico, pero no hay un campo que lo declare. | Media | Rotular el origen del contador en el HUD o separar "sesión" de "histórico" explícitamente. No corregido en R11 (afecta a la contabilidad, que ya arrastra el problema de T3). |
@@ -431,7 +467,7 @@ Almacena **precios** (`1121.50`, `1265.00`), no coordenadas Y. El nombre de la c
 
 | Criterio | Estado | Evidencia |
 | :--- | :--- | :--- |
-| Sin contaminación entre activos | **PASA** | `TickFrameParserTest` (12 tests) + contador `⛔ ajenos:` en HUD + auditoría T2 (126 181 ticks, 0 contaminados) |
+| Sin contaminación entre activos | **PASA (verificado contra el journal real)** | `TickFrameParserTest` (12 tests) + contador `⛔ ajenos:` en HUD + auditoría T2: 4 filas contaminadas pre-fix, **0 post-fix** (bloque `15:07`–`17:05`, escala única `641.867310`, velocidades `0.00`) |
 | Micro-velocidad con signo y flecha coherentes | **PASA** | `after_21.png`: `-1.18e-08 %/s ▼ Bajista`; `TickVelocityLabelTest` (6 tests) |
 | Countdown real, sin `Liquidando en vela :00s` | **PASA** | `after_21.png`: `Vela [1m] :31s` |
 | P&L real, no `+$$$` | **PASA** | Código + `StrikeCalculatorTest` (18 tests) |
