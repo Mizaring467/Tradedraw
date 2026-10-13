@@ -46,7 +46,7 @@ class RiskManagerTest {
      */
     @Test
     fun testClearPendingTrade_onRiskCheck_expiresAtTimeout() {
-        riskManager.recordTradeSent(TradeAction.BUY, entryPriceY = 250f, baseBalance = 50000.0)
+        riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 250.0, baseBalance = 50000.0)
         assertTrue("Debe haber trade pendiente", riskManager.hasPendingTrade)
 
         // Envejecemos el pendiente más allá del timeout de seguridad (85s)
@@ -87,10 +87,10 @@ class RiskManagerTest {
 
     @Test
     fun testTradePendingBlocksDuplicateExecution() {
-        riskManager.recordTradeSent(TradeAction.BUY, entryPriceY = 250f, baseBalance = 50000.0)
+        riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 250.0, baseBalance = 50000.0)
         assertTrue("Trade pending should be true", riskManager.hasPendingTrade)
         assertEquals("Action should be BUY", TradeAction.BUY, riskManager.pendingTradeAction)
-        assertEquals("Entry price Y should match", 250f, riskManager.pendingTradeEntryPriceY, 0.01f)
+        assertEquals("Entry price should match", 250.0, riskManager.pendingTradeEntryPrice, 0.01)
         assertEquals("Base balance should match", 50000.0, riskManager.pendingTradeBaseBalance, 0.01)
 
         val (canTrade, reason) = riskManager.canExecuteTrade()
@@ -471,13 +471,13 @@ class RiskManagerTest {
     @Test
     fun testBug3_VoidDoesNotIncrementStreak() {
         com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 50000000.0
-        riskManager.recordTradeSent(TradeAction.BUY, 0f, 50000000.0)
+        riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 0.0, baseBalance = 50000000.0)
         com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 49920000.0
         riskManager.recordTradeLoss() // Real loss
         assertEquals(1, riskManager.currentLossStreak)
 
         // Void trade (balance doesn't change)
-        riskManager.recordTradeSent(TradeAction.BUY, 0f, 49920000.0)
+        riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 0.0, baseBalance = 49920000.0)
         riskManager.recordTradeLoss() // Engine calls loss, but risk manager should intercept as void
         assertEquals("Streak should not increment for void trade", 1, riskManager.currentLossStreak)
         assertEquals("Void count should increment", 1, riskManager.consecutiveVoids)
@@ -487,7 +487,7 @@ class RiskManagerTest {
     fun testBug3_ThreeVoidsCauseHardStop() {
         com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 50000000.0
         for (i in 1..3) {
-            riskManager.recordTradeSent(TradeAction.BUY, 0f, 50000000.0)
+            riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 0.0, baseBalance = 50000000.0)
             riskManager.recordTradeLoss() // Interpreted as void
         }
         assertEquals(3, riskManager.consecutiveVoids)
@@ -589,7 +589,7 @@ class RiskManagerTest {
         assertEquals("Initial pendingTradeConfidence should be 0.0f", 0.0f, riskManager.pendingTradeConfidence, 0.001f)
 
         // Persistencia al abrir trade con recordTradeSent
-        riskManager.recordTradeSent(TradeAction.BUY, entryPriceY = 250f, baseBalance = 50000.0, confidence = 0.88f)
+        riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 250.0, baseBalance = 50000.0, confidence = 0.88f)
         assertEquals("Confidence should be persisted on recordTradeSent", 0.88f, riskManager.pendingTradeConfidence, 0.001f)
 
         // Reseteo al limpiar trade pendiente con clearPendingTrade
@@ -597,7 +597,7 @@ class RiskManagerTest {
         assertEquals("Confidence should be reset on clearPendingTrade", 0.0f, riskManager.pendingTradeConfidence, 0.001f)
 
         // Persistencia mediante notifyTradePlaced
-        riskManager.notifyTradePlaced(TradeAction.SELL, entryPriceY = 150f, baseBalance = 45000.0, confidence = 0.92f)
+        riskManager.notifyTradePlaced(TradeAction.SELL, entryPrice = 150.0, baseBalance = 45000.0, confidence = 0.92f)
         assertEquals("Confidence should be persisted on notifyTradePlaced", 0.92f, riskManager.pendingTradeConfidence, 0.001f)
 
         // Reseteo al liquidar trade (recordTradeLoss limpia pending trade)

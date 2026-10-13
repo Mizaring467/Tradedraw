@@ -75,69 +75,105 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
         // El HUD didáctico muestra la información de S/R, probabilidad y patrones en tiempo real.
     }
 
-    private var currentEntryY: Float = 0f
+    // Ronda 11 (T3): el strike vive en DOMINIO DE PRECIO. Antes se guardaba la Y del tap y se
+    // comparaba con Y de visión, lo que producía una línea punteada a cientos de píxeles del
+    // precio real y un estado ITM/OTM imposible (PUT [ITM] con el precio por encima del strike).
+    private var currentEntryPrice: Double = 0.0
     private var currentEntryAction: TradeAction? = null
 
-    /**
-     * Traza la línea de precio de entrada (Strike Price) para opciones binarias.
-     * Reemplaza definitivamente la caja de Forex/StopLoss por una línea limpia ITM/OTM.
-     */
-    fun drawTradeEntry(action: TradeAction, entryPriceY: Float, screenWidth: Float) {
-        currentEntryY = entryPriceY
-        currentEntryAction = action
+    // Stake y payout vigentes para estimar el P&L real en la etiqueta.
+    private var currentStake: Double = 0.0
+    private var currentPayoutRate: Double = 0.0
 
-        val label = if (action == TradeAction.BUY) "▲ CALL [ITM]" else "▼ PUT [ITM]"
-        drawingView.addOrUpdateBotShape(
-            "BOT_STRIKE_PRICE",
-            DrawShape(
-                tool = TradingTool.STRIKE_PRICE_LINE,
-                startX = 0f,
-                startY = entryPriceY,
-                endX = screenWidth,
-                endY = entryPriceY,
-                color = Color.GREEN,
-                strokeWidth = 4f,
-                labelText = label
-            )
-        )
+    /**
+     * Traza la línea del STRIKE (precio de entrada) para opciones binarias.
+     *
+     * @param entryPrice precio real del broker en el momento del disparo (dominio de precio).
+     * @param screenWidth ancho del lienzo.
+     * @param stake capital arriesgado (para el P&L estimado).
+     * @param payoutRate tasa de payout configurada (para el P&L estimado).
+     */
+    fun drawTradeEntry(
+        action: TradeAction,
+        entryPrice: Double,
+        screenWidth: Float,
+        stake: Double = 0.0,
+        payoutRate: Double = 0.0
+    ) {
+        currentEntryPrice = entryPrice
+        currentEntryAction = action
+        currentStake = stake
+        currentPayoutRate = payoutRate
+        // El strike es de otro activo si cambia la escala: se recalibra el viewport.
+        PriceViewportMapper.reset()
+        renderStrike(action, TradeMoneyness.TIE)
     }
 
     /**
-     * Actualiza en tiempo real el estado ITM (Ganando - Verde) u OTM (Perdiendo - Rojo) del Strike Price.
+     * Actualiza el estado ITM/OTM comparando el PRECIO actual contra el precio de entrada.
+     * Devuelve el moneyness calculado para que el llamador pueda etiquetar el HUD con la misma
+     * fuente de verdad (una sola comparación en el sistema).
      */
-    fun updateTradeEntryLiveStatus(livePriceY: Float) {
-        val action = currentEntryAction ?: return
-        if (currentEntryY <= 0f) return
+    fun updateTradeEntryLiveStatus(livePrice: Double): TradeMoneyness {
+        val action = currentEntryAction ?: return TradeMoneyness.TIE
+        if (currentEntryPrice <= 0.0) return TradeMoneyness.TIE
 
-        // En coordenadas de pantalla: Menor Y = Mayor Precio (Subió)
-        val isITM = if (action == TradeAction.BUY) {
-            livePriceY <= currentEntryY // En CALL gana si el precio actual está más arriba (menor Y)
-        } else {
-            livePriceY >= currentEntryY // En PUT gana si el precio actual está más abajo (mayor Y)
+        val moneyness = StrikeCalculator.moneyness(action, currentEntryPrice, livePrice)
+        renderStrike(action, moneyness)
+        return moneyness
+    }
+
+    private fun renderStrike(action: TradeAction, moneyness: TradeMoneyness) {
+        val label = StrikeCalculator.strikeLabel(
+            action = action,
+            moneyness = moneyness,
+            entryPrice = currentEntryPrice,
+            pnl = StrikeCalculator.estimatedPnl(moneyness, currentStake, currentPayoutRate)
+        )
+        val color = if (moneyness == TradeMoneyness.ITM) Color.GREEN else Color.RED
+
+        // Rango visible reciente del motor sintético: fallback de proyección cuando no hay
+        // calibración real del eje (Binomo no expone el eje de precios a accesibilidad).
+        val synthetic = OverlayService.instance?.tradingEngine?.syntheticCandleEngine
+        if (synthetic != null) {
+            val (lo, hi) = synthetic.recentPriceBounds()
+            if (hi > lo) {
+                PriceViewportMapper.setVisiblePriceRange(lo, hi, 0f, drawingView.height.toFloat())
+            }
         }
 
-        val actionName = if (action == TradeAction.BUY) "CALL" else "PUT"
-        val statusTag = if (isITM) "▲ $actionName [ITM]" else "▼ $actionName [OTM]"
-        val color = if (isITM) Color.GREEN else Color.RED
+        // El precio de entrada puede caer fuera del viewport visible: en ese caso se ancla al borde
+        // con flecha en vez de dibujar la línea en una Y inventada.
+        val geometry = StrikeCalculator.strikeGeometry(
+            entryPrice = currentEntryPrice,
+            priceToY = { PriceViewportMapper.priceToY(it) },
+            viewportTop = 0f,
+            viewportBottom = drawingView.height.toFloat()
+        )
+        val y = geometry?.y ?: (drawingView.height * 0.5f)
+        val arrow = geometry?.arrow ?: ""
+        val finalLabel = if (arrow.isEmpty()) label else "$arrow $label"
 
         drawingView.addOrUpdateBotShape(
             "BOT_STRIKE_PRICE",
             DrawShape(
                 tool = TradingTool.STRIKE_PRICE_LINE,
                 startX = 0f,
-                startY = currentEntryY,
-                endX = 0f,
-                endY = currentEntryY,
+                startY = y,
+                endX = drawingView.width.toFloat().coerceAtLeast(1f),
+                endY = y,
                 color = color,
                 strokeWidth = 4f,
-                labelText = statusTag
+                labelText = finalLabel
             )
         )
     }
 
     fun clearTradeEntry() {
-        currentEntryY = 0f
+        currentEntryPrice = 0.0
         currentEntryAction = null
+        currentStake = 0.0
+        currentPayoutRate = 0.0
         val shapes = drawingView.getShapes().toMutableList()
         shapes.removeAll { it.labelText.contains("BOT_STRIKE_PRICE") || it.tool == TradingTool.STRIKE_PRICE_LINE }
         drawingView.setShapes(shapes)

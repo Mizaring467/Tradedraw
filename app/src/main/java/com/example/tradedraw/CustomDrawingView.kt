@@ -270,8 +270,7 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
 
     private fun drawStrikePriceLine(canvas: Canvas, shape: DrawShape) {
         val y = shape.startY
-        val isCall = shape.labelText.contains("CALL", ignoreCase = true) || shape.labelText.contains("COMPRA", ignoreCase = true)
-        val isITM = shape.color == Color.GREEN || shape.labelText.contains("ITM", ignoreCase = true)
+        val isITM = shape.color == Color.GREEN
 
         val linePaint = Paint().apply {
             color = if (isITM) Color.parseColor("#22c55e") else Color.parseColor("#ef4444")
@@ -287,11 +286,9 @@ class CustomDrawingView(context: Context, attrs: AttributeSet?) : View(context, 
             style = Paint.Style.FILL
             isAntiAlias = true
         }
-        val labelText = if (isCall) {
-            if (isITM) "▲ CALL [ITM +$$$]" else "▲ CALL [OTM $0]"
-        } else {
-            if (isITM) "▼ PUT [ITM +$$$]" else "▼ PUT [OTM $0]"
-        }
+        // Ronda 11 (T6): la etiqueta la construye StrikeCalculator con precio y P&L REALES.
+        // Antes se pintaban aquí los literales "+$$$" (ITM) y "$0" (OTM), que no eran dinero.
+        val labelText = shape.labelText.ifBlank { if (isITM) "CALL [ITM]" else "PUT [OTM]" }
 
         val badgeWidth = textPaint.measureText(labelText) + 24f
         val badgeHeight = 36f

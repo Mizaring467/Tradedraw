@@ -103,7 +103,6 @@ class TradingEngine(
     private val PROCESS_INTERVAL_MS = 1000L
 
     private var pendingTradeHasObservedWin: Boolean = false
-    private var pendingTradeRecordedCandleCloseY: Float = 0f
     private val isTradeResolving = java.util.concurrent.atomic.AtomicBoolean(false)
     private var lastFeedbackEmitTime: Long = 0L
     private var lastTradeResolutionTime: Long = 0L
@@ -178,7 +177,12 @@ class TradingEngine(
     data class PendingTradeSnapshot(
         val action: TradeAction,
         val startTime: Long,
-        val entryY: Float,
+        /**
+         * Ronda 11 (T3): STRIKE en dominio de precio (no en píxeles). La liquidación compara este
+         * valor contra el precio del tick WS. Antes era una Y de visión (0.0 en headless), así que
+         * la comparación `latestPrice > entryY` era siempre cierta y el resultado era aleatorio.
+         */
+        val entryPrice: Double,
         val baseBalance: Double,
         val confidence: Float
     )
@@ -342,31 +346,24 @@ class TradingEngine(
         if (riskManager.hasPendingTrade) {
             val elapsedSec = (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000
 
-            // Actualizar en vivo la línea de entrada (Verde si va ganando ITM, Roja si va perdiendo OTM)
-            handler.post {
-                autoDrawEngine.updateTradeEntryLiveStatus(analysis.currentPriceY)
+            // Actualizar en vivo la línea de entrada (Verde si va ganando ITM, Roja si va perdiendo OTM).
+            // Ronda 11 (T3): la comparación es en DOMINIO DE PRECIO (tick WS vs strike de entrada), no
+            // en píxeles de visión. `analysis.currentPriceY` viene de la ruta de visión retirada y
+            // traía ceros, así que el estado ITM/OTM era arbitrario.
+            val livePrice = latestMarketTick?.price
+            if (livePrice != null && livePrice > 0.0) {
+                handler.post {
+                    autoDrawEngine.updateTradeEntryLiveStatus(livePrice)
+                }
             }
 
-            val entryY = riskManager.pendingTradeEntryPriceY
-            val exitY = analysis.currentPriceY
+            // Ronda 11 (T3): el journal guarda el STRIKE REAL en dominio de precio. El parámetro se
+            // llama `priceY` por historia, pero su contenido siempre fueron precios (1121.50, 641.87).
+            val entryY = riskManager.pendingTradeEntryPrice.toFloat()
             val action = riskManager.pendingTradeAction
             val baseBalance = riskManager.pendingTradeBaseBalance
             val pendingConfidence = riskManager.pendingTradeConfidence
             val tradeStartMs = riskManager.pendingTradeStartTime
-
-            // Capturar el precio de cierre en la ventana de expiración tras al menos 40s de trade
-            if (elapsedSec >= 40 && (analysis.candleSecond in 1..5)) {
-                if (pendingTradeRecordedCandleCloseY == 0f && analysis.currentPriceY > 0f) {
-                    pendingTradeRecordedCandleCloseY = analysis.currentPriceY
-                }
-            }
-
-            // Capturar el precio de cierre al expirar la vela tras al menos 45s de trade
-            if (elapsedSec >= 45 && (analysis.candleSecond in 1..5)) {
-                if (pendingTradeRecordedCandleCloseY == 0f && analysis.currentPriceY > 0f) {
-                    pendingTradeRecordedCandleCloseY = analysis.currentPriceY
-                }
-            }
 
             // Ventana de resolución estricta al EXPIRAR la vela (según timeframe: 60s o 300s + ventana de liquidación del broker)
             val expDurationSec = timeframe.seconds
@@ -396,20 +393,26 @@ class TradingEngine(
                         method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado tras ${elapsedSec}s)"
                     }
                 } else if (elapsedSec >= (expDurationSec + 5)) {
-                    // 2. Fallback de resolución por Acción de Precio (si el saldo no es legible por UI)
-                    val entryPrice = entryY
-                    val exitPrice = if (pendingTradeRecordedCandleCloseY > 0f) pendingTradeRecordedCandleCloseY else exitY
-                    if (entryPrice > 0f && exitPrice > 0f) {
-                        val isCall = (action == TradeAction.BUY)
-                        val isDiffSignificant = Math.abs(exitPrice - entryPrice) >= 0.5f
-                        if (!isDiffSignificant) {
-                            isTie = true
-                            method = "PRECIO (=) Empate técnico: Entry=$entryPrice vs Exit=$exitPrice (${elapsedSec}s)"
-                        } else {
-                            val priceWon = if (isCall) (exitPrice < entryPrice) else (exitPrice > entryPrice)
-                            isWin = priceWon
-                            val sign = if (priceWon) "+" else "-"
-                            method = "PRECIO ($sign) Resolución por acción de precio: Entry=$entryPrice vs Exit=$exitPrice (${elapsedSec}s)"
+                    // 2. Fallback de resolución por Acción de Precio (si el saldo no es legible por UI).
+                    // Ronda 11 (T3): se resuelve en DOMINIO DE PRECIO con el tick WS. El código previo
+                    // comparaba Y de visión con signo invertido (`isCall -> exitY < entryY`) y con
+                    // `entryY` en 0 fuera de la ruta de visión, así que el fallback era inoperante.
+                    val entryPrice = riskManager.pendingTradeEntryPrice
+                    val exitPrice = latestMarketTick?.price ?: 0.0
+                    if (entryPrice > 0.0 && exitPrice > 0.0 && action != null) {
+                        when (StrikeCalculator.moneyness(action, entryPrice, exitPrice)) {
+                            TradeMoneyness.TIE -> {
+                                isTie = true
+                                method = "PRECIO (=) Empate técnico: Entry=$entryPrice vs Exit=$exitPrice (${elapsedSec}s)"
+                            }
+                            TradeMoneyness.ITM -> {
+                                isWin = true
+                                method = "PRECIO (+) Resolución por acción de precio: Entry=$entryPrice vs Exit=$exitPrice (${elapsedSec}s)"
+                            }
+                            TradeMoneyness.OTM -> {
+                                isWin = false
+                                method = "PRECIO (-) Resolución por acción de precio: Entry=$entryPrice vs Exit=$exitPrice (${elapsedSec}s)"
+                            }
                         }
                     } else if (elapsedSec >= (expDurationSec + 15)) {
                         isTie = true
@@ -426,7 +429,6 @@ class TradingEngine(
                     val finalWin = isWin ?: false
                     handler.post {
                         pendingTradeHasObservedWin = false
-                        pendingTradeRecordedCandleCloseY = 0f
                         val curTrend = analysis.trend.name
                         val supDist = analysis.distanceToSupportRatio
                         val resDist = analysis.distanceToResistanceRatio
@@ -1423,7 +1425,13 @@ class TradingEngine(
 
         if (mode == AutoTradeMode.SEMIAUTOMATIC) {
             handler.post {
-                autoDrawEngine.drawTradeEntry(finalAction, analysis.currentPriceY, context.resources.displayMetrics.widthPixels.toFloat())
+                autoDrawEngine.drawTradeEntry(
+                    finalAction,
+                    latestMarketTick?.price ?: 0.0,
+                    context.resources.displayMetrics.widthPixels.toFloat(),
+                    riskManager.getCurrentInvestmentAmount(autonomousSubMode).toDouble(),
+                    riskManager.sorosPayoutRate.toDouble()
+                )
                 Toast.makeText(context, "🔔 SEÑAL: $actionText\n$finalReason", Toast.LENGTH_SHORT).show()
             }
             return
@@ -1492,7 +1500,10 @@ class TradingEngine(
         val observed = accessibility?.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
         val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
         isTradeResolving.set(false)
-        riskManager.recordTradeSent(action, analysis.currentPriceY, baseBal, confidence, analysis.candleSecond, reasonDescription)
+        // Ronda 11 (T3): el strike se registra en dominio de PRECIO. `analysis.currentPriceY` era
+        // una Y de visión (0 en headless): guardarla como entryPrice dejaba la liquidación sin
+        // referencia real.
+        riskManager.recordTradeSent(action, latestMarketTick?.price ?: 0.0, 0f, baseBal, confidence, analysis.candleSecond, reasonDescription)
         // Despacho táctil único con verificación y fallback ROOT transparente
         AutoTradeAccessibilityService.performClick(x, y) { success, error ->
             if (!success) {
@@ -1502,7 +1513,16 @@ class TradingEngine(
 
         handler.post {
             drawingView.triggerClickAnimation(x, y)
-            autoDrawEngine.drawTradeEntry(action, analysis.currentPriceY, screenW)
+            // Ronda 11 (T3): la STRIKE_PRICE_LINE se sitúa por PRECIO de entrada (no por la Y del
+            // tap). Antes se hacía `y.coerceIn(screenH*0.35, screenH*0.65)`: una coordenada de
+            // pulsación sin relación con ningún precio, de ahí la línea fantasma a ~640 px.
+            autoDrawEngine.drawTradeEntry(
+                action = action,
+                entryPrice = latestMarketTick?.price ?: 0.0,
+                screenWidth = screenW,
+                stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode).toDouble(),
+                payoutRate = riskManager.sorosPayoutRate.toDouble()
+            )
             saveAuditScreenshot(bitmap, action)
             val stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode)
             Toast.makeText(context, "🤖 BOT OPERÓ: $action ($$$stake)\n$reasonDescription", Toast.LENGTH_LONG).show()
@@ -1787,7 +1807,7 @@ class TradingEngine(
         // correlacionar el segundo de disparo con el resultado, la métrica que el journal no captura.
         Log.i("TradingEngine", "🎯 ENTRADA despachada | ${finalAction} | segundo=$sec | estrategia=${strategy.name} | $finalReason")
         isTradeResolving.set(false)
-        riskManager.recordTradeSent(finalAction, latestMarketTick?.price?.toFloat() ?: 0f, baseBal, headlessConfidence, sec, finalReason)
+        riskManager.recordTradeSent(finalAction, latestMarketTick?.price ?: 0.0, 0f, baseBal, headlessConfidence, sec, finalReason)
         synchronized(this) {
             lastExecutedCandleEpochMinute = currentCandleEpochMinute
         }
@@ -1806,8 +1826,14 @@ class TradingEngine(
 
         handler.post {
             drawingView.triggerClickAnimation(x, y)
-            // En modo Headless, situar la STRIKE_PRICE_LINE en la altura estimada del gráfico
-            autoDrawEngine.drawTradeEntry(finalAction, y.coerceIn(screenH * 0.35f, screenH * 0.65f), screenW)
+            // Ronda 11 (T3): strike por PRECIO de entrada del tick WS, no por la Y del tap.
+            autoDrawEngine.drawTradeEntry(
+                action = finalAction,
+                entryPrice = latestMarketTick?.price ?: 0.0,
+                screenWidth = screenW,
+                stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode).toDouble(),
+                payoutRate = riskManager.sorosPayoutRate.toDouble()
+            )
             emitHapticAndAudioFeedback()
             val stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode)
             Toast.makeText(context, "⚡ [${strategy.name}] BOT OPERÓ: $finalAction ($$$stake)\n$finalReason", Toast.LENGTH_LONG).show()
@@ -1827,7 +1853,7 @@ class TradingEngine(
                     PendingTradeSnapshot(
                         action = riskManager.pendingTradeAction ?: TradeAction.BUY,
                         startTime = startMs,
-                        entryY = riskManager.pendingTradeEntryPriceY,
+                        entryPrice = riskManager.pendingTradeEntryPrice,
                         baseBalance = riskManager.pendingTradeBaseBalance,
                         confidence = riskManager.pendingTradeConfidence
                     )
@@ -1866,19 +1892,25 @@ class TradingEngine(
                 method = "ORDEN NO PROCESADA (Diff=$diff -> Saldo inalterado tras ${elapsedSec}s)"
             }
         } else if (elapsedSec >= (expDurationSec + 5)) {
-            val pendingEntry = snapshot.entryY
-            val latestPrice = latestMarketTick?.price?.toFloat() ?: 0f
-            if (pendingEntry > 0f && latestPrice > 0f) {
-                val isCall = (snapshot.action == TradeAction.BUY)
-                val isDiffSignificant = Math.abs(latestPrice - pendingEntry) > 0.00001f
-                if (!isDiffSignificant) {
-                    isTie = true
-                    method = "PRECIO (=) Empate técnico en tick WS: Entry=$pendingEntry vs Close=$latestPrice (${elapsedSec}s)"
-                } else {
-                    val priceWon = if (isCall) (latestPrice > pendingEntry) else (latestPrice < pendingEntry)
-                    isWin = priceWon
-                    val sign = if (priceWon) "+" else "-"
-                    method = "PRECIO ($sign) Tick WS: Entry=$pendingEntry vs Close=$latestPrice (${elapsedSec}s)"
+            // Ronda 11 (T3): comparación en DOMINIO DE PRECIO, con la misma función que usa el HUD
+            // para pintar ITM/OTM. Una sola definición de "va ganando" en todo el sistema.
+            val pendingEntry = snapshot.entryPrice
+            val latestPrice = latestMarketTick?.price ?: 0.0
+            if (pendingEntry > 0.0 && latestPrice > 0.0) {
+                val moneyness = StrikeCalculator.moneyness(snapshot.action, pendingEntry, latestPrice)
+                when (moneyness) {
+                    TradeMoneyness.TIE -> {
+                        isTie = true
+                        method = "PRECIO (=) Empate técnico en tick WS: Entry=$pendingEntry vs Close=$latestPrice (${elapsedSec}s)"
+                    }
+                    TradeMoneyness.ITM -> {
+                        isWin = true
+                        method = "PRECIO (+) Tick WS: Entry=$pendingEntry vs Close=$latestPrice (${elapsedSec}s)"
+                    }
+                    TradeMoneyness.OTM -> {
+                        isWin = false
+                        method = "PRECIO (-) Tick WS: Entry=$pendingEntry vs Close=$latestPrice (${elapsedSec}s)"
+                    }
                 }
             } else if (elapsedSec >= (expDurationSec + 15)) {
                 isTie = true
@@ -1891,7 +1923,7 @@ class TradingEngine(
 
             val finalWin = isWin ?: false
             val pendingAction = snapshot.action
-            val pendingEntry = snapshot.entryY
+            val pendingEntry = snapshot.entryPrice
             val pendingConfidence = snapshot.confidence
             val pendingStake = riskManager.getCurrentInvestmentAmount()
             val pendingTradeStartMs = snapshot.startTime
@@ -1913,7 +1945,7 @@ class TradingEngine(
                     submode = autonomousSubMode.name,
                     action = pendingAction.name,
                     confidence = pendingConfidence,
-                    priceY = pendingEntry,
+                    priceY = pendingEntry.toFloat(),
                     stake = pendingStake,
                     baseBalance = baseBalance,
                     result = journalResult,

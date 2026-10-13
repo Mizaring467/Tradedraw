@@ -234,6 +234,22 @@ class SyntheticCandleEngine {
      * Rango de salida: 0.0 a 100.0. Zero-allocation para no generar presión en GC.
      */
     /**
+     * Rango de precios visible reciente (mín, máx) de los ticks guardados.
+     *
+     * Ronda 11 (T3): sirve para proyectar el strike sobre el gráfico cuando no hay calibración real
+     * del eje. Binomo no expone las etiquetas del eje de precios al árbol de accesibilidad
+     * (verificado con `uiautomator dump`), así que este es el único anclaje monótono disponible.
+     * Devuelve (0, 0) si no hay muestra suficiente.
+     */
+    fun recentPriceBounds(): Pair<Double, Double> {
+        synchronized(recentTickPrices) {
+            if (recentTickPrices.size < 4) return 0.0 to 0.0
+            val sample = recentTickPrices.takeLast(60)
+            return sample.minOrNull()!! to sample.maxOrNull()!!
+        }
+    }
+
+    /**
      * Z-Score de sobreextension de ticks: Z = (precio - media) / stdDev
      */
     fun calculateTickZScore(period: Int = 60, currentPrice: Double): Double {

@@ -230,6 +230,16 @@ class RiskManager(context: Context? = null) {
     var pendingTradeEntryPriceY: Float = 0f
         internal set
 
+    /**
+     * Ronda 11 (T3): precio REAL de entrada del broker, en dominio de precio (no en píxeles).
+     * Es el strike con el que se calcula ITM/OTM y con el que se compara la liquidación.
+     * `pendingTradeEntryPriceY` queda como campo heredado (píxeles de visión retirada) y NO debe
+     * usarse para decidir nada: se conserva para compatibilidad del journal histórico.
+     */
+    @Volatile
+    var pendingTradeEntryPrice: Double = 0.0
+        internal set
+
     @Volatile
     var pendingTradeBaseBalance: Double = 0.0
         internal set
@@ -475,13 +485,29 @@ class RiskManager(context: Context? = null) {
         resetStreakOnly()
     }
 
+    /**
+     * Registra la orden enviada.
+     *
+     * @param entryPrice Precio REAL del broker en el momento del disparo (tick WS). Es el strike
+     *   de la opción binaria: ITM/OTM y la liquidación se calculan contra él.
+     * @param entryPriceY Coordenada de pantalla heredada (visión retirada). Solo informativa.
+     */
     @Synchronized
-    fun recordTradeSent(action: TradeAction, entryPriceY: Float = 0f, baseBalance: Double = 0.0, confidence: Float = 0.0f, entryCandleSecond: Int = -1, reason: String = "") {
+    fun recordTradeSent(
+        action: TradeAction,
+        entryPrice: Double = 0.0,
+        entryPriceY: Float = 0f,
+        baseBalance: Double = 0.0,
+        confidence: Float = 0.0f,
+        entryCandleSecond: Int = -1,
+        reason: String = ""
+    ) {
         val now = System.currentTimeMillis()
         lastTradeTime = now
         hasPendingTrade = true
         pendingTradeAction = action
         pendingTradeStartTime = now
+        pendingTradeEntryPrice = entryPrice
         pendingTradeEntryPriceY = entryPriceY
         pendingTradeBaseBalance = baseBalance
         pendingTradeConfidence = confidence
@@ -490,8 +516,8 @@ class RiskManager(context: Context? = null) {
     }
 
     @Synchronized
-    fun notifyTradePlaced(action: TradeAction, entryPriceY: Float = 0f, baseBalance: Double = 0.0, confidence: Float = 0.0f) {
-        recordTradeSent(action, entryPriceY, baseBalance, confidence)
+    fun notifyTradePlaced(action: TradeAction, entryPrice: Double = 0.0, baseBalance: Double = 0.0, confidence: Float = 0.0f) {
+        recordTradeSent(action, entryPrice, 0f, baseBalance, confidence)
     }
 
     @Synchronized
@@ -499,6 +525,7 @@ class RiskManager(context: Context? = null) {
         hasPendingTrade = false
         pendingTradeAction = null
         pendingTradeStartTime = 0L
+        pendingTradeEntryPrice = 0.0
         pendingTradeEntryPriceY = 0f
         pendingTradeBaseBalance = 0.0
         pendingTradeConfidence = 0.0f
