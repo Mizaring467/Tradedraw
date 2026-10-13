@@ -31,6 +31,10 @@ class OverlayService : Service() {
 
     companion object {
         private const val ACTION_STOP = "com.example.tradedraw.STOP"
+
+        /** Margen lateral (dp) que se reserva al HUD para no tocar el borde de la pantalla. */
+        private const val HUD_SIDE_MARGIN_DP = 24
+
         @Volatile
         var instance: OverlayService? = null
     }
@@ -73,7 +77,13 @@ class OverlayService : Service() {
         internal set
     private var hudAlpha: Float = 0.70f
     var isHudCollapsed: Boolean = true
-        internal set
+
+    /**
+     * Ronda 11 (T8): true si el usuario plegó/desplegó el HUD manualmente durante la operación
+     * abierta. Mientras esté a true, el auto-plegado no le lleva la contraria.
+     */
+    @Volatile
+    private var userToggledThisTrade: Boolean = false
     private var agentChatOverlay: AgentChatOverlay? = null
 
     fun openAgentChat() {
@@ -1028,8 +1038,15 @@ class OverlayService : Service() {
     private fun setupHUDWindow() {
         val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
         hudView = LayoutInflater.from(this).inflate(R.layout.layout_trading_hud, null)
+        // Ronda 11 (T8): el HUD usaba ancho WRAP_CONTENT. Con textos largos (WS Activo + descartes,
+        // plan de acción) la ventana crecía más allá del borde derecho y el botón de plegado quedaba
+        // fuera de pantalla. Se fija un ancho máximo real: el panel ya no puede desbordar y los
+        // TextView `match_parent` envuelven el texto en varias líneas.
+        val screenWidthPx = resources.displayMetrics.widthPixels
+        val hudWidthPx = screenWidthPx - (HUD_SIDE_MARGIN_DP * resources.displayMetrics.density).toInt()
+            .coerceAtLeast((240 * resources.displayMetrics.density).toInt())
         hudParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            hudWidthPx, WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -1084,10 +1101,9 @@ class OverlayService : Service() {
         btnCollapse?.text = if (isHudCollapsed) "▼" else "▲"
 
         btnCollapse?.setOnClickListener {
-            isHudCollapsed = !isHudCollapsed
-            hudPrefs.edit().putBoolean("hud_collapsed", isHudCollapsed).apply()
-            detailsContainer?.visibility = if (isHudCollapsed) View.GONE else View.VISIBLE
-            btnCollapse.text = if (isHudCollapsed) "▼" else "▲"
+            // Plegado manual: manda sobre el auto-plegado durante la operación en curso.
+            userToggledThisTrade = true
+            applyHudCollapsed(!isHudCollapsed)
         }
 
         hudView?.findViewById<TextView>(R.id.hud_btn_chat)?.setOnClickListener {
@@ -1124,7 +1140,12 @@ class OverlayService : Service() {
         hudView?.findViewById<Button>(R.id.hud_btn_recalc_ai)?.setOnClickListener {
             tradingEngine.unlockAllLines()
             updateHUDView()
-            Toast.makeText(this, "↺ S/R restablecido: IA recalculando en vivo", Toast.LENGTH_SHORT).show()
+            // Ronda 11 (T8): confirmación en el PROPIO botón en vez de un Toast. Los Toast de Android
+            // aparecen abajo-centro, justo encima de los botones SUBE/BAJA de Binomo, y tapaban el
+            // control que el operador necesita pulsar en modo semiautomático.
+            val btn = hudView?.findViewById<Button>(R.id.hud_btn_recalc_ai)
+            btn?.text = "↺ S/R restablecido"
+            btn?.postDelayed({ updateHUDView() }, 1200L)
         }
 
         val showStatsManager = View.OnLongClickListener {
@@ -1356,16 +1377,20 @@ class OverlayService : Service() {
     }
 
     fun setHUDCollapsed(collapsed: Boolean) {
-        mainHandler.post {
-            isHudCollapsed = collapsed
-            getSharedPreferences("TradeDraw_HUDConfig", Context.MODE_PRIVATE)
-                .edit().putBoolean("hud_collapsed", isHudCollapsed).apply()
-            hudView?.findViewById<View>(R.id.hud_details_container)?.visibility =
-                if (isHudCollapsed) View.GONE else View.VISIBLE
-            hudView?.findViewById<TextView>(R.id.hud_btn_collapse)?.text =
-                if (isHudCollapsed) "▼" else "▲"
-            updateHUDView(force = true)
-        }
+        // Un plegado/desplegado explícito del usuario manda durante la operación en curso.
+        userToggledThisTrade = true
+        mainHandler.post { applyHudCollapsed(collapsed) }
+    }
+
+    /** Aplica el estado de plegado al HUD y lo persiste. Debe correr en el hilo principal. */
+    private fun applyHudCollapsed(collapsed: Boolean) {
+        isHudCollapsed = collapsed
+        getSharedPreferences("TradeDraw_HUDConfig", Context.MODE_PRIVATE)
+            .edit().putBoolean("hud_collapsed", isHudCollapsed).apply()
+        hudView?.findViewById<View>(R.id.hud_details_container)?.visibility =
+            if (isHudCollapsed) View.GONE else View.VISIBLE
+        hudView?.findViewById<TextView>(R.id.hud_btn_collapse)?.text =
+            if (isHudCollapsed) "▼" else "▲"
     }
 
 
@@ -1704,6 +1729,16 @@ class OverlayService : Service() {
             }
 
             txtHint.text = tradingEngine.getStrategyStatusHint()
+
+            // Ronda 11 (T8): con operación abierta el HUD se muestra PLEGADO por defecto. Desplegado
+            // tapaba la barra de herramientas del gráfico y el chip del strike; plegado conserva la
+            // cabecera (WS, timer, W/L, acciones) y libera la zona del gráfico. El plegado manual del
+            // usuario se respeta dentro de la misma operación (`userToggledThisTrade`).
+            if (hud.hasPendingTrade && !userToggledThisTrade) {
+                if (!isHudCollapsed) applyHudCollapsed(true)
+            } else if (!hud.hasPendingTrade) {
+                userToggledThisTrade = false
+            }
 
             // Botón de estado S/R (Manual vs Auto)
             val btnRecalc = v.findViewById<Button>(R.id.hud_btn_recalc_ai)

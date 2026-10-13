@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/hud_root"
-    android:layout_width="wrap_content"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="@drawable/bg_hud_panel"
@@ -90,11 +90,13 @@
         <!-- Botón Minimizar / Desplegar -->
         <TextView
             android:id="@+id/hud_btn_collapse"
-            android:layout_width="22dp"
-            android:layout_height="22dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:minWidth="32dp"
+            android:minHeight="32dp"
             android:text="▼"
             android:textColor="#cbd5e1"
-            android:textSize="9.5sp"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:gravity="center"
             android:background="@drawable/bg_hud_chip"
