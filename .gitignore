@@ -39,6 +39,7 @@ __pycache__/
 # R10: ticks crudos y series nulas (no versionar, solo local)
 data/ticks/*_2026-*.csv
 data/null/
+data/null_combined_trades.csv
 
 # R12: runtime local del bucle de datos (procesos vivos, trazas y latidos).
 # Son ficheros de sesion, no evidencia de ronda: cambian en cada ejecucion y
@@ -49,3 +50,8 @@ loops/journal/live/*_stderr.log
 loops/journal/live/*_stream.log
 data/ticks/heartbeat.txt
 data/ticks/replay_*.csv
+
+# R12: dumps de runtime capturados en dispositivo (arbol de accesibilidad, salidas de
+# /status). Son instantaneas de un momento concreto, no evidencia reproducible.
+loops/screenshots/**/ui.xml
+loops/screenshots/**/status_log.txt
