@@ -201,11 +201,20 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             onResult: ((Boolean, String?) -> Unit)? = null
         ) {
             Thread {
+                val inicioMs = System.currentTimeMillis()
                 try {
                     val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "input tap ${x.toInt()} ${y.toInt()}"))
                     val exit = p.waitFor()
+                    val duracionMs = System.currentTimeMillis() - inicioMs
+                    // R13/A4: se registra CUANDO termina el tap y cuánto tardó. Sin esto no había
+                    // forma de saber si un tap se había despachado tarde (la causa de las órdenes
+                    // no registradas era justo esa) porque logcat no funciona en el dispositivo.
+                    TradeEventLog.add(
+                        TradeEventLog.Kind.TAP,
+                        "root ($x,$y) exit=$exit durMs=$duracionMs"
+                    )
                     if (exit == 0) {
-                        Log.i("TradeDraw", "⚡ Tap ejecutado con éxito vía ROOT en ($x, $y)")
+                        Log.i("TradeDraw", "⚡ Tap ejecutado con éxito vía ROOT en ($x, $y) en ${duracionMs}ms")
                         // Ronda 3: el callback puede tocar vistas (HUD); debe correr en el hilo
                         // principal o Android lanza CalledFromWrongThreadException.
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -218,7 +227,18 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                     }
                 } catch (e: Exception) {
                     Log.e("TradeDraw", "Excepción ejecutando root tap", e)
+                    TradeEventLog.add(
+                        TradeEventLog.Kind.TAP,
+                        "root ($x,$y) EXCEPCION ${e.message ?: "?"}"
+                    )
                     onResult?.invoke(false, e.message)
+                } finally {
+                    // R13/A4: liberar el bypass del HUD SOLO cuando el tap ha terminado.
+                    // Antes lo liberaba un temporizador fijo de 350 ms que el tap real
+                    // (141-327 ms medidos, sin cota con carga alta) rebasaba, dejando el HUD
+                    // tactil sobre el boton: el overlay se comia el toque y la orden no se
+                    // registraba. Este `finally` es lo que cierra la causa raiz.
+                    try { OverlayService.instance?.restoreHudTouchable() } catch (e: Exception) {}
                 }
             }.start()
         }
@@ -538,15 +558,31 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                 // Solo actualizar si la pestaña está explícitamente seleccionada o si aún no hay ningún activo detectado
                 if (isActiveTab || latestObservedAsset.isBlank()) {
                     latestObservedAsset = assetCandidate
-                    // Ronda 12 (A2): el payout va en el MISMO nodo que el nombre del activo,
-                    // como `Crypto IDX 83%` / `Ethereum (OTC) 82%`. `extractAssetCandidate` ya
-                    // descarta ese sufijo para quedarse con el nombre; aqui se RESCATA el valor
-                    // en vez de tirarlo, que es lo que hacia antes.
+                    // Ronda 12 (A2) / Ronda 13 (A3): el payout se intenta rescatar del MISMO nodo
+                    // (`Crypto IDX 83%`), porque `extractAssetCandidate` descarta ese sufijo.
+                    // HALLAZGO R13: en el dispositivo este camino NUNCA produce valor
+                    // (`payoutFromPercentLabel = null` de forma persistente): Binomo expone el
+                    // porcentaje en un nodo distinto del nombre del activo, y no hay relacion
+                    // padre/hermano explotable (el dump de la pantalla de trading sale vacio:
+                    // Binomo bloquea `uiautomator`). Se mantiene el intento porque es gratis y
+                    // cubre el caso de que el broker vuelva a fusionar los nodos, pero el metodo
+                    // 1 NO se declara validado en dispositivo. El metodo 2 (ratio del boton) es
+                    // el unico confirmado.
                     PayoutReader.parsePercentLabel(
                         Regex("(\\d{1,3}\\s*%)").find(text)?.value
                     )?.let { pct ->
                         val actual = observedPayout
                         observedPayout = PayoutReader.reconcile(pct, actual.fromButtonRatio)
+                        // R13/A3: si el metodo 1 acaba funcionando, el cruce con el metodo 2 pasa
+                        // a ser informativo de verdad. Se registra para que `/events` lo muestre.
+                        if (actual.fromButtonRatio != null &&
+                            Math.abs(pct - actual.fromButtonRatio) > PayoutReader.TOLERANCIA
+                        ) {
+                            TradeEventLog.add(
+                                TradeEventLog.Kind.PAYOUT_DISCREPANTE,
+                                "etiqueta=%.3f boton=%.3f".format(java.util.Locale.US, pct, actual.fromButtonRatio)
+                            )
+                        }
                     }
                     val upper = assetCandidate.uppercase()
                     val isSyn = upper.contains("IDX") || upper.contains("OTC")
@@ -557,23 +593,48 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                             // Ronda 7-fix: mapeo completo pantalla -> RIC real de Binomo. Antes solo
                             // cubría IDX/EUR/GBP/JPY; "Ethereum (OTC)" caía al else y producía el RIC
                             // inválido "Ethereum(OTC)" en vez de "ETHUSD-OTC", rompiendo el feed.
+                            // R13/A2a: se añaden los NOMBRES COMPLETOS (Bitcoin, Cardano...)
+                            // porque los simbolos cortos no siempre estan contenidos en ellos:
+                            // "BITCOIN" no contiene "BTC" ni "CARDANO" contiene "ADA", asi que
+                            // caian al `else` y producian RICs inexistentes. Mismo defecto que
+                            // dejaba a Aave sin feed.
                             val formattedRic = when {
                                 upper.contains("IDX") -> "Z-CRY/IDX"
-                                upper.contains("ETH") -> "ETHUSD-OTC"
-                                upper.contains("BTC") && upper.contains("CASH") -> "BCHUSD-OTC"
-                                upper.contains("BTC") -> "BTCUSD-OTC"
+                                upper.contains("ETH") || upper.contains("ETHEREUM") -> "ETHUSD-OTC"
+                                (upper.contains("BTC") || upper.contains("BITCOIN")) && upper.contains("CASH") -> "BCHUSD-OTC"
+                                upper.contains("BTC") || upper.contains("BITCOIN") -> "BTCUSD-OTC"
                                 upper.contains("SOL") -> "SOLUSD-OTC"
-                                upper.contains("LTC") -> "LTCUSD-OTC"
-                                upper.contains("XRP") -> "XRPUSD-OTC"
-                                upper.contains("ADA") -> "ADAUSD-OTC"
-                                upper.contains("DOT") -> "DOTUSD-OTC"
-                                upper.contains("LINK") -> "LINKUSD-OTC"
-                                upper.contains("DOGE") -> "DOGEUSD-OTC"
-                                upper.contains("XAU") || upper.contains("GOLD") -> "XAU/USD"
+                                upper.contains("LTC") || upper.contains("LITECOIN") -> "LTCUSD-OTC"
+                                upper.contains("XRP") || upper.contains("RIPPLE") -> "XRPUSD-OTC"
+                                upper.contains("ADA") || upper.contains("CARDANO") -> "ADAUSD-OTC"
+                                upper.contains("DOT") || upper.contains("POLKADOT") -> "DOTUSD-OTC"
+                                upper.contains("LINK") || upper.contains("CHAINLINK") -> "LINKUSD-OTC"
+                                upper.contains("DOGE") || upper.contains("DOGECOIN") -> "DOGEUSD-OTC"
+                                upper.contains("AAVE") -> "AAVEUSD-OTC"
+                                // R13/A2a: "Oro" es el nombre en español del mismo activo; sin
+                                // esta linea caia al `else` y producia el RIC `OROUS-OTC`.
+                                upper.contains("XAU") || upper.contains("GOLD") || upper.contains("ORO") -> "XAU/USD"
                                 upper.contains("EUR/USD") -> "Z-EUR/USD2"
                                 upper.contains("GBP/USD") -> "Z-GBP/USD2"
                                 upper.contains("USD/JPY") -> "Z-USD/JPY2"
-                                else -> assetCandidate.replace(" ", "")
+                                // R13/A2a: el `else` anterior hacia `replace(" ", "")`, que para
+                                // "Aave (OTC)" produce "Aave(OTC)" CON parentesis: un RIC que el
+                                // feed no reconoce, asi que el activo quedaba sin ticks y el HUD
+                                // pintaba "(0ms)" sin precio. La causa raiz no era el parser ni
+                                // el feed: era este mapeo, que no cubria AAVE y no normalizaba.
+                                // Ahora se deriva un RIC con el patron real de Binomo
+                                // (<BASE>USD-OTC): se quita el sufijo "(OTC)"/"OTC", se limpia a
+                                // alfanumerico y se le añade el sufijo correcto.
+                                else -> {
+                                    val base = upper
+                                        .replace("(OTC)", "")
+                                        .replace("OTC", "")
+                                        .replace("(CASH)", "")
+                                        .replace("/", "")
+                                        .filter { it.isLetterOrDigit() }
+                                    if (base.isBlank()) assetCandidate.replace(" ", "")
+                                    else "${base}USD-OTC"
+                                }
                             }
                             ws.updateActiveAsset(formattedRic)
                         }
