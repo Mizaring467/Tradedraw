@@ -53,6 +53,11 @@ data class HudSnapshot(
     val martingaleBadge: String,
     val cooldownRemainingSec: Long,
     val hasPendingTrade: Boolean,
+    /**
+     * Ronda 12 (B1): estado de envio de la operacion. El HUD solo muestra "Trade Activo"
+     * cuando vale CONFIRMADA; en ENVIADA avisa de que falta confirmacion del broker.
+     */
+    val orderState: RiskManager.OrderState,
     val pendingAction: TradeAction?,
     val pendingElapsedSec: Long,
     val pendingEntryPrice: Double,

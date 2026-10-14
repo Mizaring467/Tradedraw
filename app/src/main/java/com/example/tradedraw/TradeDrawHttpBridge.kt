@@ -418,6 +418,8 @@ class TradeDrawHttpBridge(
                 "martingaleStatus": "${escapeJson(rm.getMartingaleStatusBadge())}",
                 "investmentAmount": ${rm.getCurrentInvestmentAmount()},
                 "hasPendingTrade": ${rm.hasPendingTrade},
+                "orderState": "${rm.orderState.name}",
+                "hasConfirmedTrade": ${rm.hasConfirmedTrade},
                 "remainingCooldown": ${rm.getRemainingCooldown()}
             },
             "activeSignal": $signalJson,

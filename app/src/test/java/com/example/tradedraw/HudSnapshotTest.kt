@@ -57,6 +57,9 @@ class HudSnapshotTest {
         martingaleBadge = "M0",
         cooldownRemainingSec = 0L,
         hasPendingTrade = pending,
+        // Ronda 12 (B1): los tests existentes describen operaciones ya en curso, que es el
+        // estado CONFIRMADA. El caso ENVIADA (sin confirmar) se cubre en OrderConfirmationTest.
+        orderState = if (pending) RiskManager.OrderState.CONFIRMADA else RiskManager.OrderState.NO_PROCESADA,
         pendingAction = pendingAction,
         pendingElapsedSec = if (pending) 20L else 0L,
         pendingEntryPrice = entry,

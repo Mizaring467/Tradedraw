@@ -1208,6 +1208,7 @@ class TradingEngine(
             martingaleBadge = riskManager.getMartingaleStatusBadge(autonomousSubMode),
             cooldownRemainingSec = riskManager.getRemainingCooldown(autonomousSubMode).toLong(),
             hasPendingTrade = riskManager.hasPendingTrade,
+            orderState = riskManager.orderState,
             pendingAction = pendingAction,
             pendingElapsedSec = if (riskManager.hasPendingTrade)
                 (System.currentTimeMillis() - riskManager.pendingTradeStartTime) / 1000 else 0L,
@@ -1973,7 +1974,60 @@ class TradingEngine(
         }
     }
 
+    /**
+     * Ronda 12 (B1): ventana en la que se exige que el broker confirme la orden.
+     *
+     * Con stake de opciones binarias el saldo se debita al ABRIR, asi que un movimiento del
+     * saldo es prueba de que la orden existe. Si pasada la ventana el saldo sigue identico al
+     * de apertura, la orden NO se registro: es una operacion fantasma, no un empate.
+     */
+    private fun checkOrderConfirmation() {
+        val snapshot = synchronized(riskManager) {
+            if (!riskManager.hasPendingTrade || riskManager.orderState != RiskManager.OrderState.ENVIADA) null
+            else Triple(riskManager.pendingTradeStartTime, riskManager.pendingTradeBaseBalance, riskManager.pendingTradeAction)
+        } ?: return
+
+        val (startMs, baseBalance, action) = snapshot
+        if (startMs <= 0L) return
+        val elapsedSec = (System.currentTimeMillis() - startMs) / 1000
+
+        val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance()
+            ?: AutoTradeAccessibilityService.latestObservedBalance
+
+        if (riskManager.isOrderConfirmed(baseBalance, currentBal, elapsedSec)) {
+            riskManager.markOrderConfirmed()
+            Log.i(
+                "TradingEngine",
+                "✅ ORDEN CONFIRMADA por movimiento de saldo | $action | base=$baseBalance ahora=$currentBal (${elapsedSec}s)"
+            )
+            handler.post { OverlayService.instance?.updateHUDView() }
+            return
+        }
+
+        if (riskManager.isOrderUnprocessed(baseBalance, currentBal, elapsedSec)) {
+            // La orden nunca llego al broker. Se cierra el estado pendiente para que el HUD deje
+            // de mostrar "Trade Activo" y el motor pueda volver a operar; se registra el fallo
+            // en el journal como fallo de ENVIO, no como empate de precio.
+            riskManager.markOrderUnprocessed()
+            Log.w(
+                "TradingEngine",
+                "⛔ ORDEN NO PROCESADA: el saldo no se movio en ${elapsedSec}s " +
+                    "(base=$baseBalance ahora=$currentBal) | $action | el tap no creo operacion"
+            )
+            handler.post {
+                Toast.makeText(
+                    context,
+                    "⛔ Orden NO procesada: el tap no llego al broker (saldo sin cambios)",
+                    Toast.LENGTH_LONG
+                ).show()
+                OverlayService.instance?.updateHUDView()
+            }
+            return
+        }
+    }
+
     private fun checkHeadlessTradeResolution() {
+        checkOrderConfirmation()
         val snapshot = synchronized(riskManager) {
             if (!riskManager.hasPendingTrade) null
             else {

@@ -1918,7 +1918,17 @@ class OverlayService : Service() {
                 renderIdleSignalCard(cardSignal, txtSignalTitle, txtSignalDesc, txtSignalCountdown)
             }
 
-            if (hud.hasPendingTrade) {
+            // Ronda 12 (B1): el HUD NUNCA debe mostrar "Trade Activo" sin confirmacion del broker.
+            // Medido en el journal del dispositivo: 17 TIE (8,0%) con el saldo intacto, incluida
+            // una racha de 5 seguidos, mientras LOSS/WIN mueven +-100.000. Eso no son empates de
+            // precio: son taps que no crearon operacion. Antes el HUD los anunciaba como activos.
+            val mustConfirm = hud.orderState == RiskManager.OrderState.ENVIADA
+            if (hud.hasPendingTrade && mustConfirm) {
+                // Enviada pero SIN confirmar: se dice explicitamente, no se presenta como activa.
+                val act = if (hud.pendingAction == TradeAction.BUY) "CALL ▲" else "PUT ▼"
+                txtStatus.text = "⏳ ENVIADA $act · esperando confirmación del broker…"
+                txtStatus.setTextColor(Color.parseColor("#f59e0b"))
+            } else if (hud.hasPendingTrade) {
                 // Ronda 11 (T6+T8): una SOLA línea de operación en curso. Antes convivían tres
                 // mensajes redundantes ("Operación en curso", "Trade Activo..." y el hint), y el
                 // estado ITM/OTM se pintaba sin P&L real. Aquí van acción, strike, moneyness real y

@@ -215,6 +215,71 @@ class RiskManager(context: Context? = null) {
     var hasPendingTrade: Boolean = false
         internal set
 
+    /**
+     * Ronda 12 (B1): estado de envio de la operacion en curso.
+     *
+     * DEFECTO QUE CORRIGE: `recordTradeSent` marcaba `hasPendingTrade = true` ANTES de que el
+     * tap se hubiera confirmado, asi que el HUD mostraba `Trade Activo: PUT` aunque la orden
+     * no hubiera llegado nunca al broker. Evidencia medida sobre el journal del dispositivo
+     * (212 filas unicas): 17 TIE (8,0%) con `settled_balance == base_balance` EXACTO, mientras
+     * las 114 LOSS y 81 WIN mueven +-100.000, y una racha de 5 TIE CONSECUTIVOS. Un empate de
+     * precio 5 veces seguidas es estadisticamente inviable: el saldo inmovil prueba que el tap
+     * no creo operacion, no que el precio empatara.
+     *
+     * Tres estados posibles, y el HUD nunca debe mostrar "Trade Activo" sin confirmacion:
+     *  - ENVIADA     : el tap se despacho, pero aun no hay prueba de que el broker lo registro.
+     *  - CONFIRMADA  : el broker movio el saldo, o la operacion aparece registrada.
+     *  - NO_PROCESADA: se agoto el tiempo sin ninguna prueba de que la orden existiera.
+     */
+    enum class OrderState { ENVIADA, CONFIRMADA, NO_PROCESADA }
+
+    @Volatile
+    var orderState: OrderState = OrderState.NO_PROCESADA
+        internal set
+
+    /** true solo si hay operacion Y el broker la ha confirmado. Es lo que el HUD debe exigir. */
+    val hasConfirmedTrade: Boolean
+        get() = hasPendingTrade && orderState == OrderState.CONFIRMADA
+
+    /**
+     * Ronda 12 (B1): comprobacion PURA y testeable de si el broker registro la operacion.
+     *
+     * Criterio: la orden existe si el saldo se movio respecto al de apertura. Un stake de
+     * opciones binarias se debita al abrir, asi que CUALQUIER resultado real (ganar o perder)
+     * altera el saldo; solo la ausencia de orden lo deja identico. Se admite un margen de
+     * 1.0 COP para el ruido de lectura del arbol de accesibilidad.
+     *
+     * @param baseBalance saldo leido al despachar el tap (0 si no se pudo leer)
+     * @param currentBalance saldo leido ahora (0 si no se pudo leer)
+     * @param elapsedSec segundos desde el envio
+     * @param confirmationWindowSec ventana en la que se exige ver movimiento de saldo
+     */
+    fun isOrderConfirmed(
+        baseBalance: Double,
+        currentBalance: Double,
+        elapsedSec: Long,
+        confirmationWindowSec: Long = 12L
+    ): Boolean {
+        if (baseBalance <= 0.0 || currentBalance <= 0.0) return false
+        if (elapsedSec > confirmationWindowSec) return false
+        return Math.abs(currentBalance - baseBalance) > 1.0
+    }
+
+    /**
+     * Ronda 12 (B1): la orden no existe si paso la ventana de confirmacion sin que el saldo se
+     * moviera. Distinto de "empate": un empate real habria debitado el stake al abrir.
+     */
+    fun isOrderUnprocessed(
+        baseBalance: Double,
+        currentBalance: Double,
+        elapsedSec: Long,
+        confirmationWindowSec: Long = 12L
+    ): Boolean {
+        if (elapsedSec < confirmationWindowSec) return false
+        if (baseBalance <= 0.0 || currentBalance <= 0.0) return false
+        return Math.abs(currentBalance - baseBalance) <= 1.0
+    }
+
     @Volatile
     var pendingTradeAction: TradeAction? = null
         internal set
@@ -505,6 +570,10 @@ class RiskManager(context: Context? = null) {
         val now = System.currentTimeMillis()
         lastTradeTime = now
         hasPendingTrade = true
+        // Ronda 12 (B1): al despachar el tap la orden solo esta ENVIADA, nunca confirmada.
+        // Antes se marcaba como operacion en curso directamente y el HUD lo presentaba como
+        // "Trade Activo" aunque el broker no hubiera registrado nada.
+        orderState = OrderState.ENVIADA
         pendingTradeAction = action
         pendingTradeStartTime = now
         pendingTradeEntryPrice = entryPrice
@@ -520,9 +589,36 @@ class RiskManager(context: Context? = null) {
         recordTradeSent(action, entryPrice, 0f, baseBalance, confidence)
     }
 
+    /**
+     * Ronda 12 (B1): el broker confirmo la orden (se movio el saldo). Solo desde aqui el HUD
+     * puede mostrar la operacion como activa.
+     */
     @Synchronized
-    fun clearPendingTrade() {
-        hasPendingTrade = false
+    fun markOrderConfirmed() {
+        if (hasPendingTrade && orderState == OrderState.ENVIADA) {
+            orderState = OrderState.CONFIRMADA
+        }
+    }
+
+    /**
+     * Ronda 12 (B1): se agoto la ventana sin prueba de que la orden existiera. Cierra el estado
+     * pendiente (para no bloquear el motor ni dejar el HUD en "Trade Activo" indefinidamente) y
+     * cuenta el fallo como VOID de envio, que es lo que realmente ocurrio.
+     */
+    @Synchronized
+    fun markOrderUnprocessed() {
+        if (!hasPendingTrade) return
+        orderState = OrderState.NO_PROCESADA
+        clearPendingTrade()
+        lastTradeTime = System.currentTimeMillis()
+        OverlayService.instance?.updateHUDView()
+    }
+
+    @Synchronized
+    fun clearPendingTrade() {        hasPendingTrade = false
+        // Ronda 12 (B1): sin operacion en curso no hay estado de envio que mostrar. El HUD
+        // solo debe pintar "Trade Activo" mientras haya una orden viva.
+        orderState = OrderState.NO_PROCESADA
         pendingTradeAction = null
         pendingTradeStartTime = 0L
         pendingTradeEntryPrice = 0.0
