@@ -58,7 +58,7 @@ El dato **ya estaba llegando al código y se tiraba**: `extractAssetCandidate` (
 
 **Corregido en `74bbbc2`:** `.gitignore` ampliado (`loops/journal/live/*.pid`, `*_stdout.log`, `*_stderr.log`, `*_stream.log`, `data/ticks/heartbeat.txt`, `data/ticks/replay_*.csv`); las **69 capturas citadas** versionadas; las **4 mayores de 1 MB** reducidas o excluidas (`after_04`/`after_05` excluidas por no estar citadas; `after_18` recortado a 720×540 = 315 KB; `tester_27_state` reescalado al 70 % = 652 KB); `r9_logcat_stream.log` revertido con `git checkout`; `data/ticks/*` no subido. Dos citas rotas de `REPORTE_TESTER.md` corregidas (`tester_28_relaunch.png` retirada por no existir; `zoom_12_sniper.png` → `zoom_tester_12_sniper.png`).
 
-**Residuo declarado (medido con `git ls-files --others --exclude-standard`):** 41 entradas — `loops/R12_REPORTE.md` (este informe, que se commitea), **37 PNG** no citados por ningún documento, `data/null_combined_trades.csv`, y dos dumps de runtime del dispositivo (`loops/screenshots/r11/status_log.txt`, `loops/screenshots/r11/ui.xml`). Los dumps y el CSV pasan al `.gitignore`. Los 37 PNG **no se commitean a propósito**: no son evidencia de nada y engordarían el repositorio. No se borran porque son material de origen de rondas anteriores; se declaran aquí en lugar de silenciarlos.
+**Residuo declarado (medido con `git ls-files --others --exclude-standard` al cierre):** **36 PNG** no citados por ningún documento, y **nada más** — el CSV y los dos dumps de runtime pasaron al `.gitignore`, y `zoom_tester_12_sniper.png` se versionó al detectarse que `REPORTE_TESTER.md` lo citaba (`ed88df3`). Los 36 PNG **no se commitean a propósito**: no son evidencia de nada y engordarían el repositorio. No se borran porque son material de origen de rondas anteriores; se declaran aquí en lugar de silenciarlos. **`git status` queda limpio salvo este residuo declarado.**
 
 ### A4 — Encabezado y nota de verificación desactualizados; última corrida anterior al último commit
 
@@ -225,7 +225,7 @@ T1 arregló el parser y T3 el buffer de `SyntheticCandleEngine`. Se revisó el r
 | Texto del HUD legible sobre velas | **PASA** | `r12_after_a5a6.png` con panel al **20 %** de alfa y texto legible sobre el gráfico |
 | Ninguna orden TIE aparece como `Trade Activo` | **PASA (por lógica y tests)** | `hasConfirmedTrade` exige `CONFIRMADA`; `recordTradeSent` deja `ENVIADA`. `OrderConfirmationTest` (12 tests). **Sin observación en vivo: ver salvedad abajo** |
 | Riesgo #1 reescrito con datos | **PASA** | `loops/R11_REPORTE.md`, riesgo #1 y `## Cierre` con las 21 filas del journal |
-| `git status` limpio y evidencia versionada | **PASA** | 69 capturas citadas versionadas en `74bbbc2`; residuo de 39 PNG no citados declarado; `*.pid`/logs/heartbeat en `.gitignore` |
+| `git status` limpio y evidencia versionada | **PASA** | 69 capturas citadas versionadas en `74bbbc2` + `zoom_tester_12_sniper.png` en `ed88df3`; residuo de 36 PNG no citados declarado; `*.pid`/logs/heartbeat/dumps en `.gitignore`; **0 ficheros no-PNG sin commitear** |
 | Tests verdes sobre el árbol de código final | **PASA** | árbol `app/`=`391049b4`, 2026-10-13 20:36:56 → **271 passed, 0 failed, 2 skipped (20 clases)** |
 | Build limpio | **PASA** | `BUILD SUCCESSFUL` |
 | Verificación visual ANTES/DESPUÉS en dispositivo | **PASA (parcial)** | `loops/screenshots/r12/` (captura nueva) + `loops/screenshots/r11/` (antes). POCO X6 Pro `UGU8KFUKM7E6CE8D` |
