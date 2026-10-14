@@ -1117,5 +1117,106 @@ class SyntheticCandleEngineTest {
         assertEquals("El mínimo debe seguir siendo el del primer bloque", loA, loB, 1e-9)
         assertEquals("El máximo debe seguir siendo el del primer bloque", hiA, hiB, 1e-9)
     }
+
+    // ==========================================================================
+    // Ronda 12 (B3): guardas de denominador por RANGO y DESVIACION TIPICA.
+    //
+    // Ambas eran ABSOLUTAS (1e-5 y 1e-6) y en un activo de escala minuscula como Z-CRY/IDX
+    // superaban al propio valor real, hundiendo los ratios por debajo de cualquier umbral.
+    // Estos tests fijan la escala real medida en dispositivo (rango por vela ~4e-7 sobre
+    // precio 641.867; desviacion tipica de 60 ticks ~1e-7) y comprueban que ahora SI se
+    // distingue una mecha de rechazo real, que antes era invisible.
+    // ==========================================================================
+
+    @Test
+    fun rangoDeVelaMicroscopico_noSeReescalaYLaMechaDeRechazoSeDetecta() {
+        // Vela de Z-CRY/IDX con rango real 4e-7: antes `range` devolvia 1e-5 (x25 mayor) y la
+        // mecha del 50% se leia 0.02. Ahora el rango es el real y la mecha se lee ~0.50.
+        val precio = 641.867
+        val rango = 4e-7
+        val open = precio
+        val close = precio + rango * 0.5          // cuerpo la mitad del rango
+        val high = close + rango * 0.5            // mecha superior = 50% del rango
+        val low = open
+        val vela = SyntheticCandle(0L, open, high, low, close)
+
+        assertEquals("El rango NO debe reescalarse", rango, vela.range, rango * 0.01)
+        assertEquals("La mecha real es el 50% del rango", 0.5f, vela.upperWickRatio, 0.01f)
+        assertTrue(
+            "Una mecha del 50% debe superar el umbral 0.45 de MT_REJECTION",
+            vela.upperWickRatio >= 0.45f
+        )
+    }
+
+    @Test
+    fun rangoCero_noProduceDivisionPorCeroNiInfinito() {
+        // Vela degenerada (un solo tick): el rango cae al epsilon y los ratios deben ser finite.
+        val vela = SyntheticCandle(0L, 641.867, 641.867, 641.867, 641.867)
+        assertTrue("El rango debe ser positivo", vela.range > 0.0)
+        assertFalse("upperWickRatio no puede ser NaN", vela.upperWickRatio.isNaN())
+        assertFalse("bodyRatio no puede ser NaN", vela.bodyRatio.isNaN())
+        assertFalse("bodyRatio no puede ser infinito", vela.bodyRatio.isInfinite())
+    }
+
+    @Test
+    fun cuerpoDominanteEnEscalaMicroscopica_superaElUmbralDeCuerpo() {
+        // El umbral de cuerpo de agotamiento exige bodyRatio >= 0.50. Con la guarda absoluta
+        // un cuerpo del 70% se leia 0.028 en Z-CRY/IDX y la estrategia no disparaba nunca.
+        val precio = 641.867
+        val rango = 4e-7
+        // Cuerpo del 70% del rango: las mechas reparten el 30% restante (15% cada lado).
+        val open = precio + rango * 0.15
+        val close = precio + rango * 0.85
+        val high = close + rango * 0.15
+        val low = open - rango * 0.15
+        val vela = SyntheticCandle(0L, open, high, low, close)
+
+        assertEquals("El rango debe ser el total de la vela", rango, vela.range, rango * 0.01)
+        assertEquals(0.7f, vela.bodyRatio, 0.01f)
+        assertTrue("Un cuerpo del 70% debe superar 0.50", vela.bodyRatio >= 0.50f)
+    }
+
+    @Test
+    fun zScoreDejaDeSerCeroEnEscalaMicroscopica() {
+        // Antes: la guarda `stdDev > 1e-6` con desviacion real ~1e-7 devolvia 0.0 SIEMPRE y
+        // QUANT_CRYPTO (|z| >= 1.9) no podia disparar jamas.
+        val engine = SyntheticCandleEngine()
+        val base = 641.867
+        val now = 60000L * 9L
+        // 60 ticks con dispersion del orden real de Z-CRY/IDX (pasos de ~1e-7).
+        for (i in 0 until 60) {
+            val precio = if (i < 59) base + (i % 5) * 1e-7 else base + 9e-7
+            engine.onNewTick(MarketTick(asset = "Z-CRY/IDX", price = precio, timestampMs = now + i * 100L))
+        }
+        val z = engine.calculateTickZScore(60, base + 9e-7)
+        assertNotEquals("El z-score NO puede ser 0.0 en escala microscopica", 0.0, z, 1e-12)
+        assertFalse("El z-score no puede ser NaN", z.isNaN())
+    }
+
+    @Test
+    fun zScoreSigueSiendoCeroConPreciosIdenticos() {
+        // Caso legitimo de la guarda: todos los ticks al mismo precio => sin dispersion => 0.0.
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 11L
+        for (i in 0 until 60) {
+            engine.onNewTick(MarketTick(asset = "Z-CRY/IDX", price = 641.867, timestampMs = now + i * 100L))
+        }
+        assertEquals(0.0, engine.calculateTickZScore(60, 641.867), 1e-12)
+    }
+
+    @Test
+    fun escalaGrandeNoSeVeAfectadaPorElCambioDeGuardas() {
+        // En ETHUSD-OTC (activo por defecto elegido en B2) el rango por vela es ~0.94, muy por
+        // encima de cualquier epsilon: el comportamiento debe ser identico al de antes.
+        val open = 1072.40
+        val close = 1073.00
+        val high = 1073.30
+        val low = 1072.10
+        val vela = SyntheticCandle(0L, open, high, low, close)
+
+        val rangoEsperado = high - low
+        assertEquals(rangoEsperado, vela.range, 1e-9)
+        assertEquals(((close - open) / rangoEsperado).toFloat(), vela.bodyRatio, 1e-6f)
+    }
 }
 

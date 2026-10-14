@@ -286,6 +286,9 @@ class OverlayService : Service() {
         // Z-CRY/IDX con rango relativo ~5e-10). Sin esto el bot decide CALL/PUT sobre una
         // línea plana, que equivale a lanzar una moneda.
         tradingEngine.priceFrozenProvider = { wsClient.isPriceFrozen() }
+        // Ronda 12 (B2, veto V2): el motor necesita medir el rango relativo del feed para vetar
+        // los activos sin volatilidad utilizable (Z-CRY/IDX: 2,5e-09 frente a 4,2e-02 de ETHUSD-OTC).
+        tradingEngine.priceRangeRatioProvider = { wsClient.recentPriceRangeRatio() }
         wsClient.start()
 
         val cmdFilter = IntentFilter("com.example.tradedraw.CMD")

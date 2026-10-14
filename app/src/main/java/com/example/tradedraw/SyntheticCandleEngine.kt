@@ -13,7 +13,21 @@ data class SyntheticCandle(
     var close: Double,
     var isClosed: Boolean = false
 ) {
-    val range: Double get() = (high - low).coerceAtLeast(0.00001)
+    val range: Double
+        get() {
+            val alto = high - low
+            if (alto > 0.0) return alto
+            // Ronda 12 (B3): la guarda era ABSOLUTA (`coerceAtLeast(0.00001)`) y sustituia el
+            // rango real por 1e-5 cuando la vela medía menos. En un activo de escala minuscula
+            // como Z-CRY/IDX (rango real por vela ~4e-7 sobre precio 641.867) eso multiplicaba
+            // el denominador x5-x63 y hundia upperWickRatio/lowerWickRatio/bodyRatio por debajo
+            // de CUALQUIER umbral: una mecha de rechazo real del 50% se leia 0.008-0.10 y el
+            // filtro MT_REJECTION (wickLimit >= 0.45) no disparaba jamas.
+            // La guarda solo debe evitar la division por cero, no reescalar el rango: se usa un
+            // epsilon RELATIVO al precio, 12 ordenes por debajo, que no altera ningun activo
+            // con rango medible (en ETHUSD-OTC el rango real es 0.94 frente a un suelo de 1e-9).
+            return (Math.abs(close) * RANGO_EPSILON_RELATIVO).coerceAtLeast(RANGO_EPSILON_ABSOLUTO)
+        }
     val body: Double get() = Math.abs(close - open)
     val isGreen: Boolean get() = close >= open
     val isRed: Boolean get() = close < open
@@ -22,6 +36,14 @@ data class SyntheticCandle(
     val upperWickRatio: Float get() = (upperWick / range).toFloat()
     val lowerWickRatio: Float get() = (lowerWick / range).toFloat()
     val bodyRatio: Float get() = (body / range).toFloat()
+
+    companion object {
+        /** Epsilon del rango, RELATIVO al precio de la vela. No reescala activos medibles. */
+        const val RANGO_EPSILON_RELATIVO = 1e-12
+
+        /** Suelo absoluto, solo para velas sin precio utilizable (`close` == 0). */
+        const val RANGO_EPSILON_ABSOLUTO = 1e-12
+    }
 }
 
 /**
@@ -31,6 +53,24 @@ data class SyntheticCandle(
 class SyntheticCandleEngine {
 
     private val TAG = "SyntheticCandleEngine"
+
+    companion object {
+        /**
+         * Ronda 12 (B3): epsilon del z-score RELATIVO al precio medio, para no depender de la
+         * escala del activo. Con ~1e-7 de desviacion tipica real en Z-CRY/IDX, un umbral
+         * absoluto de 1e-6 devolvia z=0.0 siempre y mataba QUANT_CRYPTO.
+         */
+        const val ZSCORE_EPSILON_RELATIVO = 1e-12
+        const val ZSCORE_EPSILON_ABSOLUTO = 1e-12
+
+        /**
+         * Ronda 12 (B3): epsilon del ATR RELATIVO al precio. Con el suelo absoluto de 1e-7 y un
+         * ATR real de ~3.2e-7 en Z-CRY/IDX, `atrNorm` colapsaba los dos ratios de distancia a 1.0
+         * simultaneamente y anulaba el filtro de canal.
+         */
+        const val ATR_EPSILON_RELATIVO = 1e-12
+        const val ATR_EPSILON_ABSOLUTO = 1e-12
+    }
 
     var currentCandle: SyntheticCandle? = null
         private set
@@ -284,7 +324,12 @@ class SyntheticCandleEngine {
                 sumSqDiff += diff * diff
             }
             val stdDev = Math.sqrt(sumSqDiff / n)
-            return if (stdDev > 0.000001) (currentPrice - mean) / stdDev else 0.0
+            // Ronda 12 (B3): la guarda era ABSOLUTA (`stdDev > 0.000001`). En Z-CRY/IDX la
+            // desviacion tipica real de 60 ticks es ~1e-7, muy por debajo de 1e-6: la funcion
+            // devolvia 0.0 SIEMPRE y la estrategia QUANT_CRYPTO (que exige |z| >= 1.9/2.1) no
+            // podia disparar nunca. El umbral debe ser relativo a la escala del activo.
+            val umbral = (Math.abs(mean) * ZSCORE_EPSILON_RELATIVO).coerceAtLeast(ZSCORE_EPSILON_ABSOLUTO)
+            return if (stdDev > umbral) (currentPrice - mean) / stdDev else 0.0
         }
     }
 
@@ -615,7 +660,14 @@ class SyntheticCandleEngine {
             }
 
             // Normalización por ATR independiente:
-            val atrNorm = (atr * 2.0).coerceAtLeast(1e-7)
+            // Ronda 12 (B3): la guarda era ABSOLUTA (1e-7). En Z-CRY/IDX el ATR real es ~3.2e-7,
+            // asi que `atr * 2.0` (=6.4e-7) quedaba por debajo del suelo, que lo SUBIA a 1e-7... y
+            // el cociente canal/ATR salia ~3.9 => `coerceIn(0f,1f)` lo aplastaba a 1.0 en AMBOS
+            // lados a la vez. Con `channelWidth = distSup + distRes >= 0.35` siempre verdadero, el
+            // filtro de "canal significativo" dejaba de discriminar. La guarda debe ser relativa.
+            val atrSuelo = (Math.abs(currentPrice) * ATR_EPSILON_RELATIVO)
+                .coerceAtLeast(ATR_EPSILON_ABSOLUTO)
+            val atrNorm = (atr * 2.0).coerceAtLeast(atrSuelo)
 
             val rawDistToSupport = Math.abs(currentPrice - dynamicSupportPrice)
             val rawDistToResistance = Math.abs(dynamicResistancePrice - currentPrice)

@@ -233,6 +233,18 @@ class TradingEngine(
     fun isPriceFrozen(): Boolean = priceFrozenProvider?.invoke() ?: false
 
     /**
+     * Ronda 12 (B2, veto V2): rango relativo del precio en la ventana reciente.
+     *
+     * Es la señal que distingue un activo operable de uno plano. `null` (sin proveedor) devuelve
+     * -1.0, que queda FUERA del rango de veto: en tests y en headless simulado no hay feed real
+     * y no debe vetarse por una medida que no existe.
+     */
+    var priceRangeRatioProvider: (() -> Double)? = null
+
+    /** Rango relativo reciente, o -1.0 si no hay feed del que medirlo. */
+    fun recentPriceRangeRatio(): Double = priceRangeRatioProvider?.invoke() ?: -1.0
+
+    /**
      * Invocado cuando llega un nuevo micro-tick en tiempo real vía WebSocket.
      */
     fun onMarketTick(tick: MarketTick) {
@@ -538,6 +550,14 @@ class TradingEngine(
     }
 
     companion object {
+        /**
+         * Ronda 12 (B2, veto V2): rango relativo minimo para considerar que un feed tiene
+         * volatilidad medible. Congelado en `workflows/PREREGISTRO_R12.md` ANTES de medir su
+         * efecto. Referencias medidas: ETHUSD-OTC 4,164e-02 (3 ordenes por encima), Z-CRY/IDX
+         * 2,547e-09 (4 ordenes por debajo). El umbral separa ambos casos con holgura amplia.
+         */
+        const val RANGO_RELATIVO_MINIMO = 1e-5
+
         internal fun tieJournalResult(isTie: Boolean, saldoFresco: Boolean): String? =
             if (!isTie) null else if (saldoFresco) "TIE" else "TIE_INCIERTO"
 
@@ -1731,14 +1751,34 @@ class TradingEngine(
             return
         }
 
-        // GUARD DE PRECIO CONGELADO: el feed está fresco pero el emisor no mueve el precio.
-        // En ese estado cualquier decisión CALL/PUT es equivalente a lanzar una moneda.
+        // GUARD DE PRECIO CONGELADO / FEED SIN VOLATILIDAD MEDIBLE (veto V2 de B2).
+        // El feed puede estar fresco (l llegan ticks) y aun asi no aportar nada operable: el
+        // emisor entrega marcas de precio que caben en el error de redondeo. En ese estado
+        // cualquier decision CALL/PUT es equivalente a lanzar una moneda.
+        //
+        // Ronda 12: antes habia una EXCEPCION explicita para los activos "IDX", que anulaba
+        // justo este veto en el unico activo que lo necesitaba. Medido en `data/ticks`:
+        // Z-CRY/IDX tiene rango relativo 2,547e-09 frente a 4,164e-02 de ETHUSD-OTC (8 ordenes
+        // de magnitud). El veto pasa a ser POR CONDICION DE FEED, no por nombre de activo:
+        // se aplica a cualquiera que no se mueva, con el umbral congelado en PREREGISTRO_R12.
+        val rangoRelativo = recentPriceRangeRatio()
         val currentObservedAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
-        if (isPriceFrozen() && !currentObservedAsset.contains("IDX", ignoreCase = true)) {
+        if (rangoRelativo >= 0.0 && rangoRelativo < RANGO_RELATIVO_MINIMO) {
             Log.w(
                 "TradingEngine",
-                "⛔ Headless Trade $action VETADO por precio congelado: el emisor entrega " +
-                    "ticks pero el rango del precio es ~0 (activo plano)"
+                "⛔ Headless Trade $action VETADO (V2) por feed sin volatilidad medible: " +
+                    "rangoRelativo=$rangoRelativo < $RANGO_RELATIVO_MINIMO (activo=$currentObservedAsset)"
+            )
+            return
+        }
+
+        // Veto complementario: el feed declara congelacion (metodo del cliente WebSocket).
+        // Se mantiene ademas del anterior porque cubre el caso de precio identico tick a tick,
+        // donde el rango relativo es exactamente 0 y ya lo captura V2.
+        if (isPriceFrozen()) {
+            Log.w(
+                "TradingEngine",
+                "⛔ Headless Trade $action VETADO por precio congelado (activo=$currentObservedAsset)"
             )
             return
         }
@@ -1844,6 +1884,23 @@ class TradingEngine(
                     OverlayService.instance?.updateHUDView()
                 }
             }
+            return
+        }
+
+        // VETO V1 (B2): exclusividad mutua S/R <-> anti-chop.
+        // El filtro S/R y el plan de accion pueden pedir direcciones OPUESTAS; es una
+        // contradiccion interna del analisis, no una senal debil. Caso real capturado en R11
+        // (`clock_03.png`): "Toque Directo en Resistencia [PUT Optimo]" frente a
+        // "Cerca de Soporte (15%) ... CALL". Hasta ahora solo se ETIQUETABA en el HUD
+        // (`HudCoherence.actionConflict` se usaba unicamente para pintar el aviso) y la orden
+        // se disparaba igual. Ahora veta, con el umbral congelado en PRAGEREGISTRO_R12.
+        val reasoning = getEngineReasoning()
+        if (HudCoherence.actionConflict(reasoning.srFilterStatus, reasoning.actionPlan)) {
+            Log.w(
+                "TradingEngine",
+                "⛔ Headless Trade $action VETADO (V1) por conflicto S/R<->Plan: " +
+                    "SR=\"${reasoning.srFilterStatus}\" PLAN=\"${reasoning.actionPlan}\""
+            )
             return
         }
 
