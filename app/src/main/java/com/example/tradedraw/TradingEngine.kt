@@ -46,25 +46,64 @@ class TradingEngine(
     val chartViewportController = ChartViewportController(context, riskManager)
     val agentController = AutonomousAgentController(context, this, riskManager, chartViewportController)
 
+    /**
+     * Modo del motor. **Solo lectura desde fuera**: la unica forma de cambiarlo es
+     * [setTradingMode], que registra quien lo pidio. Es deliberado que el setter sea privado:
+     * en R14 hubo un rearme a `AUTONOMOUS` en una ronda desatendida y hubo que reconstruirlo a
+     * posteriori desde un volcado de eventos. Un campo publico escribible obliga a ese trabajo
+     * forense; un metodo con `source` obligatorio lo convierte en un dato.
+     */
     var mode: AutoTradeMode = AutoTradeMode.DISABLED
-        set(value) {
-            val anterior = field
-            field = value
-            if (value != anterior) {
-                // R15-A: solo observabilidad. Registrar el cambio NO lo altera. El ORIGEN es lo
-                // unico que permite atribuir el rearme espontaneo observado en R14: sin el, un
-                // cambio automatico y un toque humano son indistinguibles.
-                TradeEventLog.add(
-                    TradeEventLog.Kind.MODE_CHANGE,
-                    "de=$anterior a=$value origen=${modeChangeOrigin()}"
-                )
-            }
-            if (value == AutoTradeMode.AUTONOMOUS) {
-                agentController.start()
-            } else {
-                agentController.stop()
-            }
+        private set
+
+    /**
+     * Ultimo cambio de modo, para `/status`: `prev -> next | source=<caller>`. Cadena vacia si
+     * nunca hubo transicion. NO contiene datos sensibles: solo nombres de modo y de metodo.
+     */
+    @Volatile
+    var lastModeChange: String = ""
+        private set
+
+    /** Instante (ms epoch) del ultimo cambio de modo. 0 si nunca hubo transicion. */
+    @Volatile
+    var lastModeChangeTs: Long = 0L
+        private set
+
+    /**
+     * Cambia el modo del motor registrando el origen. **Unico punto de escritura.**
+     *
+     * `source` es obligatorio y debe nombrar la ruta que lo pide (p. ej.
+     * `"overlayCommandReceiver(action=AUTO)"`, `"bridge/mode"`, `"ui:showAutonomousSubModeDialog"`).
+     * El `ORIGEN` de la pila se sigue guardando ademas del `source`, porque un `source` se escribe
+     * a mano y una pila no: si los dos discrepan, el dato interesante es que discrepan.
+     *
+     * Devuelve `true` si el modo cambio de valor, `false` si era el mismo (en ese caso no se emite
+     * evento, para no llenar el buffer de transiciones que no lo son).
+     */
+    fun setTradingMode(newMode: AutoTradeMode, source: String): Boolean {
+        val anterior = mode
+        if (newMode == anterior) return false
+
+        mode = newMode
+        val origen = modeChangeOrigin()
+        lastModeChange = "$anterior -> $newMode | source=$source"
+        lastModeChangeTs = System.currentTimeMillis()
+
+        // Solo observabilidad: registrar el cambio NO lo altera. El ORIGEN es lo unico que permite
+        // atribuir un rearme espontaneo: sin el, un cambio automatico y un toque humano son
+        // indistinguibles.
+        TradeEventLog.add(
+            TradeEventLog.Kind.MODE_CHANGE,
+            "de=$anterior a=$newMode source=$source origen=$origen"
+        )
+
+        if (newMode == AutoTradeMode.AUTONOMOUS) {
+            agentController.start()
+        } else {
+            agentController.stop()
         }
+        return true
+    }
 
     /**
      * R15-A: pila de llamadas corta y legible para el ORIGEN de un cambio de modo.
@@ -80,6 +119,9 @@ class TradingEngine(
                 .drop(1)
                 .filterNot { it.className.startsWith("java.") || it.className.startsWith("kotlin.") }
                 .filterNot { it.methodName.startsWith("access$") }
+                // El propio cambiador no es un origen: quitar el frame evita que el primer
+                // elemento util de la pila sea siempre el mismo metodo.
+                .filterNot { it.className.endsWith("TradingEngine") && it.methodName == "setTradingMode" }
                 .take(5)
                 .map { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
             if (frames.isEmpty()) "desconocido" else frames.joinToString("<")
@@ -108,7 +150,7 @@ class TradingEngine(
         if (autonomousSubMode == AutonomousSubMode.SNIPER) {
             val (canTrade, reason) = riskManager.canExecuteTrade(autonomousSubMode)
             if (!canTrade && (reason.contains("alcanzado", ignoreCase = true) || reason.contains("finalizada", ignoreCase = true) || reason.contains("Límite", ignoreCase = true))) {
-                mode = AutoTradeMode.DISABLED
+                setTradingMode(AutoTradeMode.DISABLED, "engine:sniper-limite(checkSniperSessionLimits)")
                 sniperShutdownReason = reason
                 handler.post {
                     Toast.makeText(context, "🛑 $reason", Toast.LENGTH_LONG).show()
@@ -1610,7 +1652,7 @@ class TradingEngine(
         if (mode == AutoTradeMode.AUTONOMOUS) {
             if (!canTrade) {
                 if (autonomousSubMode == AutonomousSubMode.SNIPER && (reason.contains("alcanzado", ignoreCase = true) || reason.contains("finalizada", ignoreCase = true) || reason.contains("Límite", ignoreCase = true))) {
-                    mode = AutoTradeMode.DISABLED
+                    setTradingMode(AutoTradeMode.DISABLED, "engine:sniper-limite(seguimiento)")
                     sniperShutdownReason = reason
                     handler.post {
                         Toast.makeText(context, "🛑 $reason", Toast.LENGTH_LONG).show()
@@ -1989,7 +2031,7 @@ class TradingEngine(
         if (!canTrade) {
             Log.d("TradingEngine", "Headless bloqueado por riesgo: $riskReason")
             if (isSniper && (riskReason.contains("alcanzado", ignoreCase = true) || riskReason.contains("finalizada", ignoreCase = true) || riskReason.contains("Límite", ignoreCase = true))) {
-                mode = AutoTradeMode.DISABLED
+                setTradingMode(AutoTradeMode.DISABLED, "engine:sniper-limite(headless)")
                 sniperShutdownReason = riskReason
                 handler.post {
                     Toast.makeText(context, "🛑 $riskReason", Toast.LENGTH_LONG).show()
@@ -2326,7 +2368,7 @@ class TradingEngine(
     }
 
     fun stop() {
-        mode = AutoTradeMode.DISABLED
+        setTradingMode(AutoTradeMode.DISABLED, "engine:stop()")
         autoDrawEngine.clearAutoDrawings()
     }
 }

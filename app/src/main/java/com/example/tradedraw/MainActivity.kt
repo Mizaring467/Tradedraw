@@ -77,6 +77,15 @@ class MainActivity : AppCompatActivity() {
                 requestOverlayPermission()
             }
         }
+
+        // Ronda 15 / B1: si el permiso de overlay YA estaba concedido, arrancar el servicio sin
+        // esperar a que alguien pulse el boton. Motivo medido: `adb install -r` mata el proceso y
+        // abrir la app no ejecutaba ningun listener, asi que el bridge :8080 quedaba caido y no
+        // habia forma de leer /status en modo desatendido. No se concede ningun permiso nuevo: se
+        // automatiza un arranque que el usuario ya habia autorizado. No se toca el modo.
+        if (checkOverlayPermission() && AutoTradeAccessibilityService.isAccessibilityPermissionGranted(this)) {
+            launchService(null)
+        }
     }
 
     override fun onResume() {

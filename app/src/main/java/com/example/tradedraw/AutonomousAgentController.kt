@@ -97,7 +97,7 @@ class AutonomousAgentController(
      */
     fun resumeAutonomousTrading(reason: String = "Instrucción del usuario"): String {
         riskManager.resetStreakOnly()
-        tradingEngine.mode = AutoTradeMode.AUTONOMOUS
+        tradingEngine.setTradingMode(AutoTradeMode.AUTONOMOUS, "agent:resumeAutonomousTrading")
         tradingEngine.unlockAllLines()
         mainHandler.post {
             OverlayService.instance?.updateHUDView()

@@ -158,14 +158,14 @@ class OverlayService : Service() {
             when (action) {
                 "AUTO" -> {
                     tradingEngine.autonomousSubMode = AutonomousSubMode.CONSERVATIVE
-                    setTradingMode(AutoTradeMode.AUTONOMOUS)
+                    setTradingMode(AutoTradeMode.AUTONOMOUS, "broadcast(CMD,action=AUTO)")
                 }
                 "YOLO" -> {
                     tradingEngine.autonomousSubMode = AutonomousSubMode.YOLO
-                    setTradingMode(AutoTradeMode.AUTONOMOUS)
+                    setTradingMode(AutoTradeMode.AUTONOMOUS, "broadcast(CMD,action=YOLO)")
                 }
-                "SEMI" -> setTradingMode(AutoTradeMode.SEMIAUTOMATIC)
-                "STOP" -> setTradingMode(AutoTradeMode.DISABLED)
+                "SEMI" -> setTradingMode(AutoTradeMode.SEMIAUTOMATIC, "broadcast(CMD,action=SEMI)")
+                "STOP" -> setTradingMode(AutoTradeMode.DISABLED, "broadcast(CMD,action=STOP)")
                 "DEB" -> showDebugDialog()
                 "HUD" -> toggleHUDVisibility()
                 "TEST" -> {
@@ -266,7 +266,7 @@ class OverlayService : Service() {
 
         TradeEventLog.add(
             TradeEventLog.Kind.MODE_CHANGE,
-            "de=NINGUNO a=${tradingEngine.mode} origen=onCreate(servicio recreado)"
+            "de=NINGUNO a=${tradingEngine.mode} source=onCreate(servicio recreado) origen=onCreate(servicio recreado)"
         )
 
         // Cargar estrategia guardada previamente (por defecto AUTO_ADAPTIVE)
@@ -843,8 +843,8 @@ class OverlayService : Service() {
             .setItems(modes) { _, which ->
                 when (which) {
                     0 -> showAutonomousSubModeDialog()
-                    1 -> setTradingMode(AutoTradeMode.SEMIAUTOMATIC)
-                    2 -> setTradingMode(AutoTradeMode.DISABLED)
+                    1 -> setTradingMode(AutoTradeMode.SEMIAUTOMATIC, "ui:showModeDialog(semi)")
+                    2 -> setTradingMode(AutoTradeMode.DISABLED, "ui:showModeDialog(disabled)")
                 }
                 showAISubmenu()
             }
@@ -866,17 +866,17 @@ class OverlayService : Service() {
                 when (which) {
                     0 -> {
                         tradingEngine.autonomousSubMode = AutonomousSubMode.CONSERVATIVE
-                        setTradingMode(AutoTradeMode.AUTONOMOUS)
+                        setTradingMode(AutoTradeMode.AUTONOMOUS, "ui:showAutonomousSubModeDialog(conservador)")
                         Toast.makeText(this, "🤖 Modo Autónomo: Conservador", Toast.LENGTH_SHORT).show()
                     }
                     1 -> {
                         tradingEngine.autonomousSubMode = AutonomousSubMode.YOLO
-                        setTradingMode(AutoTradeMode.AUTONOMOUS)
+                        setTradingMode(AutoTradeMode.AUTONOMOUS, "ui:showAutonomousSubModeDialog(yolo)")
                         Toast.makeText(this, "🚀 Modo Autónomo: YOLO", Toast.LENGTH_SHORT).show()
                     }
                     2 -> {
                         tradingEngine.autonomousSubMode = AutonomousSubMode.SNIPER
-                        setTradingMode(AutoTradeMode.AUTONOMOUS)
+                        setTradingMode(AutoTradeMode.AUTONOMOUS, "ui:showAutonomousSubModeDialog(sniper)")
                         Toast.makeText(this, "🎯 Modo Autónomo: Francotirador", Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -924,15 +924,19 @@ class OverlayService : Service() {
         }
     }
 
-    private fun setTradingMode(newMode: AutoTradeMode) {
-        tradingEngine.mode = newMode
+    /**
+     * Ronda 15: `source` es obligatorio y viaja hasta el evento `MODE_CHANGE`. Nombra la ruta que
+     * pide el cambio, no quien la invoca: la pila de llamadas ya cubre eso.
+     */
+    private fun setTradingMode(newMode: AutoTradeMode, source: String) {
+        val cambio = tradingEngine.setTradingMode(newMode, source)
         if (newMode != AutoTradeMode.DISABLED) {
             // Sin captura de pantalla: el feed WebSocket ya está activo y alimenta al motor.
             // No se arranca ScreenCaptureManager ni se solicita MediaProjection.
-            Toast.makeText(this, "Modo: ${newMode.name} (WebSocket puro)", Toast.LENGTH_SHORT).show()
+            if (cambio) Toast.makeText(this, "Modo: ${newMode.name} (WebSocket puro)", Toast.LENGTH_SHORT).show()
         } else {
             tradingEngine.stop()
-            Toast.makeText(this, "Trading detenido", Toast.LENGTH_SHORT).show()
+            if (cambio) Toast.makeText(this, "Trading detenido", Toast.LENGTH_SHORT).show()
         }
         updateHUDView()
     }

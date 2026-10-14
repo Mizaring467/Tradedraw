@@ -37,8 +37,15 @@ object TickFrameParser {
      * @param hadForeignAsset true si la trama traía precios de OTROS activos. Distingue una
      *   contaminación real (hay activos ajenos y ninguno es el mío) de una trama informativa
      *   (heartbeat, phx_reply) que simplemente no lleva precios: solo lo primero es un incidente.
+     * @param assetsVistos RICs nombrados que traía la trama. Ronda 15 / Frente C lo usa para medir
+     *   si un RIC secundario suscrito recibe datos reales, sin dejar que sus precios entren en el
+     *   motor. Solo lectura diagnóstica: no altera qué tick se emite.
      */
-    data class FrameAnalysis(val tick: ParsedTick?, val hadForeignAsset: Boolean)
+    data class FrameAnalysis(
+        val tick: ParsedTick?,
+        val hadForeignAsset: Boolean,
+        val assetsVistos: List<String> = emptyList()
+    )
 
     /**
      * Atribuye un precio de [rawText] a [activeAsset].
@@ -74,12 +81,14 @@ object TickFrameParser {
 
         collectCandidates(root, candidates, anonymousPrices, 0)
 
+        val vistos = candidates.map { it.asset }.distinct()
+
         candidates.firstOrNull { it.asset.equals(active, ignoreCase = true) }?.let {
-            return FrameAnalysis(it, candidates.size > 1)
+            return FrameAnalysis(it, candidates.size > 1, vistos)
         }
 
         // Multi-activo sin el activo propio: NO se emite el precio ajeno.
-        if (candidates.isNotEmpty()) return FrameAnalysis(null, true)
+        if (candidates.isNotEmpty()) return FrameAnalysis(null, true, vistos)
 
         // Sin ningún `ric` en la trama: solo se acepta si hay UN ÚNICO precio. Dos o más precios
         // anónimos son un contenedor ambiguo (p. ej. el topic global `rates`) y no se pueden atribuir.

@@ -166,7 +166,7 @@ class TradeDrawHttpBridge(
                         val modeStr = params["name"]?.uppercase() ?: params["mode"]?.uppercase() ?: ""
                         try {
                             val m = AutoTradeMode.valueOf(modeStr)
-                            overlayService.tradingEngine.mode = m
+                            overlayService.tradingEngine.setTradingMode(m, "bridge:/mode")
                             overlayService.updateHUDView()
                             sendJsonResponse(output, 200, """{"success":true,"mode":"${m.name}"}""")
                         } catch (e: Exception) {
@@ -203,6 +203,48 @@ class TradeDrawHttpBridge(
                             output, 200,
                             """{"success":true,"total":${lineas.size},"events":[$cuerpo]}"""
                         )
+                    }
+                    "/diag_multiric" -> {
+                        // Ronda 15 / Frente C: experimento B0 (suscripcion multi-RIC) medido en el
+                        // dispositivo. Existe SOLO para medir y tiene dos cierres de seguridad:
+                        //
+                        //  1. Rechaza la operacion si el motor NO esta en DISABLED. Suscribir un
+                        //     RIC ajeno mientras el bot pudiera operar es exactamente la condicion
+                        //     que esta ronda debe evitar.
+                        //  2. `accion=restaurar` devuelve el socket a un solo RIC. Es obligatorio
+                        //     llamarlo al terminar: dejar dos RICs suscritos cambiaria el estado de
+                        //     partida de la ronda.
+                        //
+                        // NO cambia el activo activo, NO cambia el modo y NO deja que los precios
+                        // del RIC ajeno entren en el motor: solo se cuentan.
+                        val ws = overlayService.binomoWebSocketClient
+                        val modoActual = overlayService.tradingEngine.mode
+                        val accion = params["accion"]?.lowercase() ?: "suscribir"
+                        when {
+                            ws == null ->
+                                sendJsonResponse(output, 503, """{"success":false,"error":"sin cliente WebSocket"}""")
+                            modoActual != AutoTradeMode.DISABLED ->
+                                sendJsonResponse(
+                                    output, 409,
+                                    """{"success":false,"error":"solo en DISABLED","mode":"${modoActual.name}"}"""
+                                )
+                            accion == "restaurar" -> {
+                                ws.restaurarSuscripcionUnica()
+                                sendJsonResponse(output, 200, """{"success":true,"accion":"restaurar"}""")
+                            }
+                            else -> {
+                                val ric = params["ric"] ?: ""
+                                if (ric.isBlank()) {
+                                    sendJsonResponse(output, 400, """{"success":false,"error":"falta ric"}""")
+                                } else {
+                                    val ok = ws.suscribirRicSecundario(ric)
+                                    sendJsonResponse(
+                                        output, if (ok) 200 else 409,
+                                        """{"success":$ok,"ric":"${escapeJson(ric)}","principal":"${escapeJson(ws.activeAsset)}"}"""
+                                    )
+                                }
+                            }
+                        }
                     }
                     "/reset_stats" -> {
                         overlayService.riskManager.resetStats()
@@ -434,6 +476,8 @@ class TradeDrawHttpBridge(
         return """{
             "app": "TradeDraw",
             "mode": "$mode",
+            "lastModeChangeSource": "${escapeJson(te.lastModeChange)}",
+            "lastModeChangeTs": ${te.lastModeChangeTs},
             "strategy": "$strat",
             "accessibilityActive": $accessConnected,
             "balance": $bal,
@@ -493,7 +537,16 @@ class TradeDrawHttpBridge(
                 "payoutResolved": ${AutoTradeAccessibilityService.observedPayout.resolved ?: "null"},
                 "payoutDiscrepant": ${AutoTradeAccessibilityService.observedPayout.discrepant},
                 "payoutConfigured": ${overlayService.riskManager.sorosPayoutRate.toDouble()},
-                "rawFrames": ${rawFramesJson(ws)}
+                "rawFrames": ${rawFramesJson(ws)},
+                "acceptedTicks": ${ws?.acceptedTicks ?: 0L},
+                "rejectedForeignAssetTicks": ${ws?.rejectedForeignAssetTicks ?: 0L},
+                "diagMultiRic": {
+                    "ricSecundario": "${escapeJson(ws?.ricSecundario ?: "")}",
+                    "ticksRicSecundario": ${ws?.ticksRicSecundario ?: 0L},
+                    "ultimoTickRicSecundarioMs": ${ws?.ultimoTickRicSecundarioMs ?: 0L},
+                    "desconexiones": ${ws?.desconexiones ?: 0L},
+                    "reconexiones": ${ws?.reconexiones ?: 0L}
+                }
             },
             "engine": {
                 "signalsGenerated": ${synthetic.signalsGenerated},

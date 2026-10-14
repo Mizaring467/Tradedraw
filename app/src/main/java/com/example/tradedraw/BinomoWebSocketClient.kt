@@ -58,6 +58,111 @@ class BinomoWebSocketClient(private val context: Context) {
         get() = prefs.getBoolean("ws_client_enabled", true)
         set(value) = prefs.edit().putBoolean("ws_client_enabled", value).apply()
 
+    // ---------------------------------------------------------------------------------------
+    // Ronda 15 / Frente C: diagnostico de suscripcion multi-RIC (B0).
+    //
+    // El experimento de R14 quedo NO CONCLUYENTE porque nadie probo si suscribir un RIC extra
+    // mantiene vivo el stream del activo principal. La duda no se resuelve leyendo codigo: hay que
+    // medirlo. Estas piezas existen SOLO para medir y son reversibles: la suscripcion por defecto
+    // del motor NO se toca, y `restaurarSuscripcionUnica()` devuelve el socket al estado normal.
+    //
+    // Nada de esto altera una decision de trading: no cambia el activo, no cambia el modo y los
+    // ticks del RIC ajeno NO entran en `emitTick` (solo se cuentan).
+    // ---------------------------------------------------------------------------------------
+
+    /** RIC secundario suscrito por el diagnostico. Vacio = suscripcion normal de un solo RIC. */
+    @Volatile
+    var ricSecundario: String = ""
+        private set
+
+    /** Ticks validos recibidos del [ricSecundario] desde que se activo el diagnostico. */
+    @Volatile
+    var ticksRicSecundario: Long = 0L
+        private set
+
+    /** Instante del ultimo tick del [ricSecundario]. 0 si nunca llego. */
+    @Volatile
+    var ultimoTickRicSecundarioMs: Long = 0L
+        private set
+
+    /** Desconexiones (onClosed + onFailure) observadas desde el ultimo reinicio de contadores. */
+    @Volatile
+    var desconexiones: Long = 0L
+        private set
+
+    /** Reconexiones intentadas desde el ultimo reinicio de contadores. */
+    @Volatile
+    var reconexiones: Long = 0L
+        private set
+
+    fun reiniciarContadoresDiagnostico() {
+        ticksRicSecundario = 0L
+        ultimoTickRicSecundarioMs = 0L
+        desconexiones = 0L
+        reconexiones = 0L
+    }
+
+    /**
+     * Suscribe [ric] ADEMAS del activo principal, en la misma conexion. Devuelve false si no hay
+     * socket vivo: sin conexion no se puede medir nada y fingirlo seria peor que fallar.
+     */
+    fun suscribirRicSecundario(ric: String): Boolean {
+        val ws = webSocket ?: return false
+        if (!isConnected) return false
+        val clean = ric.trim()
+        if (clean.isBlank()) return false
+        try {
+            reiniciarContadoresDiagnostico()
+            ricSecundario = clean
+            ricSecundarioANotificar = clean
+            // Un unico mensaje `subscribe` con los DOS rics: es exactamente la forma que el
+            // protocolo admite (clave `rics`, array) y la que R14 no llego a probar.
+            ws.send(
+                JSONObject().apply {
+                    put("action", "subscribe")
+                    put("rics", JSONArray().apply { put(activeAsset); put(clean) })
+                }.toString()
+            )
+            ws.send(phoenixJoin("asset:$clean", JSONObject()))
+            ws.send(phoenixJoin("rates", JSONObject().put("ric", clean)))
+            Log.i(TAG, "Diagnostico multi-RIC: suscrito $clean junto a $activeAsset")
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "Diagnostico multi-RIC: fallo suscribiendo $clean", e)
+            ricSecundario = ""
+            return false
+        }
+    }
+
+    /**
+     * Devuelve la suscripcion a un solo RIC. Se llama SIEMPRE al cerrar el diagnostico, incluso si
+     * el experimento fallo: dejar dos RICs suscritos cambiaria el estado de partida de la ronda.
+     */
+    fun restaurarSuscripcionUnica() {
+        val ws = webSocket
+        ricSecundario = ""
+        if (ws != null && isConnected) {
+            try {
+                // `unsubscribe` explicito del RIC ajeno antes de reafirmar el propio: si el
+                // servidor mantuviera el canal abierto, el estado no volveria al de partida.
+                ws.send(
+                    JSONObject().apply {
+                        put("action", "unsubscribe")
+                        put("rics", JSONArray().apply { put(ricSecundarioANotificar) })
+                    }.toString()
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Diagnostico multi-RIC: unsubscribe fallo (no bloqueante)", e)
+            }
+            subscribeToAsset(ws, activeAsset)
+        }
+        Log.i(TAG, "Diagnostico multi-RIC: suscripcion restaurada a un solo RIC")
+    }
+
+    /** Ultimo RIC secundario que se suscribio, para poder desuscribirlo aunque [ricSecundario] ya se limpio. */
+    @Volatile
+    private var ricSecundarioANotificar: String = ""
+
     var authToken: String
         get() = prefs.getString("ws_auth_token", "") ?: ""
         set(value) = prefs.edit().putString("ws_auth_token", value.trim()).apply()
@@ -334,6 +439,7 @@ class BinomoWebSocketClient(private val context: Context) {
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     isConnecting.set(false)
                     isConnectedFlag.set(false)
+                    desconexiones++
                     updateState(WebSocketState.DISCONNECTED, "Cerrado: $reason")
                     scheduleReconnect()
                 }
@@ -341,6 +447,7 @@ class BinomoWebSocketClient(private val context: Context) {
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     isConnecting.set(false)
                     isConnectedFlag.set(false)
+                    desconexiones++
                     val errorMsg = t.message ?: "Fallo de red"
                     val is401 = response?.code == 401 || errorMsg.contains("401")
                     if (is401) {
@@ -443,7 +550,15 @@ class BinomoWebSocketClient(private val context: Context) {
             if (parsed == null) {
                 // Solo se contabiliza como contaminación si la trama traía precios de OTROS activos.
                 // Una respuesta informativa (phx_reply, heartbeat) no es un incidente de integridad.
-                if (frame.hadForeignAsset) rejectedForeignAssetTicks++
+                if (frame.hadForeignAsset) {
+                    rejectedForeignAssetTicks++
+                    // Ronda 15 / Frente C: si la trama traia el RIC secundario del diagnostico, se
+                    // cuenta aqui. NO se emite como tick: el motor sigue viendo un solo activo.
+                    if (ricSecundario.isNotEmpty() && frame.assetsVistos.any { it.equals(ricSecundario, ignoreCase = true) }) {
+                        ticksRicSecundario++
+                        ultimoTickRicSecundarioMs = System.currentTimeMillis()
+                    }
+                }
                 return
             }
 
@@ -545,6 +660,7 @@ class BinomoWebSocketClient(private val context: Context) {
     private fun scheduleReconnect() {
         if (!isEnabled) return
         reconnectAttempts++
+        reconexiones++
         val delay = (reconnectAttempts * 2000L).coerceAtMost(MAX_RECONNECT_DELAY_MS)
         updateState(WebSocketState.RECONNECTING, "Reconectando en ${delay / 1000}s...")
         workerHandler.removeCallbacks(reconnectRunnable)

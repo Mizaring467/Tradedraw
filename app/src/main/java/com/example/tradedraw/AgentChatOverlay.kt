@@ -232,7 +232,7 @@ class AgentChatOverlay(
         if (lower.contains("detén yolo") || lower.contains("para yolo") || lower.contains("desactiva yolo") || 
             lower.contains("para el bot") || lower.contains("detén el bot") || lower.contains("deten el bot") ||
             lower == "para" || lower == "stop" || lower == "pausa" || lower.contains("detente") || lower.contains("para ya")) {
-            tradingEngine.mode = AutoTradeMode.DISABLED
+            tradingEngine.setTradingMode(AutoTradeMode.DISABLED, "chat:NL(para/detener)")
             OverlayService.instance?.updateHUDView()
             val botMsg = "🛑 Trading detenido. El bot ha quedado pausado de forma segura."
             messages.add(ChatMessage(botMsg, false))
@@ -246,7 +246,7 @@ class AgentChatOverlay(
         // 4. Detección de SUBMODO YOLO
         if (lower.contains("activa modo yolo") || lower.contains("modo yolo") || lower == "yolo" || lower.contains("activa yolo") || lower.contains("pon modo yolo") || lower.contains("submodo yolo")) {
             tradingEngine.autonomousSubMode = AutonomousSubMode.YOLO
-            tradingEngine.mode = AutoTradeMode.AUTONOMOUS
+            tradingEngine.setTradingMode(AutoTradeMode.AUTONOMOUS, "chat:NL(yolo)")
             OverlayService.instance?.updateHUDView()
             val botMsg = "🚀 ¡SUBMODO YOLO ACTIVADO! Operando de forma autónoma continua sin Stop Loss ni límites de pérdidas. Escribe 'para' o toca '🛑 Parar Bot' cuando quieras pausar."
             messages.add(ChatMessage(botMsg, false))
@@ -260,7 +260,7 @@ class AgentChatOverlay(
         // 5. Detección de SUBMODO CONSERVADOR
         if (lower.contains("modo conservador") || lower.contains("submodo conservador") || lower.contains("modo seguro") || lower.contains("conservador")) {
             tradingEngine.autonomousSubMode = AutonomousSubMode.CONSERVATIVE
-            tradingEngine.mode = AutoTradeMode.AUTONOMOUS
+            tradingEngine.setTradingMode(AutoTradeMode.AUTONOMOUS, "chat:NL(conservador)")
             tradingEngine.riskManager.resetStreakOnly()
             OverlayService.instance?.updateHUDView()
             val botMsg = "🛡️ ¡SUBMODO CONSERVADOR ACTIVADO! Operando de forma autónoma con gestión de riesgo estricta (Stop Loss, Take Profit y Cooldowns activos)."
@@ -341,23 +341,23 @@ class AgentChatOverlay(
             }
             "MODE_AUTONOMOUS" -> {
                 tradingEngine.autonomousSubMode = AutonomousSubMode.CONSERVATIVE
-                tradingEngine.mode = AutoTradeMode.AUTONOMOUS
+                tradingEngine.setTradingMode(AutoTradeMode.AUTONOMOUS, "chat:cmd(MODE_AUTONOMOUS)")
                 OverlayService.instance?.updateHUDView()
                 Toast.makeText(context, "🤖 Modo: AUTÓNOMO (Conservador)", Toast.LENGTH_SHORT).show()
             }
             "MODE_YOLO" -> {
                 tradingEngine.autonomousSubMode = AutonomousSubMode.YOLO
-                tradingEngine.mode = AutoTradeMode.AUTONOMOUS
+                tradingEngine.setTradingMode(AutoTradeMode.AUTONOMOUS, "chat:cmd(MODE_YOLO)")
                 OverlayService.instance?.updateHUDView()
                 Toast.makeText(context, "🚀 Modo: AUTÓNOMO (Submodo YOLO)", Toast.LENGTH_SHORT).show()
             }
             "MODE_SEMIAUTO" -> {
-                tradingEngine.mode = AutoTradeMode.SEMIAUTOMATIC
+                tradingEngine.setTradingMode(AutoTradeMode.SEMIAUTOMATIC, "chat:cmd(MODE_SEMIAUTO)")
                 OverlayService.instance?.updateHUDView()
                 Toast.makeText(context, "🤖 Modo cambiado a SEMIAUTOMÁTICO", Toast.LENGTH_SHORT).show()
             }
             "MODE_DISABLED", "STOP_TRADING" -> {
-                tradingEngine.mode = AutoTradeMode.DISABLED
+                tradingEngine.setTradingMode(AutoTradeMode.DISABLED, "chat:cmd($cmd)")
                 OverlayService.instance?.updateHUDView()
                 Toast.makeText(context, "🛑 Trading pausado", Toast.LENGTH_SHORT).show()
             }
