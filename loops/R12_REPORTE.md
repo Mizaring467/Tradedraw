@@ -1,7 +1,9 @@
 # Ronda 12 — Erratum de R11, operaciones fantasma, payout real y activo por defecto
 
-**Rama:** `main` · **SHA final:** `ed88df3` · **Fecha:** 2026-10-13
-**Rango de la ronda:** `926dc50..ed88df3`
+**Rama:** `main` · **Árbol de código verificado:** `app/` = `391049b4a6d1b85bc8e8a7268bbdb02b359bca9e` · **Fecha:** 2026-10-13
+**Rango de la ronda:** `926dc50..c50fbfd`
+
+> **Por qué se ancla al árbol y no a un SHA de commit (lección del defecto A4 que esta ronda corrige):** citar como "SHA final" un commit que deja de ser `HEAD` en cuanto se commitea el propio informe reproduce exactamente el error A4 (verificación anterior al último commit). El hash del árbol `app/` sí es estable: identifica **el código** con independencia de commits posteriores de documentación. La suite se ejecutó sobre `ed88df3`, y `git rev-parse ed88df3:app` = `git rev-parse c50fbfd:app` = `391049b4`, con **0 ficheros de `app/`** distintos entre ambos: la verificación aplica a cualquier commit con ese árbol. Commits de cierre: `ed88df3` (informe + evidencia), `c50fbfd` (SHA/hora), este (anclaje al árbol).
 **Restricción respetada:** no se relajó ningún umbral de `master_traders_skill`. `workflows/PREREGISTRO_R10.md` **no se modificó**: los umbrales nuevos viven en `workflows/PREREGISTRO_R12.md`, creado en esta ronda.
 **Balance:** 38.014.735,00 → **37.914.736,64** (−99.998,36). Cuenta **demo**. Explicado en "Seguridad" al final: una operación LOSS durante la verificación en dispositivo.
 **Auto-trading:** **DISABLED** al cierre, confirmado por HTTP. `hasPendingTrade: false`.
@@ -68,7 +70,8 @@ El dato **ya estaba llegando al código y se tiraba**: `extractAssetCandidate` (
 
 | Dato | Valor |
 | :--- | :--- |
-| SHA | `ed88df325230fcd7d1ec8027a93cea6223937758` |
+| **Árbol de código verificado** | `app/` = `391049b4a6d1b85bc8e8a7268bbdb02b359bca9e` (idéntico en `ed88df3` y `c50fbfd`; 0 ficheros de `app/` entre ambos) |
+| Commit sobre el que se ejecutó | `ed88df325230fcd7d1ec8027a93cea6223937758` |
 | Hora de fin | 2026-10-13 20:36:56 |
 | Resultado | **271 passed, 0 failed, 2 skipped (20 clases)** |
 | Comando | `gradlew testDebugUnitTest assembleDebug --no-daemon --offline --no-configuration-cache --max-workers=1` |
@@ -223,7 +226,7 @@ T1 arregló el parser y T3 el buffer de `SyntheticCandleEngine`. Se revisó el r
 | Ninguna orden TIE aparece como `Trade Activo` | **PASA (por lógica y tests)** | `hasConfirmedTrade` exige `CONFIRMADA`; `recordTradeSent` deja `ENVIADA`. `OrderConfirmationTest` (12 tests). **Sin observación en vivo: ver salvedad abajo** |
 | Riesgo #1 reescrito con datos | **PASA** | `loops/R11_REPORTE.md`, riesgo #1 y `## Cierre` con las 21 filas del journal |
 | `git status` limpio y evidencia versionada | **PASA** | 69 capturas citadas versionadas en `74bbbc2`; residuo de 39 PNG no citados declarado; `*.pid`/logs/heartbeat en `.gitignore` |
-| Tests verdes sobre el SHA final | **PASA** | `ed88df3`, 2026-10-13 20:36:56 → **271 passed, 0 failed, 2 skipped (20 clases)** |
+| Tests verdes sobre el árbol de código final | **PASA** | árbol `app/`=`391049b4`, 2026-10-13 20:36:56 → **271 passed, 0 failed, 2 skipped (20 clases)** |
 | Build limpio | **PASA** | `BUILD SUCCESSFUL` |
 | Verificación visual ANTES/DESPUÉS en dispositivo | **PASA (parcial)** | `loops/screenshots/r12/` (captura nueva) + `loops/screenshots/r11/` (antes). POCO X6 Pro `UGU8KFUKM7E6CE8D` |
 
@@ -259,6 +262,8 @@ T1 arregló el parser y T3 el buffer de `SyntheticCandleEngine`. Se revisó el r
 | `69b5925` | B4 — reset de acumuladores por activo y hook de cambio de activo |
 | `11fa359` | Erratum de R11 (A1, A4, A2, B2/B3/B4) en `R11_REPORTE.md` |
 | `ed88df3` | Informe R12 + `zoom_tester_12_sniper.png` (evidencia citada y sin versionar) + `.gitignore` de dumps |
+| `c50fbfd` | SHA/hora de la suite final |
+| *(este)* | Anclaje de la verificación al árbol `app/`=`391049b4`, inmune a commits de documentación |
 
 **CI:** workflow "Build APK" → artefacto `TradeDraw-debug`.
 `https://github.com/Mizaring467/Tradedraw/actions`
