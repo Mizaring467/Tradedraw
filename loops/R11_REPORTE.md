@@ -23,7 +23,15 @@
 
 **Tests:** `221 passed, 0 failed, 2 skipped` (17 clases). Baseline antes de R11: 164 tests.
 **Build:** `assembleDebug --no-daemon --offline --no-configuration-cache` → `BUILD SUCCESSFUL`.
-**Instalado y verificado en dispositivo:** POCO X6 Pro `UGU8KFUKM7E6CE8D`.
+**Instalado y verificado en dispositivo:** Redmi A1 `220733SL` (ADB Wi-Fi `192.168.1.196:5555`).
+
+> **Erratum R13 (adenda 1):** este informe decía "POCO X6 Pro `UGU8KFUKM7E6CE8D`". Es
+> **incorrecto** y se venía repitiendo sin verificar desde rondas anteriores. El dispositivo
+> real, según `getprop`, es un **Redmi A1 `220733SL`**, Android 12 **Go** (`ro.config.low_ram =
+> true`), `mt6761`, **4 núcleos**, `armeabi-v7a`, 1.875.668 kB de RAM, y `loadavg` ≈ 17 en
+> operación. El serial USB `UGU8KFUKM7E6CE8D` ya no existe. **Consecuencia: las mediciones de
+> latencia y rendimiento de este informe se hicieron asumiendo un teléfono mucho más potente
+> del que es, y quedan invalidadas** (ver `loops/R13_REPORTE.md`, adenda 1).
 **Informe del probador:** `loops/screenshots/r11/REPORTE_TESTER.md` (28 capturas).
 
 > **Nota de verificación (corregida en R12, A4):** T3, T4 (caso "feed no fresco") y T6b (total resuelto ≠ 0) quedaron **NO VERIFICABLES en dispositivo** por no haberse abierto ninguna operación en la sesión de prueba (`hasPendingTrade: false`, `signalsGenerated: 0` durante ~40 min). Están **cubiertos por tests unitarios**, no por observación visual. **T8 sí quedó confirmado**: el propio informe lo cerró después con `2ffebe9`/`f752077` y capturas (`t8_fix_botkey`, `t8_landscape_01/02/03`, `t8_leak_after/before`); la nota original que lo daba por "sin confirmar" quedó obsoleta y se corrige aquí.
@@ -391,7 +399,8 @@ Corrección: `onNewTick` detecta el cambio de activo (comparando `tick.asset`) y
 
 `OverlayService.onConfigurationChanged` sí reprocesaba el lienzo (`MATCH_PARENT`) y sí corregía la `x`/`y` del HUD si caía fuera de pantalla, pero **nunca tocaba `hudParams.width`**: quedaba congelado en el valor calculado al arrancar el servicio.
 
-Medición en dispositivo (el eje lógico de la app pasa de 720 a 670 px al rotar en este POCO X6 Pro):
+Medición en dispositivo (el eje lógico de la app pasa de 720 a 670 px al rotar; **el dispositivo
+es un Redmi A1, no un POCO X6 Pro** — ver erratum al inicio de este informe):
 
 | Momento | `mAttrs` del HUD | Ancho útil | ¿Cabe? |
 | :--- | :--- | ---: | :--- |

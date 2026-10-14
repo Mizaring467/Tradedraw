@@ -1,6 +1,7 @@
 # REPORTE TESTER — Ronda 11 (R11)
 
-**Dispositivo:** POCO X6 Pro — serial ADB `UGU8KFUKM7E6CE8D`
+**Dispositivo:** ~~POCO X6 Pro~~ → **Redmi A1 `220733SL`** (Android 12 Go, `mt6761`, 4 núcleos) — serial ADB Wi-Fi `192.168.1.196:5555`.
+*(Erratum R13/adenda 1: el modelo y el serial USB `UGU8KFUKM7E6CE8D` de la línea original eran incorrectos. Las cifras de rendimiento y latencia de este informe asumían un teléfono más potente del que es; ver `loops/R13_REPORTE.md`.)*
 **Pantalla:** 720x1600 px, densidad 320 (360dp ancho)
 **App bajo prueba:** TradeDraw (overlay HUD sobre Binomo `com.marketly.trading`)
 **Fecha de sesión:** según reloj de dispositivo, franja 15:18–15:58

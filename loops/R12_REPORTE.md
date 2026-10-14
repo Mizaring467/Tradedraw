@@ -44,7 +44,18 @@ De las 10 filas con `price_y` "fuera de escala 600-700", **7 son ETHUSD-OTC leg�
 
 **Qué estaba mal.** El riesgo #2 lo afirmaba. El HUD calculaba el P&L con `sorosPayoutRate` (**0.85**, `RiskManager.kt:174`) mientras Binomo mostraba **82 %** y luego **83 %**.
 
-**Qué dato lo corrige.** El payout **sí** es legible por accesibilidad, por **dos** vías: el texto `Crypto IDX 82%` lleva el porcentaje en el **mismo nodo** que el nombre del activo, y los botones CALL/PUT muestran `Col$182.000,00` sobre `Cantidad Col$100.000` ⇒ `182000/100000 − 1 = 0.82`.
+**Qué dato lo corrige.** El payout **sí** es legible por accesibilidad. De las dos vías que este
+informe declaraba, **solo una está confirmada**: los botones CALL/PUT muestran `Col$182.000,00`
+sobre `Cantidad Col$100.000` ⇒ `182000/100000 − 1 = 0.82`.
+
+> **Erratum R13 (A3): la segunda vía NO está validada.** Este informe afirmaba que el texto
+> `Crypto IDX 82%` lleva el porcentaje en el **mismo nodo** que el nombre del activo. **Es
+> falso en el dispositivo**: `payoutFromPercentLabel` es `null` de forma persistente (el propio
+> informe lo registra en la línea de verificación, sin sacar la consecuencia), porque Binomo
+> expone el porcentaje en un **nodo distinto**. El intento se mantiene en el código, pero
+> **declarado como no validado**; `payoutDiscrepant` era por tanto **inerte**, y en R13 pasa a
+> registrar en `/events` si alguna vez hay dos lecturas que contrastar. Ver
+> `loops/R13_REPORTE.md` (A3).
 
 El dato **ya estaba llegando al código y se tiraba**: `extractAssetCandidate` (`AutoTradeAccessibilityService.kt:77`) hacía `clean.replace(Regex("(?i)\\s*\\d{1,3}%\\s*"), "")` para quedarse con el nombre y **descartaba el porcentaje**.
 
@@ -235,14 +246,30 @@ T1 arregló el parser y T3 el buffer de `SyntheticCandleEngine`. Se revisó el r
 | Ninguna orden TIE aparece como `Trade Activo` | **PASA** | `hasConfirmedTrade` exige `CONFIRMADA`; `recordTradeSent` deja `ENVIADA`. **En dispositivo:** HUD en `MODO OFF: En Espera` (no `Trade Activo`) con `hasPendingTrade=false`, visible en `r12_final_gates.png`. `OrderConfirmationTest` (12 tests) |
 | Riesgo #1 reescrito con datos | **PASA** | `loops/R11_REPORTE.md`, riesgo #1 y `## Cierre` con las 21 filas del journal |
 | `git status` limpio y evidencia versionada | **PASA** | 69 capturas citadas versionadas en `74bbbc2` + `zoom_tester_12_sniper.png` en `ed88df3`; residuo de 36 PNG no citados declarado; `*.pid`/logs/heartbeat/dumps en `.gitignore`; **0 ficheros no-PNG sin commitear** |
-| Tests verdes sobre el árbol de código final | **PASA** | árbol `app/`=`391049b4`, 2026-10-13 20:36:56 → **271 passed, 0 failed, 2 skipped (20 clases)** |
+| Tests verdes sobre el árbol de código final | **PASA** | árbol `app/`=`391049b4`, **271 passed, 0 failed, 2 skipped (20 clases)**. *(Erratum R13/A6: este informe declaraba "2026-10-13 20:36:56" como hora de ejecución, pero los XML en disco eran de las 20:07:31 — Gradle dio la tarea por vigente y la reutilizó. El resultado es válido porque el árbol era idéntico, pero la hora era la de la reutilización, no la de una ejecución real. En R13 se usó `cleanTest --rerun-tasks` y se verificó la regeneración de los XML.)* |
 | Build limpio | **PASA** | `BUILD SUCCESSFUL` |
-| Verificación visual ANTES/DESPUÉS en dispositivo | **PASA** | `loops/screenshots/r12/r12_final_gates.png` (final, con APK del código verificado) + `r12_after_a5a6.png` + `loops/screenshots/r11/` (antes). POCO X6 Pro `UGU8KFUKM7E6CE8D` |
+| Verificación visual ANTES/DESPUÉS en dispositivo | **PASA** | `loops/screenshots/r12/r12_final_gates.png` (final, con APK del código verificado) + `r12_after_a5a6.png` + `loops/screenshots/r11/` (antes). *(Erratum R13/adenda 1: el dispositivo NO es un POCO X6 Pro `UGU8KFUKM7E6CE8D`, es un **Redmi A1 `220733SL`** con ADB Wi-Fi `192.168.1.196:5555`. El serial USB ya no existe. Las cifras de latencia de este informe asumían un teléfono mucho más potente y quedan invalidadas.)* |
 | Instalado el APK del árbol verificado | **PASA** | `adb install -r app-debug.apk` → `Success` sobre el árbol `app/`=`391049b4` |
+
+### Erratum R13 (A6): los dos datasets del journal no son el mismo
+
+Este informe usaba indistintamente "21 filas" y "212 filas". Son **esquemas y periodos
+distintos**, y mezclarlos sin declararlo fue un error:
+
+| Dataset | Filas | Columnas | Rango | Columnas clave |
+| :--- | ---: | ---: | :--- | :--- |
+| `loops/journal/trade_journal_device_all.csv` | 212 | 13 | 2026-09-10 → 09-12 | sin `candle_second`, sin `tick_velocity`, sin `impulse` |
+| journal del dispositivo (`trade_journal.csv`) | 26 | 21 | 2026-10-11 → 10-13 | con `candle_second`, `tick_velocity`, `impulse`, `market_regime` |
+
+**La columna `candle_second` no existe en el dataset de 212 filas**, así que cualquier análisis
+por segundo de vela solo es posible sobre el de 21 columnas. El de 212 filas contiene además
+3 fuentes solapadas (`device_all` 212 + `live` 17 + `live2` 35 = 264 filas, con **212 timestamps
+únicos**).
 
 ### Captura final: los cinco criterios en una sola pantalla
 
-`loops/screenshots/r12/r12_final_gates.png` (APK del árbol verificado, POCO X6 Pro) muestra simultáneamente:
+`loops/screenshots/r12/r12_final_gates.png` (APK del árbol verificado; **el dispositivo es un
+Redmi A1 `220733SL`, no un POCO X6 Pro** — ver erratum arriba) muestra simultáneamente:
 
 - **A5** — el HUD está **visible** sin haberlo activado por HTTP (reinicio limpio; `hud_visible=true` en `TradeDraw_HUDConfig.xml`).
 - **A6** — `Tendencia: ALCISTA`, `Patrón: RANGO S/R`, `Filtro S/R: Toque Directo en Soporte` y `Plan: Buscar retroceso...` se leen **sobre las velas** con el panel a `hud_alpha=0.2`.
@@ -262,7 +289,23 @@ T1 arregló el parser y T3 el buffer de `SyntheticCandleEngine`. Se revisó el r
 
 ## Seguridad
 
-- **Auto-trading DISABLED al cierre**, confirmado por HTTP: `{"success":true,"mode":"DISABLED"}`. `hasPendingTrade: false`.
+> **Corregido en R13 (A1).** La versión original de esta sección afirmaba que el cierre en
+> `DISABLED` probaba que el bot no operaba entre sesiones. **Eso no es una garantía de nada**, y
+> además los hechos posteriores lo desmienten:
+>
+> - `TradingEngine.mode` es una propiedad **solo en memoria** (`TradingEngine.kt:49`). **No se
+>   persiste.** Un cambio de modo sobrevive mientras el proceso vive; el reinicio sí devuelve
+>   `DISABLED`.
+> - Tras el cierre de R12, el modo estaba en **`AUTONOMOUS`** (medido al abrir R13), y en esa
+>   ventana se ejecutaron **tres operaciones reales** en demo: `+80.000`, `+80.000` y
+>   `−100.001,28` = **+59.998,72** netos (journal del dispositivo, 2026-10-13 22:10–22:15).
+>   Fue el **usuario** quien activó `AUTONOMOUS` a propósito; no fue un fallo de la app.
+> - Por tanto: "cerrado en `DISABLED`" describe el estado en un instante, **no** garantiza que
+>   el bot esté detenido después. La garantía real es el reinicio o la comprobación por HTTP.
+>
+> Ver `loops/R13_REPORTE.md` (A1).
+
+- **Auto-trading DISABLED al cierre de R12**, confirmado por HTTP: `{"success":true,"mode":"DISABLED"}`. `hasPendingTrade: false`. *(No implica que siguiera así: ver la nota de arriba.)*
 - **Cuenta demo**, stake mínimo. No se operó en real.
 - **Balance: 38.014.735,00 → 37.914.736,64 (−99.998,36).** Una operación **LOSS** durante la verificación en dispositivo. Se declara porque el enunciado lo exige: **no hubo operación fantasma ni descontrol** (movimiento de saldo exacto de un LOSS real, que además es prueba de que la liquidación por saldo funciona), pero **sí hubo una pérdida no buscada**. No se dejó el bot operando sin supervisión en ningún momento.
 
