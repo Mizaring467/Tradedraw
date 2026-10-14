@@ -178,8 +178,31 @@ class TradeDrawHttpBridge(
                         // este dispositivo no funciona (`init.svc.logd = stopped`, sin root para
                         // levantarlo). Expone vetos con motivo, transiciones de orderState, taps
                         // despachados y cambios de activo.
+                        //
+                        // Ronda 18: formato INTACTO a proposito. Los cambios de modo estan
+                        // dominados por ASSET en este ring, asi que se exponen en /mode_log.
                         val max = params["max"]?.toIntOrNull() ?: 60
                         sendJsonResponse(output, 200, TradeEventLog.toJson(max))
+                    }
+                    "/mode_log" -> {
+                        // Ronda 18: ring DEDICADO a MODE_CHANGE, independiente del buffer de 200.
+                        // Existe porque en R15-A el volcado de /events devolvio 0 MODE_CHANGE: los
+                        // eventos de activo los habian desplazado. Aqui no compiten.
+                        val max = params["max"]?.toIntOrNull() ?: TradeEventLog.MODE_CAPACIDAD
+                        sendJsonResponse(output, 200, TradeEventLog.modesToJson(max))
+                    }
+                    "/mode_journal" -> {
+                        // Ronda 18: las ultimas transiciones LEIDAS DEL DISCO. A diferencia de
+                        // /mode_log, sobrevive al reinicio del servicio, que es justo el escenario
+                        // del rearme de R14.
+                        val max = params["max"]?.toIntOrNull() ?: 50
+                        val diario = overlayService.modeJournal
+                        val lineas = diario?.tail(max) ?: emptyList()
+                        val cuerpo = lineas.joinToString(",")
+                        sendJsonResponse(
+                            output, 200,
+                            """{"success":true,"total":${lineas.size},"events":[$cuerpo]}"""
+                        )
                     }
                     "/reset_stats" -> {
                         overlayService.riskManager.resetStats()

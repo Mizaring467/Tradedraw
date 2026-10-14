@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.content.Context
 import android.content.Intent
+import java.io.File
 import android.provider.Settings
 import android.content.res.Configuration
 import android.graphics.Color
@@ -98,6 +99,13 @@ class OverlayService : Service() {
     lateinit var tradingEngine: TradingEngine
         private set
     var binomoWebSocketClient: BinomoWebSocketClient? = null
+        private set
+
+    /**
+     * Ronda 18: diario en disco de los cambios de modo. Se instala en [onCreate] y sobrevive a la
+     * rotacion del buffer en memoria. Ver [ModeEventJournal].
+     */
+    var modeJournal: ModeEventJournal? = null
         private set
 
     private var hudView: View? = null
@@ -250,6 +258,12 @@ class OverlayService : Service() {
         // R15-A: el modo arranca en DISABLED sin pasar por el setter (es el inicializador de la
         // propiedad), asi que un rearme por recreacion del servicio seria INVISIBLE. Se registra
         // el estado inicial aqui para que una recreacion deje rastro inequivoco en /events.
+        //
+        // Ronda 18: el diario en disco se enlaza ANTES de este registro, para que incluso la
+        // recreacion del servicio quede persistida. Sin esto, un rearme que ocurre antes de que
+        // el observador mire moriria con el proceso, que es justo lo que paso en R14.
+        modeJournal = ModeEventJournal.instalar(File(filesDir.absolutePath))
+
         TradeEventLog.add(
             TradeEventLog.Kind.MODE_CHANGE,
             "de=NINGUNO a=${tradingEngine.mode} origen=onCreate(servicio recreado)"
