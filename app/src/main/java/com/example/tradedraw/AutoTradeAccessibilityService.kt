@@ -320,17 +320,30 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             OverlayService.instance?.updateHUDView(true)
         } catch (e: Exception) {}
 
+        // Ronda 16 (A): este receptor estaba registrado RECEIVER_EXPORTED y sus acciones
+        // TAP/SWIPE/BACK ejecutan performClickAt y performSwipe, es decir taps y gestos REALES
+        // contra el broker. Cualquier app del dispositivo podia provocarlos, esquivando el modo,
+        // los vetos y RiskManager: un bot en DISABLED no estaba protegido frente a esto.
+        //
+        // Correcto de la ronda: RECEIVER_NOT_EXPORTED existe SOLO desde API 33 y el dispositivo
+        // de pruebas es API 31, asi que la rama `else` de 2 argumentos habria dejado el receptor
+        // EXPORTADO: el parche habria sido un no-op justo en el telefono a proteger. Se usa la
+        // sobrecarga de 4 argumentos con un permiso de firma (existe desde API 1), que restringe
+        // la emision a las apps firmadas con esta misma clave en TODAS las versiones.
+        // La app NO emite estos broadcasts en ningun punto (no hay sendBroadcast), asi que esto no
+        // rompe ninguna funcionalidad interna.
         val filter = android.content.IntentFilter().apply {
             addAction("com.example.tradedraw.TAP")
             addAction("com.example.tradedraw.SWIPE")
             addAction("com.example.tradedraw.BACK")
         }
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(commandReceiver, filter, android.content.Context.RECEIVER_EXPORTED)
-            } else {
-                registerReceiver(commandReceiver, filter)
-            }
+            registerReceiver(
+                commandReceiver,
+                filter,
+                "com.example.tradedraw.permission.INTERNAL_COMMAND",
+                null
+            )
         } catch (e: Exception) {
             Log.e("TradeDraw", "Error registrando commandReceiver", e)
         }

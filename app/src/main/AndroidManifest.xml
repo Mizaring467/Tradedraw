@@ -10,6 +10,16 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Ronda 16 (A): permiso de firma para los receptores de comando internos
+         (com.example.tradedraw.CMD y TAP/SWIPE/BACK). Solo una app firmada con esta
+         misma clave puede emitirlos. Se declara aqui porque RECEIVER_NOT_EXPORTED
+         no existe por debajo de API 33, y el dispositivo de pruebas es API 31: en esa
+         version un receptor dinamico sin permiso queda EXPORTADO por defecto, que es
+         justo el vector que R15-A reprodujo (cualquier app rearmaba el bot). -->
+    <permission
+        android:name="com.example.tradedraw.permission.INTERNAL_COMMAND"
+        android:protectionLevel="signature" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"

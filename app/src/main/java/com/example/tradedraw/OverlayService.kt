@@ -308,13 +308,26 @@ class OverlayService : Service() {
         }
         wsClient.start()
 
+        // Ronda 16 (A): este receptor estaba registrado RECEIVER_EXPORTED y sus acciones
+        // AUTO/YOLO ponen el motor en AUTONOMOUS. Cualquier app del dispositivo podia rearmar
+        // el bot sin toque humano: R15-A lo reprodujo, incluso con broadcast implicito (sin -p),
+        // y capturo el ORIGEN en OverlayService$overlayCommandReceiver$1.onReceive:153.
+        //
+        // Correcto de la ronda: RECEIVER_NOT_EXPORTED existe SOLO desde API 33 y el dispositivo
+        // de pruebas es API 31, asi que la rama `else` de 2 argumentos habria dejado el receptor
+        // EXPORTADO: el parche habria sido un no-op justo en el telefono a proteger. Se usa la
+        // sobrecarga de 4 argumentos con un permiso de firma (existe desde API 1), que restringe
+        // la emision a las apps firmadas con esta misma clave en TODAS las versiones.
+        // La app NO emite este broadcast en ningun punto (no hay sendBroadcast), asi que esto no
+        // rompe ninguna funcionalidad interna.
         val cmdFilter = IntentFilter("com.example.tradedraw.CMD")
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(overlayCommandReceiver, cmdFilter, Context.RECEIVER_EXPORTED)
-            } else {
-                registerReceiver(overlayCommandReceiver, cmdFilter)
-            }
+            registerReceiver(
+                overlayCommandReceiver,
+                cmdFilter,
+                "com.example.tradedraw.permission.INTERNAL_COMMAND",
+                null
+            )
         } catch (e: Exception) {
             Log.e("TradeDraw", "Error registrando overlayCommandReceiver", e)
         }
