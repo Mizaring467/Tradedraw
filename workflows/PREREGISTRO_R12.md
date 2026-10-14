@@ -51,6 +51,15 @@ orden no se dispara.
   por encima** del umbral. Z-CRY/IDX se queda en 2,5e-09, **cuatro órdenes por debajo**.
   El umbral separa ambos casos con holgura amplia; no es un ajuste fino sobre el ruido.
 - **No se aplica a un activo concreto**: es un veto por condición de feed, no por nombre.
+- **Tasa esperada en ETHUSD-OTC (añadido en R13/A5): ≈2,2 % de las ventanas.** Medida por el
+  usuario sobre `ETHUSD-OTC_2026-10-12.csv` con la ventana de 16 ticks que usa
+  `recentPriceRangeRatio()` (34.245 ventanas evaluadas). Es el valor de referencia para
+  detectar desviaciones: si el contador `vetoV2` de `/status` crece muy por encima del ~2 %
+  de las evaluaciones, o se queda a cero con el motor activo, hay una regresión en el feed o
+  en el cálculo del rango. Sin esta cifra, V2 no era contrastable.
+- **Observabilidad:** `vetoV2`, `vetoV1`, `vetoTotal` y `ultimoVeto` en `/status`; detalle
+  completo (motivo y valores medidos) en `/events`. Obligatorio porque `logcat` no funciona
+  en el dispositivo (`init.svc.logd = stopped`, sin root para levantarlo).
 
 ## 3. Guardas de escala corregidas (B3) — no tocan decisión sobre ETHUSD-OTC
 
@@ -74,6 +83,20 @@ frente al umbral 0,45 de `MT_REJECTION` (nunca disparaba) y z-score **siempre 0.
 **N = 0.** El conteo de muestras válidas para confirmar edge se reinicia desde el SHA de
 este cambio, y se declara así en el informe. Motivo: cambian el activo por defecto, las
 guardas de escala y se añaden dos vetos. Las muestras anteriores no son comparables.
+
+## 4bis. Veto de feed rancio (R13/A2d) — sin umbral nuevo
+
+**No se añade umbral.** El guard que veta cuando el tick supera `FEED_MAX_AGE_MS` ya existía
+al inicio de `executeHeadlessTrade`; R13 solo lo hace **observable** (contador y último
+motivo). Es el guard que cubre el caso "activo activo sin feed" medido con Aave(OTC): sin
+tick, `tickAgeMs` es `null` o supera el umbral, así que la orden queda vetada. Se documenta
+aquí para que quede constancia de que **no** se introdujo un veto adicional con umbral nuevo:
+sería duplicar el existente.
+
+**Tasa esperada: indeterminada por diseño.** Depende de la disponibilidad del feed del
+broker, no de una propiedad estadística del mercado como V2. Lo contrastable es que sea
+**cero con feed fresco** y que cada disparo deje rastro en `/events` con el activo y la edad
+del último tick.
 
 ## 5. Lo que este preregistro NO autoriza
 

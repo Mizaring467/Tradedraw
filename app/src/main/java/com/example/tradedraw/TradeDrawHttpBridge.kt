@@ -15,6 +15,12 @@ import java.util.concurrent.Executors
  * Micro-servidor HTTP local de ultra-baja latencia (10-25 ms).
  * Permite supervisión en vivo, extracción de frames en RAM y ejecución de órdenes
  * a través de ADB port forwarding (`adb forward tcp:8080 tcp:8080`) sin escribir en disco.
+ *
+ * Ronda 13 (B1): enlazado ESTRICTAMENTE a loopback. Antes `ServerSocket(port)` escuchaba en
+ * `[::]` (todas las interfaces), asi que con el telefono en Wi-Fi cualquiera en la misma red
+ * podia leer `/status` y, peor, disparar `/trade`, que ejecuta taps reales en el broker.
+ * El acceso sigue siendo posible porque `adb forward tcp:8080 tcp:8080` conecta desde dentro
+ * del dispositivo; la diferencia es que ya no se puede llegar por la LAN.
  */
 class TradeDrawHttpBridge(
     private val overlayService: OverlayService,
@@ -31,8 +37,11 @@ class TradeDrawHttpBridge(
         isRunning = true
         threadPool.execute {
             try {
-                serverSocket = ServerSocket(port)
-                Log.d("TradeDrawHttp", "Micro-servidor HTTP iniciado en puerto $port")
+                // R13/B1: solo loopback. Ver el comentario de clase.
+                val addr = java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), port)
+                serverSocket = ServerSocket()
+                serverSocket?.bind(addr)
+                Log.d("TradeDrawHttp", "Micro-servidor HTTP iniciado en loopback:$port")
                 while (isRunning && serverSocket?.isClosed == false) {
                     try {
                         val client = serverSocket?.accept() ?: break
@@ -163,6 +172,14 @@ class TradeDrawHttpBridge(
                         } catch (e: Exception) {
                             sendJsonResponse(output, 400, """{"success":false,"error":"Modo desconocido: $modeStr"}""")
                         }
+                    }
+                    "/events" -> {
+                        // R13/A5+adenda: fuente de observabilidad alternativa a logcat, que en
+                        // este dispositivo no funciona (`init.svc.logd = stopped`, sin root para
+                        // levantarlo). Expone vetos con motivo, transiciones de orderState, taps
+                        // despachados y cambios de activo.
+                        val max = params["max"]?.toIntOrNull() ?: 60
+                        sendJsonResponse(output, 200, TradeEventLog.toJson(max))
                     }
                     "/reset_stats" -> {
                         overlayService.riskManager.resetStats()
@@ -420,7 +437,12 @@ class TradeDrawHttpBridge(
                 "hasPendingTrade": ${rm.hasPendingTrade},
                 "orderState": "${rm.orderState.name}",
                 "hasConfirmedTrade": ${rm.hasConfirmedTrade},
-                "remainingCooldown": ${rm.getRemainingCooldown()}
+                "remainingCooldown": ${rm.getRemainingCooldown()},
+                "vetoV1": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO, "V1")},
+                "vetoV2": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO, "V2")},
+                "vetoTotal": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO)},
+                "ultimoVeto": "${escapeJson(TradeEventLog.lastOf(TradeEventLog.Kind.VETO)?.detail ?: "")}",
+                "tapsDespachados": ${TradeEventLog.countOf(TradeEventLog.Kind.TAP)}
             },
             "activeSignal": $signalJson,
             "feed": {

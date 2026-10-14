@@ -1769,6 +1769,21 @@ class TradingEngine(
                     "ageMs=${tickAgeMs ?: -1} (umbral=${FEED_MAX_AGE_MS}ms) " +
                     "fresh=${isFeedFresh()} → no se degrada a otra fuente"
             )
+            // R13/A2d + A5: el caso "activo activo sin feed" (Aave(OTC): socket vivo, 0 ticks)
+            // YA queda cubierto por este guard, porque sin tick su edad es null o >= umbral.
+            // Se registra para que sea observable por `/events` en vez de solo por logcat, que
+            // en este dispositivo no funciona. No se anade un veto nuevo: seria duplicar este.
+            TradeEventLog.add(
+                TradeEventLog.Kind.VETO,
+                "FEED_RANCIO ageMs=${tickAgeMs ?: -1} activo=" +
+                    AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "?" }
+            )
+            if (tickAgeMs == null) {
+                TradeEventLog.add(
+                    TradeEventLog.Kind.FEED_MUDO,
+                    "activo=${AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "?" }} sin_ningun_tick"
+                )
+            }
             return
         }
 
@@ -1790,6 +1805,14 @@ class TradingEngine(
                 "⛔ Headless Trade $action VETADO (V2) por feed sin volatilidad medible: " +
                     "rangoRelativo=$rangoRelativo < $RANGO_RELATIVO_MINIMO (activo=$currentObservedAsset)"
             )
+            // R13/A5: sin logd no hay observabilidad por logcat, asi que el veto se registra
+            // ademas en el buffer consultable por `/events`.
+            TradeEventLog.add(
+                TradeEventLog.Kind.VETO,
+                "V2 rango=%.3e umbral=%.0e activo=%s".format(
+                    java.util.Locale.US, rangoRelativo, RANGO_RELATIVO_MINIMO, currentObservedAsset
+                )
+            )
             return
         }
 
@@ -1800,6 +1823,10 @@ class TradingEngine(
             Log.w(
                 "TradingEngine",
                 "⛔ Headless Trade $action VETADO por precio congelado (activo=$currentObservedAsset)"
+            )
+            TradeEventLog.add(
+                TradeEventLog.Kind.VETO,
+                "CONGELADO activo=$currentObservedAsset"
             )
             return
         }
@@ -1921,6 +1948,11 @@ class TradingEngine(
                 "TradingEngine",
                 "⛔ Headless Trade $action VETADO (V1) por conflicto S/R<->Plan: " +
                     "SR=\"${reasoning.srFilterStatus}\" PLAN=\"${reasoning.actionPlan}\""
+            )
+            // R13/A5: el veto queda observable desde `/events` sin depender de logcat.
+            TradeEventLog.add(
+                TradeEventLog.Kind.VETO,
+                "V1 SR=\"${reasoning.srFilterStatus}\" PLAN=\"${reasoning.actionPlan}\""
             )
             return
         }
