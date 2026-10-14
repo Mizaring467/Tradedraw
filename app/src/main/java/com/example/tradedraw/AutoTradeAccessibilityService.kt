@@ -150,7 +150,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                 val overlay = OverlayService.instance
                 if (overlay != null && overlay.isPointInsideHUD(x, y)) {
                     overlay.temporarilyBypassHUD(350L) {
-                        executeRootTap(x, y, onResult)
+                        executeRootTap(x, y, onResult, bypassHud = true)
                     }
                 } else {
                     executeRootTap(x, y, onResult)
@@ -198,7 +198,8 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         fun executeRootTap(
             x: Float,
             y: Float,
-            onResult: ((Boolean, String?) -> Unit)? = null
+            onResult: ((Boolean, String?) -> Unit)? = null,
+            bypassHud: Boolean = false
         ) {
             Thread {
                 val inicioMs = System.currentTimeMillis()
@@ -206,12 +207,19 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                     val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "input tap ${x.toInt()} ${y.toInt()}"))
                     val exit = p.waitFor()
                     val duracionMs = System.currentTimeMillis() - inicioMs
-                    // R13/A4: se registra CUANDO termina el tap y cuánto tardó. Sin esto no había
-                    // forma de saber si un tap se había despachado tarde (la causa de las órdenes
-                    // no registradas era justo esa) porque logcat no funciona en el dispositivo.
+                    // R13/A4: se registra CUANDO termina el tap y cuánto tardó, y —desde la
+                    // corrección de A4— SI se aplicó el bypass del HUD.
+                    //
+                    // El flag `bypassHud` no es decorativo: en la primera versión de R13 se
+                    // declaró como causa raíz de las órdenes no registradas una carrera entre el
+                    // temporizador del bypass y la duración del tap. Esa hipótesis era FALSA,
+                    // porque el bypass solo se aplica si el punto cae DENTRO del HUD
+                    // (`isPointInsideHUD`) y en la configuración medida el HUD termina en y=1302
+                    // mientras los botones están en y≈1341. Sin este dato en el evento, la
+                    // próxima vez se vuelve a razonar sobre una precondición no comprobada.
                     TradeEventLog.add(
                         TradeEventLog.Kind.TAP,
-                        "root ($x,$y) exit=$exit durMs=$duracionMs"
+                        "root ($x,$y) exit=$exit durMs=$duracionMs bypassHud=$bypassHud"
                     )
                     if (exit == 0) {
                         Log.i("TradeDraw", "⚡ Tap ejecutado con éxito vía ROOT en ($x, $y) en ${duracionMs}ms")

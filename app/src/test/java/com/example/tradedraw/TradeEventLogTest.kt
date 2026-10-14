@@ -109,6 +109,62 @@ class TradeEventLogTest {
 }
 
 /**
+ * R13/A4: la precondicion que faltaba.
+ *
+ * El informe declaraba como causa raiz de las ordenes no registradas una carrera entre el
+ * temporizador del bypass del HUD (350 ms) y la duracion del tap. Era FALSO: el bypass solo se
+ * aplica si el punto del tap cae DENTRO del HUD. Estas pruebas fijan la geometria medida en el
+ * dispositivo (720x1600, Portrait) para que la afirmacion no se pueda volver a hacer sin
+ * comprobarla, y para que un cambio de layout que meta el HUD encima de los botones falle aqui
+ * en vez de en produccion.
+ */
+class HudGeometriaTest {
+
+    // Medido con `dumpsys window windows` en el dispositivo, Portrait, SurfaceOrientation: 0.
+    private val hudFrame = intArrayOf(96, 812, 720, 1302)
+    private val screenW = 720
+    private val screenH = 1600
+
+    // CalibrationManager, perfil BINOMO en Portrait: (w*0.347, h*0.838) y (w*0.347, h*0.844).
+    private val buyY = screenH * 0.838f
+    private val sellY = screenH * 0.844f
+    private val botonX = screenW * 0.347f
+
+    private fun dentro(frame: IntArray, x: Float, y: Float): Boolean =
+        x >= frame[0] && x <= frame[2] && y >= frame[1] && y <= frame[3]
+
+    @Test
+    fun elHudNoCubreLosBotonesDeBinomo() {
+        assertFalse(
+            "El HUD no debe cubrir el boton CALL: si lo cubre, el bypass SI se aplica y la " +
+                "carrera del temporizador vuelve a ser relevante",
+            dentro(hudFrame, botonX, buyY)
+        )
+        assertFalse(
+            "El HUD no debe cubrir el boton PUT",
+            dentro(hudFrame, botonX, sellY)
+        )
+    }
+
+    @Test
+    fun elBordeInferiorDelHudQuedaPorEncimaDeLosBotones() {
+        // Es el dato concreto que refuto la hipotesis: 1302 < 1340,8.
+        assertTrue(
+            "El HUD termina en y=${hudFrame[3]} y los botones empiezan en y=$buyY",
+            hudFrame[3] < buyY
+        )
+    }
+
+    @Test
+    fun laComprobacionDetectariaUnHudQueSiTapeElBoton() {
+        // Control negativo: el helper `dentro` debe devolver true cuando el frame SI cubre el
+        // boton. Sin esto, la prueba de arriba pasaria aunque el helper estuviera roto.
+        val hudQueSiTapa = intArrayOf(0, 50, 720, 1504)
+        assertTrue(dentro(hudQueSiTapa, botonX, buyY))
+    }
+}
+
+/**
  * Ronda 13/A2a: el mapeo de nombre visible -> RIC del feed.
  *
  * La causa raiz de "activo sin ticks" (Aave(OTC)) era el `else` de ese mapeo, que hacia

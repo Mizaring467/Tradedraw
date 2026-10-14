@@ -1359,15 +1359,18 @@ class OverlayService : Service() {
      * Vuelve el HUD temporalmente no-tactil para permitir que los clics
      * de trading de Accesibilidad atraviesen limpiamente hacia el broker sin importar dónde esté el HUD.
      *
-     * R13/A4: [durationMs] pasa a ser SOLO un failsafe, no la duracion real del bypass.
-     * CAUSA RAIZ medida de las ordenes que nunca se registraban (17 de 212, 8 %):
-     * el bypass duraba 350 ms fijos y se restauraba por temporizador, pero el tap real
-     * (`su -c input tap`) tarda 141-327 ms medidos EN EL DISPOSITIVO (mediana 222 ms) y no
-     * tiene cota superior con `loadavg ~17`. Cuando el tap tardaba mas que el temporizador, el
-     * HUD volvia a ser tactil ANTES de que el gesto llegara al broker, el overlay se comia el
-     * toque y la orden quedaba sin registrar (`ORDEN NO PROCESADA`, Diff=0.0). Ahora el bypass
-     * lo cierra [restoreHudTouchable], que se invoca cuando el tap termina; el temporizador
-     * queda como red de seguridad por si la llamada nunca vuelve.
+     * R13/A4: [durationMs] es SOLO un failsafe, no la duracion real del bypass. El bypass lo
+     * cierra [restoreHudTouchable] cuando el tap termina, porque el tap real (`su -c input tap`)
+     * tarda 255-1205 ms medidos EN EL DISPOSITIVO (mediana ~500 ms, 80 % por encima de 350 ms) y
+     * un temporizador fijo lo dejaba escapar. Cerrar por evento es lo correcto para cualquier
+     * tap que caiga bajo el HUD.
+     *
+     * OJO: esto NO explica las 17 ordenes no registradas (8 %) que se investigaron en R13. La
+     * primera version de ese informe lo afirmaba y ERA FALSO: el bypass solo se aplica si
+     * `isPointInsideHUD(x, y)` es cierto, y en la configuracion medida el HUD termina en y=1302
+     * mientras los botones de Binomo estan en y~1341, asi que el bypass NO se activa. La causa
+     * de esos 17 fallos sigue sin determinar; el evento TAP de `TradeEventLog` registra ahora
+     * `bypassHud=` junto a coordenadas y duracion para poder distinguirlo sin suposiciones.
      */
     fun temporarilyBypassHUD(durationMs: Long = 1500L, onBypassed: (() -> Unit)? = null) {
         val v = hudView ?: run {

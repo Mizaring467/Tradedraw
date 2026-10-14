@@ -195,24 +195,41 @@ Luego, verifica en la pestaÃ±a de **Actions** del repositorio de GitHub que el
 > | RAM | 1.875.668 kB totales, ~71 MB libres, ~400 MB de swap en uso |
 >
 > **Esto invalida cualquier afirmaciÃ³n de latencia o rendimiento hecha asumiendo un telÃ©fono
-> potente.** `loadavg` ronda **16-17** con la app corriendo: hay un orden de magnitud menos de
-> CPU de lo supuesto. Medido en R13: un `su -c input tap` tarda **141-327 ms** (mediana 222 ms)
-> y no tiene cota superior, frente a los ~10 ms que se declaraban. Cualquier temporizador corto
-> debe ir con failsafe y, mejor, cerrarse por evento (asÃ­ se corrigiÃ³ A4 con
-> `restoreHudTouchable`).
+> potente.** `loadavg` ronda **16-20** con la app corriendo: hay un orden de magnitud menos de
+> CPU de lo supuesto. Medido en R13 con 30 muestras bajo carga real, un `su -c input tap` tarda
+> **255-1205 ms (mediana â‰ˆ 500 ms)**, con el **80 % por encima de 350 ms**, frente a los ~10 ms
+> que se declaraban. **Cualquier temporizador corto es frÃ¡gil aquÃ­**: ir con failsafe y, mejor,
+> cerrarse por evento (asÃ­ se corrigiÃ³ el bypass del HUD con `restoreHudTouchable`).
+>
+> **GeometrÃ­a medida (720x1600, Portrait, `SurfaceOrientation: 0`)** â€” Ãºtil para saber quÃ©
+> ventana recibe un toque. HUD: frame `[96,812]-[720,1302]`, tÃ¡ctil. Lienzo a pantalla completa:
+> `[0,50]-[720,1504]`, **no tÃ¡ctil** (`FLAG_NOT_TOUCHABLE`). Botones de Binomo
+> (`w*0.347, h*0.838` / `h*0.844`): **(249,8 Â· 1340,8)** y **(249,8 Â· 1350,4)**. **El HUD no
+> cubre los botones**, asÃ­ que `isPointInsideHUD` es `false` y el bypass del HUD **no se aplica**
+> en la configuraciÃ³n por defecto.
 
-**Serial ADB: `192.168.1.196:5555` (Wi-Fi).** El serial USB `UGU8KFUKM7E6CE8D` ya no existe y
-las IP `10.218.252.45` / `10.0.0.x` estÃ¡n obsoletas. Usar `adb -s 192.168.1.196:5555 ...`.
+**Serial ADB Wi-Fi: `192.168.1.225:5555`** (Ronda 13, tras el reinicio del telÃ©fono; antes
+`192.168.1.196`, que **ya no vale**). **La IP la asigna el DHCP y CAMBIA al reiniciar.**
+
+> **CorrecciÃ³n (R13/adenda 5):** el enunciado de R13 afirmaba que el serial USB
+> `UGU8KFUKM7E6CE8D` "ya no existe". **Es falso**: tras reiniciar el telÃ©fono reapareciÃ³ como
+> `UGU8KFUKM7E6CE8D device` y responde con normalidad. Lo que pasaba al abrir R13 es que **no
+> estaba enumerado**, no que hubiera desaparecido. **Ambos transportes funcionan**; usa Wi-Fi
+> salvo que necesites reactivar `adbd` TCP, que sÃ­ requiere el cable un momento.
 
 ```bash
-adb devices                              # debe listar 192.168.1.196:5555  device
-adb connect 192.168.1.196:5555           # si no aparece
-adb -s 192.168.1.196:5555 forward tcp:8080 tcp:8080
+adb devices                              # debe listar 192.168.1.225:5555  device
+adb connect 192.168.1.225:5555           # si no aparece
+adb -s 192.168.1.225:5555 forward tcp:8080 tcp:8080
 ```
 
-Si el telÃ©fono se reinicia o cambia de IP, **no improvisar**: pedir al usuario que conecte el
-cable un momento, ejecutar `adb tcpip 5555`, `adb shell ip -f inet addr show wlan0` y
-`adb connect <IP>:5555`, y avisarle explÃcitamente de cuÃ¡ndo puede desconectar.
+**Si el telÃ©fono se reinicia, la IP probablemente cambie. No improvisar:**
+
+1. Conectar el cable un momento y localizar el dispositivo por USB
+   (`adb devices` â†’ `UGU8KFUKM7E6CE8D`).
+2. `adb -s UGU8KFUKM7E6CE8D tcpip 5555` â€” **no sobrevive al reinicio**, hay que repetirlo.
+3. **Medir la IP real** en vez de suponerla: `adb -s UGU8KFUKM7E6CE8D shell ip -f inet addr show wlan0`.
+4. `adb connect <IP>:5555` y **avisar al usuario de cuÃ¡ndo puede desconectar el cable**.
 
 ### 8.1 Bridge HTTP: SOLO loopback (Ronda 13, B1)
 
@@ -222,9 +239,9 @@ taps reales contra el broker. Ahora el socket se enlaza explÃcitamente a loopba
 se hace **siempre** por `adb forward`:
 
 ```bash
-adb -s 192.168.1.196:5555 forward tcp:8080 tcp:8080
+adb -s 192.168.1.225:5555 forward tcp:8080 tcp:8080
 curl http://127.0.0.1:8080/status         # funciona
-curl http://192.168.1.196:8080/status     # NO debe responder (verificado)
+curl http://192.168.1.225:8080/status     # NO debe responder (verificado)
 ```
 
 **USO OBLIGATORIO de `127.0.0.1:8080`, nunca la IP del telÃ©fono.** La IP del telÃ©fono sirve
@@ -237,8 +254,15 @@ confirmada: `init.svc.logd = stopped` y `/dev/log*` no existe; `start logd` resp
 `Must be root` y `adb root` responde `adbd cannot run as root in production builds`
 (`ro.build.type=user`, `ro.debuggable=0`). Falla igual por USB y por Wi-Fi.
 
-Consecuencia: **los vetos y las transiciones de estado no eran observables en absoluto**, y
-por eso R12 no pudo demostrar ni una sola vez que un veto se disparara. La observabilidad
+> **Pero VUELVE con un reinicio (R13/adenda 5).** Tras reiniciar el telÃ©fono,
+> `init.svc.logd = running` y `logcat -d` devuelve entradas reales. **`logd` no estÃ¡ roto de
+> fÃ¡brica: se cae durante el uso.** La causa sigue **sin atribuir**; lo medido descarta presiÃ³n
+> de memoria (`MemAvailable` 680-739 MB, **0** `am_kill` por memoria, las 7 de la ventana con
+> motivo `empty #N`, **0** ANR/OOM, **0** muertes de la app, Binomo o SystemUI). **Si necesitas
+> `logcat`, reinicia; no pierdas tiempo intentando levantarlo en caliente.**
+
+Consecuencia mientras estÃ© caído: **los vetos y las transiciones de estado no son observables**,
+y por eso R12 no pudo demostrar ni una sola vez que un veto se disparara. La observabilidad
 pasa a depender de:
 
 - **`GET /events`** â€” buffer circular en memoria (200 eventos) con vetos y su motivo,
@@ -265,12 +289,12 @@ pasa a depender de:
 El MCP `android-vision` (basado en `mcp-scrcpy-vision`) **no estÃ¡ disponible como herramienta
 en todas las sesiones**; en la Ronda 13 no lo estaba. Cuando **no** lo estÃ©, la vÃa es
 `adb shell ...` + `adb pull` segÃºn 8.3. Cuando sÃ­ lo estÃ©, su serial debe ser el de 8.0
-(`192.168.1.196:5555`), **no** el USB retirado.
+(`192.168.1.225:5555`), **no** el USB ni las IP retiradas.
 
 | Herramienta MCP | ParÃ¡metros |
 | :--- | :--- |
-| `android.vision.snapshot` | `{ "serial": "192.168.1.196:5555" }` |
-| `android.input.tap` | `{ "x": <x>, "y": <y>, "serial": "192.168.1.196:5555" }` |
+| `android.vision.snapshot` | `{ "serial": "192.168.1.225:5555" }` |
+| `android.input.tap` | `{ "x": <x>, "y": <y>, "serial": "192.168.1.225:5555" }` |
 | `android.input.swipe` | `{ "x1":, "y1":, "x2":, "y2":, "durationMs": }` |
 | `android.ui.dump` / `android.ui.findElement` | jerarquÃ­a de vistas |
 | `android.vision.startStream` / `stopStream` | H.264 en vivo |

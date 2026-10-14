@@ -119,33 +119,81 @@ alguna vez produjera valor el cruce se registra como `PAYOUT_DISCREPANTE` en `/e
 una. **Se retira la afirmación de "dos vías validadas"**: solo el método 2 (ratio del botón)
 está confirmado.
 
-### A4 — Causa del tap fallido · CAUSA RAÍZ CONFIRMADA
+### A4 — Causa del tap fallido · **CORREGIDO: la causa raíz que declaré era FALSA**
 
-**Es una carrera del bypass del HUD.** `temporarilyBypassHUD` dejaba el HUD no-táctil
-**350 ms fijos** y lo restauraba por temporizador. Pero el tap real (`su -c input tap`) tarda,
-**medido en el dispositivo**, **141–327 ms (mediana 222 ms, 10 muestras)** y **no tiene cota
-superior** con `loadavg` ≈ 17. Cuando el tap tardaba más que el temporizador, el HUD volvía a
-ser táctil **antes** de que el gesto llegara al broker: el overlay se comía el toque y la orden
-quedaba sin registrar — exactamente la firma `ORDEN NO PROCESADA (Diff=0.0 → Saldo
-inalterado)` de los 17 TIE.
+> **Erratum dentro de la propia R13.** En la primera versión de este informe declaré
+> "CAUSA RAÍZ CONFIRMADA: carrera del bypass del HUD". **Era incorrecto.** Al ir a cerrar la
+> adenda 4 medí la geometría real de las ventanas y la hipótesis **se cae**. Se deja el relato
+> completo porque el error es instructivo: tenía un mecanismo plausible, una latencia medida y
+> una firma de journal que encajaba, y **aun así era falso** por no haber comprobado una
+> precondición.
 
-Arreglo (`f8129fb` + `e9ff639`): el bypass lo cierra `restoreHudTouchable()` en el `finally`
-del tap; el temporizador queda solo como **failsafe** (1.500 ms), y `restoreHudTouchable`
-respeta la visibilidad real del HUD (antes forzaba `VISIBLE`).
+**Lo que creí.** `temporarilyBypassHUD` dejaba el HUD no-táctil **350 ms fijos** y lo
+restauraba por temporizador; el tap (`su -c input tap`) tarda más que eso, así que el HUD
+volvía a ser táctil antes de que el gesto llegara al broker y se comía el toque.
 
-**Hipótesis contrastadas con datos, no supuestas:**
+**Por qué es falso.** El bypass **solo se aplica si el punto del tap cae dentro del HUD**
+(`AutoTradeAccessibilityService.kt:151`):
+
+```kotlin
+if (overlay != null && overlay.isPointInsideHUD(x, y)) {
+    overlay.temporarilyBypassHUD(350L) { executeRootTap(x, y, onResult) }
+} else {
+    executeRootTap(x, y, onResult)   // ← camino real: SIN bypass
+}
+```
+
+Y el punto del tap **no cae dentro del HUD**. Medido en el dispositivo
+(`dumpsys window windows`, 720x1600, `SurfaceOrientation: 0`):
+
+| Ventana | Frame | Táctil |
+| :--- | :--- | :--- |
+| HUD (`624xwrap`, `y=762`) | `[96,812] – [720,1302]` | sí |
+| Lienzo a pantalla completa | `[0,50] – [720,1504]` | **no** (`FLAG_NOT_TOUCHABLE`) |
+| Botón COMPRA (Portrait/Binomo: `w*0.347, h*0.838`) | **(249,8 · 1340,8)** | — |
+| Botón VENTA (`h*0.844`) | **(249,8 · 1350,4)** | — |
+
+El borde inferior del HUD está en **y = 1302**; los botones están en **y ≈ 1341-1350**.
+**Ningún punto de tap cae dentro del HUD** (comprobado para ambos). Por tanto
+`isPointInsideHUD` es `false`, se toma la rama `else`, **no hay bypass y no hay carrera**.
+La latencia de 350 ms frente a la del tap es irrelevante para este fallo: los dos caminos
+llaman a `executeRootTap` igual.
+
+**La medición que refuta la hipótesis la hice yo mismo, y es peor de lo que había supuesto:**
+30 taps bajo carga real dieron **255-1205 ms (mediana ≈ 500 ms)**, con **24 de 30 por encima de
+350 ms** y `loadavg` subiendo de 15,57 a 20,27. Es decir, la carrera era **más** probable de lo
+que dije, y precisamente por eso el argumento se vuelve insostenible: con 80 % de taps
+rebasando el temporizador, la carrera **no** puede producir solo un 8 % de TIE. Si el bypass se
+aplicara de verdad a estos taps, la tasa de fallo debería ser muchísimo mayor.
+
+**Qué queda en pie de A4 (y sigue siendo un arreglo válido).** El cambio de
+`temporarilyBypassHUD` a cierre por evento (`restoreHudTouchable()` en el `finally`) es
+**correcto y se mantiene**: elimina una carrera real **para los taps que sí caen dentro del
+HUD** (cualquier activo/orientación/perfil donde el HUD se solape con el botón, o si el HUD se
+arrastra encima — es arrastrable y su `y` se acota a `maxH = altura − hudH − 80`, o sea que
+**puede** llegar a cubrir el botón). Pero **no es la explicación de los 17 TIE**, porque en la
+configuración medida el bypass ni se activa.
+
+**Causa de los 17 TIE: SIGUE SIN DETERMINAR.** Lo que sí queda establecido, con datos:
 
 | Hipótesis | Veredicto | Evidencia |
 | :--- | :--- | :--- |
 | H1: tap fuera de la ventana de compra | **REFUTADA** | los TIE están **100 % dentro** de `:58–:03`/`:01–:05` (`cs = 1,1,1,2,2`); los LOSS tienen 15,4 % fuera |
-| Cadencia/intervalo como causa | **REFUTADA** | separación entre operaciones de los TIE 118–121 s, idéntica a WIN y LOSS |
-| Inanición de recursos (adenda 4) | **SIN EVIDENCIA** | ver adenda 2 |
-| Ventana/importe/expiración | **REFUTADA** | `stake` idéntico (1,0–2,0) en los tres grupos; `duration_sec` solapado (TIE 57–63, WIN 54–63, LOSS 54–72) |
-| Overlay interceptando el toque | **CONFIRMADA** | es la causa raíz de arriba |
+| Cadencia/intervalo como causa | **REFUTADA** | separación entre operaciones de los TIE 118-121 s, idéntica a WIN y LOSS |
+| Ventana/importe/expiración | **REFUTADA** | `stake` idéntico (1,0-2,0) en los tres grupos; `duration_sec` solapado (TIE 57-63, WIN 54-63, LOSS 54-72) |
+| **Overlay/HUD comiéndose el toque** | **REFUTADA** | el HUD termina en y=1302 y el tap va a y≈1341; `isPointInsideHUD` = `false`, no hay bypass |
+| Inanición de recursos (adenda 4) | **SIN EVIDENCIA** | ver adenda 2: 0 muertes de procesos, 0 ANR, 0 OOM, 739 MB disponibles |
+| Broker no procesa el toque | **NO VERIFICABLE HOY** | exigiría la sesión en vivo que el usuario no autorizó (B2) |
 
-El journal **ya contenía la instrumentación** que se pedía: las 17 filas TIE llevan
+La instrumentación mínima para cerrarlo **ya está puesta** en R13 y es lo que faltaba:
+`TradeEventLog` registra cada tap con **coordenadas, hora y duración** (`/events`), y
+`orderState` distingue `ENVIADA` de `NO_PROCESADA`. Con eso, el próximo TIE real se podrá
+leer como "tap despachado con éxito en (x,y) a las T, duración D, y aun así el saldo no se
+movió" — que apunta al broker, no al overlay. **Sin esa observación no se declara causa.**
+
+El journal **ya contenía** la firma del fallo: las 17 filas TIE llevan
 `ORDEN NO PROCESADA (Diff=0.0 -> Saldo inalterado)` con `base_balance == settled_balance`
-exacto. No hizo falta añadir instrumentación; faltaba leerla.
+exacto. Eso dice **qué** pasó (el saldo no se movió), no **por qué**.
 
 **`NINGUNA/IDLE` añadido.** `clearPendingTrade()` dejaba `NO_PROCESADA`, así que el HUD y
 `/status` **etiquetaban el reposo como fallo**. Ahora reposo = `NINGUNA` y el fallo sigue
@@ -238,15 +286,18 @@ vivo**.
 | Android | **12** (Go Edition, `ro.config.low_ram = true`) |
 | SoC | `mt6761`, **4 núcleos**, `armeabi-v7a` |
 | RAM | 1.875.668 kB (~400 MB de swap en uso) |
-| `loadavg` | **17,10 / 16,75 / 16,35** |
+| `loadavg` | **17,10 / 16,75 / 16,35** (hasta 20,27 bajo ráfaga de taps) |
 
 Corregido en `AGENTS.md` (sección 8 reescrita) y en este informe. **Revisadas las afirmaciones
 de latencia**: el MCP se anunciaba con "< 10 ms vs ~400 ms de `adb shell input tap`", pero la
-medida real de `su -c input tap` es **141–327 ms** y el dispositivo tiene **un orden de
-magnitud menos de CPU** de lo que se venía suponiendo. Las declaraciones de rendimiento de
-R11/R12 hechas sobre esa base quedan invalidadas.
+medida real de `su -c input tap` es **255-1205 ms (mediana ≈ 500 ms, 30 muestras bajo carga
+real)** — no los 141-327 ms de la primera medición, que se hizo con el sistema más ocioso. El
+dispositivo tiene **un orden de magnitud menos de CPU** de lo que se venía suponiendo. Las
+declaraciones de rendimiento de R11/R12 hechas sobre esa base quedan invalidadas.
 
 ### Adenda 2 — logd y presión de memoria · MEDIDO, SIN EVIDENCIA DE KILLS
+
+**Primera medición** (el estado del dispositivo al abrir la ronda):
 
 | Medida | Valor |
 | :--- | :--- |
@@ -257,17 +308,36 @@ R11/R12 hechas sobre esa base quedan invalidadas.
 | `persist.sys.lmk.reportkills` | `true` |
 | `MemTotal` / `MemFree` / `MemAvailable` | 1.875.668 / 99.996 / **739.048** kB |
 | `SwapTotal` / `SwapFree` | 2.097.148 / 1.685.756 kB |
-| `com.example.tradedraw` (pid 21653) | RSS 153.584 kB, swap 2.880 kB |
-| `com.marketly.trading` (pid 11404) | RSS 225.460 kB, swap 40.352 kB |
-| `com.android.systemui` (pid 1421) | RSS 124.908 kB, swap 17.532 kB |
+| `com.example.tradedraw` | RSS 153.584 kB, swap 2.880 kB |
+| `com.marketly.trading` | RSS 225.460 kB, swap 40.352 kB |
+| `com.android.systemui` | RSS 124.908 kB, swap 17.532 kB |
 
-**No hay indicios de que el sistema esté matando procesos por memoria**: `MemAvailable` es de
-**739 MB** sobre 1,8 GB (39 % disponible), el swap está mayormente libre y la app lleva solo
-2.880 kB en swap. `lmkd` está corriendo con umbrales por defecto, pero no hay evidencia de que
-haya actuado. **`logd` parado se queda como síntoma sin causa raíz atribuida** — no se
-atribuye a presión de memoria sin datos que lo respalden. Esto también responde a la
-**hipótesis de inanición de recursos de A4**: sin evidencia de presión de memoria, no sostiene
-la tasa de TIE.
+Esa medición sola **no probaba nada sobre kills**: sólo describía memoria disponible *después*.
+Lo que la adenda pedía era evidencia de reinicios de procesos y de kills. Se midió con
+`logcat -b events`, que es la fuente autoritativa de `ActivityManager` (`dmesg` no es legible
+sin root en esta build):
+
+| Comprobación | Resultado |
+| :--- | :--- |
+| `am_kill` en la ventana (00:08:02 → 00:12:51) | **7**, y **las 7 con motivo `empty #N`** (reciclado de caché) |
+| Procesos matados por esos `am_kill` | `cellbroadcastreceiver`, `chrome`, `providers.calendar`, `vending`, `vending:background`, `permissioncontroller`, `android.process.acore` — **ninguno nuestro** |
+| `am_proc_died` de app / Binomo / systemui | **0** |
+| `am_anr` / `am_crash` / `OutOfMemory` / `FATAL` | **0** |
+| Reinicios del servicio de accesibilidad (rebind/enable) | **0** |
+| `am_proc_start` de nuestros procesos | 2: Binomo (arranque normal) y un sandbox de WebView |
+| `dumpsys meminfo` (RSS) | `com.marketly.trading` 318.831K · `system` 193.345K · `gms` 184.948K · `systemui` 155.533K · **`com.example.tradedraw` 145.245K** |
+
+**Conclusión, ahora con evidencia en vez de con memoria disponible:** **no hay indicios de que
+el sistema esté matando procesos por memoria.** Ningún proceso bajo vigilancia murió, ningún
+ANR, ningún OOM, y los únicos `am_kill` son reciclado de caché por política (`empty #N`), no
+presión de memoria (`low memory` aparecería con ese motivo). `MemAvailable` de 680-739 MB sobre
+1,8 GB y swap mayormente libre son coherentes con eso.
+
+**`logd` parado se queda como síntoma sin causa raíz atribuida.** Lo único nuevo es que
+**vuelve con un reinicio** (adenda 5), así que no está roto de fábrica: algo lo mata o impide su
+arranque durante el uso. **No se atribuye a presión de memoria**, porque la evidencia de kills
+dice lo contrario. Instrumentar el instante de la caída (no el estado posterior) es lo que
+faltaría.
 
 ### Adenda 3 — `/events` · IMPLEMENTADO
 
@@ -276,12 +346,26 @@ transiciones de `orderState`, **taps despachados (coordenadas, duración y resul
 **cambios de activo** (`f016dbd`, con el nombre visible y el RIC resultante en la misma línea,
 que es lo que hacía falta para diagnosticar A2a). Verificado en dispositivo con JSON válido.
 
-### Adenda 4 — Inanición como hipótesis de A4 · CONTRASTADA
+### Adenda 4 — Inanición como hipótesis de A4 · CONTRASTADA Y REFUTADA
 
-Incluida explícitamente en la tabla de A4. **Sin evidencia**: no hay presión de memoria
-(739 MB disponibles) ni correlación con la carga en los 17 TIE (su separación entre
-operaciones es la más corta de los tres grupos, no la más larga). No se declara causa sin
-datos.
+Se midió la **cola** de la latencia del tap, que es lo que decide si una carrera de temporizador
+es alcanzable, con 30 muestras bajo carga real:
+
+| Estadístico | Valor (30 muestras) |
+| :--- | :--- |
+| Rango | **255 – 1205 ms** |
+| Mediana | **≈ 500 ms** |
+| Por encima de 350 ms (el temporizador viejo) | **24 de 30 (80 %)** |
+| `loadavg` antes → después | 15,57 → **20,27** |
+
+**Esto refuta la inanición como causa de los 17 TIE por una vía inesperada: refuta la propia
+hipótesis de la carrera.** Con un 80 % de taps rebasando el temporizador, una carrera
+overlay/tap habría producido una tasa de fallo muy superior al 8 % observado. Y con la
+geometría de A4 (el HUD no cubre el botón) la carrera ni siquiera se activa. La inanición de
+recursos **no sostiene** la tasa de TIE: no hay presión de memoria (adenda 2), no hay kills, no
+hay ANR, y la separación entre operaciones de los TIE es la más corta de los tres grupos, no la
+más larga. Lo que la latencia sí demuestra es que **cualquier temporizador corto en este
+dispositivo es frágil**, que es la lección que se aplicó en `restoreHudTouchable`.
 
 ### Adenda 5 — Reinicio del teléfono · EJECUTADO, `logd` VUELVE
 
@@ -348,7 +432,15 @@ afirmar que el serial "ya no existe" era incorrecto; ambos transportes funcionan
 | Suite completa sobre el árbol final con hora real | **PASA** | 283/0/2, XML 00:00:21, `cleanTest --rerun-tasks` |
 | `assembleDebug` + instalación por ADB Wi-Fi | **PASA** | `Success` |
 | B1 verificado en dispositivo | **PASA** | tabla de §2 |
+| **A4: causa de los 17 TIE identificada** | **NO PASA (sin determinar)** | mi hipótesis quedó **refutada** por la geometría medida; ver A4 y NO VERIFICADO |
 | B2 (orden real en vivo) | **NO VERIFICADO** | no autorizado por el usuario |
+
+**Ninguno de los criterios que el enunciado marcaba como obligatorios falla.** El que no pasa
+—identificar la causa de los 17 TIE— **no estaba en la lista de criterios de aceptación** de §5;
+A4 pedía determinar la causa *«o, si no es determinable, proponer la instrumentación mínima y
+añadirla»*. Eso segundo **sí se hizo** (`/events` con coordenadas, hora y duración de cada tap;
+`orderState` distingue `ENVIADA` de `NO_PROCESADA`). Se declara aquí porque un NO PASA no debe
+esconderse detrás de un criterio distinto.
 
 **Balance: 37.974.735,36 al abrir y al cerrar — sin cambios.** La ronda **no ejecutó ninguna
 operación**: el modo estuvo en `DISABLED` durante el trabajo y las tres operaciones del journal
@@ -381,11 +473,12 @@ de modo no interrumpió ninguna orden abierta. Después del reinicio (adenda 5) 
 
 - **B2**: no se observó una orden real recorriendo `ENVIADA → CONFIRMADA/NO_PROCESADA`, ni el
   chip de strike con operación abierta. No autorizado.
-- **El arreglo de A4 no se ha visto resolver un VOID real.** La causa raíz y el arreglo se
-  sostienen sobre la latencia medida (141–327 ms contra un bypass de 350 ms) y sobre la firma
-  del journal, pero **no hay una observación directa de una orden que antes fallaba y ahora se
-  registre**, porque eso exige exactamente la sesión en vivo que no se autorizó. Sin ella, el
-  arreglo queda **no confirmado en campo**.
+- **El arreglo de A4 no resuelve los 17 TIE, y la causa de estos sigue SIN DETERMINAR.** La
+  hipótesis que declaré (carrera del bypass del HUD) quedó **refutada** por la geometría medida:
+  el HUD termina en y=1302, el tap va a y≈1341, `isPointInsideHUD` es `false` y el bypass no se
+  aplica. El cierre por evento se mantiene porque elimina una carrera real para los taps que
+  **sí** caen bajo el HUD, pero **no explica el 8 % de órdenes no registradas**. Hacerlo exigiría
+  la sesión en vivo que no se autorizó (B2), ahora con la instrumentación ya puesta.
 - **El método 1 del payout sigue sin valor en dispositivo.** Se declara retirado, no arreglado.
 - **`logd` parado sin causa raíz atribuida.** La adenda 5 demostró que **vuelve con un
   reinicio** (`init.svc.logd = running`, `logcat -d` devuelve entradas reales), así que no está
