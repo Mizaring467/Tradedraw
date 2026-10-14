@@ -179,27 +179,101 @@ Luego, verifica en la pestaÃ±a de **Actions** del repositorio de GitHub que el
 
 ---
 
-## âš¡ 8. AutomatizaciÃ³n y AuditorÃ­a del Dispositivo con MCP scrcpy (`android-vision`)
+## âš¡ 8. AutomatizaciÃ³n y AuditorÃ­a del Dispositivo (ADB sobre Wi-Fi)
 
-Para interactuar con el dispositivo Android (POCO X6 Pro / `10.218.252.45:5555` o IP activa asignada por DHCP en `adb devices`) a alta velocidad y bajo consumo de recursos, este proyecto tiene configurado el servidor MCP **`android-vision`** (basado en `mcp-scrcpy-vision` con soporte de `scrcpy-server` v4.1 y `ffmpeg`):
+### 8.0 Dispositivo real y acceso (corregido en Ronda 13)
 
-### Herramientas MCP disponibles (vÃ­a `call_mcp_tool`):
-1. **Captura de Pantalla InstantÃ¡nea:**
-   - Herramienta: `android.vision.snapshot`
-   - ParÃ¡metros: `{ "serial": "10.218.252.45:5555" }`
-   - *Ventaja:* Retorna la imagen en ~1s sin recalentar la CPU del telÃ©fono con `screencap` repetidos.
-2. **PulsaciÃ³n / Tap Ultra RÃ¡pido:**
-   - Herramienta: `android.input.tap`
-   - ParÃ¡metros: `{ "x": <coordX>, "y": <coordY>, "serial": "10.218.252.45:5555" }`
-   - *Ventaja:* InyecciÃ³n de evento directa (< 10 ms vs ~400 ms de `adb shell input tap`).
-3. **Desplazamiento y Gestos:**
-   - `android.input.swipe`: `{ "x1": <x1>, "y1": <y1>, "x2": <x2>, "y2": <y2>, "durationMs": <ms> }`
-4. **InspecciÃ³n de UI DinÃ¡mica:**
-   - `android.ui.dump` / `android.ui.findElement` para inspeccionar jerarquÃ­a de vistas de forma mucho mÃ¡s rÃ¡pida que `uiautomator dump` tradicional.
-5. **Streaming en Tiempo Real (H.264):**
-   - `android.vision.startStream` / `android.vision.stopStream` para monitoreo continuo mediante resource frames.
+> **El dispositivo NO es un "POCO X6 Pro".** AfirmaciÃ³n repetida en rondas anteriores sin
+> verificarla. Datos reales de `getprop`:
+>
+> | Propiedad | Valor real |
+> | :--- | :--- |
+> | `ro.product.model` | **`220733SL`** |
+> | `ro.product.marketname` | **Redmi A1** |
+> | Android | **12** (Go Edition, `ro.config.low_ram = true`) |
+> | SoC | `mt6761`, **4 nÃºcleos**, `armeabi-v7a` |
+> | RAM | 1.875.668 kB totales, ~71 MB libres, ~400 MB de swap en uso |
+>
+> **Esto invalida cualquier afirmaciÃ³n de latencia o rendimiento hecha asumiendo un telÃ©fono
+> potente.** `loadavg` ronda **16-17** con la app corriendo: hay un orden de magnitud menos de
+> CPU de lo supuesto. Medido en R13: un `su -c input tap` tarda **141-327 ms** (mediana 222 ms)
+> y no tiene cota superior, frente a los ~10 ms que se declaraban. Cualquier temporizador corto
+> debe ir con failsafe y, mejor, cerrarse por evento (asÃ­ se corrigiÃ³ A4 con
+> `restoreHudTouchable`).
 
-> âš ï¸  **Regla para Agentes:** **NO** ejecutes comandos de PowerShell lentos como `adb shell screencap` o `adb shell input tap` salvo que el MCP no responda; utiliza siempre las herramientas del servidor MCP `android-vision` para mÃ¡xima velocidad y estabilidad.
+**Serial ADB: `192.168.1.196:5555` (Wi-Fi).** El serial USB `UGU8KFUKM7E6CE8D` ya no existe y
+las IP `10.218.252.45` / `10.0.0.x` estÃ¡n obsoletas. Usar `adb -s 192.168.1.196:5555 ...`.
+
+```bash
+adb devices                              # debe listar 192.168.1.196:5555  device
+adb connect 192.168.1.196:5555           # si no aparece
+adb -s 192.168.1.196:5555 forward tcp:8080 tcp:8080
+```
+
+Si el telÃ©fono se reinicia o cambia de IP, **no improvisar**: pedir al usuario que conecte el
+cable un momento, ejecutar `adb tcpip 5555`, `adb shell ip -f inet addr show wlan0` y
+`adb connect <IP>:5555`, y avisarle explÃcitamente de cuÃ¡ndo puede desconectar.
+
+### 8.1 Bridge HTTP: SOLO loopback (Ronda 13, B1)
+
+`:8080` **ya no escucha en la LAN.** Antes `ServerSocket(port)` se enlazaba a `[::]`, asÃ­ que
+cualquiera en la misma red Wi-Fi podÃ­a leer `/status` y, peor, disparar `/trade`, que ejecuta
+taps reales contra el broker. Ahora el socket se enlaza explÃcitamente a loopback y el acceso
+se hace **siempre** por `adb forward`:
+
+```bash
+adb -s 192.168.1.196:5555 forward tcp:8080 tcp:8080
+curl http://127.0.0.1:8080/status         # funciona
+curl http://192.168.1.196:8080/status     # NO debe responder (verificado)
+```
+
+**USO OBLIGATORIO de `127.0.0.1:8080`, nunca la IP del telÃ©fono.** La IP del telÃ©fono sirve
+solo para ADB, no para el bridge.
+
+### 8.2 Observabilidad sin `logcat` (Ronda 13)
+
+**`logcat` NO funciona en este dispositivo y no es un problema de transporte.** Causa raÃz
+confirmada: `init.svc.logd = stopped` y `/dev/log*` no existe; `start logd` responde
+`Must be root` y `adb root` responde `adbd cannot run as root in production builds`
+(`ro.build.type=user`, `ro.debuggable=0`). Falla igual por USB y por Wi-Fi.
+
+Consecuencia: **los vetos y las transiciones de estado no eran observables en absoluto**, y
+por eso R12 no pudo demostrar ni una sola vez que un veto se disparara. La observabilidad
+pasa a depender de:
+
+- **`GET /events`** â€” buffer circular en memoria (200 eventos) con vetos y su motivo,
+  transiciones de `orderState`, taps despachados (coordenadas, duraciÃ³n, resultado) y cambios
+  de activo.
+- **`/status`** â€” contadores agregados: `vetoV1`, `vetoV2`, `vetoTotal`, `ultimoVeto`,
+  `tapsDespachados`.
+
+### 8.3 Capturas y comandos: restricciones de este dispositivo
+
+- **PowerShell 5.1: NO usar `adb exec-out screencap -p` con pipe** (corrompe el PNG). Usar
+  `screencap -p /sdcard/x.png`, `adb pull`, `adb shell rm`.
+- **NO ejecutar `find` sobre `/sdcard/Android/data`**: cuelga la sesiÃ³n.
+- `uiautomator dump` **falla a menudo** y en la pantalla de trading de Binomo devuelve un
+  Ã¡rbol vacÃo (anti-automatizaciÃ³n). No es un fallo del comando.
+- **BaterÃ­a:** el telÃ©fono ya no carga de forma fiable. Medir
+  `adb shell dumpsys battery | grep level` **al empezar y al terminar** cada ronda y
+  reportarlo. Si baja del 20 %, detener las pruebas y pedir al usuario que lo cargue.
+  Minimizar sesiones largas con pantalla encendida y rÃ¡fagas de capturas.
+- **No cambiar ajustes del telÃ©fono** (suspensiÃ³n de Wi-Fi, etc.) sin preguntar al usuario.
+
+### 8.4 MCP `android-vision`
+
+El MCP `android-vision` (basado en `mcp-scrcpy-vision`) **no estÃ¡ disponible como herramienta
+en todas las sesiones**; en la Ronda 13 no lo estaba. Cuando **no** lo estÃ©, la vÃa es
+`adb shell ...` + `adb pull` segÃºn 8.3. Cuando sÃ­ lo estÃ©, su serial debe ser el de 8.0
+(`192.168.1.196:5555`), **no** el USB retirado.
+
+| Herramienta MCP | ParÃ¡metros |
+| :--- | :--- |
+| `android.vision.snapshot` | `{ "serial": "192.168.1.196:5555" }` |
+| `android.input.tap` | `{ "x": <x>, "y": <y>, "serial": "192.168.1.196:5555" }` |
+| `android.input.swipe` | `{ "x1":, "y1":, "x2":, "y2":, "durationMs": }` |
+| `android.ui.dump` / `android.ui.findElement` | jerarquÃ­a de vistas |
+| `android.vision.startStream` / `stopStream` | H.264 en vivo |
 
 ---
 
