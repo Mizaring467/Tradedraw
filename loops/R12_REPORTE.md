@@ -52,6 +52,8 @@ El dato **ya estaba llegando al código y se tiraba**: `extractAssetCandidate` (
 
 **Verificado en dispositivo:** `payoutFromPercentLabel = null`, `payoutFromButtonRatio = 0.8200000000000001`, `payoutResolved = 0.82`, `payoutConfigured = 0.8500000238418579`. **La desviación de ~3 puntos era real y está corregida.** `/status` expone los dos métodos por separado para poder auditarlos desde fuera. T9.3 y riesgo #2 corregidos.
 
+**Prueba adicional de que la lectura es VIVA y no un valor fijado:** en una comprobación posterior el broker mostraba **80 %** y el lector devolvía `payoutResolved = 0.8` / `payoutFromButtonRatio = 0.8`, mientras `payoutConfigured` seguía en `0.85`. Es decir: el valor leído **sigue al broker cuando este cambia** (82 % → 80 %) y no es una constante disfrazada. Es exactamente el comportamiento que exige el criterio "el payout leído coincide con el broker".
+
 ### A3 — Evidencia citada no estaba en git
 
 **Qué estaba mal.** El informe citaba capturas `after_*` que no estaban commiteadas, más `*.pid`, logs de runtime y `heartbeat.txt`. La evidencia no era verificable por un tercero.
@@ -220,7 +222,7 @@ T1 arregló el parser y T3 el buffer de `SyntheticCandleEngine`. Se revisó el r
 | Criterio | Estado | Evidencia |
 | :--- | :--- | :--- |
 | HUD visible tras reiniciar | **PASA** | `hud_visible=true` en `TradeDraw_HUDConfig` + `hudVisible:true` en `/status` tras `am force-stop` y relanzar. `r12_after_a5a6.png` |
-| Payout leído coincide con el broker (82 %/83 %) | **PASA** | `payoutFromButtonRatio = 0.82`, `payoutResolved = 0.82`, `payoutConfigured = 0.85`; `Crypto IDX 82%` visible en `r12_after_a5a6.png`; `PayoutReaderTest` (16 tests) |
+| Payout leído coincide con el broker (82 %/83 %) | **PASA** | `payoutFromButtonRatio = 0.82`, `payoutResolved = 0.82`, `payoutConfigured = 0.85`; `Crypto IDX 82%` visible en `r12_after_a5a6.png`. **Lectura viva confirmada**: con el broker a 80 % el lector devolvió `0.8`, no el configurado. `PayoutReaderTest` (16 tests) |
 | P&L sin `(est.)` cuando hay lectura | **PASA** | `PayoutReader.effectivePayout` + test `conLecturaUsaLaDelBrokerYNoLoMarcaComoEstimado` |
 | Texto del HUD legible sobre velas | **PASA** | `r12_after_a5a6.png` con panel al **20 %** de alfa y texto legible sobre el gráfico |
 | Ninguna orden TIE aparece como `Trade Activo` | **PASA (por lógica y tests)** | `hasConfirmedTrade` exige `CONFIRMADA`; `recordTradeSent` deja `ENVIADA`. `OrderConfirmationTest` (12 tests). **Sin observación en vivo: ver salvedad abajo** |
