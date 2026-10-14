@@ -59,7 +59,9 @@ class HudSnapshotTest {
         hasPendingTrade = pending,
         // Ronda 12 (B1): los tests existentes describen operaciones ya en curso, que es el
         // estado CONFIRMADA. El caso ENVIADA (sin confirmar) se cubre en OrderConfirmationTest.
-        orderState = if (pending) RiskManager.OrderState.CONFIRMADA else RiskManager.OrderState.NO_PROCESADA,
+        // R13/A4: en reposo el estado es NINGUNA, no NO_PROCESADA (que significa "se intento y
+        // fallo"). Antes se etiquetaba la inactividad como fallo.
+        orderState = if (pending) RiskManager.OrderState.CONFIRMADA else RiskManager.OrderState.NINGUNA,
         pendingAction = pendingAction,
         pendingElapsedSec = if (pending) 20L else 0L,
         pendingEntryPrice = entry,

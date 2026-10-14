@@ -226,16 +226,28 @@ class RiskManager(context: Context? = null) {
      * precio 5 veces seguidas es estadisticamente inviable: el saldo inmovil prueba que el tap
      * no creo operacion, no que el precio empatara.
      *
-     * Tres estados posibles, y el HUD nunca debe mostrar "Trade Activo" sin confirmacion:
+     * Cuatro estados posibles, y el HUD nunca debe mostrar "Trade Activo" sin confirmacion:
+     *  - NINGUNA     : no se ha enviado nada en esta sesion (estado de reposo). R13/A4: antes
+     *                  este caso se representaba con NO_PROCESADA, que significa "se intento y
+     *                  el broker no lo registro", es decir se etiquetaba un estado INACTIVO como
+     *                  un FALLO. Eso hacia imposible distinguir "no ha pasado nada" de "algo
+     *                  fallo" tanto en `/status` como en el HUD.
      *  - ENVIADA     : el tap se despacho, pero aun no hay prueba de que el broker lo registro.
      *  - CONFIRMADA  : el broker movio el saldo, o la operacion aparece registrada.
      *  - NO_PROCESADA: se agoto el tiempo sin ninguna prueba de que la orden existiera.
      */
-    enum class OrderState { ENVIADA, CONFIRMADA, NO_PROCESADA }
+    enum class OrderState { NINGUNA, ENVIADA, CONFIRMADA, NO_PROCESADA }
 
     @Volatile
-    var orderState: OrderState = OrderState.NO_PROCESADA
+    var orderState: OrderState = OrderState.NINGUNA
         internal set
+
+    /** Cambia el estado y lo registra en el buffer observable (R13/A5). */
+    internal fun setOrderState(nuevo: OrderState, motivo: String) {
+        if (orderState == nuevo) return
+        orderState = nuevo
+        TradeEventLog.add(TradeEventLog.Kind.ORDER_STATE, "${nuevo.name} $motivo")
+    }
 
     /** true solo si hay operacion Y el broker la ha confirmado. Es lo que el HUD debe exigir. */
     val hasConfirmedTrade: Boolean
@@ -573,7 +585,7 @@ class RiskManager(context: Context? = null) {
         // Ronda 12 (B1): al despachar el tap la orden solo esta ENVIADA, nunca confirmada.
         // Antes se marcaba como operacion en curso directamente y el HUD lo presentaba como
         // "Trade Activo" aunque el broker no hubiera registrado nada.
-        orderState = OrderState.ENVIADA
+        setOrderState(OrderState.ENVIADA, "tap despachado")
         pendingTradeAction = action
         pendingTradeStartTime = now
         pendingTradeEntryPrice = entryPrice
@@ -596,7 +608,7 @@ class RiskManager(context: Context? = null) {
     @Synchronized
     fun markOrderConfirmed() {
         if (hasPendingTrade && orderState == OrderState.ENVIADA) {
-            orderState = OrderState.CONFIRMADA
+            setOrderState(OrderState.CONFIRMADA, "saldo movido")
         }
     }
 
@@ -608,17 +620,23 @@ class RiskManager(context: Context? = null) {
     @Synchronized
     fun markOrderUnprocessed() {
         if (!hasPendingTrade) return
-        orderState = OrderState.NO_PROCESADA
+        // R13/A4: se limpia primero (lo que deja el estado en NINGUNA) y se marca NO_PROCESADA
+        // despues, para que quede registrado el RESULTADO del intento. Al reves, `clearPendingTrade`
+        // pisaba el NO_PROCESADA con NINGUNA y el fallo se perdia.
         clearPendingTrade()
+        setOrderState(OrderState.NO_PROCESADA, "ventana agotada sin movimiento de saldo")
         lastTradeTime = System.currentTimeMillis()
         OverlayService.instance?.updateHUDView()
     }
 
     @Synchronized
-    fun clearPendingTrade() {        hasPendingTrade = false
+    fun clearPendingTrade() {
+        hasPendingTrade = false
         // Ronda 12 (B1): sin operacion en curso no hay estado de envio que mostrar. El HUD
         // solo debe pintar "Trade Activo" mientras haya una orden viva.
-        orderState = OrderState.NO_PROCESADA
+        // R13/A4: pasa a NINGUNA (reposo). Antes ponia NO_PROCESADA, que significa "se intento
+        // y fallo": eso hacia que `/status` reportase un fallo permanente en reposo.
+        setOrderState(OrderState.NINGUNA, "sin operacion en curso")
         pendingTradeAction = null
         pendingTradeStartTime = 0L
         pendingTradeEntryPrice = 0.0
