@@ -708,12 +708,14 @@ class VisionAnalyzer {
         val finalConfPut = confPut.coerceIn(0, 100)
 
         // Micro-Sincronización Reloj Sniper Estricto (:01-:05 ventana permitida, veto fuera de ella)
+        // R14/A3: el inicio de ventana viene del flag `entryEarliestSecond` (por defecto 1, que
+        // reproduce el comportamiento actual). No hay cambio de comportamiento sin activarlo.
         val candleSecond = ((System.currentTimeMillis() / 1000) % 60).toInt()
-        val isStrictTimingWindow = candleSecond in 1..5
-        val isTimingVetoed = candleSecond !in 1..5
+        val isStrictTimingWindow = MarketTickFilters.isInEntryWindow(candleSecond)
+        val isTimingVetoed = !isStrictTimingWindow
         val isSniperTimingWindow = isStrictTimingWindow
         val isSniperZeroSecondWindow = isStrictTimingWindow
-        val isSniperPullbackWindow = candleSecond in 1..5
+        val isSniperPullbackWindow = MarketTickFilters.isInEntryWindow(candleSecond)
         val isLateTimingForbidden = isTimingVetoed || !isStrictTimingWindow
 
         // Detección de Micro-Rango Choppy en Visión (< 0.05% de altura o velas comprimidas alternantes)

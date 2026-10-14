@@ -517,8 +517,10 @@ class TradingEngine(
 
             if (localSignal != null && !riskManager.hasPendingTrade) {
                 val sec = analysis.candleSecond
-                val isTimingVetoed = sec !in 1..5 || analysis.isTimingVetoed
-                val isStrictTimingWindow = sec in 1..5
+                // R14/A3: la ventana se consulta a traves del flag `entryEarliestSecond`, cuyo
+                // valor por defecto (1) reproduce exactamente el `sec in 1..5` de siempre.
+                val isTimingVetoed = !MarketTickFilters.isInEntryWindow(sec) || analysis.isTimingVetoed
+                val isStrictTimingWindow = MarketTickFilters.isInEntryWindow(sec)
                 val isChoppy = syntheticCandleEngine.isChoppinessDetected() || analysis.isMicroRangeChoppy
                 val isTickVelocityConfirmed = when (localSignal) {
                     TradeAction.BUY -> !analysis.isBearishImpulse || analysis.tickVelocityNormalized >= -0.08f
@@ -621,7 +623,7 @@ class TradingEngine(
             val tf = syntheticEngine?.timeframe ?: CandleTimeframe.M1
             val ts = latestTick?.timestampMs ?: System.currentTimeMillis()
             val inTimingWindow = if (analysis.candleSecond > 0 && tf == CandleTimeframe.M1) {
-                analysis.candleSecond in 1..5
+                MarketTickFilters.isInEntryWindow(analysis.candleSecond)
             } else {
                 tf.isSniperTimingWindow(ts)
             }
@@ -717,7 +719,7 @@ class TradingEngine(
             val isStrictTimingWindow = MarketTickFilters.isStrictTimingWindow(sec) // :58 a :03
             val isTimingVetoed = MarketTickFilters.isTimingVetoed(sec) // :06 a :57
             val isInstitutionalTrap = analysis.isFalseBreakoutCall || analysis.isFalseBreakoutPut
-            val isSniperPullbackTrigger = (sec in 1..5 || analysis.isSniperPullbackWindow) &&
+            val isSniperPullbackTrigger = (MarketTickFilters.isInEntryWindow(sec) || analysis.isSniperPullbackWindow) &&
                 (analysis.isPullbackAgainstSignalCall || analysis.isPullbackAgainstSignalPut || analysis.isPullbackSniperCall || analysis.isPullbackSniperPut)
 
             // Veto universal de entrada tardía (:06 a :57)
@@ -730,11 +732,11 @@ class TradingEngine(
                 return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper :01-:05")
             }
 
-            val isSniperPullbackCallTrigger = (sec in 1..5 || analysis.isSniperPullbackWindow) &&
+            val isSniperPullbackCallTrigger = (MarketTickFilters.isInEntryWindow(sec) || analysis.isSniperPullbackWindow) &&
                 (analysis.isPullbackAgainstSignalCall || (analysis.candleList.size >= 2 && analysis.candleList[1].type == CandleType.GREEN && analysis.candleList[1].bodyHeight >= 15f && analysis.currentPriceY >= analysis.candleList[1].bodyTopY - 3f && analysis.currentPriceY <= analysis.candleList[1].bodyTopY + analysis.candleList[1].bodyHeight * 0.55f)) &&
                 !analysis.isDojiOrLowVolume
 
-            val isSniperPullbackPutTrigger = (sec in 1..5 || analysis.isSniperPullbackWindow) &&
+            val isSniperPullbackPutTrigger = (MarketTickFilters.isInEntryWindow(sec) || analysis.isSniperPullbackWindow) &&
                 (analysis.isPullbackAgainstSignalPut || (analysis.candleList.size >= 2 && analysis.candleList[1].type == CandleType.RED && analysis.candleList[1].bodyHeight >= 15f && analysis.currentPriceY <= analysis.candleList[1].bodyBottomY + 3f && analysis.currentPriceY >= analysis.candleList[1].bodyBottomY - analysis.candleList[1].bodyHeight * 0.55f)) &&
                 !analysis.isDojiOrLowVolume
 
@@ -1864,8 +1866,8 @@ class TradingEngine(
             }
         }
 
-        // Ventana Sniper Quirúrgica: :01-:05 conforme a master_traders_skill
-        val inWindow = sec in 1..5
+        // Ventana Sniper Quirúrgica conforme a master_traders_skill (inicio por A3, default :01)
+        val inWindow = MarketTickFilters.isInEntryWindow(sec)
         if (!inWindow) {
             Log.d("TradingEngine", "Headless bloqueado fuera de ventana timing sniper (⏱ ${sec}s | SNIPER=$isSniper | YOLO=$isYolo)")
             return

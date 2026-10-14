@@ -14,11 +14,12 @@ enum class CandleTimeframe(val seconds: Int, val label: String) {
 
     fun isSniperTimingWindow(timestampMs: Long = System.currentTimeMillis()): Boolean {
         val s = getCycleSecond(timestampMs)
-        return s in 1..5
+        // R14/A3: ventana con inicio configurable; por defecto identica a `s in 1..5`.
+        return MarketTickFilters.isInEntryWindow(s)
     }
 
     fun isStandardTimingWindow(timestampMs: Long = System.currentTimeMillis()): Boolean {
         val s = getCycleSecond(timestampMs)
-        return s in 1..5
+        return MarketTickFilters.isInEntryWindow(s)
     }
 }

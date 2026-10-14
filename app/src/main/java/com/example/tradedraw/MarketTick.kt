@@ -23,13 +23,13 @@ data class MarketTick(
     val candleSecond: Int
         get() = ((timestampMs / 1000L) % 60L).toInt()
 
-    /** Ventana estricta de entrada al segundo :00 (:57 a :05) */
+    /** Ventana estricta de entrada al segundo :00 (:57 a :05) — inicio desplazable por A3. */
     val isStrictTimingWindow: Boolean
-        get() = candleSecond in 1..5
+        get() = MarketTickFilters.isInEntryWindow(candleSecond)
 
     /** Veto estricto de entrada a mitad de ciclo de vela (:15 a :55) */
     val isTimingVetoed: Boolean
-        get() = candleSecond !in 1..5
+        get() = !MarketTickFilters.isInEntryWindow(candleSecond)
 }
 
 enum class WebSocketState {
@@ -47,6 +47,36 @@ enum class WebSocketState {
 object MarketTickFilters {
     /** Umbral máximo de rango para clasificar como micro-rango ruidoso / choppy (0.05%) */
     const val MAX_CHOPPY_RANGE_PERCENT = 0.05 // 0.05%
+
+    /** Primer segundo de la ventana sniper vigente (`master_traders_skill`: :01). */
+    const val ENTRY_WINDOW_FIRST_SECOND_DEFAULT = 1
+
+    /** Último segundo de la ventana sniper vigente (`master_traders_skill`: :05). */
+    const val ENTRY_WINDOW_LAST_SECOND = 5
+
+    /**
+     * Ronda 14 (A3): primer segundo en que se permite despachar un tap.
+     *
+     * **Por defecto `1`, que es exactamente el comportamiento actual: este flag NO cambia nada
+     * mientras no se suba a 3.** Existe para poder contrastar, en una futura sesión supervisada,
+     * la variante A (ventana actual `:01–:05`) contra la variante B (`:03–:08`, que evita
+     * despachar el tap en los primeros ~2 s tras el cambio de vela). El experimento está
+     * preregistrado en `workflows/PREREGISTRO_R14.md` y **no se activa en R14**.
+     */
+    @Volatile
+    var entryEarliestSecond: Int = ENTRY_WINDOW_FIRST_SECOND_DEFAULT
+
+    /**
+     * true si [second] cae dentro de la ventana de entrada vigente, con el inicio desplazable por
+     * [entryEarliestSecond]. Con el valor por defecto es idéntico a `second in 1..5`.
+     */
+    fun isInEntryWindow(second: Int): Boolean =
+        second in entryEarliestSecond..ENTRY_WINDOW_LAST_SECOND
+
+    /** Restaura el flag a su valor por defecto. Uso en tests. */
+    internal fun resetEntryEarliestSecondForTests() {
+        entryEarliestSecond = ENTRY_WINDOW_FIRST_SECOND_DEFAULT
+    }
 
     /**
      * Rango relativo por debajo del cual el precio se considera congelado: 1e-6 (0,0001%).
@@ -80,14 +110,15 @@ object MarketTickFilters {
     }
 
     /**
-     * Evalúa si el segundo actual está dentro de la ventana estricta (:01 a :05) conforme a master_traders_skill.
+     * Evalúa si el segundo actual está dentro de la ventana estricta conforme a master_traders_skill.
+     * Desde R14/A3 el inicio es configurable, con valor por defecto idéntico al histórico (:01).
      */
-    fun isStrictTimingWindow(second: Int): Boolean = second in 1..5
+    fun isStrictTimingWindow(second: Int): Boolean = isInEntryWindow(second)
 
     /**
      * Evalúa si el segundo actual cae dentro del veto estricto conforme a master_traders_skill.
      */
-    fun isTimingVetoed(second: Int): Boolean = second !in 1..5
+    fun isTimingVetoed(second: Int): Boolean = !isInEntryWindow(second)
 
     /**
      * Calcula el rango porcentual de las últimas velas: ((maxHigh - minLow) / refPrice) * 100.
