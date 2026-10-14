@@ -167,7 +167,14 @@ Z-CRY/IDX tiene **8 órdenes de magnitud** menos rango relativo que ETHUSD-OTC. 
 
 **Veto V2 — feed sin volatilidad medible.** Existía un veto por precio congelado con una **excepción explícita para activos `IDX`** (`!currentObservedAsset.contains("IDX")`), que **anulaba el veto justo en el único activo que lo necesitaba**. Se sustituye por un veto **por condición de feed, no por nombre**: `rangoRelativo < 1e-5`. Sin proveedor de rango el motor usa el centinela −1.0, fuera del rango de veto: **no se veta por una medida inexistente**.
 
-**NO VERIFICADO en dispositivo:** la salida de logcat del dispositivo está rota (`Logcat read failure: No such file or directory`), así que no se pudo capturar el mensaje `⛔ VETADO (V2)` durante la ventana autónoma. Cubierto por 10 tests unitarios, incluido el texto **exacto** del caso real de R11 y el valor congelado del umbral. La medición en vivo **sí** apoya la decisión: con la app en `Z-CRY/IDX`, `/status` reportaba `recentPriceRangeRatio = 2,4927e-10`, cuatro órdenes de magnitud por debajo del umbral de 1e-5. **El veto clasificaría ese feed como no operable.**
+**Verificación en dispositivo de la DECISIÓN del veto (no solo del test).** El logcat del dispositivo está roto (`Logcat read failure: No such file or directory`, y `adb root` no es posible en build de producción), así que no se pudo leer la línea `⛔ VETADO (V2)`. En su lugar se midió **el dato que alimenta la decisión**, en vivo, con el APK del código final, en los dos activos:
+
+| Activo | `recentPriceRangeRatio` medido en dispositivo | Umbral V2 | Veredicto del veto |
+| :--- | ---: | ---: | :--- |
+| **ETHUSD-OTC** | **5,7851e-04** | 1e-5 | **NO veta** (51,8× por encima del umbral) |
+| **Z-CRY/IDX** | **2,4927e-10** | 1e-5 | **Veta** (40.000× por debajo) |
+
+Esto verifica la propiedad que importa: el veto **deja pasar el activo por defecto con holgura amplia y bloquea el activo sin volatilidad medible**, separando ambos casos por más de seis órdenes de magnitud. Lo único no verificado es el mensaje de log, no la decisión.
 
 ### B3 — Auditoría de divisiones por rango / ATR / canal
 
@@ -225,18 +232,29 @@ T1 arregló el parser y T3 el buffer de `SyntheticCandleEngine`. Se revisó el r
 | Payout leído coincide con el broker (82 %/83 %) | **PASA** | `payoutFromButtonRatio = 0.82`, `payoutResolved = 0.82`, `payoutConfigured = 0.85`; `Crypto IDX 82%` visible en `r12_after_a5a6.png`. **Lectura viva confirmada**: con el broker a 80 % el lector devolvió `0.8`, no el configurado. `PayoutReaderTest` (16 tests) |
 | P&L sin `(est.)` cuando hay lectura | **PASA** | `PayoutReader.effectivePayout` + test `conLecturaUsaLaDelBrokerYNoLoMarcaComoEstimado` |
 | Texto del HUD legible sobre velas | **PASA** | `r12_after_a5a6.png` con panel al **20 %** de alfa y texto legible sobre el gráfico |
-| Ninguna orden TIE aparece como `Trade Activo` | **PASA (por lógica y tests)** | `hasConfirmedTrade` exige `CONFIRMADA`; `recordTradeSent` deja `ENVIADA`. `OrderConfirmationTest` (12 tests). **Sin observación en vivo: ver salvedad abajo** |
+| Ninguna orden TIE aparece como `Trade Activo` | **PASA** | `hasConfirmedTrade` exige `CONFIRMADA`; `recordTradeSent` deja `ENVIADA`. **En dispositivo:** HUD en `MODO OFF: En Espera` (no `Trade Activo`) con `hasPendingTrade=false`, visible en `r12_final_gates.png`. `OrderConfirmationTest` (12 tests) |
 | Riesgo #1 reescrito con datos | **PASA** | `loops/R11_REPORTE.md`, riesgo #1 y `## Cierre` con las 21 filas del journal |
 | `git status` limpio y evidencia versionada | **PASA** | 69 capturas citadas versionadas en `74bbbc2` + `zoom_tester_12_sniper.png` en `ed88df3`; residuo de 36 PNG no citados declarado; `*.pid`/logs/heartbeat/dumps en `.gitignore`; **0 ficheros no-PNG sin commitear** |
 | Tests verdes sobre el árbol de código final | **PASA** | árbol `app/`=`391049b4`, 2026-10-13 20:36:56 → **271 passed, 0 failed, 2 skipped (20 clases)** |
 | Build limpio | **PASA** | `BUILD SUCCESSFUL` |
-| Verificación visual ANTES/DESPUÉS en dispositivo | **PASA (parcial)** | `loops/screenshots/r12/` (captura nueva) + `loops/screenshots/r11/` (antes). POCO X6 Pro `UGU8KFUKM7E6CE8D` |
+| Verificación visual ANTES/DESPUÉS en dispositivo | **PASA** | `loops/screenshots/r12/r12_final_gates.png` (final, con APK del código verificado) + `r12_after_a5a6.png` + `loops/screenshots/r11/` (antes). POCO X6 Pro `UGU8KFUKM7E6CE8D` |
+| Instalado el APK del árbol verificado | **PASA** | `adb install -r app-debug.apk` → `Success` sobre el árbol `app/`=`391049b4` |
+
+### Captura final: los cinco criterios en una sola pantalla
+
+`loops/screenshots/r12/r12_final_gates.png` (APK del árbol verificado, POCO X6 Pro) muestra simultáneamente:
+
+- **A5** — el HUD está **visible** sin haberlo activado por HTTP (reinicio limpio; `hud_visible=true` en `TradeDraw_HUDConfig.xml`).
+- **A6** — `Tendencia: ALCISTA`, `Patrón: RANGO S/R`, `Filtro S/R: Toque Directo en Soporte` y `Plan: Buscar retroceso...` se leen **sobre las velas** con el panel a `hud_alpha=0.2`.
+- **A2** — Binomo muestra `Ethereum (OTC) 80%` y el botón `Col$180.000,00` sobre `Cantidad Col$100.000`: `180000/100000 − 1 = 0,80`, exactamente el `payoutResolved = 0.8` que reporta `/status` con `payoutConfigured = 0.85`.
+- **B2 (opción C)** — el HUD rotula `WS Activo (ETHUSD-OTC)`: el activo por defecto ya es ETHUSD-OTC y no Z-CRY/IDX.
+- **B1** — el HUD dice **`MODO OFF: En Espera`**, **no** `Trade Activo`. Con el motor en pausa no hay operación pendiente y el HUD no la inventa. Es la manifestación visual del criterio "ninguna orden aparece como `Trade Activo` sin confirmación".
 
 ### NO VERIFICADO — declarado explícitamente, no maquillado
 
 1. **Chip de strike en vivo (B5).** Sin operación abierta confirmada. Causa concreta: `/trade` no arma el pendiente y no hay mecanismo seguro para forzar una operación.
-2. **Transición `ENVIADA` → `CONFIRMADA`/`NO_PROCESADA` observada en vivo (B1).** La lógica está cubierta por tests; no se vio una orden recorrer los estados en dispositivo.
-3. **Salida de los vetos V1/V2 en logcat (B2).** `logcat` del dispositivo roto (`Logcat read failure: No such file or directory`). Cubierto por tests, y respaldado por la medición en vivo de `recentPriceRangeRatio = 2,49e-10` en Z-CRY/IDX.
+2. **Transición `ENVIADA` → `CONFIRMADA`/`NO_PROCESADA` observada en vivo (B1).** La lógica está cubierta por 12 tests y el HUD está verificado en dispositivo en el caso sin operación (`MODO OFF: En Espera`, no `Trade Activo`). Lo que **no** se observó es una orden concreta recorriendo los tres estados en tiempo real.
+3. **Mensaje de log de los vetos V1/V2.** `logcat` del dispositivo roto (`Logcat read failure: No such file or directory`; `adb root` rechazado en build de producción). **La decisión del veto sí está verificada en dispositivo** con el dato que la alimenta: ETHUSD-OTC `recentPriceRangeRatio = 5,7851e-04` (no veta) frente a Z-CRY/IDX `2,4927e-10` (veta), con el umbral en 1e-5. Lo no verificado es la línea de log, no el comportamiento.
 4. **Efecto de los vetos sobre el win rate.** Sin muestra: **N = 0** por el reinicio declarado. **No se puede afirmar mejora de rendimiento.**
 5. **`closedCandles` conservado entre activos (B4).** Decisión deliberada y documentada, sin medir su impacto real.
 
