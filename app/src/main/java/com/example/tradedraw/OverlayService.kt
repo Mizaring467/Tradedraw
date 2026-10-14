@@ -1326,8 +1326,10 @@ class OverlayService : Service() {
                 }
             }
             windowManager.addView(v, hudParams)
-            v.visibility = View.GONE
-            isHudVisible = false
+            // Ronda 12 (A5): respetar la visibilidad restaurada de preferencias. Antes estas dos
+            // lineas forzaban SIEMPRE oculto al final de `setupHUDWindow()`, pisando el valor
+            // leido unas lineas antes: la preferencia se guardaba pero no llegaba a aplicarse.
+            v.visibility = if (isHudVisible) View.VISIBLE else View.GONE
             startHUDTimerLoop()
         }
     }

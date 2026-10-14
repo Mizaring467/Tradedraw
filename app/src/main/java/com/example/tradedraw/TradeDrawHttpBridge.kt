@@ -438,8 +438,6 @@ class TradeDrawHttpBridge(
                 "journalRotations": ${TradeJournalLogger.rotationCount},
                 "priceFrozen": ${ws?.isPriceFrozen() ?: false},
                 "recentPriceRangeRatio": ${ws?.recentPriceRangeRatio() ?: -1.0},
-                // Ronda 12 (A2): payout leido del arbol de accesibilidad de Binomo, con los dos
-                // metodos por separado para poder auditar discrepancias desde fuera.
                 "payoutFromPercentLabel": ${AutoTradeAccessibilityService.observedPayout.fromPercentLabel ?: "null"},
                 "payoutFromButtonRatio": ${AutoTradeAccessibilityService.observedPayout.fromButtonRatio ?: "null"},
                 "payoutResolved": ${AutoTradeAccessibilityService.observedPayout.resolved ?: "null"},
