@@ -213,3 +213,108 @@ no convertir una ausencia de observación en una conclusión.
 - **No** modifica `master_traders_skill` ni ningún umbral.
 - **No** declara causa raíz sin `ORIGEN` medido.
 - **No** usa `duration_sec` como evidencia (es artefacto del método de liquidación).
+
+---
+
+# AMPLIACIÓN 1 — Frentes B y C · `2026-10-14 16:50`
+
+**Motivo de esta ampliación.** El enunciado de R15 tiene tres frentes (A, B, C). El frente A se
+ejecutó y cerró en `fafbc05` / `8ac1b26` / `afa296c`. **Los frentes B y C no se ejecutaron**: R14
+los dejó como NO VERIFICADO (§10.5) y R15-A no los retomó. Esta ampliación **fija los criterios de
+B y C antes de tocar el código correspondiente**, para no violar la regla 6 (preregistro antes del
+cambio). El cuerpo original de §0-§5 **no se reescribe**: sigue siendo válido para el frente A.
+
+**Árbol en el momento de esta ampliación:** `752f21e` (`HEAD == origin/main == main`).
+**Estado del dispositivo:** `UGU8KFUKM7E6CE8D` (USB), batería **86 %**, `logd` vivo, app viva
+(PID 15269).
+
+## 6. Frente B — criterios fijados a priori
+
+### 6.1 B1 — arranque del servicio sin `MediaProjection`
+
+**Hecho ya medido en R15-A §4.1 y que gobierna este frente:** `OverlayService` **nunca ha exigido**
+`MediaProjection`. `onStartCommand` ignora el `dataIntent` (`OverlayService.kt:224-236`) y llama a
+`startTradeDrawForeground(hasMediaProjection = false)` **siempre**; devuelve `START_STICKY`. La
+atribución de R14 ("no arranca sin conceder captura por toque") era **falsa**.
+
+**Causa real del bridge caído tras `adb install -r` (leída, a confirmar en B2):** el servicio se
+arranca **sólo desde un `OnClickListener`** de `MainActivity` (`MainActivity.kt:53-79`, `:131-142`).
+`adb install -r` mata el proceso, y abrir la app con `am start` **no** ejecuta ningún listener.
+`am start-foreground-service` sin root falla porque el servicio es `exported="false"`.
+
+**Criterio de aceptación de B1 (fijado ahora, ANTES del cambio):**
+
+| # | condición | umbral |
+| :-- | :--- | :--- |
+| B1.1 | Tras `adb install -r` + **una sola** `am start -n com.example.tradedraw/.MainActivity`, `curl 127.0.0.1:8080/status` responde **HTTP 200** | binario |
+| B1.2 | No se ha tocado la pantalla del teléfono ni concedido `MediaProjection` en el intervalo | binario |
+| B1.3 | El arranque automático **no arranca `ScreenCaptureManager`** ni pide `MediaProjection` | binario |
+| B1.4 | El arranque automático **no cambia el modo**: sigue en `DISABLED`, `hasPendingTrade=false` | binario |
+
+**Diseño de mínima intervención (decidido ahora):** en `MainActivity.onCreate`, si
+`Settings.canDrawOverlays(this)` ya es verdadero, arrancar el servicio sin esperar al botón. Es
+decir: **convertir en automático un arranque que el usuario ya había autorizado**. No se añade
+ninguna ruta nueva de rearme, ningún permiso nuevo y ninguna persistencia del modo.
+
+**Lo que FALSARÍA el diseño:** que B1.1 falle, o que B1.4 se incumpla (el arranque cambia el modo).
+Si B1.3 falla (se arranca captura), el cambio se revierte.
+
+### 6.2 B2 — banner `⚠ Mercado inoperable` en pantalla real
+
+**Hecho de partida:** el banner **nunca se ha visto en pantalla**. Su lógica está cubierta por
+`MarketInoperabilityDetectorTest` (11 casos) y por el replay sobre ticks reales de R14 §6.2, pero la
+**ruta de pintado del HUD** no está verificada en el dispositivo.
+
+**Criterio de aceptación (fijado ahora):**
+
+| # | condición | umbral |
+| :-- | :--- | :--- |
+| B2.1 | Existe una captura **real del dispositivo** en `loops/screenshots/r15/r15_inoperable_banner.png` donde el texto del banner es **legible** | binario |
+| B2.2 | La ruta usada para provocarlo queda **declarada con honestidad**, distinguiendo "mercado realmente congelado" de "inyección controlada" | binario |
+| B2.3 | `/status` reporta `inoperableNow=true` y `ultimoInoperable` no nulo en el momento de la captura | binario |
+| B2.4 | Existe el evento `INOPERABLE` en `/events` con el mismo instante (± 5 s) | binario |
+| B2.5 | Al terminar, el estado queda **limpio**: `inoperableNow=false` y sin residuo de la inyección | binario |
+
+**Advertencia de honestidad fijada a priori.** El activo estaba **plano** durante R19 (167 vetos V2
+por rango ~2.9e-10 durante 39 min). Es decir: lo más probable es que el mercado **esté** inoperable
+de verdad y la ruta no necesite inyección alguna. **Se preferirá siempre la observación real sobre la
+inyección.** Si hay que inyectar, se declara como tal en el informe y en el pie de la captura.
+
+## 7. Frente C — experimento multi-RIC (B0), criterios fijados a priori
+
+### 7.1 Qué se mide
+
+Con `mode = DISABLED` (0 taps posibles), una ventana de **60 s** en la que se suscribe un **segundo
+RIC** además del activo principal, y se compara con una ventana de referencia del **mismo RIC solo**.
+
+| # | magnitud | cómo se mide |
+| :-- | :--- | :--- |
+| C.1 | ticks/s del RIC **principal** con 1 RIC (referencia) | contador del cliente, ventana de 60 s |
+| C.2 | ticks/s del RIC **principal** con 2 RICs | ídem, ventana de 60 s |
+| C.3 | ticks/s del RIC **secundario** | ídem |
+| C.4 | ¿muere la conexión? | `onFailure`/`onClosed` del cliente + reconexiones contadas |
+| C.5 | ¿deja de llegar el activo principal? | C.2 ≥ 50 % de C.1 |
+
+### 7.2 Regla de decisión (fijada AHORA, no después de ver los datos)
+
+- **B0 SOSTENIDA** si y sólo si se cumplen **las tres**: (a) C.4 = 0 desconexiones en la ventana;
+  (b) C.5 se cumple (el principal conserva ≥ 50 % de su tasa); (c) llegan ticks reales del
+  secundario (C.3 > 0). En ese caso se documenta el protocolo exacto y **NO se implementa B2a**
+  (queda preregistrado con datos reales para una ronda con el usuario presente).
+- **B0 REFUTADA** si ocurre **cualquiera**: (a) el servidor corta la conexión; (b) el principal cae
+  por debajo del 50 % de su tasa; (c) el secundario recibe 0 ticks. En ese caso **B2b queda como
+  diseño definitivo** y se restaura la suscripción de **1 solo RIC** antes de cerrar la ronda.
+- **NO CONCLUYENTE** si no se puede medir limpiamente (p. ej. el bridge cae a mitad, o el activo
+  está congelado y ambas tasas son 0). Se declarará como tal, sin convertirlo en veredicto.
+
+**Salvaguarda de irreversibilidad:** el experimento **debe** poder deshacerse. Se fija que la
+suscripción de 2 RICs se hará **desde el exterior** (nuevo endpoint de diagnóstico que sólo actúa en
+`DISABLED`, o instrumentación equivalente), **nunca** cambiando la suscripción por defecto del
+motor. Si esa condición no se puede cumplir con un cambio pequeño, **C se declara NO EJECUTADO** en
+lugar de forzarlo — antes que dejar una suscripción alterada sin forma de restaurarla.
+
+## 8. Umbral de parada de la ampliación
+
+Se detiene B o C y se reporta sin veredicto si: la batería baja del **20 %**; algo exige un **tap
+real**; aparece cualquier **discrepancia de balance** respecto a `37.974.735,36` (→ INCIDENTE);
+o la suite queda en rojo por una causa que no se pueda arreglar sin tocar lógica de trading.
