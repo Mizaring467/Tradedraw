@@ -271,6 +271,39 @@ pasa a depender de:
 - **`/status`** â€” contadores agregados: `vetoV1`, `vetoV2`, `vetoTotal`, `ultimoVeto`,
   `tapsDespachados`.
 
+### 8.2-bis Broadcasts de comando: exigen permiso `signature` (Ronda 16)
+
+> **Desde `af71997` los broadcasts de comando exigen el permiso `signature`
+> `com.example.tradedraw.permission.INTERNAL_COMMAND`. Desde `adb shell` NO llegan; usar
+> `su -c` y SOLO para pruebas controladas.**
+
+Afecta a **ambos** receptores dinámicos:
+
+| acción | receptor | efecto |
+| :--- | :--- | :--- |
+| `com.example.tradedraw.CMD` (extras `action=AUTO/YOLO/SEMI/STOP/...`) | `OverlayService.overlayCommandReceiver` | `AUTO`/`YOLO` **rearman el motor a `AUTONOMOUS`** |
+| `com.example.tradedraw.TAP` / `.SWIPE` / `.BACK` | `AutoTradeAccessibilityService.commandReceiver` | **ejecutan taps y gestos reales** vía `dispatchGesture` |
+
+**Consecuencias prácticas para cualquier agente de este proyecto:**
+
+- `adb shell am broadcast -a com.example.tradedraw.CMD --es action AUTO` **ya no hace nada**.
+  Devuelve `Broadcast completed: result=0` **sin error**, así que **no** sirve comprobar el
+  resultado del comando: hay que comprobar el **efecto** (`/status` → `mode`).
+- La vía que sigue funcionando es **`su -c 'am broadcast ...'`** (UID 0). Requiere root, que este
+  dispositivo tiene (Magisk).
+- **La app NUNCA emite estos broadcasts** (cero `sendBroadcast` en el código): sólo los consumía
+  desde fuera. Por eso cerrarlos no rompió ningún flujo interno.
+- **NO** sustituir el permiso por `Context.RECEIVER_NOT_EXPORTED`: existe **sólo desde API 33** y
+  este dispositivo es **API 31**, así que la rama `else` dejaría el receptor **exportado** otra vez
+  (el bug que se acaba de cerrar). El permiso de firma funciona desde API 1.
+- Los dos emisores históricos del repo (`test_master_trader_suite.py:65` con `--es command
+  TEST_PULSE`, y `docs/superpowers/plans/...:754` con la acción `com.example.tradedraw.TEST`) eran
+  **inertes ya antes del parche**: el receptor lee el extra `action`, no `command`, y la acción
+  `.TEST` no tenía receptor. No hay regresión.
+- Consulta [`loops/R16_A_REPORTE.md`](loops/R16_A_REPORTE.md) para la evidencia medida (control
+  positivo con root) y [`workflows/PREREGISTRO_R16.md`](workflows/PREREGISTRO_R16.md) para el
+  criterio de éxito y el límite de alcance.
+
 ### 8.3 Capturas y comandos: restricciones de este dispositivo
 
 - **PowerShell 5.1: NO usar `adb exec-out screencap -p` con pipe** (corrompe el PNG). Usar

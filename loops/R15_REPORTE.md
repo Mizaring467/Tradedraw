@@ -381,3 +381,53 @@ deberían registrarse con `RECEIVER_NOT_EXPORTED`, que es un cambio de una líne
 | `activeAsset` | `Z-CRY/IDX` |
 | Batería final | **71 %** |
 | Bridge | vivo en `127.0.0.1:8080` (por `adb forward`, solo loopback) |
+
+---
+
+# ENMIENDA 1 — Ronda 16 · `2026-10-14 14:10`
+
+**Se enmienda, no se reescribe el cuerpo.** Dos secciones de este informe quedaron desactualizadas
+por el commit `af71997`, hecho **después** de escribirlo.
+
+## Qué ha cambiado
+
+| sección de este informe | decía | estado real tras `af71997` |
+| :--- | :--- | :--- |
+| **§5** «Hallazgo colateral de seguridad» | «**No se corrige en esta ronda**… Los dos receptores deberían registrarse con `RECEIVER_NOT_EXPORTED`» | **CORREGIDO.** Ambos receptores exigen ahora el permiso de firma `com.example.tradedraw.permission.INTERNAL_COMMAND` |
+| **§8 recomendación 1** | «PRIORITARIO — cerrar los dos receptores exportados… a `RECEIVER_NOT_EXPORTED`» | **HECHO**, pero **no** con `RECEIVER_NOT_EXPORTED` (ver corrección abajo) |
+
+## Corrección de la recomendación técnica de §8.1
+
+Este informe recomendó `RECEIVER_NOT_EXPORTED`. **Era una recomendación errónea para este
+dispositivo**, y aplicarla tal cual habría dejado el bug abierto:
+
+> `Context.RECEIVER_NOT_EXPORTED` existe **sólo desde API 33**. El dispositivo es **API 31**.
+> El patrón `if (SDK_INT >= TIRAMISU) … else registerReceiver(r, f)` habría dejado el receptor
+> **exportado** en la rama `else` — es decir, **exactamente igual que antes** en el teléfono a
+> proteger, compilando sin errores y pasando los 314 tests.
+
+La solución aplicada es la sobrecarga de **4 argumentos** con permiso de firma, que existe desde
+API 1. Detalle en [`R16_A_REPORTE.md`](R16_A_REPORTE.md) §1.3 y
+[`PREREGISTRO_R16.md`](../workflows/PREREGISTRO_R16.md) §2.
+
+## Lo que NO cambia con la enmienda
+
+- **El emisor del rearme de R14 sigue NO ATRIBUIDO.** El fix cierra la puerta por la que **una app
+  de terceros sin privilegios** podía rearmar el bot; no identifica quién la usó. El vector quedó
+  **identificado y reproducido** (§2.1), pero el emisor concreto de R14 no.
+- **`root` puede seguir rearmando el bot.** Verificado como control positivo: `su -c 'am broadcast
+  -a com.example.tradedraw.CMD --es action AUTO'` **sí** pone `AUTONOMOUS`. Entre los candidatos no
+  descartados para R14 siguen estando Magisk, Shizuku, Termux con `su` y `adb root`.
+- **`/mode` del bridge sigue siendo otra puerta de rearme** por loopback + `adb forward` (§8
+  recomendación 6 sigue vigente). Se audita en R17.
+- **La observabilidad del buffer sigue siendo frágil.** Este informe perdió casi toda la evidencia
+  de modo porque `ASSET` llenó el ring de 200 (ver §8 recomendación 3). Se aborda en R18.
+
+## Enmienda 1 · adenda A — `2026-10-14 14:14`
+
+La §8 recomendación 1 anticipaba que el cierre «podría romper el tooling que usa `adb broadcast`».
+**Verificado en R16.2:** no rompe nada, porque **no había nada que romper**. Los dos únicos
+emisores del repo (`test_master_trader_suite.py:65` y `docs/superpowers/plans/...:754`) eran
+**inertes ya antes del parche** (el receptor lee el extra `action`, no `command`; y la acción
+`com.example.tradedraw.TEST` nunca tuvo receptor). Ver `loops/R16_REPORTE.md` §2.
+
