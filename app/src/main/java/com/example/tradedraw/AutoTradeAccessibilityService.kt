@@ -637,6 +637,13 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                                 }
                             }
                             ws.updateActiveAsset(formattedRic)
+                            // R13 (adenda 3): los cambios de activo deben quedar en `/events`.
+                            // Sin esto no habia forma de ver QUE RIC se estaba suscribiendo, que
+                            // es justo lo que hacia falta para diagnosticar el activo sin ticks.
+                            TradeEventLog.add(
+                                TradeEventLog.Kind.ASSET,
+                                "visible=\"$assetCandidate\" ric=\"$formattedRic\""
+                            )
                         }
                     } catch (e: Exception) {}
                 }
