@@ -250,6 +250,45 @@ de=DISABLED a=AUTONOMOUS origen=
 
 ---
 
-## 9. Veredicto
+## 9. ENMIENDA 1 — el commit `85222f1` quedó con el test roto (`2026-10-14 17:05`)
+
+**Hecho, medido al auditar el árbol antes del push final:**
+
+```
+git show 85222f1:…/ModeRingDedicadoTest.kt  →  funelJsonDeEventsNoCambiaDeForma()   (falta espacio)
+                                            →  java.io.File(tmp.root, "no\0valido") (Illegal escape '\0')
+```
+
+**Ambos errores impiden compilar.** Quien hiciera `checkout` de `85222f1` o de `d8ea309` obtenía un
+`testDebugUnitTest` en rojo.
+
+**Causa:** los arreglos de esos dos errores **se aplicaron en el árbol de trabajo pero nunca se
+commitearon**. La medición de **325 tests / 0 fallos** del §5 se hizo sobre el árbol de trabajo —
+correctamente, porque era el código real que se estaba probando — pero **el commit no capturó el
+estado medido**. Es una **discrepancia entre lo medido y lo commiteado**, y es un fallo de proceso:
+el §5 daba por bueno el commit sin comprobar que el commit contuviera lo medido.
+
+**Corrección:** commit **`5ddc995`** (`fix(r18)`), que incorpora los dos arreglos:
+
+| antes (roto en `85222f1`) | después (`5ddc995`) |
+| :--- | :--- |
+| `funelJsonDeEventsNoCambiaDeForma()` | `fun elJsonDeEventsNoCambiaDeForma()` |
+| `java.io.File(tmp.root, "no\0valido")` | `java.io.File(tmp.root, "soy_un_directorio")` — un directorio usado como fichero provoca un fallo realista de `appendText` sin depender de escapes ni permisos |
+
+**Verificado sobre `HEAD` tras el arreglo:** `cleanTest testDebugUnitTest assembleDebug` →
+**BUILD SUCCESSFUL**, **325 tests, 0 fallos, 0 errores, 2 omitidos**, APK 13.723.003 bytes.
+
+**Lección para R19/R20 y para el informe final:** la regla 7 («sin build verde + suite verde NO se
+hace push») **no basta** si la verificación se hace sobre un árbol que difiere del commit. Hay que
+verificar **el commit**, no el directorio de trabajo. Se incorpora al resumen como lección de
+proceso.
+
+**El resto del informe (§0–§8) se mantiene íntegro**: los números de la suite eran correctos para el
+árbol medido, y todo lo verificado en dispositivo (ring, diario, reinicio, `Permission Denial`)
+corresponde al APK construido desde ese mismo árbol.
+
+---
+
+## 10. Veredicto
 
 **PASS-AUTOR** (verificación independiente pendiente: agy/hermes).
