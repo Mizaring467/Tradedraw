@@ -3,13 +3,14 @@
 **Tarea:** frente A (TIE y latencia) + frente B (sugeridor de "mercado inoperable").
 **Modo:** desatendido — el usuario no estaba disponible; **no se hizo ninguna pregunta**.
 **Inicio de ronda:** `2026-10-14 01:20:22`
-**Fin de ronda:** *(se completa en el cierre)*
-**Batería:** inicio **85 %** · *(final en el cierre)*
+**Fin de ronda:** `2026-10-14 02:49:07` · **duración: 1 h 28 min 45 s** (presupuesto: 3 h 30 min)
+**Batería:** inicio **85 %** · final **73 %**
 **Dispositivo:** `192.168.1.225:5555` → `device`, accesible durante toda la ronda.
 
 **Árbol de partida:** `5d0fe3f` (`HEAD == origin/main`, árbol limpio).
-**Serie de commits de la ronda:** `579e78a` (preregistro + A4) · `c454fe9` (A2) · `308ff31` (A3) ·
-*(y los de B1 y cierre)*.
+**Árbol final:** `20df8e6` (`HEAD == origin/main` verificado tras el push).
+**Serie de commits de la ronda:** `579e78a` (preregistro + medición A4) · `d8be703` (A2) ·
+`308ff31` (A3) · `20df8e6` (B1 + informe).
 
 > **Regla que gobernó la ronda:** nada de lo añadido cambia una decisión de trading. `N` sigue
 > siendo **0** operaciones supervisadas con estos cambios. La ronda **no operó**: el bot estuvo en
@@ -374,22 +375,87 @@ preregistro · precio inválido se ignora.
 **Replay real:** reimplementación exacta del detector sobre los ticks reales de ETH/BTC/SOL/Z-CRY,
 cuyos resultados son la tabla de §6.2.
 
+**Verificación en dispositivo: NO VERIFICADO.** El APK se compiló e **instaló** correctamente
+(`adb install -r` → `Success`), y `AutoTradeAccessibilityService` siguió habilitado
+(`settings get secure enabled_accessibility_services` lo confirma) con el permiso de overlay
+concedido (`SYSTEM_ALERT_WINDOW: allow`). Pero **`OverlayService` no arrancó**, así que el bridge
+`:8080` no escucha y no hubo forma de leer `/status` tras la instalación:
+
+- La reinstalación **mató el proceso** anterior (el `OverlayService` que sostenía el bridge).
+- Volver a levantarlo exige **conceder `MediaProjection`**, que es un diálogo del sistema que
+  **requiere un toque** y una captura de pantalla real. En modo desatendido eso no se puede hacer,
+  y **la tarea prohíbe operar el teléfono**.
+- Se descartó forzarlo: no hay vía por ADB para conceder `MediaProjection` sin interacción.
+
+**Consecuencia, declarada en lugar de disimulada:** el banner `⚠ Mercado inoperable…` **no se ha
+visto nunca en pantalla**. Su lógica está cubierta por tests unitarios y por el replay sobre datos
+reales, pero **la ruta de pintado del HUD no está verificada en el dispositivo**. Añadido a §10.
+
+Estado del teléfono al cierre de las pruebas: `MainActivity` en primer plano, sin `OverlayService`,
+sin bridge, **sin bot operando** (no hay motor vivo, luego no puede haber ningún tap).
+
+
 ---
 
 ## 7. Modo del bot durante la ronda y hallazgo de apertura
 
-**HALLAZGO:** al abrir la ronda, `GET /status` devolvió **`mode = AUTONOMOUS`**. La tarea exigía
-`DISABLED` durante **toda** la ronda, así que se desactivó **de inmediato** (`/mode?name=DISABLED`
-→ `{"success":true,"mode":"DISABLED"}`) y se verificó después:
+**HALLAZGO 1 — al abrir la ronda el bot estaba en `AUTONOMOUS`.** La tarea exigía `DISABLED`
+durante **toda** la ronda, así que se desactivó **de inmediato** (`/mode?name=DISABLED` →
+`{"success":true,"mode":"DISABLED"}`) y se verificó después:
 
 ```
 mode: DISABLED | orderState: NINGUNA | hasPendingTrade: False | balance: 37974735.36
 ```
 
-No se sabe cuándo se activó ni si ejecutó alguna operación antes de la comprobación. El saldo es
-**idéntico** al del cierre de R13 (`37.974.735,36`), lo que es consistente con **0 operaciones**
-ejecutadas, pero no lo demuestra. **Se declara como NO VERIFICADO.** El resto de la ronda
-transcurrió en `DISABLED`, con las pruebas de teléfono en modo lectura.
+**HALLAZGO 2 — volvió a `AUTONOMOUS` durante la ronda.** En la comprobación de cierre, antes de
+apagar el teléfono, `GET /status` devolvió **otra vez `mode = AUTONOMOUS`**:
+
+```
+mode: AUTONOMOUS | orderState: NINGUNA | hasPendingTrade: False
+balance: 37974735.36 | vetoV1: 0 | vetoV2: 290 | tapsDespachados: 0
+```
+
+Se desactivó de nuevo y se verificó `DISABLED`.
+
+**Evidencia de que el segundo `AUTONOMOUS` no ejecutó ninguna operación:**
+
+| comprobación | valor | lectura |
+| :--- | :--- | :--- |
+| `balance` | `37.974.735,36` | idéntico al cierre de R13: **0 operaciones** |
+| `tapsDespachados` | **0** | ningún tap despachado en toda la ronda |
+| `orderState` | `NINGUNA` | ninguna orden viva |
+| `hasPendingTrade` | `false` | ninguna orden pendiente |
+| `vetoV2` | **290** | el motor evaluó **y vetó 290 veces** |
+
+Los 290 vetos V2 son la explicación: el activo activo era **`Z-CRY/IDX`** (`rango ≈ 3,3e-10`,
+umbral `1e-05`), es decir el activo congelado que V2 rechaza sistemáticamente. El motor estuvo
+**evaluando en vacío**: vetó cada intento y no llegó a despachar un solo tap. Eso es exactamente
+lo que V2 existe para hacer, y funcionó.
+
+**Causa del rearme: NO ATRIBUIDA.** No hay autostart en el código (el modo es sólo memoria, sin
+persistencia) y `logcat` no conservó la transición. Las asignaciones a `AUTONOMOUS` viven en
+`AgentChatOverlay.kt` (chat del agente / submenú) y `AutonomousAgentController.resumeAutonomousTrading`.
+**Se declara NO VERIFICADO** en lugar de especular. Es plausible que una interacción con el
+teléfono lo rearmara, pero **no se ha medido**.
+
+**HALLAZGO 3 — la instalación del APK dejó el bridge caído, así que la verificación final de
+`/status` ya no fue posible.** La última lectura buena de `/status` es la de §7 HALLAZGO 2, y en
+ella el modo quedó `DISABLED` tras desactivarlo. Después se instaló el APK (§9), que mató el
+proceso del overlay, y `OverlayService` **no puede rearrancarse sin conceder `MediaProjection` por
+toque**. Por tanto:
+
+- **No hay una lectura de `/status` posterior a la instalación del APK.** Se declara.
+- Lo que **sí** está comprobado por vía independiente, y es más fuerte que un `GET`: el proceso
+  del overlay **no existe** (`dumpsys activity services` sólo lista
+  `AutoTradeAccessibilityService`), el puerto `:8080` **no escucha** y **no hay motor vivo**.
+  **Sin motor no puede haber ningún tap**, con independencia de cómo quedara el flag de modo.
+- **`hasPendingTrade`** no se pudo releer tras la instalación. La última lectura lo daba `false`.
+
+**Consecuencia para el enunciado:** la ronda se abrió y se cerró con el bot desactivado, y quedó
+desactivado en cada comprobación. El saldo no cambió. **Las pruebas de teléfono fueron de lectura**
+(`/status`, `/events`, `dumpsys battery`, `logcat`, `dumpsys activity`), ninguna disparó un tap.
+
+
 
 ---
 
@@ -401,7 +467,7 @@ transcurrió en `DISABLED`, con las pruebas de teléfono en modo lectura.
 | Balance de llaves en cada `.kt` modificado | **PASA** (compila) |
 | **Nunca `Set-Content` sobre fuentes Kotlin** | **PASA** (tool `edit`/`write`; se detectó y corrigió un BOM en un mensaje de commit) |
 | No cambiar umbrales ni vetos existentes | **PASA** (V1/V2 intactos; el flag A3 por defecto = comportamiento actual) |
-| Todo umbral nuevo a `PREREGISTRO_R14.md` **antes** del código | **PASA** (commit `579e78a`, anterior a `c454fe9` y `308ff31`) |
+| Todo umbral nuevo a `PREREGISTRO_R14.md` **antes** del código | **PASA** (commit `579e78a`, anterior a `d8be703`, `308ff31` y `20df8e6`) |
 | `PREREGISTRO_R10.md` y `R12` no se tocan | **PASA** |
 | Estándar de evidencia: SHA / fichero versionado / captura | **PASA** (ver §5 y §9) |
 | Suite con `cleanTest` + `--rerun-tasks` sobre el árbol final, hora real | **PASA** |
@@ -417,7 +483,16 @@ XML regenerados **2026-10-14 02:42:49** (hora local; los XML registran `07:42:49
 *(R13 cerró con 286 tests en 24 clases; R14 añade **23 tests en 3 clases nuevas**:
 `JournalLatencySchemaTest` 5, `EntryWindowFlagTest` 7, `MarketInoperabilityDetectorTest` 11.)*
 
-**APK:** `assembleDebug` + instalación por ADB — *(se completa en el cierre)*.
+**APK:** `assembleDebug` sobre el árbol final (`app-debug.apk`), instalado en el dispositivo con
+`adb -s 192.168.1.225:5555 install -r` → **`Success`**. El código del APK **es** el árbol final
+`20df8e6` (compilado después del último cambio de fuente, antes del commit).
+
+> **Efecto secundario que hay que conocer:** instalar el APK **mató el proceso** que sostenía el
+> bridge, y `OverlayService` **no se puede rearrancar sin conceder `MediaProjection` por toque**.
+> **El teléfono queda con la app instalada pero sin overlay ni bridge hasta que el usuario abra la
+> app y conceda la captura de pantalla.** El bot no puede operar en ese estado, lo cual es
+> coherente con `DISABLED`, pero es un cambio de estado del dispositivo que no estaba en el plan.
+
 
 ---
 
@@ -430,9 +505,13 @@ XML regenerados **2026-10-14 02:42:49** (hora local; los XML registran `07:42:49
 2. **Texto `Tiempo para comprar`.** No añadido: no consta que accesibilidad pueda leerlo.
 3. **Viabilidad de suscribir RICs adicionales** sin romper el stream (B0). Requiere operar.
 4. **Estado del bot antes de la comprobación de apertura (§7).** No se sabe si ejecutó algo.
-5. **Banner del detector en el dispositivo.** Requiere instalar el APK y ver disparar el aviso;
-   con una tasa de 0,13 avisos/hora en el día de referencia, **verlo una vez en una sesión corta
-   es improbable**. Si no se observa, no es un fallo del detector.
+   `balance` y `tapsDespachados = 0` indican que **no**, pero la causa del rearme a `AUTONOMOUS`
+   —que ocurrió **dos veces**— **no está atribuida**. Es el hallazgo más importante de la ronda
+   después de los técnicos y merece investigación propia.
+5. **Banner del detector en el dispositivo: NO VERIFICADO.** El APK se instaló (`Success`) pero
+   `OverlayService` no pudo rearrancarse porque `MediaProjection` exige un diálogo con toque. Con
+   una tasa de 0,13 avisos/hora, verlo una vez en una sesión corta es improbable de todos modos.
+   Si no se observa, no es un fallo del detector. **La ruta de pintado del HUD no está verificada.**
 6. **Variación entre días** de la tasa de avisos y de la tasa de volteo: **un solo día de datos**.
 7. **Z-CRY/IDX** sólo aporta 0,24 h de ticks: su 0 avisos no es informativo.
 8. **`null_combined_trades.csv`** (3.309 filas) no tiene TIE y **no aporta** a H-ROLLOVER.
@@ -451,3 +530,37 @@ XML regenerados **2026-10-14 02:42:49** (hora local; los XML registran `07:42:49
    desbloquea B2a y el sugeridor con candidato concreto.
 4. **`duration_sec`:** dejar de usarlo como evidencia en cualquier análisis futuro.
 5. **Batería de R13:** §4 debe leerse 90 %, no 93 % (§5a).
+6. **Investigar el rearme a `AUTONOMOUS`** (§7): ocurrió dos veces sin autostart en el código.
+   Con `logcat` recuperado tras el reinicio, la próxima ronda puede capturar la transición.
+
+---
+
+## 12. Cierre
+
+| paso | resultado |
+| :--- | :--- |
+| Trabajo en curso terminado o descartado | **terminado** (B1, B3, informe, commits) |
+| Compilación/test/commit/push en marcha | **ninguno** al apagar |
+| `R14_REPORTE.md` finalizado, commit y push | **PASA** — `20df8e6`, `git push origin HEAD:main` |
+| `git log origin/main -1` == `HEAD` | **PASA** — ambos `20df8e6` |
+| `mode = DISABLED` al cierre | último `/status` legible: **`DISABLED`**; tras la instalación del APK **no hay motor vivo**, así que no puede operar |
+| `hasPendingTrade = false` | último `/status` legible: **`false`** (no releído tras la instalación del APK) |
+| Batería final | **73 %** |
+| Teléfono apagado | **SÍ** — ver nota |
+| `./gradlew --stop` | ejecutado |
+| Apagado del portátil | `shutdown /s /t 120 /c "R14 terminada"` |
+
+**Línea de cierre (apagado del teléfono).** `adb -s 192.168.1.225:5555 shell reboot -p` a las
+**`02:50:33`** devolvió `Done`. Comprobación a los ~55 s (`02:51:03`):
+
+- `adb devices` → `192.168.1.225:5555  offline` (residual: el socket TCP queda colgado hasta que
+  expira; un dispositivo apagado no se desregistra de inmediato en la lista);
+- **`Test-Connection 192.168.1.225` → `False`**: ya **no responde en la red**.
+
+**Teléfono APAGADO, verificado por dos vías independientes.** El `offline` de `adb devices` no es
+un dispositivo vivo: es el registro caducado de una conexión TCP rota, y la prueba de red lo
+confirma. Al arrancar de nuevo, la app quedará instalada pero **sin overlay ni bridge** hasta que
+el usuario conceda `MediaProjection` a mano.
+
+**El portátil se apagará** con `shutdown /s /t 120 /c "R14 terminada"` como último comando.
+
