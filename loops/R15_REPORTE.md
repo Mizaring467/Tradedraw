@@ -698,6 +698,76 @@ que consumió esta fase.
    propósito es avisar de *«este activo ya no sirve»*, el criterio no puede ser sólo relativo.
 9. **Retirar o acotar `/diag_multiric` y `/diag_inoperable`** cuando la verificación esté cerrada.
    (El punto 9 anterior —«añadir el caso de test»— quedó hecho: ver §15.4.)
-10. **Retirar o acotar `/diag_multiric` y `/diag_inoperable`** cuando la verificación esté cerrada.
+10. **Añadir un auto-`DISABLED` por inactividad en `AUTONOMOUS`.** El §17 lo refuerza con un caso
+    real: el motor quedó rearmado **117 s** sin que nada lo devolviera a `DISABLED`.
+
+---
+
+## 17. INCIDENTE — dos rearmes reales a `AUTONOMOUS`, atribuidos **en vivo** por la instrumentación A2
+
+Ocurridos **durante esta misma ampliación**, con el usuario ausente. Se documentan porque son la
+**primera vez** que un rearme queda atribuido en el momento, sin arqueología posterior: es
+exactamente el trabajo para el que se construyó el §10.
+
+### 17.1 Los dos eventos, leídos de `/mode_journal`
+
+| # | hora local | `source` | pila (`origen`) |
+| --: | :--- | :--- | :--- |
+| 1 | `18:00:06` | `ui:showAutonomousSubModeDialog(conservador)` | `setTradingMode:932 < showAutonomousSubModeDialog$lambda$36:869 < …ExternalSyntheticLambda53.onClick:0` |
+| 2 | `18:41:43` | `ui:showAutonomousSubModeDialog(conservador)` | `setTradingMode:934 < showAutonomousSubModeDialog$lambda$36:871 < …ExternalSyntheticLambda53.onClick:0` |
+
+**Los dos por la MISMA ruta, y no es la del broadcast.** Ninguno por `broadcast(CMD,…)`, ninguno por
+`bridge:/mode`, ninguno por `chat:`, ninguno por `agent:`. Coincide con el patrón ya observado en
+R19 (4 rearmes, los 4 por esta misma función).
+
+### 17.2 Por qué esto no es «rearme espontáneo»
+
+`showAutonomousSubModeDialog` (`OverlayService.kt:857-889`) es un `AlertDialog` de **tres opciones**
+que exige **dos selecciones humanas** en secuencia (el modo, después el submodo). La pila termina en
+`…ExternalSyntheticLambda53.onClick:0`: **un `OnClickListener`, es decir un toque**. **No existe
+ninguna ruta de código que invoque ese diálogo sola** — se verificó en R15-A §1 y ninguna de las
+rutas añadidas en R16-R19 lo toca.
+
+Contexto medido en el momento del segundo evento:
+
+- `mResumedActivity = com.marketly.trading/.modules.trading.TradingActivity` — **Binomo en primer
+  plano**, es decir el escenario donde viven los botones del broker.
+- Cuatro ventanas overlay de TradeDraw activas (`Window #5..#8`).
+- **`enabled_accessibility_services = com.example.tradedraw/.AutoTradeAccessibilityService`** —
+  la accesibilidad **está activa**, y con ella `dispatchGesture`. **No se descarta** que una app con
+  accesibilidad pueda inyectar gestos; es el mismo confusor que R19 dejó abierto.
+- Los paquetes **`com.termux`, `com.termux.api`, `moe.shizuku.privileged.api` y
+  `com.topjohnwu.magisk` están instalados**. Es decir: **Shizuku, Termux y Magisk están disponibles
+  en este dispositivo**, y cualquiera de ellos puede emitir un broadcast con UID 0, que `af71997`
+  **no** bloquea (verificado como control positivo en R16).
+
+**Clasificación:** rearme por **ruta de UI con confusor humano**, **no espontáneo**.
+**Causa inmediata NO ATRIBUIDA con certeza** — la ruta sí está atribuida por la pila; **quién** la
+disparó, no. Es la misma conclusión que R19, ahora con el emisor identificado en el instante y no a
+posteriori.
+
+### 17.3 Lo que SÍ queda demostrado
+
+1. **La instrumentación A2 funciona en producción.** El rearme se atribuyó **en el momento**, sin
+   `logcat`, sin arqueología y sin reiniciar nada: `source` + pila, en `/status` y en el diario.
+   Es la validación más fuerte posible del §10 — un caso real, no una prueba de laboratorio.
+2. **`AUTONOMOUS` no operó.** Durante las ventanas en `AUTONOMOUS`: `tapsDespachados = 0`,
+   `W/L = 0/0`, `orderState = NINGUNA`, `hasPendingTrade = false`, **cero eventos `TAP`/`ORDER`** en
+   `/events`. **Ninguno de los dos rearmes fue un incidente de trading.**
+3. **Falta el auto-`DISABLED` por inactividad.** El bot quedó en `AUTONOMOUS` **117 s** (medido)
+   hasta que lo devolví a `DISABLED` por `/mode`. Refuerza con un caso real la recomendación 5 de
+   R19 y la 7 de §16: hoy nada devuelve el motor a `DISABLED` solo.
+
+### 17.4 Contención aplicada
+
+Devuelto a `DISABLED` por `bridge:/mode`, que queda registrado como último evento del diario:
+
+```
+de=AUTONOMOUS a=DISABLED source=bridge:/mode
+origen=TradingEngine.modeChangeOrigin:129<TradeDrawHttpBridge.handleClient:169<…
+```
+
+Estado verificado tras la contención: `mode=DISABLED`, `orderState=NINGUNA`,
+`hasPendingTrade=false`, `tapsDespachados=0`, `W/L=0/0`.
 
 
