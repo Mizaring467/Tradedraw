@@ -10,13 +10,24 @@
 
 ## 0. Cambio operativo: ADB Wi-Fi
 
-El serial USB `UGU8KFUKM7E6CE8D` ya no existe. Todo el trabajo se hizo sobre
-**`192.168.1.196:5555`** con `adb forward tcp:8080 tcp:8080` y `http://127.0.0.1:8080`.
+El trabajo se hizo sobre **`192.168.1.196:5555`** con `adb forward tcp:8080 tcp:8080` y
+`http://127.0.0.1:8080`, como pedía el enunciado.
 
-**logcat está roto y NO es el transporte** (causa raíz confirmada): `init.svc.logd = stopped`
-y `/dev/log*` no existe. `start logd` → `Must be root`; `adb root` → `adbd cannot run as root
-in production builds`. Falla igual por USB y por Wi-Fi. Por eso A5 y la adenda 3 (buffer en
-memoria + `/events`) no son un extra: son la única observabilidad posible.
+> **Erratum (adenda 5):** el enunciado afirmaba que el serial USB `UGU8KFUKM7E6CE8D` "ya no
+> existe". **Es incorrecto**: tras el reinicio del teléfono el dispositivo reapareció como
+> `UGU8KFUKM7E6CE8D device` y responde con normalidad. Lo que ocurría al abrir R13 es que no
+> estaba **enumerado**, no que hubiera desaparecido. **Ambos transportes funcionan**; se usó
+> Wi-Fi por indicación expresa.
+
+**logcat estaba roto durante la ronda y NO era el transporte** (causa raíz confirmada):
+`init.svc.logd = stopped` y `/dev/log*` no existe. `start logd` → `Must be root`; `adb root` →
+`adbd cannot run as root in production builds`. Fallaba igual por USB y por Wi-Fi. Por eso A5 y
+la adenda 3 (buffer en memoria + `/events`) no son un extra: eran la única observabilidad
+posible.
+
+> **Y se recupera con un reinicio (adenda 5):** tras reiniciar el teléfono, `init.svc.logd =
+> running` y `logcat -d` devuelve entradas reales. **`logd` no estaba roto de fábrica: estaba
+> caído.** Ver adenda 5, donde se detalla y se declara que la causa sigue **sin atribuir**.
 
 ---
 
@@ -272,11 +283,55 @@ Incluida explícitamente en la tabla de A4. **Sin evidencia**: no hay presión d
 operaciones es la más corta de los tres grupos, no la más larga). No se declara causa sin
 datos.
 
-### Adenda 5 — Reinicio del teléfono · AUTORIZADO, PENDIENTE DE EJECUTAR
+### Adenda 5 — Reinicio del teléfono · EJECUTADO, `logd` VUELVE
 
-El usuario **autorizó** reiniciar el teléfono al final de la ronda para ver si `logd` vuelve
-(requiere el cable un momento para reactivar ADB Wi-Fi). Se ejecuta al cierre, tras dejar el
+El usuario **autorizó** reiniciar el teléfono al final de la ronda. Ejecutado tras dejar el
 modo en `DISABLED`.
+
+**Resultado: `logd` SÍ vuelve tras el reinicio, y `logcat` funciona.**
+
+| Momento | `init.svc.logd` | `logcat -d` |
+| :--- | :--- | :--- |
+| Antes del reinicio | `stopped` | `Logcat read failure: No such file or directory` |
+| **Después del reinicio** | **`running`** | **devuelve entradas reales** |
+
+Salida real de `logcat -d -t 5` tras el reinicio (recortada):
+
+```
+--------- beginning of main
+10-14 00:09:23.012   773   848 D AALLightSensor: enable Sensor FAIL! 
+10-14 00:09:23.145  1762  6385 I NearbySharing: Network state changed: ...
+10-14 00:09:24.016   773   848 D AALLightSensor: get SensorManager SUCCESS!
+```
+
+**Qué significa.** `logd` no estaba roto de fábrica: **estaba caído**, y el reinicio lo levanta.
+Por tanto la causa no es la build (`user`, `ro.debuggable=0`), porque eso no cambia al
+reiniciar. **La causa es que algo lo mata o impide su arranque durante el funcionamiento**, no
+que no pueda existir. Esto **refuta** parcialmente la conclusión de R13 de que "no se puede
+levantar sin root": no se puede levantar **en caliente**, pero sí vuelve con un reinicio.
+
+**Nota sobre el cable.** Al reiniciar, el dispositivo USB reapareció solo como
+`UGU8KFUKM7E6CE8D device`. `adb tcpip 5555` **no** sobrevivió al reinicio (el
+`192.168.1.196:5555` quedó en `offline` y hubo que reactivarlo), así que hizo falta el cable un
+momento, exactamente como se había avisado al usuario.
+
+**Y la IP había cambiado.** `wlan0` estaba en **`192.168.1.225/24`**, no en `192.168.1.196`.
+El teléfono tomó otra concesión DHCP al reiniciar. Se reconectó con `adb connect
+192.168.1.225:5555` → `device`, y **el cable ya se puede desconectar**.
+`adb -s 192.168.1.225:5555` es la dirección válida a partir de ahora. Esto es precisamente el
+escenario para el que existe el procedimiento de §8.0 de `AGENTS.md`: la IP cambió sin avisar,
+y la respuesta correcta era medirla (`ip -f inet addr show wlan0`), no improvisar.
+
+**Indicio (no conclusión).** Que `logd` muera con el uso y vuelva en cada arranque es
+**compatible** con presión de memoria, pero **las mediciones de la adenda 2 no la respaldan**:
+`MemAvailable` era de 739 MB de 1,8 GB (39 % libre) y la app tenía solo 2.880 kB en swap. Sin
+una medición **en el momento** en que `logd` muere, la causa sigue **sin atribuir**. Se
+declara como observación, no como causa raíz.
+
+**Observación lateral que corrige §0.** El serial USB `UGU8KFUKM7E6CE8D` **no había
+desaparecido**: existe y funciona. Lo que ocurría es que en el momento de abrir R13 el
+dispositivo no estaba enumerado por USB. Se accedió por Wi-Fi como pidió el enunciado, pero
+afirmar que el serial "ya no existe" era incorrecto; ambos transportes funcionan.
 
 ---
 
@@ -288,12 +343,20 @@ modo en `DISABLED`.
 | Método 1 del payout funcional **o retirado** | **PASA (retirado)** | declarado no validado; `payoutFromPercentLabel = null` medido; solo el método 2 confirmado |
 | Contadores de vetos visibles | **PASA** | `/status` → `vetoV1`, `vetoV2`, `vetoTotal`, `ultimoVeto`; `/events` con motivo |
 | Bridge inaccesible desde la LAN | **PASA** | LAN sin respuesta; loopback 200 |
-| `mode = DISABLED` al cierre | **PASA** | ver §5 |
-| Batería reportada al inicio y al final | **PASA** | 100 % → 96 % |
+| `mode = DISABLED` al cierre | **PASA** | `DISABLED` confirmado por `/status`, también tras el reinicio; `hasPendingTrade: false` |
+| Batería reportada al inicio y al final | **PASA** | 100 % → 93 % |
 | Suite completa sobre el árbol final con hora real | **PASA** | 283/0/2, XML 00:00:21, `cleanTest --rerun-tasks` |
 | `assembleDebug` + instalación por ADB Wi-Fi | **PASA** | `Success` |
 | B1 verificado en dispositivo | **PASA** | tabla de §2 |
 | B2 (orden real en vivo) | **NO VERIFICADO** | no autorizado por el usuario |
+
+**Balance: 37.974.735,36 al abrir y al cerrar — sin cambios.** La ronda **no ejecutó ninguna
+operación**: el modo estuvo en `DISABLED` durante el trabajo y las tres operaciones del journal
+(`+80.000`, `+80.000`, `−100.001,28`) son **anteriores** a esta ronda (2026-10-13 22:10–22:15,
+antes de abrir R13), atribuidas al `AUTONOMOUS` que el usuario activó. Al releer `/status`
+justo tras el reinicio el saldo apareció como `0.0`: es el arranque en frío, antes de que la
+accesibilidad leyera el saldo de Binomo (la captura de ese momento ya mostraba
+`Col$37.974.735` en pantalla). Con el árbol asentado, `/status` devuelve `37974735.36`.
 
 ---
 
@@ -307,6 +370,11 @@ dejar el bot operando entre sesiones.
 estado como estaba). Al cierre de esta ronda el modo queda en **`DISABLED`**, confirmado por
 `/status`. Queda constancia de que fue el agente quien lo cambió, y de por qué.
 
+**El cambio se hizo con el teléfono vigilado y no había operación en curso.** Antes de
+desactivarlo se comprobó `hasPendingTrade: false` y `orderState: NINGUNA`, de modo que el cambio
+de modo no interrumpió ninguna orden abierta. Después del reinicio (adenda 5) se revalidó:
+`mode: DISABLED`, `hasPendingTrade: false`, `balance` sin cambios.
+
 ---
 
 ## 6. NO VERIFICADO
@@ -319,8 +387,12 @@ estado como estaba). Al cierre de esta ronda el modo queda en **`DISABLED`**, co
   registre**, porque eso exige exactamente la sesión en vivo que no se autorizó. Sin ella, el
   arreglo queda **no confirmado en campo**.
 - **El método 1 del payout sigue sin valor en dispositivo.** Se declara retirado, no arreglado.
-- **`logd` parado sin causa raíz atribuida.** Medido que no hay presión de memoria; el reinicio
-  de la adenda 5 puede dar más información.
+- **`logd` parado sin causa raíz atribuida.** La adenda 5 demostró que **vuelve con un
+  reinicio** (`init.svc.logd = running`, `logcat -d` devuelve entradas reales), así que no está
+  roto de fábrica: **algo lo mata o impide su arranque durante el uso**. No se ha medido memoria
+  **en el instante en que muere**, y las medidas tomadas después no muestran presión (739 MB
+  disponibles). Por tanto la causa **sigue sin atribuir**: ni confirmada ni refutada la
+  hipótesis de memoria. Falta instrumentar el momento de la caída, no el estado posterior.
 - **El evento `ASSET` de `/events` no se ha visto dispararse** en la verificación: requiere un
   cambio de activo observado por accesibilidad, y el activo ya estaba fijado en la sesión de
   prueba. El endpoint sí está verificado como tal.
@@ -351,5 +423,13 @@ habría exigido commits que no compilan. Se declara aquí en vez de aparentar gr
 ## 8. Entrega
 
 - **CI:** https://github.com/Mizaring467/Tradedraw/actions → artefacto **`TradeDraw-debug`**
+  · run verde del árbol final: **`38514679629`** (`7814f34`)
 - **SHA del árbol verificado:** `f016dbd` (árbol `app/` = `52cfcc6c16a5a45b90518209451291f04bb0cef6`)
-- **Evidencia visual:** `loops/screenshots/r13/r13_hud_estado.png` (720x1600, 248.795 bytes)
+  · último commit de documentación: `0dfdb4b` · `.gitignore`: `7814f34`
+- **Evidencia visual:**
+  - `loops/screenshots/r13/r13_hud_estado.png` (720x1600, 248.795 bytes) — A2b/A2c en vivo.
+  - `loops/screenshots/r13/r13_final_post_reinicio.png` (720x1600, 284.250 bytes) — estado tras
+    el reinicio de la adenda 5: `MODO OFF: En Espera`, `Micro-Velocidad: +7,77e-09 %/s ▲
+    Alcista` (**unidad `%/s`, no `px/s`**, con tick fresco) y `Col$37.974.735` en pantalla.
+- **Dirección ADB vigente:** `192.168.1.225:5555` (la IP cambió al reiniciar; el cable ya se
+  puede desconectar).
