@@ -208,4 +208,32 @@ Se declararon a priori como "razonables" **< 1 aviso/hora agregado** y "ruidosos
 
 ## Enmiendas
 
-*(ninguna todavía)*
+### Enmienda 1 — 2026-10-14 02:05 · guard de la mediana de referencia (B1)
+
+**Motivo:** al escribir los tests de B3 se detectó que, tal como estaba definido en la sección
+B1, la mediana de referencia `M(t)` **incluía las muestras del propio tramo candidato**. Efecto:
+tras unos segundos de rango plano, la mediana caía a cero, `K * M` pasaba a valer cero y la
+condición `R < K*M` se volvía imposible **justo cuando el aviso debía dispararse**. El detector
+se apagaba solo. Es un bug de corrección, no de calibración.
+
+**Cambio:** `M(t)` se calcula excluyendo las muestras de los últimos `N` segundos. La referencia
+describe "cómo se movía esto antes", no "cómo se mueve ahora". Implementado en
+`MarketInoperabilityDetector.medianReference(nowMs)` y cubierto por el test
+`laReferenciaNoSeContaminaConElPropioEstancamiento`.
+
+**Efecto sobre la calibración:** el guard reduce la sensibilidad efectiva. Re-medido con los
+umbrales preregistrados (`K=0.25`, `N=30 s`) sobre los mismos cuatro activos:
+
+| medición | avisos agregados/hora |
+| :--- | ---: |
+| sin guard (cifra declarada en B1) | 0,26 |
+| **con guard (cifra real del código)** | **0,13** |
+
+Desglose con guard: ETH 2, BTC 1, SOL 0, Z-CRY/IDX 0 (3 avisos en 23,11 h de datos).
+
+**Decisión:** se **mantienen** `K=0,25` y `N=30 s` — siguen siendo los valores preregistrados,
+siguen disparando (3 veces en 23 h) y quedan muy por debajo del techo de 1 aviso/hora declarado.
+No se re-optimiza a posteriori sobre los mismos datos: eso sería sobreajuste al día de referencia.
+La cifra de 0,26/h que consta en B1 queda **sustituida** por 0,13/h.
+
+**Sin cambio en lo esencial:** sigue siendo un aviso, no una decisión; el bot no cambia de activo.

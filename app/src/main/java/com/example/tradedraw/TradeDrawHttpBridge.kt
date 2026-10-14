@@ -442,7 +442,10 @@ class TradeDrawHttpBridge(
                 "vetoV2": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO, "V2")},
                 "vetoTotal": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO)},
                 "ultimoVeto": "${escapeJson(TradeEventLog.lastOf(TradeEventLog.Kind.VETO)?.detail ?: "")}",
-                "tapsDespachados": ${TradeEventLog.countOf(TradeEventLog.Kind.TAP)}
+                "tapsDespachados": ${TradeEventLog.countOf(TradeEventLog.Kind.TAP)},
+                "inoperableCount": ${TradeEventLog.countOf(TradeEventLog.Kind.INOPERABLE)},
+                "inoperableNow": ${te.inoperabilityDetector.isInoperable},
+                "ultimoInoperable": "${escapeJson(TradeEventLog.lastOf(TradeEventLog.Kind.INOPERABLE)?.detail ?: "")}"
             },
             "activeSignal": $signalJson,
             "feed": {

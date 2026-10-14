@@ -265,12 +265,32 @@ class TradingEngine(
     }
 
     /**
+     * Ronda 14 (B1): detector de mercado inoperable sobre el activo activo.
+     *
+     * AVISO, no decision: alimenta un banner y contadores. Nunca cambia de activo ni participa
+     * en la decision de entrada. Ver `MarketInoperabilityDetector`.
+     */
+    val inoperabilityDetector = MarketInoperabilityDetector()
+
+    /**
      * Invocado cuando llega un nuevo micro-tick en tiempo real vía WebSocket.
      */
     fun onMarketTick(tick: MarketTick) {
         latestMarketTick = tick
         syntheticCandleEngine.subMode = autonomousSubMode
         syntheticCandleEngine.onNewTick(tick)
+
+        // R14/B1: el aviso se evalua con cada tick. Solo registra evento en el FLANCO de subida
+        // (cuando el aviso se enciende), o `/events` se llenaria con el mismo aviso repetido.
+        // La frescura la aporta el propio tick: si el feed estuviera caido no llegaria ninguno.
+        if (inoperabilityDetector.onTick(tick.price, tick.timestampMs, feedFresh = true)) {
+            TradeEventLog.add(
+                TradeEventLog.Kind.INOPERABLE,
+                "INOPERABLE activo=${tick.asset} segundos=${inoperabilityDetector.holdSeconds} " +
+                    "ratio=%.3e".format(Locale.US, inoperabilityDetector.lastRatio)
+            )
+            android.util.Log.w("TradingEngine", "⚠️ Mercado inoperable en ${tick.asset}")
+        }
 
         // El análisis se publica desde el motor sintético de ticks (fuente única WebSocket).
         // Sin esto, latestAnalysisResult solo se poblaba en onNewFrame() (visión retirada por

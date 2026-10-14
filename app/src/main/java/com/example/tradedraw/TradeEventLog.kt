@@ -35,7 +35,12 @@ object TradeEventLog {
         /** El payout leido y el deducido del boton no concuerdan. */
         PAYOUT_DISCREPANTE,
         /** Se detecto un activo activo sin feed (A2c). */
-        FEED_MUDO
+        FEED_MUDO,
+        /**
+         * Ronda 14 (B1): el mercado del activo activo lleva N segundos sin rango suficiente.
+         * Es un AVISO, no una decision: el bot nunca cambia de activo por esto.
+         */
+        INOPERABLE
     }
 
     data class Event(

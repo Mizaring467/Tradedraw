@@ -1770,6 +1770,17 @@ class OverlayService : Service() {
                                 "🔴 SIN TICKS · $friendlyAsset sin feed (socket vivo) | Headless",
                                 Color.parseColor("#f59e0b")
                             )
+                        } else if (tradingEngine.inoperabilityDetector.isInoperable) {
+                            // R14/B1: el feed vive pero el mercado no se mueve. Es un AVISO: el bot
+                            // NO cambia de activo. En B2b no se nombra ningún candidato (no hay
+                            // acumulador de otros activos; ver PREREGISTRO_R14).
+                            val secs = tradingEngine.inoperabilityDetector
+                                .inoperableSeconds(System.currentTimeMillis())
+                            Pair(
+                                "⚠ Mercado inoperable en $friendlyAsset (${secs}s sin rango). " +
+                                    "Considera cambiar de gráfico | Headless",
+                                Color.parseColor("#f59e0b")
+                            )
                         } else {
                             val priceStr = if (hud.price > 0.0) formatDynamicPrice(hud.price) else "..."
                             // Latencia real del último tick (antes estaba fija en "0ms").
