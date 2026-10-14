@@ -40,6 +40,13 @@ class BinomoWebSocketClient(private val context: Context) {
             lastPrice = 0.0
             lastPriceTimeMs = 0L
             smoothedVelocity = 0f
+            // Ronda 12 (B4): `recentTicks` NO se limpiaba, asi que durante los siguientes 16
+            // ticks la ventana mezclaba la escala del activo anterior con la del nuevo
+            // (p.ej. 1.166 de un par FX junto a 641.86 de IDX). Consecuencia medida: `isPriceFrozen()`
+            // y `recentPriceRangeRatio()` veian un rango artificial enorme y el veto
+            // anti-linea-plana quedaba DESACTIVADO justo tras cada cambio de activo, que es
+            // cuando mas hace falta. El reset de precio de arriba ya existia; faltaba el buffer.
+            recentTicks.clear()
             val ws = webSocket
             if (ws != null && isConnected) {
                 subscribeToAsset(ws, clean)

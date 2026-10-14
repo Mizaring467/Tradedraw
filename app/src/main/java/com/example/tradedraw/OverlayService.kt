@@ -289,6 +289,15 @@ class OverlayService : Service() {
         // Ronda 12 (B2, veto V2): el motor necesita medir el rango relativo del feed para vetar
         // los activos sin volatilidad utilizable (Z-CRY/IDX: 2,5e-09 frente a 4,2e-02 de ETHUSD-OTC).
         tradingEngine.priceRangeRatioProvider = { wsClient.recentPriceRangeRatio() }
+        // Ronda 12 (B4): el listener de cambio de activo NUNCA se asignaba (solo se declaraba y
+        // se invocaba), asi que no habia ningun punto central donde limpiar el estado por activo.
+        // Aqui se cierra ese circuito: al detectar un activo nuevo se resetea el estado que
+        // pertenece al anterior. `SyntheticCandleEngine` y `BinomoWebSocketClient` ya limpian lo
+        // suyo al ver el activo nuevo en el tick; esto garantiza ademas el pedido de analisis.
+        AutoTradeAccessibilityService.onAssetUpdatedListener = { asset, _ ->
+            Log.i("OverlayService", "Cambio de activo detectado: $asset")
+            tradingEngine.onAssetChanged()
+        }
         wsClient.start()
 
         val cmdFilter = IntentFilter("com.example.tradedraw.CMD")

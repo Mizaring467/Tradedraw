@@ -173,6 +173,57 @@ class SyntheticCandleEngine {
     /**
      * Procesa cada micro-tick entrante desde el WebSocket.
      */
+    /**
+     * Ronda 12 (B4): limpia los acumuladores que son POR ACTIVO al detectar el cambio.
+     *
+     * El reset de `recentTickPrices` (R11, T1/T3) arreglo la linea de strike, pero otros
+     * acumuladores seguian sobreviviendo al cambio de activo y contaminando el analisis con
+     * datos de escala distinta. Se limpia solo lo que es inequivocamente por activo; NO se toca
+     * lo que debe sobrevivir por diseno (rachas de resultados, contadores de sesion, buffers
+     * que se recalculan solos al cerrar vela).
+     *
+     * Se resetea:
+     *  - rachas de ticks (consecutiveUp/DownTicks y las completadas): describen el activo anterior
+     *  - tickFlowImbalance y los contadores de ventana por minuto: misma razon
+     *  - los flags de climax/continuacion: se calcularon sobre el activo anterior
+     *  - `currentCandle`: pertenece al activo anterior. Si no se cierra aqui, el primer tick del
+     *    activo nuevo actualiza high/low de una vela de OTRA escala y produce mechas absurdas.
+     *  - `lastRecordedCandleMinute`: evita que la vela del activo nuevo se descarte por creer
+     *    que ya se registro.
+     *
+     * NO se resetea `closedCandles` deliberadamente: se recorta solo (tope 60) y vaciarlo
+     * obligaria a recalcular pivotes/ATR desde cero, dejando el motor ciego mas tiempo del
+     * necesario. Se reporta como pendiente conocido en lugar de cambiarlo sin medir.
+     */
+    private fun resetAccumulatorsForAssetChange() {
+        consecutiveUpTicks = 0
+        consecutiveDownTicks = 0
+        lastCompletedUpStreak = 0
+        lastCompletedDownStreak = 0
+        tickFlowImbalance = 0.0f
+        windowUpTicksCount = 0
+        windowDownTicksCount = 0
+        isClimaxReversalPutTrigger = false
+        isClimaxReversalCallTrigger = false
+        isContinuationConfirmedCall = false
+        isContinuationConfirmedPut = false
+        currentCandle = null
+        lastRecordedCandleMinute = 0L
+        // Los pivotes cacheados pertenecen al activo anterior: forzar recalculo.
+        synchronized(this) {
+            cachedPivotHighs.clear()
+            cachedPivotLows.clear()
+            cachedHighestPivotHigh = null
+            cachedLowestPivotLow = null
+            cachedAtr = 0.0
+            // `cachedChoppiness` se calculaba sobre el activo anterior y solo se refresca al
+            // cerrar vela: con velas de 1m, un valor contaminado sobrevive hasta 60s y puede
+            // vetar (o dejar de vetar) senales del activo nuevo. Se devuelve a su valor neutro.
+            cachedChoppiness = false
+            pivotsCacheDirty = true
+        }
+    }
+
     fun onNewTick(tick: MarketTick) {
         val periodMs = timeframe.durationMs
         val candleMinute = (tick.timestampMs / periodMs) * periodMs
@@ -186,6 +237,7 @@ class SyntheticCandleEngine {
             if (lastTickAsset.isNotEmpty()) {
                 synchronized(recentTickPrices) { recentTickPrices.clear() }
                 lastTickPrice = 0.0
+                resetAccumulatorsForAssetChange()
             }
             lastTickAsset = tick.asset
         }

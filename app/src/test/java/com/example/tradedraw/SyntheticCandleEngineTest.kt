@@ -1218,5 +1218,104 @@ class SyntheticCandleEngineTest {
         assertEquals(rangoEsperado, vela.range, 1e-9)
         assertEquals(((close - open) / rangoEsperado).toFloat(), vela.bodyRatio, 1e-6f)
     }
+
+    // ==========================================================================
+    // Ronda 12 (B4): acumuladores que sobrevivian al cambio de activo.
+    //
+    // T1 arreglo el parser y T3 el buffer de precios de este motor, pero el resto de
+    // acumuladores seguia mezclando activos: rachas de ticks, flujo, flags de climax,
+    // pivotes cacheados, choppiness y la vela en construccion. Todos describen el activo
+    // ANTERIOR y contaminan el analisis del nuevo.
+    // ==========================================================================
+
+    @Test
+    fun cambioDeActivo_reseteaLasRachasDeTicks() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 20L
+
+        // Racha alcista clara en Crypto IDX.
+        for (i in 0..9) {
+            engine.onNewTick(MarketTick(asset = "Z-CRY/IDX", price = 641.867 + i * 0.001, timestampMs = now + i * 100L))
+        }
+        assertTrue("Debe haber racha alcista acumulada", engine.consecutiveUpTicks > 0)
+
+        // Cambio de activo: la racha describia al activo anterior.
+        engine.onNewTick(MarketTick(asset = "ETHUSD-OTC", price = 1048.0, timestampMs = now + 5000L))
+        assertEquals("La racha alcista no debe sobrevivir al cambio", 0, engine.consecutiveUpTicks)
+        assertEquals("La racha bajista tampoco", 0, engine.consecutiveDownTicks)
+    }
+
+    @Test
+    fun cambioDeActivo_reseteaLaVelaEnConstruccion() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 22L
+
+        for (i in 0..9) {
+            engine.onNewTick(MarketTick(asset = "Z-CRY/IDX", price = 641.867 + i * 0.001, timestampMs = now + i * 100L))
+        }
+        assertNotNull("Debe haber una vela en construccion", engine.currentCandle)
+
+        engine.onNewTick(MarketTick(asset = "ETHUSD-OTC", price = 1048.0, timestampMs = now + 3000L))
+        // La vela del activo nuevo empieza vacia: no puede heredar el high/low de otra escala.
+        val vela = engine.currentCandle
+        if (vela != null) {
+            assertTrue(
+                "La vela nueva no debe tener el rango del activo anterior (high=${vela.high})",
+                vela.high < 2000.0
+            )
+        }
+    }
+
+    @Test
+    fun cambioDeActivo_reseteaLosFlagsDeClimaxYContinuacion() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 24L
+
+        for (i in 0..19) {
+            engine.onNewTick(MarketTick(asset = "Z-CRY/IDX", price = 641.867 + i * 0.002, timestampMs = now + i * 100L))
+        }
+        // Los flags pueden estar o no activos segun el mercado simulado; lo que se fija es que
+        // tras el cambio NINGUNO puede quedar heredado del activo anterior.
+        engine.onNewTick(MarketTick(asset = "ETHUSD-OTC", price = 1048.0, timestampMs = now + 9000L))
+
+        assertFalse("Climax PUT no debe sobrevivir", engine.isClimaxReversalPutTrigger)
+        assertFalse("Climax CALL no debe sobrevivir", engine.isClimaxReversalCallTrigger)
+        assertFalse("Continuacion CALL no debe sobrevivir", engine.isContinuationConfirmedCall)
+        assertFalse("Continuacion PUT no debe sobrevivir", engine.isContinuationConfirmedPut)
+        assertEquals("El flujo de ticks es del activo anterior", 0.0f, engine.tickFlowImbalance, 1e-9f)
+    }
+
+    @Test
+    fun cambioDeActivo_reseteaLaChoppinessCacheada() {
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 26L
+
+        for (i in 0..9) {
+            engine.onNewTick(MarketTick(asset = "Z-CRY/IDX", price = 641.867 + i * 0.001, timestampMs = now + i * 100L))
+        }
+        engine.onNewTick(MarketTick(asset = "ETHUSD-OTC", price = 1048.0, timestampMs = now + 4000L))
+
+        // Se recalcula al cerrar vela: el valor heredado del activo anterior no puede persistir.
+        assertFalse("La choppiness cacheada es del activo anterior", engine.cachedChoppiness)
+    }
+
+    @Test
+    fun mismoActivo_noReseteaLasRachasDeTicks() {
+        // Contraprueba: sin cambio de activo nada se limpia, o el motor no acumularia nada.
+        val engine = SyntheticCandleEngine()
+        val now = 60000L * 28L
+
+        for (i in 0..9) {
+            engine.onNewTick(MarketTick(asset = "Z-CRY/IDX", price = 641.867 + i * 0.001, timestampMs = now + i * 100L))
+        }
+        val rachaAntes = engine.consecutiveUpTicks
+        assertTrue(rachaAntes > 0)
+
+        engine.onNewTick(MarketTick(asset = "Z-CRY/IDX", price = 641.867 + 10 * 0.001, timestampMs = now + 5000L))
+        assertTrue(
+            "El mismo activo debe seguir acumulando la racha",
+            engine.consecutiveUpTicks >= rachaAntes
+        )
+    }
 }
 

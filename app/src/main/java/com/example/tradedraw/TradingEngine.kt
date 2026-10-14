@@ -245,6 +245,26 @@ class TradingEngine(
     fun recentPriceRangeRatio(): Double = priceRangeRatioProvider?.invoke() ?: -1.0
 
     /**
+     * Ronda 12 (B4): limpieza del estado POR ACTIVO al detectar un cambio de activo.
+     *
+     * `SyntheticCandleEngine` y `BinomoWebSocketClient` ya limpian sus propios buffers al ver el
+     * activo nuevo en el tick. Aqui se limpia lo que vive en el motor y pertenece al activo
+     * anterior: la senal vigente (que se calculo sobre otro precio y otro canal) y el ultimo
+     * analisis. NO se toca ninguna racha, contador de sesion ni el trade pendiente: esos son de
+     * la CUENTA, no del activo, y deben sobrevivir por diseno.
+     */
+    fun onAssetChanged() {
+        synchronized(this) {
+            currentActiveSignal = null
+            lastSignalReason = ""
+            lastExecutedCandleEpochMinute = 0L
+        }
+        latestAnalysisResult = null
+        latestAIResult = null
+        latestAITimestamp = 0L
+    }
+
+    /**
      * Invocado cuando llega un nuevo micro-tick en tiempo real vía WebSocket.
      */
     fun onMarketTick(tick: MarketTick) {
