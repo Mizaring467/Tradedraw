@@ -1,10 +1,10 @@
 # Ronda 13 — Informe
 
-**Árbol verificado:** `f016dbd` · árbol `app/` = `52cfcc6c16a5a45b90518209451291f04bb0cef6`
-**Suite:** 283 tests, 0 fallos, 2 omitidos, 23 clases · XML regenerados 2026-10-14 00:00:21
-(`cleanTest` + `--rerun-tasks`, hora real; no se reutilizó caché de Gradle)
-**APK:** `app-debug.apk` 13.712.119 bytes, instalado por ADB Wi-Fi (`Success`)
-**Batería:** inicio 100 % · final 96 % (el teléfono no carga de forma fiable)
+**Árbol verificado:** `c83992b` · árbol `app/` = `289b1f2eb47fe7a776d9bacd04bae26983f61a63`
+**Suite:** 286 tests, 0 fallos, 2 omitidos, 24 clases · XML regenerados 2026-10-14 00:45:17
+(`cleanTest` + `--rerun-tasks` sobre el árbol final, hora real; no se reutilizó caché de Gradle)
+**APK:** `app-debug.apk` instalado por ADB Wi-Fi (`Success`) sobre ese mismo árbol
+**Batería:** inicio 100 % · final 90 % (el teléfono no carga de forma fiable)
 
 ---
 
@@ -219,7 +219,7 @@ ventana de 16 ticks), para poder detectar desviaciones.
 
 **(a) Hora de la suite.** R12 declaró "Suite re-ejecutada 20:36:56" mientras los XML en disco
 eran de las 20:07:31: Gradle la dio por vigente. Aquí se ha usado `cleanTest` +
-`--rerun-tasks` y se verifica que **los 23 XML se regeneraron en el mismo instante**
+`--rerun-tasks` y se verifica que **los 24 XML se regeneraron en el mismo instante**
 (2026-10-14 00:00:21), 12 s antes de leerlos. La hora declarada es la real.
 
 **(b) Datasets 21 vs 212 · RECONCILIADOS.** Son **esquemas y periodos distintos**, y R12 los
@@ -429,7 +429,7 @@ afirmar que el serial "ya no existe" era incorrecto; ambos transportes funcionan
 | Bridge inaccesible desde la LAN | **PASA** | LAN sin respuesta; loopback 200 |
 | `mode = DISABLED` al cierre | **PASA** | `DISABLED` confirmado por `/status`, también tras el reinicio; `hasPendingTrade: false` |
 | Batería reportada al inicio y al final | **PASA** | 100 % → 93 % |
-| Suite completa sobre el árbol final con hora real | **PASA** | 283/0/2, XML 00:00:21, `cleanTest --rerun-tasks` |
+| Suite completa sobre el árbol final con hora real | **PASA** | 286/0/2, XML 00:45:17, `cleanTest --rerun-tasks` sobre `c83992b` |
 | `assembleDebug` + instalación por ADB Wi-Fi | **PASA** | `Success` |
 | B1 verificado en dispositivo | **PASA** | tabla de §2 |
 | **A4: causa de los 17 TIE identificada** | **NO PASA (sin determinar)** | mi hipótesis quedó **refutada** por la geometría medida; ver A4 y NO VERIFICADO |
@@ -506,19 +506,27 @@ de modo no interrumpió ninguna orden abierta. Después del reinicio (adenda 5) 
 | `5df79ee` | `docs(adenda)`: modelo real Redmi A1, ADB Wi-Fi, bridge en loopback |
 | `e03ac03` | `test(R13)`: buffer de eventos, mapeo RIC, estado de reposo |
 | `f016dbd` | `feat(adenda3)`: registrar cambios de activo en `/events` |
+| `0dfdb4b` | `docs(r13)`: informe de ronda + erratas de R11/R12 (modelo real, payout, hora de suite) |
+| `7814f34` | `chore`: ignorar temporales `.tmp_*` |
+| `508b41c` | `docs(r13)`: adenda 5 ejecutada — `logd` vuelve con el reinicio y la IP cambió |
+| `c83992b` | `fix(A4)`: **la causa raíz que declaré era falsa**; geometría medida + `HudGeometriaTest` |
 
 Tres commits agrupan más de una tarea porque las tareas caían en el **mismo fichero**
 (`TradeDrawHttpBridge.kt`, `OverlayService.kt`, `AutoTradeAccessibilityService.kt`) y separarlas
 habría exigido commits que no compilan. Se declara aquí en vez de aparentar granularidad.
+
+`c83992b` merece mención aparte: **no añade funcionalidad, corrige una conclusión falsa de este
+mismo informe.** Es el commit que debería haber existido antes de escribir "CAUSA RAÍZ
+CONFIRMADA" en A4.
 
 ---
 
 ## 8. Entrega
 
 - **CI:** https://github.com/Mizaring467/Tradedraw/actions → artefacto **`TradeDraw-debug`**
-  · run verde del árbol final: **`38514679629`** (`7814f34`)
-- **SHA del árbol verificado:** `f016dbd` (árbol `app/` = `52cfcc6c16a5a45b90518209451291f04bb0cef6`)
-  · último commit de documentación: `0dfdb4b` · `.gitignore`: `7814f34`
+  · run verde del árbol final: **`38517661074`** (`c83992b`)
+- **SHA del árbol verificado:** `c83992b` (árbol `app/` = `289b1f2eb47fe7a776d9bacd04bae26983f61a63`)
+  · último commit de documentación: `508b41c` · `.gitignore`: `7814f34`
 - **Evidencia visual:**
   - `loops/screenshots/r13/r13_hud_estado.png` (720x1600, 248.795 bytes) — A2b/A2c en vivo.
   - `loops/screenshots/r13/r13_final_post_reinicio.png` (720x1600, 284.250 bytes) — estado tras
