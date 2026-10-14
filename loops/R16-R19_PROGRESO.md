@@ -92,12 +92,17 @@ injustificado: `BinomoAuthActivity`. Parche en `scratch/proposals/`, **no aplica
 
 | sub-paso | estado | SHA | hora | batería |
 | :--- | :--- | :--- | :--- | :--- |
-| R18.1 Preregistro | pendiente | — | — | — |
-| R18.2 Ring dedicado | pendiente | — | — | — |
-| R18.3 Persistencia JSONL | pendiente | — | — | — |
-| R18.4 UID del emisor | pendiente | — | — | — |
-| R18.5 Prueba controlada + reinicio | pendiente | — | — | — |
-| R18.6 Informe + push | pendiente | — | — | — |
+| R18.1 Preregistro | **HECHO** | `85222f1` | 14:40 | 76 % |
+| R18.2 Ring dedicado | **HECHO** | `85222f1` | 15:10 | 77 % |
+| R18.3 Persistencia JSONL | **HECHO** | `85222f1` | 15:10 | 77 % |
+| R18.4 UID del emisor | **HECHO** — NO DISPONIBLE en API 31 (`since=34`), pero `Permission Denial` capturado con uid/pid | `85222f1` | 15:08 | 77 % |
+| R18.5 Prueba controlada + reinicio | **HECHO** — rearme sobrevive al reinicio (disco=3, ring=1) | `85222f1` | 15:18 | 75 % |
+| R18.6 Informe + push | **HECHO** | `7940f5d` | 15:24 | 75 % |
+
+**Resultado R18:** 325 tests, 0 fallos (+11). `/mode_log` (ring dedicado 100) y `/mode_journal`
+(disco) verificados en dispositivo. `getSentFromUid()` es `since=34` → **NO DISPONIBLE en API 31**;
+el `Permission Denial` sí capturado, con contraste medido UID 2000 (denegado) vs UID 0 (aceptado).
+`balance=0.0` al cierre es **valor no leído** tras reinicio sin abrir la pantalla, **no** discrepancia.
 
 ## R19 · Observación pasiva larga
 
