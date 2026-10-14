@@ -67,21 +67,26 @@ pasiva, o el teléfono deja de estar desatendido.
 | sub-paso | estado | SHA | hora | batería |
 | :--- | :--- | :--- | :--- | :--- |
 | R16.0 Reconocimiento + incidente | **HECHO** | — | 13:57 | 74 % (cargando) |
-| R16.1 Preregistro retroactivo | **EN CURSO** | — | — | — |
-| R16.2 Verificación de tooling | pendiente | — | — | — |
-| R16.3 Limitación de root + enmienda R15 | pendiente | — | — | — |
-| R16.4 Higiene git | pendiente | — | — | — |
-| R16.5 Informe + push | pendiente | — | — | — |
+| R16.1 Preregistro retroactivo | **HECHO** | `875dbcb` | 14:03 | 74 % |
+| R16.2 Verificación de tooling | **HECHO** | `8950947` | 14:12 | 75 % |
+| R16.3 Limitación de root + enmienda R15 | **HECHO** | `8950947` | 14:12 | 75 % |
+| R16.4 Higiene git | **HECHO** | — | 14:14 | 75 % |
+| R16.5 Informe + push | **HECHO** | `8950947` | 14:16 | 75 % |
 
 ## R17 · Auditoría BinomoAuthActivity
 
 | sub-paso | estado | SHA | hora | batería |
 | :--- | :--- | :--- | :--- | :--- |
-| R17.1 Preregistro | pendiente | — | — | — |
-| R17.2 Auditoría actividad + superficie exported | pendiente | — | — | — |
-| R17.3 `/mode` del bridge | pendiente | — | — | — |
-| R17.4 Parche propuesto (sin aplicar) | pendiente | — | — | — |
-| R17.5 Informe + push | pendiente | — | — | — |
+| R17.1 Preregistro | **HECHO** | `9199d13` | 14:20 | 75 % |
+| R17.2 Auditoría actividad + superficie exported | **HECHO** | `9199d13` | 14:28 | 76 % |
+| R17.3 `/mode` del bridge | **HECHO** | `9199d13` | 14:28 | 76 % |
+| R17.4 Parche propuesto (sin aplicar) | **HECHO** | `9199d13` | 14:31 | 76 % |
+| R17.5 Informe + push | **HECHO** | `9199d13` | 14:34 | 76 % |
+
+**Hallazgos R17:** H-INTENT FALSADA (cero `getIntent`) · **H-LEAK SOSTENIDA** (3 logs con token en
+claro: `:256`, `:322`, `:352`) · H-REDIRECT FALSADA (URL constante `:161`) · H-BRIDGE SOSTENIDA
+parcial (riesgo BAJO) · H-MODE SOSTENIDA (`/mode` sin auth, solo loopback). Único `exported="true"`
+injustificado: `BinomoAuthActivity`. Parche en `scratch/proposals/`, **no aplicado**.
 
 ## R18 · MODE_CHANGE persistente + atribución
 
