@@ -1,7 +1,7 @@
 # Ronda 12 — Erratum de R11, operaciones fantasma, payout real y activo por defecto
 
-**Rama:** `main` · **SHA final:** `11fa359` · **Fecha:** 2026-10-13
-**Rango de la ronda:** `926dc50..11fa359`
+**Rama:** `main` · **SHA final:** `ed88df3` · **Fecha:** 2026-10-13
+**Rango de la ronda:** `926dc50..ed88df3`
 **Restricción respetada:** no se relajó ningún umbral de `master_traders_skill`. `workflows/PREREGISTRO_R10.md` **no se modificó**: los umbrales nuevos viven en `workflows/PREREGISTRO_R12.md`, creado en esta ronda.
 **Balance:** 38.014.735,00 → **37.914.736,64** (−99.998,36). Cuenta **demo**. Explicado en "Seguridad" al final: una operación LOSS durante la verificación en dispositivo.
 **Auto-trading:** **DISABLED** al cierre, confirmado por HTTP. `hasPendingTrade: false`.
@@ -68,8 +68,8 @@ El dato **ya estaba llegando al código y se tiraba**: `extractAssetCandidate` (
 
 | Dato | Valor |
 | :--- | :--- |
-| SHA | `11fa359b1caaec527bc7b76ab3116687ed7880f5` |
-| Hora de fin | 2026-10-13 20:30:36 |
+| SHA | `ed88df325230fcd7d1ec8027a93cea6223937758` |
+| Hora de fin | 2026-10-13 20:36:56 |
 | Resultado | **271 passed, 0 failed, 2 skipped (20 clases)** |
 | Comando | `gradlew testDebugUnitTest assembleDebug --no-daemon --offline --no-configuration-cache --max-workers=1` |
 | Build | `BUILD SUCCESSFUL` |
@@ -223,7 +223,7 @@ T1 arregló el parser y T3 el buffer de `SyntheticCandleEngine`. Se revisó el r
 | Ninguna orden TIE aparece como `Trade Activo` | **PASA (por lógica y tests)** | `hasConfirmedTrade` exige `CONFIRMADA`; `recordTradeSent` deja `ENVIADA`. `OrderConfirmationTest` (12 tests). **Sin observación en vivo: ver salvedad abajo** |
 | Riesgo #1 reescrito con datos | **PASA** | `loops/R11_REPORTE.md`, riesgo #1 y `## Cierre` con las 21 filas del journal |
 | `git status` limpio y evidencia versionada | **PASA** | 69 capturas citadas versionadas en `74bbbc2`; residuo de 39 PNG no citados declarado; `*.pid`/logs/heartbeat en `.gitignore` |
-| Tests verdes sobre el SHA final | **PASA** | `11fa359`, 2026-10-13 20:30:36 → **271 passed, 0 failed, 2 skipped (20 clases)** |
+| Tests verdes sobre el SHA final | **PASA** | `ed88df3`, 2026-10-13 20:36:56 → **271 passed, 0 failed, 2 skipped (20 clases)** |
 | Build limpio | **PASA** | `BUILD SUCCESSFUL` |
 | Verificación visual ANTES/DESPUÉS en dispositivo | **PASA (parcial)** | `loops/screenshots/r12/` (captura nueva) + `loops/screenshots/r11/` (antes). POCO X6 Pro `UGU8KFUKM7E6CE8D` |
 
@@ -257,7 +257,8 @@ T1 arregló el parser y T3 el buffer de `SyntheticCandleEngine`. Se revisó el r
 | `5228bd2` | B2 + B3 — vetos V1/V2, preregistro R12, guardas de escala relativas |
 | `09266e2` | B1 — causa raíz de las operaciones fantasma y los tres estados |
 | `69b5925` | B4 — reset de acumuladores por activo y hook de cambio de activo |
-| `11fa359` | Erratum de R11 (A1, A4, A2, B2/B3/B4) en `R11_REPORTE.md` + `R12_REPORTE.md` |
+| `11fa359` | Erratum de R11 (A1, A4, A2, B2/B3/B4) en `R11_REPORTE.md` |
+| `ed88df3` | Informe R12 + `zoom_tester_12_sniper.png` (evidencia citada y sin versionar) + `.gitignore` de dumps |
 
 **CI:** workflow "Build APK" → artefacto `TradeDraw-debug`.
 `https://github.com/Mizaring467/Tradedraw/actions`
