@@ -40,7 +40,17 @@ object TradeEventLog {
          * Ronda 14 (B1): el mercado del activo activo lleva N segundos sin rango suficiente.
          * Es un AVISO, no una decision: el bot nunca cambia de activo por esto.
          */
-        INOPERABLE
+        INOPERABLE,
+        /**
+         * Ronda 15-A: transicion del modo de trading (`TradingEngine.mode`).
+         *
+         * Existe para atribuir el rearme espontaneo a `AUTONOMOUS` observado dos veces en R14.
+         * El detalle lleva el modo anterior, el nuevo y el ORIGEN (pila de llamadas), que es lo
+         * que permite distinguir una ruta automatica de un toque humano.
+         *
+         * Es PURA observabilidad: registrar el cambio no altera el cambio.
+         */
+        MODE_CHANGE
     }
 
     data class Event(

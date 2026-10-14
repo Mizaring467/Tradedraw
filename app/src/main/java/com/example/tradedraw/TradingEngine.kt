@@ -48,13 +48,45 @@ class TradingEngine(
 
     var mode: AutoTradeMode = AutoTradeMode.DISABLED
         set(value) {
+            val anterior = field
             field = value
+            if (value != anterior) {
+                // R15-A: solo observabilidad. Registrar el cambio NO lo altera. El ORIGEN es lo
+                // unico que permite atribuir el rearme espontaneo observado en R14: sin el, un
+                // cambio automatico y un toque humano son indistinguibles.
+                TradeEventLog.add(
+                    TradeEventLog.Kind.MODE_CHANGE,
+                    "de=$anterior a=$value origen=${modeChangeOrigin()}"
+                )
+            }
             if (value == AutoTradeMode.AUTONOMOUS) {
                 agentController.start()
             } else {
                 agentController.stop()
             }
         }
+
+    /**
+     * R15-A: pila de llamadas corta y legible para el ORIGEN de un cambio de modo.
+     *
+     * Se saltan los frames de la propia instrumentacion y los del runtime, y se devuelven los
+     * primeros 5 utiles. Nunca devuelve cadena vacia: si todo falla, devuelve "desconocido"
+     * explicito, porque un ORIGEN vacio se leeria como "no hay origen" en vez de "no se pudo
+     * capturar" — y esa diferencia es justo lo que esta ronda intenta medir.
+     */
+    private fun modeChangeOrigin(): String {
+        return try {
+            val frames = Thread.currentThread().stackTrace
+                .drop(1)
+                .filterNot { it.className.startsWith("java.") || it.className.startsWith("kotlin.") }
+                .filterNot { it.methodName.startsWith("access$") }
+                .take(5)
+                .map { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
+            if (frames.isEmpty()) "desconocido" else frames.joinToString("<")
+        } catch (e: Exception) {
+            "desconocido"
+        }
+    }
 
     var autonomousSubMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE
         set(value) {

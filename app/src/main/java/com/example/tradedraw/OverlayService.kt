@@ -247,6 +247,14 @@ class OverlayService : Service() {
         tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager)
         tradingEngine.adaptiveLearningEngine.loadState(this)
 
+        // R15-A: el modo arranca en DISABLED sin pasar por el setter (es el inicializador de la
+        // propiedad), asi que un rearme por recreacion del servicio seria INVISIBLE. Se registra
+        // el estado inicial aqui para que una recreacion deje rastro inequivoco en /events.
+        TradeEventLog.add(
+            TradeEventLog.Kind.MODE_CHANGE,
+            "de=NINGUNO a=${tradingEngine.mode} origen=onCreate(servicio recreado)"
+        )
+
         // Cargar estrategia guardada previamente (por defecto AUTO_ADAPTIVE)
         val savedStrat = getSharedPreferences("TradeDraw_Config", Context.MODE_PRIVATE)
             .getString("saved_strategy", AutoTradeStrategy.AUTO_ADAPTIVE.name)
