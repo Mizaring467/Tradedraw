@@ -431,3 +431,273 @@ emisores del repo (`test_master_trader_suite.py:65` y `docs/superpowers/plans/..
 **inertes ya antes del parche** (el receptor lee el extra `action`, no `command`; y la acción
 `com.example.tradedraw.TEST` nunca tuvo receptor). Ver `loops/R16_REPORTE.md` §2.
 
+---
+
+# AMPLIACIÓN 2 — Frentes B y C · `2026-10-14 18:40`
+
+**Se añade, no se reescribe el cuerpo.** El frente A de esta ronda se cerró en `fafbc05` /
+`8ac1b26` / `afa296c`. Los frentes **B** (supervivencia del bridge sin `MediaProjection` +
+verificación del banner) y **C** (experimento multi-RIC) **no se habían ejecutado**: R14 los dejó
+como NO VERIFICADO y ni R15-A ni R16-R19 los retomaron. Criterios fijados a priori en
+`PREREGISTRO_R15.md` §6-§7, commit `d3c12eb`, **antes** de tocar código.
+
+**Árbol de partida:** `752f21e`. **Commits de esta ampliación:** `d3c12eb` (preregistro) ·
+`00a474e` (A2 + B1 + instrumentación C) · `77f1fb1` (corrección del detector + banner).
+
+---
+
+## 10. Frente A2 — el modo deja de ser escribible desde fuera
+
+**Problema que resuelve.** En R14 el motor apareció en `AUTONOMOUS` en una ronda desatendida y
+hubo que **reconstruir el origen a posteriori leyendo código**, porque `TradingEngine.mode` era un
+campo público que **13 puntos distintos** asignaban a mano. Un campo escribible convierte cada
+rearme en un trabajo forense; un método con `source` obligatorio lo convierte en un dato.
+
+**Cambio.** `mode` pasa a `private set`; la única puerta es
+`setTradingMode(newMode: AutoTradeMode, source: String): Boolean`, que:
+
+1. no emite evento si el modo no cambia (evita llenar el ring de transiciones que no lo son);
+2. registra en `TradeEventLog` → `/events`: `de=<prev> a=<next> source=<caller> origen=<pila>`;
+3. expone `lastModeChangeSource` y `lastModeChangeTs` en `/status`;
+4. conserva el `ORIGEN` por pila **además** del `source`, porque un `source` se escribe a mano y
+   una pila no: **si los dos discrepan, el dato interesante es que discrepan**.
+
+**Los 13 escritores, migrados con su `source`:**
+
+| ruta | `source` |
+| :--- | :--- |
+| `overlayCommandReceiver` AUTO / YOLO / SEMI / STOP | `broadcast(CMD,action=…)` |
+| `showModeDialog` semi / disabled | `ui:showModeDialog(…)` |
+| `showAutonomousSubModeDialog` conservador / yolo / sniper | `ui:showAutonomousSubModeDialog(…)` |
+| `AgentChatOverlay` NL para / yolo / conservador | `chat:NL(…)` |
+| `AgentChatOverlay` cmd MODE_AUTONOMOUS / YOLO / SEMIAUTO / DISABLED | `chat:cmd(…)` |
+| `resumeAutonomousTrading` | `agent:resumeAutonomousTrading` |
+| `TradingEngine.stop()` | `engine:stop()` |
+| límite de sesión sniper (3 rutas) | `engine:sniper-limite(…)` |
+| `/mode` del bridge | `bridge:/mode` |
+| `onCreate` | `onCreate(servicio recreado)` (vía `marcarModoInicial`) |
+
+**Sembrado del estado inicial.** `mode` nace `DISABLED` en el inicializador de la propiedad y
+**nunca pasa por el setter**. Medido en dispositivo: sin sembrarlo, `/status` devolvía
+`lastModeChangeSource = ""` y no se podía distinguir *«arrancó limpio»* de *«no se registró la
+transición»*. `marcarModoInicial(source)` cierra esa ambigüedad sin cambiar el valor ni emitir
+evento. Verificado tras arranque limpio:
+
+```
+lastModeChangeSource=DISABLED -> DISABLED | source=onCreate(servicio recreado)
+```
+
+**Cobertura.** `ModeTransitionAuditTest`, 5 casos: `mode` es privado por reflexión; el accesor
+`setMode` no puede ser público; `setTradingMode` existe con la firma exacta y devuelve `Boolean`;
+`lastModeChange`/`lastModeChangeTs` son privados con lectura pública; y **análisis estático de
+todo `src/main` que falla si reaparece cualquier asignación directa de `mode`**. Ese último test
+es el que impide que la próxima ronda reintroduzca el problema.
+
+---
+
+## 11. Frente B1 — el bridge sobrevive a `adb install -r` sin ningún toque
+
+**Atribución de R14, corregida.** R14 §9 concluyó que `OverlayService` «no se puede rearrancar sin
+conceder `MediaProjection` por toque». **Es falso, y ya estaba medido en R15-A §4.1:** el servicio
+**nunca** pidió captura — `onStartCommand` ignora el `dataIntent`
+(`OverlayService.kt:224-236`) y llama a `startTradeDrawForeground(hasMediaProjection = false)`
+**siempre**.
+
+**Causa real, ahora aislada y reproducida:** el servicio se arrancaba **sólo desde un
+`OnClickListener`** de `MainActivity`. `adb install -r` mata el proceso y **abrir la app no ejecuta
+ningún listener**. Reproducido: tras `force-stop`, `pidof` vacío; tras `am start`, proceso vivo
+pero **bridge caído** (`Se ha terminado la conexión`).
+
+**Cambio.** Si `Settings.canDrawOverlays(this)` ya es verdadero, `MainActivity` arranca el servicio
+al abrirse. **No se concede ningún permiso nuevo**: se automatiza un arranque que el usuario ya
+había autorizado. No se toca el modo.
+
+**Error de diseño detectado y corregido durante la propia verificación.** La primera versión exigía
+además `isAccessibilityPermissionGranted`. Medido: en este dispositivo
+`enabled_accessibility_services = null`, así que el guard **bloqueaba el arranque** — un fallo
+espurio que el preregistro no contemplaba. Se eliminó la condición: el HUD y el bridge **no
+necesitan accesibilidad**. Es un recordatorio de por qué el criterio se fija antes y se mide
+después, en ese orden.
+
+**Criterios de aceptación, verificados:**
+
+| # | condición | resultado |
+| :-- | :--- | :--- |
+| B1.1 | tras `force-stop` + **una** `am start`, `curl /status` → HTTP 200 | **HTTP 200** |
+| B1.2 | sin tocar la pantalla ni conceder `MediaProjection` | **cumplido** (todo por ADB) |
+| B1.3 | no arranca `ScreenCaptureManager` | **cumplido** (`hasMediaProjection=false` incondicional) |
+| B1.4 | no cambia el modo | **cumplido** (`mode=DISABLED`, `hasPendingTrade=false`) |
+
+---
+
+## 12. Frente C — B0 (suscripción multi-RIC): **SOSTENIDA**
+
+### 12.1 Qué mide y por qué hacía falta
+
+R14 dejó B0 **NO CONCLUYENTE** porque nadie probó en el dispositivo si suscribir un RIC adicional
+mantiene vivo el stream del principal. Se resolvió con una ventana de **60 s** por escenario, con
+`mode = DISABLED` (0 taps posibles).
+
+### 12.2 Resultado medido
+
+| escenario | ticks/s del **principal** (`Z-CRY/IDX`) | ticks del secundario (`ETHUSD-OTC`) | desconexiones |
+| :--- | ---: | ---: | ---: |
+| **1 RIC** (referencia, 60 s) | **2,45** (147 ticks) | — | **0** |
+| **2 RICs** (60 s) | **2,43** (146 ticks) | **90 ticks reales** | **0** |
+
+**El principal conserva el 99,2 % de su tasa** (criterio C.5 exige ≥ 50 %). El servidor **no
+rechaza, no ignora ni corta**: entrega ticks de ambos RIC en la misma conexión.
+
+### 12.3 Veredicto y qué NO se hace con él
+
+**B0 SOSTENIDA** (se cumplen las tres condiciones fijadas a priori en §7.2: 0 desconexiones, el
+principal conserva ≥ 50 %, el secundario recibe > 0 ticks).
+
+**NO se implementa B2a.** El preregistro lo fijó así: con B0 sostenida se **documenta el protocolo
+exacto validado** y el acumulador de candidatos queda **preregistrado con datos reales** para una
+ronda con el usuario presente. Implementar B2a aquí sería cambiar el motor de suscripción en una
+ronda desatendida, que es justo lo que el enunciado prohíbe.
+
+**Protocolo validado (para R20):** un **único** mensaje
+`{"action":"subscribe","rics":["<principal>","<secundario>"]}` — clave `rics` en plural, array de
+strings — seguido de `phx_join` a `asset:<ric>` y `rates` con el `ric` en el payload, por cada RIC
+adicional.
+
+### 12.4 Reversibilidad — ejecutada y verificada
+
+`/diag_multiric?accion=restaurar` desuscribe el RIC ajeno y reafirma el propio. Verificado:
+
+```
+post-restauracion: ricSec=[] accepted=521 desconn=0 fresh=True asset=Z-CRY/IDX
+```
+
+La suscripción por defecto del motor **nunca se tocó**: el experimento vive detrás de un endpoint
+que **rechaza la operación si el motor no está en `DISABLED`** (devuelve HTTP 409). Los precios del
+RIC secundario **no entran en el motor**: solo se cuentan.
+
+### 12.5 Hallazgo colateral: `AAVEUSD-OTC` está muerto
+
+Al arrancar tras la instalación, el activo persistido era `AAVEUSD-OTC`. La suscripción fue
+**aceptada por el servidor** (`{"success":true,"errors":[]}`) y aun así **0 ticks en 48 s**:
+`socketTicks=0`, `rawSocketMessages=1`. Es el mismo caso ya visto en R13 (Aave sin stream). Se
+documenta porque **una suscripción aceptada no prueba que haya datos**: el criterio de éxito de
+cualquier experimento de feed debe ser el **tick**, no el `success:true`.
+
+---
+
+## 13. Frente B2 — el banner `⚠ Mercado inoperable`, verificado en pantalla
+
+### 13.1 El banner existe y se pinta
+
+![Banner de mercado inoperable en el HUD](screenshots/r15/r15_inoperable_banner.png)
+
+Captura **real del dispositivo** (`720x1600`, Redmi A1), `loops/screenshots/r15/r15_inoperable_banner.png`.
+Texto legible en el HUD:
+
+> `⚠ Mercado inoperable en ETHUSD-OTC (15s sin rango). Considera cambiar de gráfico | Headless`
+
+**Es la primera vez que se ve este banner en pantalla.** R14 §10.5 lo dejó NO VERIFICADO.
+
+### 13.2 Declaración honesta: fue una **INYECCIÓN**, no un mercado real
+
+**El banner se activó por inyección controlada, y hay que decirlo así.** No se observó un mercado
+realmente congelado, porque **el detector no se enciende en ese escenario** — y esa es la parte
+interesante.
+
+**Por qué no se enciende solo (medido, no supuesto).** El detector compara el rango actual contra
+la **mediana de los últimos 60 min del propio activo**, excluyendo sólo los últimos 30 s. Si el
+activo lleva más de 30 s plano, **sus propias muestras planas ya entran en la mediana** `M`,
+`0.25·M` se va a cero y `R < 0.25·M` deja de cumplirse. Medido en el dispositivo: **14 min con
+rango ≈ 2,5e-10 en `Z-CRY/IDX`** y `inoperableNow = false`, con la referencia cayendo. Es decir:
+**el detector avisa de una CAÍDA de actividad respecto a la historia reciente del activo, no de
+una actividad baja en términos absolutos.** Un activo muerto desde hace una hora **no dispara el
+aviso**, y eso es una propiedad del diseño, no un fallo transitorio.
+
+**Qué tocó la inyección y qué no.** Alimentó **únicamente** `inoperabilityDetector`, que es
+**aviso y nunca decisión**: no cambia de activo, no entra en la decisión de entrada, no toca el
+modo. **No se inyectó ni un tick** en el motor, en el motor sintético ni en el feed del broker. El
+evento lo declara en su propio texto: `activo=INYECTADO(prueba B2)`.
+
+### 13.3 Criterios de aceptación, verificados
+
+| # | condición | resultado |
+| :-- | :--- | :--- |
+| B2.1 | captura real con el texto legible | **cumplida** (arriba) |
+| B2.2 | ruta usada declarada distinguiendo real de inyectado | **cumplida** (§13.2, inyección) |
+| B2.3 | `/status` con `inoperableNow=true` | **cumplido** (`inoperableNow=true`, `inoperableSeconds=2`) |
+| B2.4 | evento `INOPERABLE` en `/events` (± 5 s) | **cumplido** |
+| B2.5 | estado limpio al terminar | **cumplido** (`inoperableNow=false`, `secs=0`) |
+
+### 13.4 Hallazgo real de B2: la referencia **no se limpiaba al cambiar de activo**
+
+Verificando B2 apareció un fallo de verdad, no cosmético. La referencia de inoperabilidad es la
+mediana de rango **del propio activo**, y **no se reiniciaba** al cambiar de activo. Escalas
+medidas: `Z-CRY/IDX` **2,5e-10** frente a `ETHUSD-OTC` **5e-4** — **cuatro órdenes de magnitud**.
+El activo nuevo quedaba clasificado contra el rango del viejo. Es **el mismo fallo que R12/B4 ya
+corrigió** para `recentTicks`: el estado que describe *«cómo se movía esto»* es **por activo** y no
+sobrevive a un cambio de activo.
+
+Corregido en `77f1fb1`: `MarketInoperabilityDetector.onAssetChanged()` limpia la serie, y
+`/asset` pasa a disparar `onAssetChanged` — antes **solo** lo hacía la vía de accesibilidad, así que
+un cambio de activo por el bridge dejaba la referencia contaminada. Verificado: tras cambiar de
+activo, `reference = -1.0` (serie limpia).
+
+Se añadieron a `/status` `inoperableSeconds`, `inoperableRatio` e `inoperableReference`: sin ellos
+no se puede distinguir *«no se activó»* de *«no había referencia»*, que es exactamente el trabajo
+que consumió esta fase.
+
+---
+
+## 14. Verificación de la ampliación
+
+| comprobación | resultado |
+| :--- | :--- |
+| Suite completa, `cleanTest --rerun-tasks` sobre el árbol final | **331 tests, 0 fallos, 0 errores, 2 omitidos, 30 clases** |
+| Línea base | 314 (R15-A) → 325 (R18) → **331** (+6: `ModeTransitionAuditTest` ×5, caso de cambio de activo ×1) |
+| Hora real de los XML | `2026-10-14 18:41:34` |
+| `assembleDebug` + `adb install -r` | **BUILD SUCCESSFUL**, **`Success`** (13.726.948 bytes) |
+| B1: `/status` → HTTP 200 tras arranque por ADB sin toque | **cumplido** |
+| B2: banner en pantalla real + `/status` + `/events` | **cumplido** |
+| C: B0 multi-RIC medido con tabla de ticks/s | **cumplido** — SOSTENIDA |
+| Suscripción restaurada a 1 RIC | **cumplida** (`ricSec=[]`) |
+| `master_traders_skill` intacta | **SÍ** — ningún umbral, ventana, veto ni dimensionamiento tocado |
+| `N` de operaciones supervisadas | **0** — `tapsDespachados=0`, `W/L=0/0` |
+| Modo al cierre | **`DISABLED`**, `orderState=NINGUNA`, `hasPendingTrade=false` |
+| Batería | inicio **86 %** · cierre **93 %** (cargando) |
+
+---
+
+## 15. NO VERIFICADO de la ampliación
+
+1. **El banner nunca se ha visto por un mercado realmente congelado.** Se vio por inyección. Y hay
+   motivo medido para creer que **es difícil verlo así** (§13.2): en un activo plano de forma
+   sostenida, la propia referencia se contamina. **No se declara que el aviso funcione en
+   producción**; se declara que **la ruta de pintado funciona** y que el **disparador natural no se
+   reprodujo**.
+2. **B0 SOSTENIDA se midió en UNA ventana de 60 s, con UN par de RICs, con el mercado plano.**
+   No se probó con más de dos RICs, ni en otro par, ni con el activo principal volátil. La
+   conclusión se limita a lo medido.
+3. **El coste de B2a sigue sin medir.** Que el servidor acepte dos RICs no dice nada sobre el
+   consumo de CPU, batería o memoria del teléfono, que en este dispositivo (4 núcleos,
+   `loadavg` 16-20) es la restricción real.
+4. **La corrección del detector al cambiar de activo** está verificada en dispositivo **y** cubierta
+   por el caso `elCambioDeActivoLimpiaLaReferencia` (añadido tras escribir este informe; la suite
+   sobre el árbol final son **331** casos, no 330).
+5. **`/diag_multiric` y `/diag_inoperable` son endpoints de diagnóstico** que quedan en el código.
+   Están limitados (el primero exige `DISABLED`; el segundo solo toca el detector), pero **son
+   superficie nueva del bridge** y conviene decidir en R20 si se retiran.
+
+---
+
+## 16. Recomendaciones que se añaden a las de §8
+
+7. **Decidir si B2a se implementa.** B0 está sostenida con datos. El preregistro de R20 debe fijar
+   el coste aceptable en CPU/batería antes de tocar la suscripción.
+8. **Revisar el disparador del aviso de inoperabilidad.** Tal como está, un activo muerto desde
+   hace una hora **no genera aviso**, porque su propia quietud contamina la referencia. Si el
+   propósito es avisar de *«este activo ya no sirve»*, el criterio no puede ser sólo relativo.
+9. **Retirar o acotar `/diag_multiric` y `/diag_inoperable`** cuando la verificación esté cerrada.
+   (El punto 9 anterior —«añadir el caso de test»— quedó hecho: ver §15.4.)
+10. **Retirar o acotar `/diag_multiric` y `/diag_inoperable`** cuando la verificación esté cerrada.
+
+

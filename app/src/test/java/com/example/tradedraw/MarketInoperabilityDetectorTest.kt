@@ -41,6 +41,29 @@ class MarketInoperabilityDetectorTest {
     }
 
     @Test
+    fun elCambioDeActivoLimpiaLaReferencia() {
+        // Ronda 15 / B2. La referencia es la mediana de rango del PROPIO activo. Sin limpiarla, el
+        // activo nuevo se compara contra el rango del anterior. Medido en dispositivo: Z-CRY/IDX
+        // ronda 2.5e-10 y ETHUSD-OTC 5e-4, cuatro ordenes de magnitud de diferencia.
+        val d = MarketInoperabilityDetector()
+        feed(d, alternante(200, base = 100.0, delta = 0.2))
+        assertTrue("La referencia debe estar construida antes del cambio", d.lastReference > 0.0)
+
+        d.onAssetChanged()
+
+        assertEquals("La referencia debe quedar limpia", -1.0, d.lastReference, 1e-12)
+        assertEquals("El ratio debe quedar limpio", -1.0, d.lastRatio, 1e-12)
+        assertFalse("No puede quedar encendido tras limpiar", d.isInoperable)
+
+        // Con la serie limpia, un activo de OTRA escala no debe heredar el veredicto del anterior.
+        // ETH ronda 5e-4: si la referencia vieja (de escala 0.2 sobre 100) sobreviviera, este
+        // activo perfectamente vivo se clasificaria contra ella.
+        val flancos = feed(d, alternante(200, base = 3000.0, delta = 1.5))
+        assertTrue("Un activo vivo de otra escala no debe encender el aviso", flancos.isEmpty())
+        assertFalse(d.isInoperable)
+    }
+
+    @Test
     fun mercadoAmplioNoDisparaNada() {
         val d = MarketInoperabilityDetector()
         val flancos = feed(d, alternante(200))
