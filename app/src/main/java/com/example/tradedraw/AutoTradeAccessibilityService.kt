@@ -43,6 +43,16 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         var isSyntheticOrOTC: Boolean = false
             internal set
 
+        /**
+         * Ronda 12 (A2): payout real leido del arbol de accesibilidad de Binomo.
+         * `null` si no se ha podido leer todavia (el HUD cae entonces al valor configurado
+         * y lo rotula como estimado). Se publica como `PayoutReader.PayoutReading` para que
+         * el consumidor vea tambien si los dos metodos de lectura discrepan.
+         */
+        @Volatile
+        var observedPayout: PayoutReader.PayoutReading = PayoutReader.reconcile(null, null)
+            internal set
+
         var onBalanceUpdatedListener: ((Double) -> Unit)? = null
         var onAssetUpdatedListener: ((String, Boolean) -> Unit)? = null
 
@@ -475,6 +485,39 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         try {
             traverseScreenContext(root)
         } catch (e: Exception) {}
+        // Ronda 12 (A2): segundo metodo de lectura del payout. Los botones CALL/PUT muestran
+        // `cantidad * (1 + payout)` como texto (p.ej. Col$182,000.00 sobre Cantidad Col$100,000
+        // => payout 0.82). Se recorre el arbol recogiendo importes y se deduce el cociente.
+        // Se hace DESPUES del recorrido porque `observedOrderAmount` (la cantidad) puede
+        // aparecer despues de los botones en el arbol.
+        try {
+            updatePayoutFromButtonRatio(root)
+        } catch (e: Exception) {}
+    }
+
+    /**
+     * Deduce el payout comparando cada importe visible con la cantidad apostada. El saldo de la
+     * cuenta tambien es un importe, pero su cociente respecto a la cantidad (cientos de veces)
+     * cae fuera del rango plausible y `PayoutReader` lo descarta solo.
+     */
+    private fun updatePayoutFromButtonRatio(node: android.view.accessibility.AccessibilityNodeInfo?) {
+        val stake = observedOrderAmount
+        if (stake <= 0.0) return
+        var candidato: Double? = null
+        val pendientes = ArrayDeque<android.view.accessibility.AccessibilityNodeInfo>()
+        node?.let { pendientes.addLast(it) }
+        while (pendientes.isNotEmpty()) {
+            val n = pendientes.removeLast()
+            val t = n.text?.toString()
+            if (!t.isNullOrBlank() && (t.contains("$") || t.contains("Col"))) {
+                val importe = parseAmountString(t)
+                PayoutReader.deriveFromButtonRatio(importe, stake)?.let { p -> candidato = p }
+            }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { pendientes.addLast(it) }
+        }
+        if (candidato != null) {
+            observedPayout = PayoutReader.reconcile(observedPayout.fromPercentLabel, candidato)
+        }
     }
 
     private fun traverseScreenContext(node: android.view.accessibility.AccessibilityNodeInfo?) {
@@ -495,6 +538,16 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                 // Solo actualizar si la pestaña está explícitamente seleccionada o si aún no hay ningún activo detectado
                 if (isActiveTab || latestObservedAsset.isBlank()) {
                     latestObservedAsset = assetCandidate
+                    // Ronda 12 (A2): el payout va en el MISMO nodo que el nombre del activo,
+                    // como `Crypto IDX 83%` / `Ethereum (OTC) 82%`. `extractAssetCandidate` ya
+                    // descarta ese sufijo para quedarse con el nombre; aqui se RESCATA el valor
+                    // en vez de tirarlo, que es lo que hacia antes.
+                    PayoutReader.parsePercentLabel(
+                        Regex("(\\d{1,3}\\s*%)").find(text)?.value
+                    )?.let { pct ->
+                        val actual = observedPayout
+                        observedPayout = PayoutReader.reconcile(pct, actual.fromButtonRatio)
+                    }
                     val upper = assetCandidate.uppercase()
                     val isSyn = upper.contains("IDX") || upper.contains("OTC")
                     isSyntheticOrOTC = isSyn

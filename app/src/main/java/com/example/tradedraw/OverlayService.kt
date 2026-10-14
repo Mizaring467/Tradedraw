@@ -57,6 +57,18 @@ class OverlayService : Service() {
         return (metrics.widthPixels - (2 * hudSideMarginPx()))
             .coerceAtLeast((200 * metrics.density).toInt())
     }
+    /**
+     * Preferencias del HUD (alfa, plegado y visibilidad). Ronda 12 (A5): centralizadas para que
+     * escritura y lectura usen el mismo fichero; `null` si el servicio aun no tiene contexto listo.
+     */
+    private fun hudPrefs(): android.content.SharedPreferences? {
+        return try {
+            getSharedPreferences("TradeDraw_HUDConfig", Context.MODE_PRIVATE)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private lateinit var canvasView: View
     internal lateinit var drawingView: CustomDrawingView
     private lateinit var canvasParams: WindowManager.LayoutParams
@@ -1021,6 +1033,31 @@ class OverlayService : Service() {
         hudView?.background?.mutate()?.alpha = (hudAlpha * 255).toInt().coerceIn(0, 255)
     }
 
+    /**
+     * Ronda 12 (A6): legibilidad del texto independiente de la transparencia del panel.
+     *
+     * Separar el alfa del fondo (hecho en R11) era necesario pero NO suficiente: con el panel
+     * translucido las velas y los ejes de Binomo siguen viendose DETRAS del texto (evidencia
+     * `after_21.png`, donde la linea de velas atraviesa "Tendencia: LATERAL / RANGO").
+     *
+     * La solucion es dar contraste propio al texto en vez de depender del fondo: sombra negra
+     * dura sobre cada TextView del HUD. Asi el panel puede ser tan transparente como quiera el
+     * usuario sin que el texto deje de leerse, y no hay que tocar el layout ni el slider.
+     */
+    private fun applyHudTextLegibility() {
+        val root = hudView ?: return
+        val cola = ArrayDeque<View>()
+        cola.addLast(root)
+        while (cola.isNotEmpty()) {
+            val v = cola.removeLast()
+            if (v is TextView) {
+                v.setShadowLayer(3f, 0f, 0f, Color.BLACK)
+            } else if (v is android.view.ViewGroup) {
+                for (i in 0 until v.childCount) cola.addLast(v.getChildAt(i))
+            }
+        }
+    }
+
     private fun setHUDOpacity(alpha: Float) {
         hudAlpha = alpha.coerceIn(0.15f, 1.0f)
         getSharedPreferences("TradeDraw_HUDConfig", Context.MODE_PRIVATE)
@@ -1081,9 +1118,13 @@ class OverlayService : Service() {
             x = hudSideMarginPx(); y = 50
         }
 
-        val hudPrefs = getSharedPreferences("TradeDraw_HUDConfig", Context.MODE_PRIVATE)
+        val hudPrefs = hudPrefs() ?: getSharedPreferences("TradeDraw_HUDConfig", Context.MODE_PRIVATE)
         hudAlpha = hudPrefs.getFloat("hud_alpha", 0.70f)
         isHudCollapsed = hudPrefs.getBoolean("hud_collapsed", true)
+        // Ronda 12 (A5): la visibilidad se restaura de preferencias en vez de arrancar siempre
+        // oculta. Por defecto `false` para no cambiar el comportamiento de un usuario que nunca
+        // la haya activado, pero una vez activada sobrevive al reinicio del servicio.
+        isHudVisible = hudPrefs.getBoolean("hud_visible", false)
         applyHudAlpha()
 
         val sliderContainer = hudView?.findViewById<View>(R.id.hud_opacity_slider_container)
@@ -1127,6 +1168,13 @@ class OverlayService : Service() {
         val btnCollapse = hudView?.findViewById<TextView>(R.id.hud_btn_collapse)
         detailsContainer?.visibility = if (isHudCollapsed) View.GONE else View.VISIBLE
         btnCollapse?.text = if (isHudCollapsed) "▼" else "▲"
+
+        // Ronda 12 (A5): aplicar la visibilidad restaurada. Sin esto, `isHudVisible` quedaria
+        // en true pero la vista seguiria como la dejo el layout (GONE), con el HUD invisible.
+        hudView?.visibility = if (isHudVisible) View.VISIBLE else View.GONE
+
+        // Ronda 12 (A6): contraste propio del texto, independiente del alfa del panel.
+        applyHudTextLegibility()
 
         btnCollapse?.setOnClickListener {
             // Plegado manual: manda sobre el auto-plegado durante la operación en curso.
@@ -1380,6 +1428,10 @@ class OverlayService : Service() {
     fun setHUDVisibility(visible: Boolean) {
         mainHandler.post {
             isHudVisible = visible
+            // Ronda 12 (A5): la visibilidad del HUD se persiste igual que el plegado y el alfa.
+            // Antes solo vivia en memoria: tras reiniciar el servicio el HUD arrancaba invisible
+            // (hudVisible:false) y habia que reactivarlo a mano por HTTP.
+            hudPrefs()?.edit()?.putBoolean("hud_visible", visible)?.apply()
             if (isHudVisible) {
                 hudParams?.let { p ->
                     val view = hudView ?: return@let
@@ -1874,18 +1926,28 @@ class OverlayService : Service() {
                     TradeMoneyness.TIE -> "ABIERTO"
                     null -> "SIN DATO"
                 }
+                // Ronda 12 (A2): el P&L usaba SIEMPRE el payout configurado (0.85), mientras
+                // Binomo muestra 82-83%. Ahora se usa el payout leido del arbol de accesibilidad
+                // y, si no hay lectura valida, se cae al configurado ROTULADO como `(est.)`
+                // para que el numero no se presente como exacto cuando no lo es.
+                val payoutReading = AutoTradeAccessibilityService.observedPayout
+                val configuredPayout = riskManager.sorosPayoutRate.toDouble()
+                val (payoutToUse, esEstimado) = PayoutReader.effectivePayout(payoutReading, configuredPayout)
                 val pnlStr = hud.pendingMoneyness?.let {
                     val pnl = StrikeCalculator.estimatedPnl(
                         it,
                         riskManager.getCurrentInvestmentAmount(tradingEngine.autonomousSubMode).toDouble(),
-                        riskManager.sorosPayoutRate.toDouble()
+                        payoutToUse
                     )
                     if (it == TradeMoneyness.TIE) "—"
                     else if (pnl >= 0) "+${StrikeCalculator.formatMoney(pnl)}" else "-${StrikeCalculator.formatMoney(-pnl)}"
                 } ?: "—"
+                // Marca de origen del payout: sin ella, un P&L calculado con el valor por
+                // defecto se leeria como si viniera del broker.
+                val payoutTag = if (esEstimado) "(est.)" else ""
                 val remainingSec = (tradingEngine.timeframe.seconds - hud.pendingElapsedSec).coerceAtLeast(0L)
 
-                txtStatus.text = "🤖 $act · Strike $entryStr · $stateStr · P&L $pnlStr · Hasta exp ${remainingSec}s"
+                txtStatus.text = "🤖 $act · Strike $entryStr · $stateStr · P&L $pnlStr$payoutTag · Hasta exp ${remainingSec}s"
                 txtStatus.setTextColor(
                     when (hud.pendingMoneyness) {
                         TradeMoneyness.ITM -> Color.parseColor("#22c55e")
