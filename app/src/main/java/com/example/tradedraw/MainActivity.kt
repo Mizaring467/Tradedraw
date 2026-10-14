@@ -83,7 +83,11 @@ class MainActivity : AppCompatActivity() {
         // abrir la app no ejecutaba ningun listener, asi que el bridge :8080 quedaba caido y no
         // habia forma de leer /status en modo desatendido. No se concede ningun permiso nuevo: se
         // automatiza un arranque que el usuario ya habia autorizado. No se toca el modo.
-        if (checkOverlayPermission() && AutoTradeAccessibilityService.isAccessibilityPermissionGranted(this)) {
+        //
+        // La condicion es SOLO `canDrawOverlays`, tal y como fija el preregistro. NO se exige el
+        // servicio de accesibilidad: el bridge y el HUD no lo necesitan, y atarlo a el dejaria el
+        // bridge caido justo cuando la accesibilidad esta desactivada (medido: bloqueo espurio).
+        if (checkOverlayPermission()) {
             launchService(null)
         }
     }

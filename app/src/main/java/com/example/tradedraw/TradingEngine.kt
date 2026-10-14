@@ -80,8 +80,19 @@ class TradingEngine(
      * Devuelve `true` si el modo cambio de valor, `false` si era el mismo (en ese caso no se emite
      * evento, para no llenar el buffer de transiciones que no lo son).
      */
-    fun setTradingMode(newMode: AutoTradeMode, source: String): Boolean {
-        val anterior = mode
+    /**
+     * Siembra el estado inicial del modo para `/status`, sin cambiar su valor y sin emitir evento.
+     *
+     * Necesario porque el modo nace `DISABLED` en el inicializador de la propiedad y nunca pasa por
+     * [setTradingMode]: sin esta marca, un motor recien creado reporta `lastModeChangeSource` vacio
+     * y no se puede distinguir "arranco limpio" de "no se registro la transicion".
+     */
+    fun marcarModoInicial(source: String) {
+        lastModeChange = "$mode -> $mode | source=$source"
+        lastModeChangeTs = System.currentTimeMillis()
+    }
+
+    fun setTradingMode(newMode: AutoTradeMode, source: String): Boolean {        val anterior = mode
         if (newMode == anterior) return false
 
         mode = newMode
@@ -336,6 +347,10 @@ class TradingEngine(
         latestAnalysisResult = null
         latestAIResult = null
         latestAITimestamp = 0L
+        // Ronda 15 / B2: la referencia de inoperabilidad es POR ACTIVO. Sin limpiarla, el activo
+        // nuevo se compara contra la mediana de rango del anterior, que puede diferir en ordenes
+        // de magnitud (medido: Z-CRY/IDX 2.5e-10 frente a ETHUSD-OTC 5e-4).
+        inoperabilityDetector.onAssetChanged()
     }
 
     /**

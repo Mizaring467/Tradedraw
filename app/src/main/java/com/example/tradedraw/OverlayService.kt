@@ -264,6 +264,8 @@ class OverlayService : Service() {
         // el observador mire moriria con el proceso, que es justo lo que paso en R14.
         modeJournal = ModeEventJournal.instalar(File(filesDir.absolutePath))
 
+        tradingEngine.marcarModoInicial("onCreate(servicio recreado)")
+
         TradeEventLog.add(
             TradeEventLog.Kind.MODE_CHANGE,
             "de=NINGUNO a=${tradingEngine.mode} source=onCreate(servicio recreado) origen=onCreate(servicio recreado)"

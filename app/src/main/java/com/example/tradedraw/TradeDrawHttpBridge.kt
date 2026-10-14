@@ -246,6 +246,68 @@ class TradeDrawHttpBridge(
                             }
                         }
                     }
+                    "/diag_inoperable" -> {
+                        // Ronda 15 / B2: verificacion del pintado del banner `Mercado inoperable`.
+                        //
+                        // POR QUE HACE FALTA INYECTAR. El detector compara el rango actual contra la
+                        // MEDIANA de los ultimos 60 min del propio activo, excluyendo solo los
+                        // ultimos 30 s. Si el activo lleva mas de 30 s plano, sus propias muestras
+                        // planas YA entran en la mediana `M`, `0.25*M` se va a cero y la condicion
+                        // `R < 0.25*M` deja de cumplirse: el detector no se enciende por mucho que
+                        // el mercado este muerto. Medido en el dispositivo: 14 min de rango 2.5e-10
+                        // en Z-CRY/IDX con `inoperableNow=false` y `reference` cayendo.
+                        //
+                        // QUE TOCA Y QUE NO. Alimenta UNICAMENTE `inoperabilityDetector`, que es
+                        // AVISO y no decision (no cambia de activo, no entra en la decision de
+                        // entrada, no toca el modo). NO se inyecta ni un tick en el motor, en el
+                        // motor sintetico ni en el feed del broker. Se declara como INYECCION en el
+                        // informe: no se finge que fue un mercado real.
+                        //
+                        // `accion=limpiar` es obligatorio al terminar y deja el detector en blanco.
+                        val det = overlayService.tradingEngine.inoperabilityDetector
+                        when (params["accion"]?.lowercase() ?: "encender") {
+                            "limpiar" -> {
+                                det.onAssetChanged()
+                                sendJsonResponse(output, 200, """{"success":true,"accion":"limpiar"}""")
+                            }
+                            else -> {
+                                // Serie sintetica en DOS fases, con el espaciado dictado por el
+                                // propio detector (medido, no supuesto):
+                                //
+                                //  - `medianReference` exige >= 16 muestras de `R` con antiguedad
+                                //    mayor que `holdSeconds`. Las muestras de `R` solo empiezan a
+                                //    registrarse cuando la ventana de 16 precios esta LLENA, asi que
+                                //    hacen falta mas de 32 ticks solo para tener referencia.
+                                //  - Un hueco entre ticks > `FEED_ALIVE_MAX_MS` (5 s) resetea toda la
+                                //    serie: el espaciado se mantiene por debajo de ese tope.
+                                //
+                                // Fase 1 (60 ticks, 1 s de separacion): rango amplio -> construye M.
+                                // Fase 2 (40 ticks, 2 s): precio clavado -> R=0, muy por debajo de
+                                // 0.25*M, y 78 s de baja sostenida > holdSeconds (30 s).
+                                val ahora = System.currentTimeMillis()
+                                val inicioRef = ahora - 31_000L - 59 * 1_000L
+                                for (i in 0 until 60) {
+                                    det.onTick(1000.0 + i * 2.0, inicioRef + i * 1_000L, true)
+                                }
+                                val refConstruida = det.lastReference
+                                var activado = false
+                                for (i in 0 until 40) {
+                                    if (det.onTick(1000.0, ahora - 30_000L + i * 2_000L, true)) {
+                                        activado = true
+                                    }
+                                }
+                                TradeEventLog.add(
+                                    TradeEventLog.Kind.INOPERABLE,
+                                    "INOPERABLE activo=INYECTADO(prueba B2) segundos=${det.holdSeconds} " +
+                                        "ratio=%.3e".format(java.util.Locale.US, det.lastRatio)
+                                )
+                                sendJsonResponse(
+                                    output, 200,
+                                    """{"success":true,"activado":$activado,"inoperableNow":${det.isInoperable},"referenceConstruida":$refConstruida,"ratio":${det.lastRatio},"reference":${det.lastReference}}"""
+                                )
+                            }
+                        }
+                    }
                     "/reset_stats" -> {
                         overlayService.riskManager.resetStats()
                         // Ronda 3: limpiar también el estado adaptativo persistido (firmas de
@@ -512,6 +574,9 @@ class TradeDrawHttpBridge(
                 "tapsDespachados": ${TradeEventLog.countOf(TradeEventLog.Kind.TAP)},
                 "inoperableCount": ${TradeEventLog.countOf(TradeEventLog.Kind.INOPERABLE)},
                 "inoperableNow": ${te.inoperabilityDetector.isInoperable},
+                "inoperableSeconds": ${te.inoperabilityDetector.inoperableSeconds(System.currentTimeMillis())},
+                "inoperableRatio": ${te.inoperabilityDetector.lastRatio},
+                "inoperableReference": ${te.inoperabilityDetector.lastReference},
                 "ultimoInoperable": "${escapeJson(TradeEventLog.lastOf(TradeEventLog.Kind.INOPERABLE)?.detail ?: "")}"
             },
             "activeSignal": $signalJson,

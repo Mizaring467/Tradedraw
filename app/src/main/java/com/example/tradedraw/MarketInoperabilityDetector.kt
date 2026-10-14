@@ -200,4 +200,17 @@ class MarketInoperabilityDetector(
         lastRatio = -1.0
         lastReference = -1.0
     }
+
+    /**
+     * Reinicia la serie porque el ACTIVO ha cambiado. Ronda 15 / B2.
+     *
+     * La referencia es la mediana de los ultimos [REFERENCE_MINUTES] del propio activo. Si no se
+     * limpia al cambiar de activo, la mediana mezcla dos ESCALAS distintas (medido: `Z-CRY/IDX`
+     * ronda 2.5e-10 y `ETHUSD-OTC` 5e-4, cuatro ordenes de magnitud) y el detector compara peras
+     * con manzanas: el activo nuevo queda clasificado contra el rango del viejo.
+     *
+     * Es el mismo fallo que R12/B4 corrigio para `recentTicks` en el cliente WebSocket: el estado
+     * que describe "como se movia esto" es POR ACTIVO y no sobrevive a un cambio de activo.
+     */
+    fun onAssetChanged() = reset()
 }
