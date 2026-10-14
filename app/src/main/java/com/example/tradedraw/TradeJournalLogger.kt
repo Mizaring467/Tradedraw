@@ -14,7 +14,30 @@ import java.util.Locale
  */
 object TradeJournalLogger {
     private const val TAG = "TradeJournalLogger"
-    private const val HEADER = "timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason\n"
+    // Ronda 14 (A2): los campos de instrumentacion de latencia se anaden AL FINAL del header.
+    // Es un esquema solo-append: un lector viejo con `csv.DictReader` sigue funcionando (ignora
+    // las columnas que no conoce) y un lector nuevo sobre un journal viejo obtiene null/ausente
+    // en vez de un error. Nunca se reordena ni se borra una columna existente.
+    private const val HEADER = "timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason,signal_ts,tap_start_ts,tap_end_ts,candle_second_at_tap_end,price_at_signal,price_at_tap_end\n"
+
+    /** Cabecera del journal. Expuesta para los tests de retrocompatibilidad del esquema. */
+    internal fun headerForTests(): String = HEADER
+
+    /**
+     * Instrumentacion de latencia de una operacion (Ronda 14, A2).
+     *
+     * Todos los campos son opcionales: **0 o un valor no medido se escribe como celda VACIA**, no
+     * como `0`, para que nadie confunda "no medido" con "medido y vale cero". Los instantes son
+     * epoch ms; los precios, en dominio de precio.
+     */
+    data class LatencyRecord(
+        val signalTs: Long = 0L,
+        val tapStartTs: Long = 0L,
+        val tapEndTs: Long = 0L,
+        val candleSecondAtTapEnd: Int = -1,
+        val priceAtSignal: Double = 0.0,
+        val priceAtTapEnd: Double = 0.0
+    )
     private val lock = Any()
 
     /**
@@ -104,7 +127,8 @@ object TradeJournalLogger {
         marketRegime: String = "NORMAL",
         candleSecond: Int = 0,
         adaptiveStatus: String = "ALLOWED",
-        tradeStartMs: Long = 0L
+        tradeStartMs: Long = 0L,
+        latency: LatencyRecord = LatencyRecord()
     ): Boolean {
         try {
             // getExternalFilesDir puede devolver null (almacenamiento externo no montado) o apuntar a
@@ -156,7 +180,7 @@ object TradeJournalLogger {
                     val line = buildLine(action, result, reason, strategy, submode, confidence, priceY,
                         stake, baseBalance, settledBalance, durationSec, trend, distSupportRatio,
                         distResistanceRatio, tickVelocity, impulse, marketRegime, candleSecond,
-                        adaptiveStatus)
+                        adaptiveStatus, latency)
                     // La escritura en el externo puede fallar aunque canWrite() dijera true: el directorio
                     // heredado de una instalación previa cambia de propietario con el UID nuevo de Android
                     // y FileWriter lanza Permission denied. Reintento inmediato en interno para no perder
@@ -242,24 +266,30 @@ object TradeJournalLogger {
         }
     }
 
-    /** Construye la fila CSV con el esquema fijo del HEADER. */
-    private fun buildLine(
+    /** Construye la fila CSV con el esquema fijo del HEADER (solo-append desde R14). */
+    internal fun buildLine(
         action: String, result: String, reason: String, strategy: String, submode: String,
         confidence: Float, priceY: Float, stake: Number, baseBalance: Number,
         settledBalance: Number, durationSec: Long, trend: String, distSupportRatio: Float,
         distResistanceRatio: Float, tickVelocity: Float, impulse: String, marketRegime: String,
-        candleSecond: Int, adaptiveStatus: String
+        candleSecond: Int, adaptiveStatus: String, latency: LatencyRecord
     ): String {
         val now = System.currentTimeMillis()
         val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(now))
         val cleanReason = reason.replace(",", ";").replace("\n", " ").take(140)
+        // Celda vacia cuando no hay medicion: "no medido" jamas se escribe como 0.
+        fun ts(v: Long) = if (v > 0L) v.toString() else ""
+        fun sec(v: Int) = if (v >= 0) v.toString() else ""
+        fun px(v: Double) = if (v > 0.0) String.format(Locale.US, "%.6f", v) else ""
         return String.format(
             Locale.US,
-            "%d,%s,%s,%s,%s,%.2f,%s,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\"\n",
+            "%d,%s,%s,%s,%s,%.2f,%s,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\",%s,%s,%s,%s,%s,%s\n",
             now, isoDate, strategy, submode, action, confidence, formatDynamicPrice(priceY.toDouble()), stake.toDouble(),
             baseBalance.toDouble(), result, settledBalance.toDouble(), durationSec, trend,
             distSupportRatio, distResistanceRatio, tickVelocity, impulse, marketRegime,
-            candleSecond, adaptiveStatus, cleanReason
+            candleSecond, adaptiveStatus, cleanReason,
+            ts(latency.signalTs), ts(latency.tapStartTs), ts(latency.tapEndTs),
+            sec(latency.candleSecondAtTapEnd), px(latency.priceAtSignal), px(latency.priceAtTapEnd)
         )
     }
 

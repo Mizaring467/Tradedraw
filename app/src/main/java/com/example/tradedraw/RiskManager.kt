@@ -331,6 +331,40 @@ class RiskManager(context: Context? = null) {
     var pendingTradeReason: String = ""
         internal set
 
+    /**
+     * Ronda 14 (A2): instrumentación de latencia del trade pendiente.
+     *
+     * Hasta R13 no había forma de saber CUÁNDO se decidió la señal frente a CUÁNDO se ejecutó el
+     * tap, y el journal sólo guardaba el segundo de vela de la DECISIÓN. Con un tap de 255-1205 ms
+     * medidos en este dispositivo, la diferencia entre ambos instantes es justo el dato que faltaba
+     * para investigar los TIE. `pendingTradeSignalTs` es el instante de la señal;
+     * `pendingTradeTapStartTs`/`pendingTradeTapEndTs` los del despacho táctil real;
+     * `pendingTradeCandleSecondAtTapEnd` el segundo de vela medido AL TERMINAR el tap.
+     */
+    @Volatile
+    var pendingTradeSignalTs: Long = 0L
+        internal set
+
+    @Volatile
+    var pendingTradeTapStartTs: Long = 0L
+        internal set
+
+    @Volatile
+    var pendingTradeTapEndTs: Long = 0L
+        internal set
+
+    @Volatile
+    var pendingTradeCandleSecondAtTapEnd: Int = -1
+        internal set
+
+    @Volatile
+    var pendingTradePriceAtSignal: Double = 0.0
+        internal set
+
+    @Volatile
+    var pendingTradePriceAtTapEnd: Double = 0.0
+        internal set
+
     @Volatile
     var sessionStartBalance: Double = 0.0
 
@@ -594,6 +628,28 @@ class RiskManager(context: Context? = null) {
         pendingTradeConfidence = confidence
         pendingTradeEntryCandleSecond = entryCandleSecond
         pendingTradeReason = reason
+        // R14/A2: la senal y la ejecucion son instantes distintos. `now` es el de la senal
+        // (esta funcion se llama justo antes de despachar el tap); los del tap los completa
+        // `captureTapLatency` cuando el tap termina.
+        pendingTradeSignalTs = now
+        pendingTradePriceAtSignal = entryPrice
+        pendingTradeTapStartTs = 0L
+        pendingTradeTapEndTs = 0L
+        pendingTradeCandleSecondAtTapEnd = -1
+        pendingTradePriceAtTapEnd = 0.0
+    }
+
+    /**
+     * Ronda 14 (A2): completa la instrumentacion de latencia del trade pendiente con los instantes
+     * REALES del tap y el precio observado al terminarlo. Si no se llama (ruta sin tap, o el tap
+     * aun no ha terminado), el journal escribe celdas VACIAS: "no medido" nunca se disfraza de 0.
+     */
+    fun captureTapLatency(tapStartTs: Long, tapEndTs: Long, candleSecondAtTapEnd: Int, priceAtTapEnd: Double) {
+        if (!hasPendingTrade) return
+        pendingTradeTapStartTs = tapStartTs
+        pendingTradeTapEndTs = tapEndTs
+        pendingTradeCandleSecondAtTapEnd = candleSecondAtTapEnd
+        pendingTradePriceAtTapEnd = priceAtTapEnd
     }
 
     @Synchronized
@@ -645,6 +701,14 @@ class RiskManager(context: Context? = null) {
         pendingTradeConfidence = 0.0f
         pendingTradeEntryCandleSecond = -1
         pendingTradeReason = ""
+        // R14/A2: la instrumentacion de latencia pertenece al trade cerrado; si se dejara,
+        // una operacion posterior sin tap heredaria los instantes de la anterior.
+        pendingTradeSignalTs = 0L
+        pendingTradeTapStartTs = 0L
+        pendingTradeTapEndTs = 0L
+        pendingTradeCandleSecondAtTapEnd = -1
+        pendingTradePriceAtSignal = 0.0
+        pendingTradePriceAtTapEnd = 0.0
     }
 
     @Synchronized

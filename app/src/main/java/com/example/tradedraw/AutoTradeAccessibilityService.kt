@@ -177,6 +177,20 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         @Volatile private var rootAccessKnown: Boolean? = null
 
         /**
+         * Ronda 14 (A2): instantes del ultimo tap despachado por root, para instrumentar la
+         * latencia real de ejecucion. Antes solo existia el instante de la DECISION; con
+         * 255-1205 ms medidos de tap, ambos momentos pueden caer en segundos de vela distintos,
+         * que es justo lo que hay que poder auditar. `lastTapCandleSecond` se mide AL TERMINAR
+         * el tap, no al decidir.
+         */
+        @Volatile var lastTapStartTs: Long = 0L
+            private set
+        @Volatile var lastTapEndTs: Long = 0L
+            private set
+        @Volatile var lastTapCandleSecond: Int = -1
+            private set
+
+        /**
          * Ronda 3: detecta (una sola vez, cacheado) si el dispositivo tiene `su` disponible.
          * En dispositivos root se prioriza `input tap` porque Binomo bloquea los gestos de accesibilidad.
          */
@@ -203,23 +217,19 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         ) {
             Thread {
                 val inicioMs = System.currentTimeMillis()
+                lastTapStartTs = inicioMs
                 try {
                     val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "input tap ${x.toInt()} ${y.toInt()}"))
                     val exit = p.waitFor()
                     val duracionMs = System.currentTimeMillis() - inicioMs
-                    // R13/A4: se registra CUANDO termina el tap y cuánto tardó, y —desde la
-                    // corrección de A4— SI se aplicó el bypass del HUD.
-                    //
-                    // El flag `bypassHud` no es decorativo: en la primera versión de R13 se
-                    // declaró como causa raíz de las órdenes no registradas una carrera entre el
-                    // temporizador del bypass y la duración del tap. Esa hipótesis era FALSA,
-                    // porque el bypass solo se aplica si el punto cae DENTRO del HUD
-                    // (`isPointInsideHUD`) y en la configuración medida el HUD termina en y=1302
-                    // mientras los botones están en y≈1341. Sin este dato en el evento, la
-                    // próxima vez se vuelve a razonar sobre una precondición no comprobada.
+                    // R14/A2: instante y segundo de vela AL TERMINAR el tap. Es el dato que faltaba:
+                    // el journal guardaba el segundo de la decision, no el de la ejecucion.
+                    lastTapEndTs = System.currentTimeMillis()
+                    lastTapCandleSecond = ((lastTapEndTs / 1000L) % 60L).toInt()
                     TradeEventLog.add(
                         TradeEventLog.Kind.TAP,
-                        "root ($x,$y) exit=$exit durMs=$duracionMs bypassHud=$bypassHud"
+                        "root ($x,$y) exit=$exit durMs=$duracionMs bypassHud=$bypassHud " +
+                            "startTs=$inicioMs endTs=$lastTapEndTs csTapEnd=$lastTapCandleSecond"
                     )
                     if (exit == 0) {
                         Log.i("TradeDraw", "⚡ Tap ejecutado con éxito vía ROOT en ($x, $y) en ${duracionMs}ms")

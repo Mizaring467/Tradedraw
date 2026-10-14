@@ -1624,6 +1624,16 @@ class TradingEngine(
         AutoTradeAccessibilityService.performClick(x, y) { success, error ->
             if (!success) {
                 triggerManualFallback(action, error ?: "Auto-clic falló en 300ms")
+            } else {
+                // R14/A2: el tap ya termino: se completa la instrumentacion de latencia con sus
+                // instantes REALES. Se hace en el callback (no antes) porque `executeRootTap`
+                // corre en su propio hilo y hasta que no vuelve no se sabe cuando acabo.
+                riskManager.captureTapLatency(
+                    tapStartTs = AutoTradeAccessibilityService.lastTapStartTs,
+                    tapEndTs = AutoTradeAccessibilityService.lastTapEndTs,
+                    candleSecondAtTapEnd = AutoTradeAccessibilityService.lastTapCandleSecond,
+                    priceAtTapEnd = latestMarketTick?.price ?: 0.0
+                )
             }
         }
 
@@ -2205,7 +2215,19 @@ class TradingEngine(
                     candleSecond = if (riskManager.pendingTradeEntryCandleSecond >= 0)
                         riskManager.pendingTradeEntryCandleSecond else sec,
                     adaptiveStatus = journalResult,
-                    tradeStartMs = pendingTradeStartMs
+                    tradeStartMs = pendingTradeStartMs,
+                    // Ronda 14 (A2): instrumentacion de latencia. Se persiste lo que realmente
+                    // midio la ruta de tap, no una reconstruccion: el journal guardaba solo el
+                    // segundo de la DECISION, que con 255-1205 ms de latencia puede no ser el
+                    // segundo en que el broker ve el toque.
+                    latency = TradeJournalLogger.LatencyRecord(
+                        signalTs = riskManager.pendingTradeSignalTs,
+                        tapStartTs = riskManager.pendingTradeTapStartTs,
+                        tapEndTs = riskManager.pendingTradeTapEndTs,
+                        candleSecondAtTapEnd = riskManager.pendingTradeCandleSecondAtTapEnd,
+                        priceAtSignal = riskManager.pendingTradePriceAtSignal,
+                        priceAtTapEnd = riskManager.pendingTradePriceAtTapEnd
+                    )
                 )
 
                 if (isTie) {
