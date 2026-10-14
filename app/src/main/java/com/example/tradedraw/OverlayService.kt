@@ -1356,10 +1356,20 @@ class OverlayService : Service() {
     }
 
     /**
-     * Vuelve el HUD temporalmente no-táctil por [durationMs] para permitir que los clics
+     * Vuelve el HUD temporalmente no-tactil para permitir que los clics
      * de trading de Accesibilidad atraviesen limpiamente hacia el broker sin importar dónde esté el HUD.
+     *
+     * R13/A4: [durationMs] pasa a ser SOLO un failsafe, no la duracion real del bypass.
+     * CAUSA RAIZ medida de las ordenes que nunca se registraban (17 de 212, 8 %):
+     * el bypass duraba 350 ms fijos y se restauraba por temporizador, pero el tap real
+     * (`su -c input tap`) tarda 141-327 ms medidos EN EL DISPOSITIVO (mediana 222 ms) y no
+     * tiene cota superior con `loadavg ~17`. Cuando el tap tardaba mas que el temporizador, el
+     * HUD volvia a ser tactil ANTES de que el gesto llegara al broker, el overlay se comia el
+     * toque y la orden quedaba sin registrar (`ORDEN NO PROCESADA`, Diff=0.0). Ahora el bypass
+     * lo cierra [restoreHudTouchable], que se invoca cuando el tap termina; el temporizador
+     * queda como red de seguridad por si la llamada nunca vuelve.
      */
-    fun temporarilyBypassHUD(durationMs: Long = 250L, onBypassed: (() -> Unit)? = null) {
+    fun temporarilyBypassHUD(durationMs: Long = 1500L, onBypassed: (() -> Unit)? = null) {
         val v = hudView ?: run {
             onBypassed?.invoke()
             return
@@ -1376,11 +1386,30 @@ class OverlayService : Service() {
             mainHandler.postDelayed({
                 onBypassed?.invoke()
             }, 30L)
-            mainHandler.postDelayed({
-                p.flags = p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-                v.visibility = View.VISIBLE
-                try { windowManager.updateViewLayout(v, p) } catch (e: Exception) {}
-            }, durationMs)
+            hudBypassFailsafe?.let { mainHandler.removeCallbacks(it) }
+            val failsafe = Runnable { restoreHudTouchable() }
+            hudBypassFailsafe = failsafe
+            mainHandler.postDelayed(failsafe, durationMs)
+        }
+    }
+
+    /** Failsafe pendiente del bypass del HUD; se cancela al restaurar de forma explicita. */
+    private var hudBypassFailsafe: Runnable? = null
+
+    /**
+     * Restaura la interactividad del HUD y cancela el failsafe. Debe llamarse cuando el tap
+     * ha terminado (R13/A4); es idempotente y seguro si el HUD no existe.
+     */
+    fun restoreHudTouchable() {
+        mainHandler.post {
+            hudBypassFailsafe?.let { mainHandler.removeCallbacks(it) }
+            hudBypassFailsafe = null
+            val v = hudView ?: return@post
+            val p = hudParams ?: return@post
+            p.flags = p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+            // Respetar la visibilidad real: antes esta rama forzaba VISIBLE siempre.
+            v.visibility = if (isHudVisible) View.VISIBLE else View.GONE
+            try { windowManager.updateViewLayout(v, p) } catch (e: Exception) {}
         }
     }
 
@@ -1728,15 +1757,27 @@ class OverlayService : Service() {
                 val friendlyAsset = hud.friendlyAsset
                 val (diagStr, diagColor) = when (wsState) {
                     WebSocketState.CONNECTED -> {
-                        val priceStr = if (hud.price > 0.0) formatDynamicPrice(hud.price) else "..."
-                        // Latencia real del último tick (antes estaba fija en "0ms").
-                        val tickAgeMs = if (hud.tickAgeMs >= 0L) hud.tickAgeMs else 0L
-                        // T1: ticks descartados por activo ajeno / salto implausible. Si hay
-                        // descartes, se muestran: son la prueba visible de la guarda de integridad.
-                        val discardTag = if (hud.rejectedForeignAssetTicks > 0L || hud.rejectedSanityJumpTicks > 0L) {
-                            " | ⛔ ajenos:${hud.rejectedForeignAssetTicks} saltos:${hud.rejectedSanityJumpTicks}"
-                        } else ""
-                        Pair("🟢 WS Activo ($friendlyAsset): $priceStr (${tickAgeMs}ms)$discardTag | Headless", Color.parseColor("#22c55e"))
+                        // R13/A2c: CONNECTED solo dice que el socket vive, NO que este activo
+                        // entregue ticks. Caso real (Aave(OTC)): socket conectado, 0 ticks y el HUD
+                        // pintaba "WS Activo (Aave(OTC)): ... (0ms)" — un "... (0ms)" que parece
+                        // una lectura de latencia de cero cuando en realidad no hay ninguna.
+                        // Si no hay tick fresco se declara el estado, sin cifras inventadas.
+                        if (!hud.hasFreshTick) {
+                            Pair(
+                                "🔴 SIN TICKS · $friendlyAsset sin feed (socket vivo) | Headless",
+                                Color.parseColor("#f59e0b")
+                            )
+                        } else {
+                            val priceStr = if (hud.price > 0.0) formatDynamicPrice(hud.price) else "..."
+                            // Latencia real del último tick (antes estaba fija en "0ms").
+                            val tickAgeMs = if (hud.tickAgeMs >= 0L) hud.tickAgeMs else 0L
+                            // T1: ticks descartados por activo ajeno / salto implausible. Si hay
+                            // descartes, se muestran: son la prueba visible de la guarda de integridad.
+                            val discardTag = if (hud.rejectedForeignAssetTicks > 0L || hud.rejectedSanityJumpTicks > 0L) {
+                                " | ⛔ ajenos:${hud.rejectedForeignAssetTicks} saltos:${hud.rejectedSanityJumpTicks}"
+                            } else ""
+                            Pair("🟢 WS Activo ($friendlyAsset): $priceStr (${tickAgeMs}ms)$discardTag | Headless", Color.parseColor("#22c55e"))
+                        }
                     }
                     WebSocketState.CONNECTING -> {
                         Pair("🟡 WS: Conectando a Binomo...", Color.parseColor("#facc15"))
