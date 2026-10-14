@@ -4,7 +4,7 @@
 **Árbol de partida:** `a20bb95` (`HEAD == origin/main`).
 **Inicio:** `2026-10-14 14:38` · **Fin:** `2026-10-14 15:24` (46 min).
 **Batería:** inicio **76 %** · final **75 %** (cargando, `status: 2`).
-**Commits:** `85222f1` (código) · `7940f5d` (informe).
+**Commits:** `85222f1` (código) · `d8ea309` (informe).
 
 ---
 

@@ -81,7 +81,7 @@ class ModeRingDedicadoTest {
     // ---------- R18.2: compatibilidad de /events ----------
 
     @Test
-    funelJsonDeEventsNoCambiaDeForma() {
+    fun elJsonDeEventsNoCambiaDeForma() {
         TradeEventLog.clear()
         TradeEventLog.add(TradeEventLog.Kind.VETO, "V1 motivo")
         TradeEventLog.add(TradeEventLog.Kind.VETO, "V2 rango=1.2")
@@ -171,9 +171,11 @@ class ModeRingDedicadoTest {
 
     @Test
     fun unFalloDeDiscoNoPropagaNiPierdeElEvento() {
-        // Directorio imposible: el sumidero debe tragarse el fallo.
-        val imposible = java.io.File(tmp.root, "no\0valido")
-        val diario = ModeEventJournal(imposible)
+        // Un DIRECTORIO usado como fichero: `appendText` fallara siempre. Es el caso realista de
+        // "no se puede escribir", sin depender de permisos ni de rutas invalidas del sistema.
+        val comoFichero = java.io.File(tmp.root, "soy_un_directorio")
+        comoFichero.mkdirs()
+        val diario = ModeEventJournal(comoFichero)
         assertFalse("Debe devolver false, no lanzar", diario.append("x"))
 
         // Y el evento SIGUE en el ring: un fallo de disco no puede impedir un cambio de modo.
