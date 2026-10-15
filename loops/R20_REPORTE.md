@@ -142,18 +142,35 @@ durante 75 s.
 
 | # | criterio | resultado | evidencia |
 | :-- | :--- | :--- | :--- |
-| **B.1** | activo feed ≠ pantalla → veta | **PASS por test unitario** | 7 casos en `AssetMismatchGuardTest`, incluido `("Aave (OTC)", "ETHUSD-OTC")` |
-| **B.2** | el veto es observable | **PASS por inspección** | contador en `/status` y evento `VETO DESAJUSTE …` en `/events` |
+| **B.1** | activo feed ≠ pantalla → veta | **PASS en vivo + 7 tests** | ver §5.2.1 |
+| **B.2** | el veto es observable | **PASS en vivo** | `vetoActivoDesajustado=61` en `/status`; `ultimoVeto='DESAJUSTE pantalla="Aave (OTC)" ric=AAVEUSD-OTC feed="ETHUSD-OTC"'` |
 | **B.3** | si coinciden NO interviene | **PASS por test unitario** | control positivo: `("Aave (OTC)","AAVEUSD-OTC")` → sin veto |
 | **B.4** | fail-closed | **PASS por test unitario** | sin dato de pantalla y con feed conocido → veta |
 
-> **NO VERIFICADO EN VIVO (declarado honestamente):** el guard **no se ha visto dispararse en el
-> dispositivo**. Para observarlo haría falta `mode=AUTONOMOUS` **y** una señal válida **y** un
-> desajuste simultáneo; la gobernanza exige `mode=DISABLED` salvo prueba preregistrada, y esta
-> ronda no la incluyó. Los 7 casos unitarios cubren la lógica, **no** el cableado en runtime.
-> **Riesgo residual:** que `feedAssetProvider` no entregue el activo del cliente. **Verificado en
-> dispositivo** que `/status` informa `activeAsset` correctamente vía ese mismo cliente, lo que
-> hace improbable el fallo de cableado, pero **no es lo mismo que verlo vetar un disparo real**.
+#### 5.2.1 Verificación EN VIVO del guard (adenda posterior al cierre)
+
+Al reconectar el dispositivo, el motor estaba **`AUTONOMOUS`** con el feed **fresco**
+(`ETHUSD-OTC`, `acceptedTicks=4366`) y el gráfico del bróker en **`Aave (OTC)`**. Esa es
+exactamente la situación que el guard existe para cubrir, y se disparó **61 veces**:
+
+```
+vetoActivoDesajustado = 57 → 61     (subió mientras el motor estuvo armado)
+vetoTotal = 61                      (TODAS por desajuste)
+tapsDespachados = 0                 (ninguna llegó a pulsar)
+ultimoVeto = 'DESAJUSTE pantalla="Aave (OTC)" ric=AAVEUSD-OTC feed="ETHUSD-OTC"'
+```
+
+**El riesgo residual #1 declarado en el cierre queda CERRADO:** el guard no solo está testeado,
+**vetó disparos reales en runtime**. El cableado (`binomoWebSocketClientRef`) entrega el activo
+correcto, como se sospechaba pero no se había medido.
+
+**Contraste medido:** sin el guard, esas 61 tentativas habrían decidido CALL/PUT con el precio de
+`ETHUSD-OTC` y pulsado los botones del gráfico de `Aave (OTC)`. Con el guard, `taps=0`.
+
+**Atribución del rearme:** `source=ui:showAutonomousSubModeDialog(conservador)`, pila
+`…OverlayService$$ExternalSyntheticLambda53.onClick` → **ruta de UI que exige toques humanos**,
+coherente con el INCIDENTE de R15. No hay evidencia de rearme espontáneo. El usuario confirmó
+haberlo apagado él (`source=ui:showModeDialog(disabled)`).
 
 ### 5.3 Suite
 
@@ -194,13 +211,40 @@ ronda no atendida, y además §1.3 mide que añadir un RIC ajeno **congela el pr
 
 **Sin credenciales expuestas:** no se imprimió, copió ni commiteó ningún token, cookie ni header.
 
-### 7.1 Estado al cierre
+### 7.1 Estado al cierre (actualizado tras reconectar el dispositivo)
 
-Última lectura de `/status` **antes de que el dispositivo se desconectara**: `mode=DISABLED`,
-`feed.activeAsset=ETHUSD-OTC`, `fresh=true`, `acceptedTicks=75`, `recuperacionesPorSinTicks=1`.
+Lectura FINAL con el dispositivo conectado: `mode=DISABLED`, `hasPendingTrade=false`,
+`orderState=NINGUNA`, `tapsDespachados=0`, `W/L=0/0`, `feed.activeAsset=ETHUSD-OTC`,
+`isFresh=true`, `acceptedTicks=4429`, `vetoActivoDesajustado=61`,
+`recuperacionesPorSinTicks=1`, `balance=38054735.36`.
 
-El dispositivo se desconectó de ADB al final de la ronda (`adb devices` → sin dispositivos), por lo
-que **la lectura de cierre final no pudo repetirse**. No se declara un estado que no se haya leído.
+### 7.2 Asunto abierto: variación de balance de +80.000, NO atribuida
+
+**Hecho medido.** El balance pasó de `37.974.735,36` (último valor conocido) a `38.054.735,36`.
+Leído por dos vías: `/status`, `/nodes` y **la pantalla del bróker** (`Col$38,054,735…`, captura
+`loops/screenshots/r20_balance.png`). Cuenta **Demo** (`isDemoAccount: true`).
+
+**Atribución: NO CONCLUYENTE. No se declara causa raíz por plausibilidad.** Lo que sí está medido:
+
+| # | hecho | evidencia |
+| --: | :--- | :--- |
+| 1 | El bot NO ejecutó ninguna orden en la ventana | `tapsDespachados=0` y `W/L=0/0`, y `/mode_log` confirma que **no hubo recreación de servicio** entre el armado (`1792027189701`) y el apagado (`1792029020257`), así que los contadores cubren los 28 min armados completos |
+| 2 | El journal persistido no tiene filas del 14-Oct | `grep -c '2026-10-14' trade_journal.csv` → **0**; mtime `2026-10-13 22:15` |
+| 3 | Las 61 tentativas fueron vetadas por desajuste | `vetoTotal=61`, todas `DESAJUSTE` |
+| 4 | El importe **no cuadra** con una operación del bot | los `WIN` del journal acreditan **+80.000 brutos** (`37994736.64 → 38074736.64`), pero con la retención del 12,5 % el neto real es **+70.000** |
+
+**Hipótesis que sostiene la evidencia (no confirmada):** una operación manual del usuario o un
+ajuste del bróker. **No se puede confirmar desde el dispositivo:** Binomo no expone historial de
+operaciones manuales y `logcat` no es fiable en este equipo (`init.svc.logd`).
+
+**Nota de rigor sobre un contador:** `tapsDespachados` y `vetoTotal` son acumulativos **desde el
+arranque del proceso**, no desde el inicio de la sesión. Por sí solos no probarían nada sobre
+procesos anteriores; lo que sí lo prueba es el hecho 1 (sin recreación en la ventana) más el
+hecho 2 (journal persistido). **Enunciado corregido durante la ronda.**
+
+**Por gobernanza esto es un INCIDENTE de máxima prioridad** por tratarse de una variación de
+saldo no explicada. **Acción pedida al usuario:** confirmar si hubo una operación manual o un
+ajuste del bróker. Si no lo hubo, hay que investigar en R21 antes de cualquier otra tarea.
 
 ---
 
@@ -208,11 +252,13 @@ que **la lectura de cierre final no pudo repetirse**. No se declara un estado qu
 
 | # | riesgo | severidad | recomendación |
 | --: | :--- | :--- | :--- |
-| 1 | El guard de desajuste **no se ha visto vetar en vivo** | media | En R21, con `mode=AUTONOMOUS` y una señal, servir el desajuste a propósito y confirmar `vetoActivoDesajustado > 0` |
-| 2 | **Aave sigue sin feed**: si el usuario deja el gráfico en Aave, el bot recupera ETH y el guard lo veta → seguirá sin operar | alta | **Decisión de producto, no técnica:** o se elige un activo con feed, o se acepta que Aave no es operable. El bot ya **no se queda mudo sin decirlo** |
+| 1 | ~~El guard de desajuste no se ha visto vetar en vivo~~ | **CERRADO** | **Verificado en vivo: 61 vetos por desajuste con `taps=0` (§5.2.1)** |
+| 2 | **Aave sigue sin feed**: si el usuario deja el gráfico en Aave, el bot recupera ETH y el guard lo veta → seguirá sin operar | alta | **Decisión de producto, no técnica:** o se elige un activo con feed, o se acepta que Aave no es operable. El bot ya **no se queda mudo sin decirlo**, y **no dispara a ciegas** |
 | 3 | `activoSinFeed` permite **un** RIC ignorado, no una lista | baja | Suficiente mientras el mecanismo esté medido; ampliar solo si aparece un segundo RIC muerto |
 | 4 | El banner del HUD **no** menciona la recuperación | baja | Añadir aviso cuando `recuperacionesPorSinTicks > 0` |
 | 5 | La causa de que la accesibilidad imponga un RIC sin feed **sigue sin atribuir** | media | La corrección trata el síntoma en la entrada. Investigar por qué el mapeo de `Aave (OTC)` → RIC sin feed es el correcto para ese activo |
+| 6 | **Variación de balance de +80.000 NO atribuida** (§7.2) | **alta** | Confirmar con el usuario si hubo operación manual o ajuste del bróker. Si no, **investigar antes que cualquier otra tarea**: por gobernanza es INCIDENTE de máxima prioridad |
+| 7 | El motor puede quedar **armado y desatendido** (28 min medidos) | media | El guard lo protegió esta vez, pero el rearme exige dos toques humanos: revisar si el diálogo de submodo debe confirmarse de forma más explícita |
 
 ---
 
@@ -226,3 +272,9 @@ mudo, vetaba correctamente todo disparo en el guard de frescura.** No era un pro
 sí lo hizo, lo registra, y **se niega a operar si el activo del feed no es el del gráfico en pantalla**.
 
 **Lo que sigue igual, a propósito:** ningún umbral de `master_traders_skill` se ha relajado.
+
+**Adenda posterior al cierre (dispositivo reconectado).** El guard de desajuste **se disparó 61
+veces en vivo** con el motor armado y el gráfico en `Aave (OTC)`, dejando `taps=0`: la corrección
+no solo está testeada, **protegió de verdad**. Queda **una variación de balance de +80.000 sin
+atribuir** (§7.2) que, por gobernanza, es un INCIDENTE de máxima prioridad y requiere confirmación
+del usuario.
