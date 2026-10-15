@@ -547,6 +547,8 @@ class TradeDrawHttpBridge(
 
         return """{
             "app": "TradeDraw",
+            "versionCode": ${BuildConfig.VERSION_CODE},
+            "versionName": "${BuildConfig.VERSION_NAME}",
             "health": ${healthReport.toJson()},
             "mode": "$mode",
             "lastModeChangeSource": "${escapeJson(te.lastModeChange)}",
