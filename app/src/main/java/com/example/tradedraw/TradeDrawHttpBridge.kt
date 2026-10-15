@@ -538,8 +538,16 @@ class TradeDrawHttpBridge(
         // Antigüedad infinita no es serializable en JSON: se emite como -1 (sin tick recibido nunca).
         val wsAgeJson = if (wsAge == Long.MAX_VALUE) -1L else wsAge
 
+        val healthReport = overlayService.healthSupervisor.evaluate(
+            tradingEngine = te,
+            riskManager = rm,
+            wsClient = ws,
+            accessibilityService = AutoTradeAccessibilityService.instance
+        )
+
         return """{
             "app": "TradeDraw",
+            "health": ${healthReport.toJson()},
             "mode": "$mode",
             "lastModeChangeSource": "${escapeJson(te.lastModeChange)}",
             "lastModeChangeTs": ${te.lastModeChangeTs},
@@ -584,7 +592,8 @@ class TradeDrawHttpBridge(
                 // Ronda 20: contadores del guard de desajuste y de la recuperacion por falta de
                 // ticks. Viven en `TradingEngine`, por eso se anaden en el mismo commit que el.
                 "vetoActivoDesajustado": ${te.vetoActivoDesajustado},
-                "recuperacionesPorSinTicks": ${te.recuperacionesPorSinTicks()}
+                "recuperacionesPorSinTicks": ${te.recuperacionesPorSinTicks()},
+                "shadowOrders": ${te.shadowOrdersGenerated}
             },
             "activeSignal": $signalJson,
             "feed": {

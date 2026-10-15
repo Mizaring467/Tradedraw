@@ -90,10 +90,22 @@ class BinomoAuthActivity : AppCompatActivity() {
         })();
     """.trimIndent()
 
+    companion object {
+        fun maskSecret(secret: String): String {
+            if (secret.isEmpty()) return "[VACÍO]"
+            return if (secret.length > 10) {
+                "${secret.take(4)}...${secret.takeLast(4)} (len=${secret.length})"
+            } else {
+                "[PRESENTE len=${secret.length}]"
+            }
+        }
+    }
+
     inner class TradeDrawBridge {
         @JavascriptInterface
         fun onWsUrl(url: String) {
-            Log.i(TAG, "🎯 WebSocket URL interceptada desde Binomo Web: $url")
+            val sanitizedUrl = url.replace(Regex("""([?&](?:authtoken|token)=)[^&#]+"""), "$1<REDACTED>")
+            Log.i(TAG, "🎯 WebSocket URL interceptada desde Binomo Web: $sanitizedUrl")
             val prefs = getSharedPreferences("TradeDraw_WSConfig", Context.MODE_PRIVATE)
             prefs.edit().putString("ws_endpoint_url", url).apply()
             OverlayService.instance?.binomoWebSocketClient?.wsUrl = url
@@ -253,7 +265,7 @@ class BinomoAuthActivity : AppCompatActivity() {
             tokenRegex.find(url)?.let { match ->
                 val extracted = URLDecoder.decode(match.groupValues[1], "UTF-8").trim()
                 if (extracted.isNotEmpty()) {
-                    Log.d(TAG, "Token detectado en URL: $extracted")
+                    Log.d(TAG, "Token detectado en URL: ${maskSecret(extracted)}")
                     mainHandler.post { etAuthToken.setText(extracted) }
                 }
             }
@@ -319,7 +331,7 @@ class BinomoAuthActivity : AppCompatActivity() {
         view.evaluateJavascript(jsCode) { result ->
             val clean = result?.trim('"', ' ', '\'', '\\') ?: ""
             if (clean.isNotEmpty() && clean != "null" && clean != "undefined") {
-                Log.d(TAG, "Token en LocalStorage: $clean")
+                Log.d(TAG, "Token en LocalStorage: ${maskSecret(clean)}")
                 mainHandler.post { etAuthToken.setText(clean) }
             }
         }
@@ -349,7 +361,7 @@ class BinomoAuthActivity : AppCompatActivity() {
         if (devId.isNotEmpty()) editor.putString("ws_device_id", devId)
         editor.apply()
 
-        Log.d(TAG, "Sesión vinculada: token=$token, devId=$devId, cookiesLen=${cookies.length}")
+        Log.d(TAG, "Sesión vinculada: token=${maskSecret(token)}, devId=${maskSecret(devId)}, cookiesLen=${cookies.length}")
 
         // Notificar al WebSocket client en OverlayService
         try {

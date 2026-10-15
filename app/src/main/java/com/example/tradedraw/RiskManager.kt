@@ -242,11 +242,22 @@ class RiskManager(context: Context? = null) {
     var orderState: OrderState = OrderState.NINGUNA
         internal set
 
-    /** Cambia el estado y lo registra en el buffer observable (R13/A5). */
+    @Volatile
+    var pendingTradeDecisionId: String = ""
+
+    @Volatile
+    var pendingTradeTradeId: String = ""
+
+    /** Cambia el estado y lo registra en el buffer observable (R13/A5, R21/Frente A). */
     internal fun setOrderState(nuevo: OrderState, motivo: String) {
         if (orderState == nuevo) return
         orderState = nuevo
-        TradeEventLog.add(TradeEventLog.Kind.ORDER_STATE, "${nuevo.name} $motivo")
+        TradeEventLog.add(
+            TradeEventLog.Kind.ORDER_STATE,
+            "${nuevo.name} $motivo",
+            decisionId = pendingTradeDecisionId.ifBlank { null },
+            tradeId = pendingTradeTradeId.ifBlank { null }
+        )
     }
 
     /** true solo si hay operacion Y el broker la ha confirmado. Es lo que el HUD debe exigir. */
@@ -611,11 +622,15 @@ class RiskManager(context: Context? = null) {
         baseBalance: Double = 0.0,
         confidence: Float = 0.0f,
         entryCandleSecond: Int = -1,
-        reason: String = ""
+        reason: String = "",
+        decisionId: String = "",
+        tradeId: String = ""
     ) {
         val now = System.currentTimeMillis()
         lastTradeTime = now
         hasPendingTrade = true
+        pendingTradeDecisionId = decisionId
+        pendingTradeTradeId = tradeId
         // Ronda 12 (B1): al despachar el tap la orden solo esta ENVIADA, nunca confirmada.
         // Antes se marcaba como operacion en curso directamente y el HUD lo presentaba como
         // "Trade Activo" aunque el broker no hubiera registrado nada.
@@ -679,8 +694,14 @@ class RiskManager(context: Context? = null) {
         // R13/A4: se limpia primero (lo que deja el estado en NINGUNA) y se marca NO_PROCESADA
         // despues, para que quede registrado el RESULTADO del intento. Al reves, `clearPendingTrade`
         // pisaba el NO_PROCESADA con NINGUNA y el fallo se perdia.
+        val decId = pendingTradeDecisionId
+        val trId = pendingTradeTradeId
         clearPendingTrade()
+        pendingTradeDecisionId = decId
+        pendingTradeTradeId = trId
         setOrderState(OrderState.NO_PROCESADA, "ventana agotada sin movimiento de saldo")
+        pendingTradeDecisionId = ""
+        pendingTradeTradeId = ""
         lastTradeTime = System.currentTimeMillis()
         OverlayService.instance?.updateHUDView()
     }
@@ -701,6 +722,8 @@ class RiskManager(context: Context? = null) {
         pendingTradeConfidence = 0.0f
         pendingTradeEntryCandleSecond = -1
         pendingTradeReason = ""
+        pendingTradeDecisionId = ""
+        pendingTradeTradeId = ""
         // R14/A2: la instrumentacion de latencia pertenece al trade cerrado; si se dejara,
         // una operacion posterior sin tap heredaria los instantes de la anterior.
         pendingTradeSignalTs = 0L

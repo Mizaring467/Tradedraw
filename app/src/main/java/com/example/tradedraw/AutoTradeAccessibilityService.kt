@@ -138,6 +138,16 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             y: Float,
             onResult: ((Boolean, String?) -> Unit)? = null
         ) {
+            performClick(x, y, decisionId = null, tradeId = null, onResult = onResult)
+        }
+
+        fun performClick(
+            x: Float,
+            y: Float,
+            decisionId: String?,
+            tradeId: String?,
+            onResult: ((Boolean, String?) -> Unit)? = null
+        ) {
             // Ronda 3: en este dispositivo (root) Binomo FILTRA los eventos sintéticos de
             // dispatchGesture (el tap se "confirma" pero la orden no se registra → VOID),
             // mientras que `input tap` vía root SÍ coloca la orden. Por eso el root tap es
@@ -150,10 +160,10 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                 val overlay = OverlayService.instance
                 if (overlay != null && overlay.isPointInsideHUD(x, y)) {
                     overlay.temporarilyBypassHUD(350L) {
-                        executeRootTap(x, y, onResult, bypassHud = true)
+                        executeRootTap(x, y, decisionId, tradeId, onResult, bypassHud = true)
                     }
                 } else {
-                    executeRootTap(x, y, onResult)
+                    executeRootTap(x, y, decisionId, tradeId, onResult)
                 }
                 return
             }
@@ -162,14 +172,14 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                 inst.performClickAt(x, y) { success, err ->
                     if (!success) {
                         Log.w("TradeDraw", "⚠️ Click por accesibilidad falló ($err). Probando fallback ROOT...")
-                        executeRootTap(x, y, onResult)
+                        executeRootTap(x, y, decisionId, tradeId, onResult)
                     } else {
                         onResult?.invoke(true, null)
                     }
                 }
             } else {
                 Log.w("TradeDraw", "⚠️ AutoTradeAccessibilityService inactivo. Ejecutando tap con fallback ROOT...")
-                executeRootTap(x, y, onResult)
+                executeRootTap(x, y, decisionId, tradeId, onResult)
                 autoHealAccessibility()
             }
         }
@@ -215,9 +225,26 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             onResult: ((Boolean, String?) -> Unit)? = null,
             bypassHud: Boolean = false
         ) {
+            executeRootTap(x, y, decisionId = null, tradeId = null, onResult = onResult, bypassHud = bypassHud)
+        }
+
+        fun executeRootTap(
+            x: Float,
+            y: Float,
+            decisionId: String?,
+            tradeId: String?,
+            onResult: ((Boolean, String?) -> Unit)? = null,
+            bypassHud: Boolean = false
+        ) {
             Thread {
                 val inicioMs = System.currentTimeMillis()
                 lastTapStartTs = inicioMs
+                TradeEventLog.add(
+                    TradeEventLog.Kind.TAP,
+                    "START ($x,$y) bypassHud=$bypassHud",
+                    decisionId = decisionId,
+                    tradeId = tradeId
+                )
                 try {
                     val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "input tap ${x.toInt()} ${y.toInt()}"))
                     val exit = p.waitFor()
@@ -228,8 +255,10 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                     lastTapCandleSecond = ((lastTapEndTs / 1000L) % 60L).toInt()
                     TradeEventLog.add(
                         TradeEventLog.Kind.TAP,
-                        "root ($x,$y) exit=$exit durMs=$duracionMs bypassHud=$bypassHud " +
-                            "startTs=$inicioMs endTs=$lastTapEndTs csTapEnd=$lastTapCandleSecond"
+                        "END root ($x,$y) exit=$exit durMs=$duracionMs bypassHud=$bypassHud " +
+                            "startTs=$inicioMs endTs=$lastTapEndTs csTapEnd=$lastTapCandleSecond",
+                        decisionId = decisionId,
+                        tradeId = tradeId
                     )
                     if (exit == 0) {
                         Log.i("TradeDraw", "⚡ Tap ejecutado con éxito vía ROOT en ($x, $y) en ${duracionMs}ms")

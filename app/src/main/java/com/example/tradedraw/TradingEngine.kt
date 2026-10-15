@@ -27,7 +27,8 @@ enum class TradeAction {
 enum class AutoTradeMode {
     AUTONOMOUS,      // Ejecuta clics automáticos
     SEMIAUTOMATIC,   // Alerta y prepara dibujos, usuario opera
-    DISABLED         // Apagado
+    DISABLED,        // Apagado
+    SHADOW           // Ronda 21 (Frente E): Análisis y decisiones reales con decision_id, sin taps ni alteración de saldo/W-L
 }
 
 enum class AutonomousSubMode {
@@ -220,14 +221,16 @@ class TradingEngine(
 
         // Conectar señales generadas matemáticamente por el motor Headless WebSocket
         syntheticCandleEngine.onSignalGenerated = { action, reason ->
-            if (mode == AutoTradeMode.AUTONOMOUS) {
-                executeHeadlessTrade(action, reason)
+            val decisionId = java.util.UUID.randomUUID().toString()
+            if (mode == AutoTradeMode.AUTONOMOUS || mode == AutoTradeMode.SHADOW) {
+                executeHeadlessTrade(action, reason, decisionId)
             } else if (mode == AutoTradeMode.SEMIAUTOMATIC) {
                 currentActiveSignal = ActiveSignal(
                     action = action,
                     title = "Señal Sniper WebSocket",
                     reason = reason,
-                    timestamp = System.currentTimeMillis()
+                    timestamp = System.currentTimeMillis(),
+                    decisionId = decisionId
                 )
                 handler.post {
                     onSignalListener?.invoke(action, reason)
@@ -248,7 +251,8 @@ class TradingEngine(
         val title: String,
         val reason: String,
         val timestamp: Long,
-        val expirySeconds: Int = 30
+        val expirySeconds: Int = 30,
+        val decisionId: String = ""
     )
 
     data class EngineReasoning(
@@ -269,7 +273,9 @@ class TradingEngine(
          */
         val entryPrice: Double,
         val baseBalance: Double,
-        val confidence: Float
+        val confidence: Float,
+        val decisionId: String = "",
+        val tradeId: String = ""
     )
 
     /** Minuto de época (epochMs / 60000) de la última orden ejecutada. Garantiza máx 1 trade por vela. */
@@ -350,6 +356,11 @@ class TradingEngine(
      */
     @Volatile
     var vetoActivoDesajustado: Long = 0L
+        private set
+
+    /** Ronda 21 (Frente E): órdenes simuladas autorizadas en modo SHADOW (cero taps, cero saldo alterado). */
+    @Volatile
+    var shadowOrdersGenerated: Long = 0L
         private set
 
     /** Ronda 20: recuperaciones de activo sin feed, para `/status`. */
@@ -605,7 +616,7 @@ class TradingEngine(
                         val sec = analysis.candleSecond
 
                         if (isTie) {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "TIE", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "TIE", tradeStartMs)
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "TIE", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "TIE", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
                             riskManager.recordTradeVoid()
                             autoDrawEngine.clearTradeEntry()
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
@@ -615,7 +626,7 @@ class TradingEngine(
                             if (!resolved) {
                                 riskManager.recordTradeWin(force = true)
                             }
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN", tradeStartMs)
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
                             adaptiveLearningEngine.recordTradeOutcome(true, context)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
@@ -626,7 +637,7 @@ class TradingEngine(
                             if (!resolved) {
                                 riskManager.recordTradeLoss(force = true)
                             }
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS", tradeStartMs)
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
                             adaptiveLearningEngine.recordTradeOutcome(false, context)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
@@ -1932,8 +1943,13 @@ class TradingEngine(
      * Ejecuta una orden en modo 100% Headless (sin frames ni capturas de pantalla).
      * Utiliza las cotizaciones puras del WebSocket y pulsa las coordenadas calibradas con Accesibilidad.
      */
-    fun executeHeadlessTrade(action: TradeAction, reasonDescription: String) {
-        Log.d("TradingEngine", "➡️ executeHeadlessTrade INICIO: $action | $reasonDescription")
+    fun executeHeadlessTrade(
+        action: TradeAction,
+        reasonDescription: String,
+        decisionId: String = java.util.UUID.randomUUID().toString()
+    ) {
+        val currentDecisionId = decisionId
+        Log.d("TradingEngine", "➡️ executeHeadlessTrade INICIO: $action | $reasonDescription | decisionId=$currentDecisionId")
         // GUARD DE FRESCURA DEL FEED (fail-closed, fuente única = WebSocket).
         // Sin tick reciente (<5000 ms) o sin conexión, se veta la operación: no se degrada
         // a ninguna otra fuente (la captura de pantalla fue retirada por consumo de batería).
@@ -1952,12 +1968,14 @@ class TradingEngine(
             TradeEventLog.add(
                 TradeEventLog.Kind.VETO,
                 "FEED_RANCIO ageMs=${tickAgeMs ?: -1} activo=" +
-                    AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "?" }
+                    AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "?" },
+                decisionId = currentDecisionId
             )
             if (tickAgeMs == null) {
                 TradeEventLog.add(
                     TradeEventLog.Kind.FEED_MUDO,
-                    "activo=${AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "?" }} sin_ningun_tick"
+                    "activo=${AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "?" }} sin_ningun_tick",
+                    decisionId = currentDecisionId
                 )
             }
             return
@@ -1987,7 +2005,8 @@ class TradingEngine(
                 TradeEventLog.Kind.VETO,
                 "V2 rango=%.3e umbral=%.0e activo=%s".format(
                     java.util.Locale.US, rangoRelativo, RANGO_RELATIVO_MINIMO, currentObservedAsset
-                )
+                ),
+                decisionId = currentDecisionId
             )
             return
         }
@@ -2002,7 +2021,8 @@ class TradingEngine(
             )
             TradeEventLog.add(
                 TradeEventLog.Kind.VETO,
-                "CONGELADO activo=$currentObservedAsset"
+                "CONGELADO activo=$currentObservedAsset",
+                decisionId = currentDecisionId
             )
             return
         }
@@ -2031,7 +2051,7 @@ class TradingEngine(
         if (motivoDesajuste != null) {
             vetoActivoDesajustado++
             Log.w("TradingEngine", "⛔ Headless Trade $action VETADO por $motivoDesajuste")
-            TradeEventLog.add(TradeEventLog.Kind.VETO, motivoDesajuste)
+            TradeEventLog.add(TradeEventLog.Kind.VETO, motivoDesajuste, decisionId = currentDecisionId)
             return
         }
 
@@ -2039,6 +2059,7 @@ class TradingEngine(
         synchronized(this) {
             if (lastExecutedCandleEpochMinute == currentCandleEpochMinute) {
                 Log.d("TradingEngine", "⛔ Headless Trade $action bloqueado: Vela de minuto $currentCandleEpochMinute ya fue operada (1 orden por vela máx).")
+                TradeEventLog.add(TradeEventLog.Kind.VETO, "VELA_YA_OPERADA minuto=$currentCandleEpochMinute", decisionId = currentDecisionId)
                 return
             }
         }
@@ -2054,6 +2075,7 @@ class TradingEngine(
                 currentAsset.contains("OTC", ignoreCase = true)
             if (isSynthetic && strategy != AutoTradeStrategy.MT_MASTER_COMBO && strategy != AutoTradeStrategy.AUTO_ADAPTIVE && strategy != AutoTradeStrategy.SUPPORT_RESISTANCE && strategy != AutoTradeStrategy.MT_REJECTION) {
                 Log.d("TradingEngine", "Headless bloqueado por Veto Francotirador: Activo sintético/OTC ($currentAsset)")
+                TradeEventLog.add(TradeEventLog.Kind.VETO, "FRANCOTIRADOR activo=$currentAsset", decisionId = currentDecisionId)
                 return
             }
         }
@@ -2062,6 +2084,7 @@ class TradingEngine(
         val inWindow = MarketTickFilters.isInEntryWindow(sec)
         if (!inWindow) {
             Log.d("TradingEngine", "Headless bloqueado fuera de ventana timing sniper (⏱ ${sec}s | SNIPER=$isSniper | YOLO=$isYolo)")
+            TradeEventLog.add(TradeEventLog.Kind.VETO, "FUERA_DE_VENTANA sec=$sec", decisionId = currentDecisionId)
             return
         }
         val isRejectionOrBounce = reasonDescription.contains("MT_REJECTION") ||
@@ -2073,6 +2096,7 @@ class TradingEngine(
                 reasonDescription.contains("QUANT_CRYPTO")
         if (syntheticCandleEngine.isChoppinessDetected() && !isRejectionOrBounce) {
             Log.d("TradingEngine", "Headless bloqueado por Filtro Anti-Choppy (<0.05% y ticks alternantes)")
+            TradeEventLog.add(TradeEventLog.Kind.VETO, "CHOP", decisionId = currentDecisionId)
             return
         }
 
@@ -2085,6 +2109,7 @@ class TradingEngine(
         }
         if (lastTradeResolutionTime > 0L && timeSinceLastResolution < minSpacingMs) {
             Log.d("TradingEngine", "Headless bloqueado por Cooldown post-resolución (${timeSinceLastResolution / 1000}s < ${minSpacingMs / 1000}s)")
+            TradeEventLog.add(TradeEventLog.Kind.VETO, "COOLDOWN ${timeSinceLastResolution}ms", decisionId = currentDecisionId)
             return
         }
 
@@ -2107,6 +2132,7 @@ class TradingEngine(
         when (adaptiveDecision) {
             is AdaptiveDecision.Block -> {
                 Log.w("TradingEngine", "⛔ Headless Trade $action VETADO por Autoaprendizaje: ${adaptiveDecision.reason}")
+                TradeEventLog.add(TradeEventLog.Kind.VETO, "ADAPTIVE_BLOCK ${adaptiveDecision.reason}", decisionId = currentDecisionId)
                 handler.post {
                     Toast.makeText(context, "⛔ [Autoaprendizaje] Entrada bloqueada: ${adaptiveDecision.reason}", Toast.LENGTH_SHORT).show()
                 }
@@ -2128,6 +2154,7 @@ class TradingEngine(
         val (canTrade, riskReason) = riskManager.canExecuteTrade(autonomousSubMode, headlessConfidence)
         if (!canTrade) {
             Log.d("TradingEngine", "Headless bloqueado por riesgo: $riskReason")
+            TradeEventLog.add(TradeEventLog.Kind.VETO, "RISK_LIMIT $riskReason", decisionId = currentDecisionId)
             if (isSniper && (riskReason.contains("alcanzado", ignoreCase = true) || riskReason.contains("finalizada", ignoreCase = true) || riskReason.contains("Límite", ignoreCase = true))) {
                 setTradingMode(AutoTradeMode.DISABLED, "engine:sniper-limite(headless)")
                 sniperShutdownReason = riskReason
@@ -2156,7 +2183,8 @@ class TradingEngine(
             // R13/A5: el veto queda observable desde `/events` sin depender de logcat.
             TradeEventLog.add(
                 TradeEventLog.Kind.VETO,
-                "V1 SR=\"${reasoning.srFilterStatus}\" PLAN=\"${reasoning.actionPlan}\""
+                "V1 SR=\"${reasoning.srFilterStatus}\" PLAN=\"${reasoning.actionPlan}\"",
+                decisionId = currentDecisionId
             )
             return
         }
@@ -2189,14 +2217,56 @@ class TradingEngine(
             Pair(rawX, rawY)
         }
 
+        // Ronda 21 (Frente E): SHADOW MODE FORMAL
+        // Si el motor está en SHADOW, todas las defensas y cálculos corren exactamente igual,
+        // pero NUNCA se despacha un tap al broker ni se altera el saldo ni el W/L real.
+        if (mode == AutoTradeMode.SHADOW) {
+            shadowOrdersGenerated++
+            val currentPrice = latestMarketTick?.price ?: 0.0
+            Log.i("TradingEngine", "👻 [SHADOW MODE] Orden simulada autorizada: $finalAction @ $currentPrice (segundo=$sec, decisionId=$currentDecisionId) - Cero taps, saldo intacto")
+            TradeEventLog.add(
+                TradeEventLog.Kind.SHADOW_DECISION,
+                "SHADOW $finalAction @ $currentPrice conf=$headlessConfidence strat=${strategy.name} sub=${autonomousSubMode.name}",
+                decisionId = currentDecisionId,
+                tradeId = null
+            )
+            TradeJournalLogger.logShadowTrade(
+                context = context,
+                strategy = strategy.name,
+                submode = autonomousSubMode.name,
+                action = finalAction.name,
+                confidence = headlessConfidence,
+                priceY = currentPrice.toFloat(),
+                trend = syntheticCandleEngine.detectedTrend.name,
+                candleSecond = sec,
+                decisionId = currentDecisionId,
+                reason = "SHADOW_AUTORIZADA: pasó todos los vetos"
+            )
+            synchronized(this) {
+                lastExecutedCandleEpochMinute = currentCandleEpochMinute
+            }
+            return
+        }
+
         val accessibility = AutoTradeAccessibilityService.instance
         val observed = accessibility?.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
         val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
+        val currentTradeId = java.util.UUID.randomUUID().toString()
         // H9: telemetría del segundo REAL de entrada (no el de liquidación del journal). Permite
         // correlacionar el segundo de disparo con el resultado, la métrica que el journal no captura.
-        Log.i("TradingEngine", "🎯 ENTRADA despachada | ${finalAction} | segundo=$sec | estrategia=${strategy.name} | $finalReason")
+        Log.i("TradingEngine", "🎯 ENTRADA despachada | ${finalAction} | segundo=$sec | estrategia=${strategy.name} | decisionId=$currentDecisionId | tradeId=$currentTradeId | $finalReason")
         isTradeResolving.set(false)
-        riskManager.recordTradeSent(finalAction, latestMarketTick?.price ?: 0.0, 0f, baseBal, headlessConfidence, sec, finalReason)
+        riskManager.recordTradeSent(
+            action = finalAction,
+            entryPrice = latestMarketTick?.price ?: 0.0,
+            entryPriceY = 0f,
+            baseBalance = baseBal,
+            confidence = headlessConfidence,
+            entryCandleSecond = sec,
+            reason = finalReason,
+            decisionId = currentDecisionId,
+            tradeId = currentTradeId
+        )
         synchronized(this) {
             lastExecutedCandleEpochMinute = currentCandleEpochMinute
         }
@@ -2207,9 +2277,16 @@ class TradingEngine(
             strategyName = strategy.name
         )
         // Despacho táctil único con verificación y fallback ROOT transparente
-        AutoTradeAccessibilityService.performClick(x, y) { success, error ->
+        AutoTradeAccessibilityService.performClick(x, y, decisionId = currentDecisionId, tradeId = currentTradeId) { success, error ->
             if (!success) {
                 triggerManualFallback(finalAction, error ?: "Auto-clic headless falló en 300ms")
+            } else {
+                riskManager.captureTapLatency(
+                    tapStartTs = AutoTradeAccessibilityService.lastTapStartTs,
+                    tapEndTs = AutoTradeAccessibilityService.lastTapEndTs,
+                    candleSecondAtTapEnd = AutoTradeAccessibilityService.lastTapCandleSecond,
+                    priceAtTapEnd = latestMarketTick?.price ?: 0.0
+                )
             }
         }
 
@@ -2297,7 +2374,9 @@ class TradingEngine(
                         startTime = startMs,
                         entryPrice = riskManager.pendingTradeEntryPrice,
                         baseBalance = riskManager.pendingTradeBaseBalance,
-                        confidence = riskManager.pendingTradeConfidence
+                        confidence = riskManager.pendingTradeConfidence,
+                        decisionId = riskManager.pendingTradeDecisionId,
+                        tradeId = riskManager.pendingTradeTradeId
                     )
                 }
             }
@@ -2421,7 +2500,9 @@ class TradingEngine(
                         candleSecondAtTapEnd = riskManager.pendingTradeCandleSecondAtTapEnd,
                         priceAtSignal = riskManager.pendingTradePriceAtSignal,
                         priceAtTapEnd = riskManager.pendingTradePriceAtTapEnd
-                    )
+                    ),
+                    decisionId = snapshot.decisionId,
+                    tradeId = snapshot.tradeId
                 )
 
                 if (isTie) {

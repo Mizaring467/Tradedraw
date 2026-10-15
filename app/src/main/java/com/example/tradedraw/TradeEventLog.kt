@@ -69,20 +69,35 @@ object TradeEventLog {
          * el servidor responde `success:true` y despues 0 ticks en 60 s. Sin este evento, volver
          * a un activo sano seria indistinguible de un cambio de activo pedido por el usuario.
          */
-        FEED_SIN_TICKS
+        FEED_SIN_TICKS,
+        /**
+         * Ronda 21 (Frente E): decisión autorizada en modo SHADOW (cero taps, cero impacto en balance).
+         */
+        SHADOW_DECISION
     }
 
     data class Event(
         val atMs: Long,
         val kind: Kind,
-        val detail: String
+        val detail: String,
+        val decisionId: String? = null,
+        val tradeId: String? = null
     ) {
         /** Representacion estable para el bridge, sin `Locale` implicito. */
-        fun toJson(): String = String.format(
-            Locale.US,
-            "{\"atMs\":%d,\"kind\":\"%s\",\"detail\":\"%s\"}",
-            atMs, kind.name, detail.replace("\\", "").replace("\"", "'")
-        )
+        fun toJson(): String {
+            val sb = StringBuilder()
+            sb.append("{\"atMs\":").append(atMs)
+                .append(",\"kind\":\"").append(kind.name).append("\"")
+                .append(",\"detail\":\"").append(detail.replace("\\", "").replace("\"", "'")).append("\"")
+            if (!decisionId.isNullOrBlank()) {
+                sb.append(",\"decisionId\":\"").append(decisionId.replace("\\", "").replace("\"", "'")).append("\"")
+            }
+            if (!tradeId.isNullOrBlank()) {
+                sb.append(",\"tradeId\":\"").append(tradeId.replace("\\", "").replace("\"", "'")).append("\"")
+            }
+            sb.append("}")
+            return sb.toString()
+        }
     }
 
     private val buffer = ArrayDeque<Event>(CAPACIDAD)
@@ -120,11 +135,16 @@ object TradeEventLog {
      * (cada uno a 1). El primer token es la etiqueta estable del motivo.
      */
     @Synchronized
-    fun add(kind: Kind, detail: String) {
+    fun add(
+        kind: Kind,
+        detail: String,
+        decisionId: String? = null,
+        tradeId: String? = null
+    ) {
         if (buffer.size >= CAPACIDAD) {
             buffer.removeFirst()
         }
-        val ev = Event(System.currentTimeMillis(), kind, detail)
+        val ev = Event(System.currentTimeMillis(), kind, detail, decisionId, tradeId)
         buffer.addLast(ev)
         val clave = if (kind == Kind.VETO) "VETO:" + detail.trim().substringBefore(' ') else kind.name
         counters[clave] = (counters[clave] ?: 0) + 1
