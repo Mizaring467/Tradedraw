@@ -52,6 +52,28 @@ def get_git_root(cwd: str = ".") -> str:
     return os.path.normpath(out.strip())
 
 
+def safe_rmtree(path: str) -> None:
+    """Borrado resiliente de directorios para evitar bloqueos de archivos de solo lectura en Windows/Git."""
+    if not os.path.exists(path):
+        return
+    import stat
+
+    def on_error(func, p, exc_info):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:
+            pass
+
+    try:
+        shutil.rmtree(path, onerror=on_error)
+    except Exception:
+        pass
+
+    if os.path.exists(path) and os.name == "nt":
+        subprocess.run(f'cmd.exe /c "rd /s /q \\"{path}\\""', shell=True, capture_output=True)
+
+
 def parse_gradle_test_results(test_results_dir: str) -> Dict[str, Any]:
     """Parsea los archivos XML de resultados de testDebugUnitTest."""
     xml_pattern = os.path.join(test_results_dir, "TEST-*.xml")
@@ -257,7 +279,7 @@ def run_worktree_verification(
             print(f"[FRENTE G] Limpiando worktree previo en {worktree_dir}...")
             run_cmd(["git", "worktree", "remove", "--force", worktree_dir], cwd=repo_root)
             if os.path.exists(worktree_dir):
-                shutil.rmtree(worktree_dir, ignore_errors=True)
+                safe_rmtree(worktree_dir)
 
         # 2. Crear el worktree temporal
         print(f"[FRENTE G] Creando worktree limpio para {commit_to_checkout}...")
@@ -338,7 +360,7 @@ def run_worktree_verification(
         run_cmd(["git", "worktree", "remove", "--force", worktree_dir], cwd=repo_root)
         run_cmd(["git", "worktree", "prune"], cwd=repo_root)
         if os.path.exists(worktree_dir):
-            shutil.rmtree(worktree_dir, ignore_errors=True)
+            safe_rmtree(worktree_dir)
         worktree_cleaned = not os.path.exists(worktree_dir)
         print(f"[FRENTE G] Worktree eliminado: {worktree_cleaned}")
 

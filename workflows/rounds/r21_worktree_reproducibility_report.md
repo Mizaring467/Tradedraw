@@ -1,6 +1,6 @@
 # R21 — REPORTE DE REPRODUCIBILIDAD EN WORKTREE LIMPIO (FRENTE G)
 
-**Fecha:** 2026-10-15 03:07:26 UTC  
+**Fecha:** 2026-10-15 03:12:39 UTC  
 **Herramienta:** `scripts/ci/verify_clean_worktree.py`  
 **Commit / Ref Verificado:** `HEAD` (`4d433ed54bbc0c8541b64a05ef122079ca0d11b9`)  
 **Ruta Worktree Temporal:** `C:\Users\heidy\Tradedraw_repro_worktree`  
@@ -25,23 +25,23 @@
 
 - **Comando ejecutado:** `"C:\Users\heidy\Tradedraw_repro_worktree\gradlew.bat" testDebugUnitTest --no-daemon`
 - **Código de salida:** `1`
-- **Duración total fase Gradle:** `94.38 s`
+- **Duración total fase Gradle:** `142.68 s`
 
 ```
-> Task :app:generateDebugResources
-> Task :app:packageDebugResources
-> Task :app:mergeDebugResources
-> Task :app:createDebugCompatibleScreenManifests
-> Task :app:extractDeepLinksDebug
-> Task :app:parseDebugLocalResources
-> Task :app:processDebugMainManifest
-> Task :app:processDebugManifest
-> Task :app:preDebugUnitTestBuild UP-TO-DATE
-> Task :app:javaPreCompileDebug
-> Task :app:javaPreCompileDebugUnitTest
-> Task :app:processDebugManifestForPackage
-> Task :app:processDebugResources
-> Task :app:compileDebugKotlin
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport.handleMessages(Unknown Source)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run0(Unknown Source)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.lambda$run$0(Unknown Source)
+	at java.base/java.security.AccessController.doPrivileged(Unknown Source)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run(Unknown Source)
+	... 3 more
+Caused by: java.nio.file.NoSuchFileException: C:\Users\heidy\Tradedraw_repro_worktree\app\build\kotlin\compileDebugKotlin\classpath-snapshot\shrunk-classpath-snapshot.bin
+	at java.base/sun.nio.fs.WindowsException.translateToIOException(Unknown Source)
+	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(Unknown Source)
+	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(Unknown Source)
+	at java.base/sun.nio.fs.WindowsFileSystemProvider.newFileChannel(Unknown Source)
+	... 29 more
+Using fallback strategy: Compile without Kotlin daemon
+Try ./gradlew --stop if this issue persists.
 
 > Task :app:compileDebugKotlin FAILED
 
@@ -57,16 +57,22 @@ For more on this, please refer to https://docs.gradle.org/9.5.0/userguide/comman
 
 **Salida de error (Stderr):**
 ```
-Warning: SDK processing. This version only understands SDK XML versions up to 3 but an SDK XML file of version 4 was encountered. This can happen if you use versions of Android Studio and the command-line tools that were released at different times.
-e: file:///C:/Users/heidy/Tradedraw_repro_worktree/app/src/main/java/com/example/tradedraw/OverlayService.kt:114:49 Unresolved reference: health
-e: file:///C:/Users/heidy/Tradedraw_repro_worktree/app/src/main/java/com/example/tradedraw/OverlayService.kt:114:97 Unresolved reference: health
+exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\TradeJournalLogger.kt
+exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\TradeLearningEngine.kt
+exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\TradingEngine.kt
+exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\TradingTool.kt
+exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\ui\theme\Color.kt
+exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\ui\theme\Theme.kt
+exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\ui\theme\Type.kt
+exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\VisionAnalyzer.kt
+exception: warning: classpath entry points to a non-existent location: C:\Users\heidy\Tradedraw_repro_worktree\app\build\intermediates\compile_and_runtime_not_namespaced_r_class_jar\debug\processDebugResources\R.jar
 
 FAILURE: Build failed with an exception.
 
 * What went wrong:
 Execution failed for task ':app:compileDebugKotlin' (registered by plugin 'org.jetbrains.kotlin.android').
 > A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
-   > Compilation error. See log for more details
+   > El sistema no puede encontrar la ruta especificada
 
 * Try:
 > Run with --stacktrace option to get the stack trace.
@@ -74,15 +80,16 @@ Execution failed for task ':app:compileDebugKotlin' (registered by plugin 'org.j
 > Run with --scan to get full insights from a Build Scan (powered by Develocity).
 > Get more help at https://help.gradle.org.
 
-BUILD FAILED in 1m 33s
+BUILD FAILED in 2m 21s
+No se ha encontrado el archivo por lotes.
 ```
 
 ---
 
 ## 3. Auditoría de Higiene del Repositorio Principal
 
-- **Archivos modificados (en curso por otros frentes):** `9`
-- **Archivos no trackeados (artefactos / temporales):** `55`
+- **Archivos modificados (en curso por otros frentes):** `0`
+- **Archivos no trackeados (artefactos / temporales):** `37`
 - **Reglas .gitignore activas para artefactos:** `OK (build y .gradle ignorados)`
 
 ---
