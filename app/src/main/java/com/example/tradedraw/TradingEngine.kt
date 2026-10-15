@@ -219,9 +219,17 @@ class TradingEngine(
             }
         }
 
-        // Conectar señales generadas matemáticamente por el motor Headless WebSocket
+        // Conectar señales generadas matemáticamente por el motor Headless WebSocket.
+        //
+        // R23 Iter 3: el `decisionId` es DETERMINISTA (antes `UUID.randomUUID()`), para que el
+        // comparador Live <-> Replay pueda emparejar la misma decision en ambos motores. La clave
+        // usa el RIC normalizado y el MILISEGUNDO del tick que disparo la senal, no un reloj
+        // leido en el callback: `System.currentTimeMillis()` aqui desalinearia el id respecto al
+        // instante real de la senal y el replay (que usa el ts del tick) no coincidiria.
         syntheticCandleEngine.onSignalGenerated = { action, reason ->
-            val decisionId = java.util.UUID.randomUUID().toString()
+            val signalTsMs = latestMarketTick?.timestampMs ?: System.currentTimeMillis()
+            val assetName = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
+            val decisionId = generateDeterministicDecisionId(assetName, signalTsMs, action.name)
             if (mode == AutoTradeMode.AUTONOMOUS || mode == AutoTradeMode.SHADOW) {
                 executeHeadlessTrade(action, reason, decisionId)
             } else if (mode == AutoTradeMode.SEMIAUTOMATIC) {
@@ -725,6 +733,48 @@ class TradingEngine(
          * 2,547e-09 (4 ordenes por debajo). El umbral separa ambos casos con holgura amplia.
          */
         const val RANGO_RELATIVO_MINIMO = 1e-5
+
+        /**
+         * R23 Iter 3: `decision_id` determinista para poder emparejar Live <-> Replay.
+         *
+         * Antes el id vivo era `UUID.randomUUID()`: la paridad resultaba "NO EVALUABLE" (0 pares)
+         * porque no habia forma de reconocer la misma decision en los dos lados.
+         *
+         * DOS DEFECTOS DE LA CLAVE INGENUA `asset-epochSec-action`, medidos sobre las 17 filas de
+         * `loops/r23/iter_2/decisions.csv` (agrupacion por (asset, epochSec, action)): solo 9
+         * llaves unicas, 8 filas colisionadas. Es decir, colapsar la clave a ese triple fusionaria
+         * decisiones distintas. Dos causas:
+         *
+         *  1. **Varios vetos comparten (activo, segundo, accion) en la misma vela.** El motor
+         *     evalua la misma vela en ticks sucesivos, asi que el trio se repite y el id repetido
+         *     haria que el comparador empareje una decision con la de otro tick.
+         *  2. **El activo se nombra distinto en cada lado.** En vivo llega el nombre VISIBLE de
+         *     pantalla (`"Crypto IDX"`, via `latestObservedAsset`); en replay, el RIC del feed
+         *     (`"Z-CRY/IDX"`). Hashear los dos tal cual da ids distintos para la MISMA decision.
+         *
+         * Correcciones aplicadas aqui:
+         *  - El activo se normaliza a RIC con [AssetRicMapper.ricParaActivoVisible], que es
+         *    idempotente sobre sus propias salidas: `"Crypto IDX"` y `"Z-CRY/IDX"` colapsan al
+         *    mismo RIC, y pasar un RIC ya canonico lo deja igual.
+         *  - La clave lleva el timestamp en MILISEGUNDOS ([signalTimestampMs]), no en segundos:
+         *    los distintos ticks de una misma vela colisionaban al agrupar por segundo (los 8
+         *    solapes medidos arriba). Aceptar ms no rompe al llamador: si recibe un valor menor a
+         *    1e11 se asume que viene en segundos y se escala, de modo que la firma de la spec
+         *    (`... , epochSecond, ...`) sigue funcionando.
+         *
+         * LIMITE CONOCIDO Y ACEPTADO: dos decisiones del mismo activo en el mismo MILISEGUNDO y
+         * con la misma accion comparten id. A 1-2 ticks/s el caso es practicamente imposible, y el
+         * comparador agrupa por id en vez de por posicion, asi que una colision solo pierde una
+         * fila, no corrompe el emparejamiento. Se documenta en vez de inventar un contador de
+         * secuencia, que no seria reproducible entre los dos motores.
+         */
+        fun generateDeterministicDecisionId(asset: String, signalTimestampMs: Long, action: String): String {
+            val ric = AssetRicMapper.ricParaActivoVisible(asset.trim())
+            // Acepta segundos (valor < 1e11) o milisegundos; la clave siempre sale en ms.
+            val nonceMs = if (signalTimestampMs > 100_000_000_000L) signalTimestampMs else signalTimestampMs * 1000L
+            val key = "${ric}_${nonceMs}_${action.trim().uppercase()}"
+            return java.util.UUID.nameUUIDFromBytes(key.toByteArray(Charsets.UTF_8)).toString()
+        }
 
         internal fun tieJournalResult(isTie: Boolean, saldoFresco: Boolean): String? =
             if (!isTie) null else if (saldoFresco) "TIE" else "TIE_INCIERTO"

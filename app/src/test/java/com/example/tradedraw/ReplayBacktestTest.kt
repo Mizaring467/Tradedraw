@@ -34,7 +34,13 @@ class ReplayBacktestTest {
         val trend: String,
         val distSupportRatio: Float,
         val distResistanceRatio: Float,
-        val isChop: Boolean
+        val isChop: Boolean,
+        /**
+         * R23 Iter 3: RIC del tick que disparo la senal. Se arrastra hasta la fila del CSV porque
+         * de el sale el `decision_id` determinista: el motor vivo usa el mismo RIC normalizado, y
+         * sin este dato el replay volveria a emitir ids incomparables.
+         */
+        val assetRic: String
     )
 
     data class SimulatedTrade(
@@ -59,6 +65,13 @@ class ReplayBacktestTest {
         val candleSecond: Int,
         val adaptiveStatus: String,
         val reason: String,
+        /**
+         * R23 Iter 3: id determinista de la decision. Se calcula con
+         * [TradingEngine.generateDeterministicDecisionId] sobre el RIC del tick de entrada y el
+         * MILISEGUNDO de la senal — la misma formula y las mismas unidades que el motor vivo, que
+         * es lo que permite al comparador emparejar ambos lados.
+         */
+        val decisionId: String,
         val source: String = ""
     )
 
@@ -153,7 +166,8 @@ class ReplayBacktestTest {
                             trend = eng.detectedTrend.name,
                             distSupportRatio = eng.distanceToSupportRatio,
                             distResistanceRatio = eng.distanceToResistanceRatio,
-                            isChop = eng.isChoppinessDetected()
+                            isChop = eng.isChoppinessDetected(),
+                            assetRic = lastTick.ric
                         )
                     )
                 }
@@ -240,7 +254,8 @@ class ReplayBacktestTest {
                     marketRegime = if (sig.isChop) "CHOP" else "TRENDING",
                     candleSecond = candleSec,
                     adaptiveStatus = result,
-                    reason = reason
+                    reason = reason,
+                    decisionId = TradingEngine.generateDeterministicDecisionId(sig.assetRic, entryTick.ts, action.name)
                 )
             )
             balance = settledBalance
@@ -252,16 +267,19 @@ class ReplayBacktestTest {
     private fun writeJournalCsv(trades: List<SimulatedTrade>, outFile: File) {
         outFile.parentFile?.mkdirs()
         FileWriter(outFile, false).use { writer ->
-            writer.write("timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason,source\n")
+            // R23 Iter 3: cabecera ampliada con `decision_id` (penultima columna, antes de `source`).
+            // El orden replica el de la spec de la iteracion para que el comparador Live <-> Replay
+            // lea la misma columna en ambos lados.
+            writer.write("timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason,decision_id,source\n")
             for (t in trades) {
                 val cleanReason = t.reason.replace(",", ";").replace("\n", " ").take(140)
                 val line = String.format(
                     Locale.US,
-                    "%d,%s,%s,%s,%s,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\",%s\n",
+                    "%d,%s,%s,%s,%s,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\",%s,%s\n",
                     t.timestamp, t.isoDate, t.strategy, t.submode, t.action.name, t.confidence,
                     t.entryPrice, t.stake, t.baseBalance, t.result, t.settledBalance, t.durationSec,
                     t.trend, t.distSupportRatio, t.distResistanceRatio, t.tickVelocity, t.impulse,
-                    t.marketRegime, t.candleSecond, t.adaptiveStatus, cleanReason, t.source
+                    t.marketRegime, t.candleSecond, t.adaptiveStatus, cleanReason, t.decisionId, t.source
                 )
                 writer.write(line)
             }
