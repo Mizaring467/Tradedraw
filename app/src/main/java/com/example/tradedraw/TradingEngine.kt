@@ -330,6 +330,32 @@ class TradingEngine(
     fun recentPriceRangeRatio(): Double = priceRangeRatioProvider?.invoke() ?: -1.0
 
     /**
+     * Ronda 20: proveedor del cliente WebSocket real. Lo inyecta OverlayService.
+     *
+     * Es un proveedor y no una referencia directa por el mismo motivo que el resto de proveedores
+     * de esta clase: el motor debe poder construirse en tests sin socket. De aqui salen tanto el
+     * activo que sirve el feed (para el guard de desajuste) como las recuperaciones por falta de
+     * ticks (para `/status`), que son dos lecturas del MISMO objeto.
+     */
+    var binomoWebSocketClientRef: (() -> BinomoWebSocketClient?)? = null
+
+    /** Activo que el feed esta sirviendo, o "" si no hay feed del que saberlo. */
+    fun feedAsset(): String = binomoWebSocketClientRef?.invoke()?.activeAsset?.trim().orEmpty()
+
+    /**
+     * Ronda 20: disparos vetados por desajuste entre el activo de pantalla y el del feed.
+     *
+     * Es el contador que hace observable el guard. Si es 0 en una sesion donde el grafico y el
+     * feed coincidian, el guard no intervino (criterio B.3 del PREREGISTRO_R20).
+     */
+    @Volatile
+    var vetoActivoDesajustado: Long = 0L
+        private set
+
+    /** Ronda 20: recuperaciones de activo sin feed, para `/status`. */
+    fun recuperacionesPorSinTicks(): Long = binomoWebSocketClientRef?.invoke()?.recuperacionesPorSinTicks ?: 0L
+
+    /**
      * Ronda 12 (B4): limpieza del estado POR ACTIVO al detectar un cambio de activo.
      *
      * `SyntheticCandleEngine` y `BinomoWebSocketClient` ya limpian sus propios buffers al ver el
@@ -697,6 +723,35 @@ class TradingEngine(
 
         internal fun recordTieVoidIfFresh(riskManager: RiskManager, saldoFresco: Boolean) {
             if (saldoFresco) riskManager.recordTradeVoid()
+        }
+
+        /**
+         * Ronda 20: decide si se debe VETAR por desajuste entre el activo del feed y el visible en
+         * pantalla. Devuelve el motivo del veto, o `null` si no procede vetar.
+         *
+         * Funcion pura a proposito: es la unica forma de fijar por test el comportamiento
+         * fail-closed sin montar medio motor.
+         *
+         * Se compara RIC contra RIC. `activoPantallaVisible` es el nombre VISIBLE
+         * (`"Aave (OTC)"`), asi que se pasa por el MISMO mapeo que usa la suscripcion: compararlo
+         * en crudo daria desajuste SIEMPRE y el bot no dispararia jamas.
+         *
+         * FAIL-CLOSED (criterio B.4 del PREREGISTRO_R20): si el feed sirve un activo CONOCIDO y la
+         * pantalla no lo confirma, se veta. Sin dato de pantalla no se autoriza. Es coherente con
+         * el resto del sistema: sin servicio de accesibilidad el bot tampoco puede pulsar, asi que
+         * exigir la confirmacion de pantalla no quita ninguna capacidad real.
+         */
+        internal fun motivoVetoPorDesajusteDeActivo(activoPantallaVisible: String, activoFeed: String): String? {
+            val visible = activoPantallaVisible.trim()
+            val feed = activoFeed.trim()
+            // Si ni siquiera se sabe que sirve el feed, no hay nada que comparar: se abstiene. El
+            // guard de feed rancio y el veto V2 ya cubren ese caso. En produccion `activoFeed`
+            // nunca esta vacio (el cliente siempre tiene un activo activo).
+            if (feed.isBlank()) return null
+            if (visible.isBlank()) return "DESAJUSTE pantalla=DESCONOCIDA feed=\"$feed\""
+            val ricPantalla = AssetRicMapper.ricParaActivoVisible(visible)
+            return if (ricPantalla.equals(feed, ignoreCase = true)) null
+            else "DESAJUSTE pantalla=\"$visible\" ric=$ricPantalla feed=\"$feed\""
         }
 
         fun evaluateStrategySignal(
@@ -1949,6 +2004,34 @@ class TradingEngine(
                 TradeEventLog.Kind.VETO,
                 "CONGELADO activo=$currentObservedAsset"
             )
+            return
+        }
+
+        // GUARD DE COINCIDENCIA PANTALLA <-> FEED (Ronda 20, fail-closed).
+        //
+        // Por que existe. La recuperacion de activo sin feed (PREREGISTRO_R20 §4.1) puede dejar el
+        // feed apuntando a un RIC DISTINTO del grafico que el usuario tiene abierto en el broker.
+        // Medido: con el grafico en `Aave (OTC)`, el feed sano disponible es `ETHUSD-OTC`.
+        //
+        // Sin este guard, el bot decidiria CALL/PUT con el precio de un subyacente y pulsaria los
+        // botones del grafico de OTRO. En opciones binarias eso no es un fallo de calidad: es una
+        // orden a ciegas sobre un activo distinto.
+        //
+        // Antes de esta ronda NO existia ninguna comprobacion de este tipo (verificado leyendo
+        // `executeHeadlessTrade`: los guards eran feed rancio, V2, congelado, una-por-vela, veto
+        // francotirador, ventana sniper, anti-chop, cooldown y decision adaptativa; ninguno
+        // comparaba activos). Este guard solo ANADE una restriccion: no relaja ninguna.
+        //
+        // FAIL-CLOSED: sin confirmacion de pantalla no se autoriza (criterio B.4 del PREREGISTRO_
+        // R20). La logica vive en una funcion pura para poder fijarla por test.
+        val motivoDesajuste = motivoVetoPorDesajusteDeActivo(
+            activoPantallaVisible = AutoTradeAccessibilityService.latestObservedAsset,
+            activoFeed = feedAsset()
+        )
+        if (motivoDesajuste != null) {
+            vetoActivoDesajustado++
+            Log.w("TradingEngine", "⛔ Headless Trade $action VETADO por $motivoDesajuste")
+            TradeEventLog.add(TradeEventLog.Kind.VETO, motivoDesajuste)
             return
         }
 

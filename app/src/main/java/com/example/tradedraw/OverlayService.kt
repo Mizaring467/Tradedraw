@@ -313,6 +313,9 @@ class OverlayService : Service() {
         // Ronda 12 (B2, veto V2): el motor necesita medir el rango relativo del feed para vetar
         // los activos sin volatilidad utilizable (Z-CRY/IDX: 2,5e-09 frente a 4,2e-02 de ETHUSD-OTC).
         tradingEngine.priceRangeRatioProvider = { wsClient.recentPriceRangeRatio() }
+        // Ronda 20: el motor necesita el cliente para dos lecturas: que activo sirve el feed (guard
+        // de desajuste pantalla<->feed) y cuantas recuperaciones por falta de ticks hubo.
+        tradingEngine.binomoWebSocketClientRef = { wsClient }
         // Ronda 12 (B4): el listener de cambio de activo NUNCA se asignaba (solo se declaraba y
         // se invocaba), asi que no habia ningun punto central donde limpiar el estado por activo.
         // Aqui se cierra ese circuito: al detectar un activo nuevo se resetea el estado que
