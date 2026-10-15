@@ -621,52 +621,10 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                     onAssetUpdatedListener?.invoke(assetCandidate, isSyn)
                     try {
                         OverlayService.instance?.binomoWebSocketClient?.let { ws ->
-                            // Ronda 7-fix: mapeo completo pantalla -> RIC real de Binomo. Antes solo
-                            // cubría IDX/EUR/GBP/JPY; "Ethereum (OTC)" caía al else y producía el RIC
-                            // inválido "Ethereum(OTC)" en vez de "ETHUSD-OTC", rompiendo el feed.
-                            // R13/A2a: se añaden los NOMBRES COMPLETOS (Bitcoin, Cardano...)
-                            // porque los simbolos cortos no siempre estan contenidos en ellos:
-                            // "BITCOIN" no contiene "BTC" ni "CARDANO" contiene "ADA", asi que
-                            // caian al `else` y producian RICs inexistentes. Mismo defecto que
-                            // dejaba a Aave sin feed.
-                            val formattedRic = when {
-                                upper.contains("IDX") -> "Z-CRY/IDX"
-                                upper.contains("ETH") || upper.contains("ETHEREUM") -> "ETHUSD-OTC"
-                                (upper.contains("BTC") || upper.contains("BITCOIN")) && upper.contains("CASH") -> "BCHUSD-OTC"
-                                upper.contains("BTC") || upper.contains("BITCOIN") -> "BTCUSD-OTC"
-                                upper.contains("SOL") -> "SOLUSD-OTC"
-                                upper.contains("LTC") || upper.contains("LITECOIN") -> "LTCUSD-OTC"
-                                upper.contains("XRP") || upper.contains("RIPPLE") -> "XRPUSD-OTC"
-                                upper.contains("ADA") || upper.contains("CARDANO") -> "ADAUSD-OTC"
-                                upper.contains("DOT") || upper.contains("POLKADOT") -> "DOTUSD-OTC"
-                                upper.contains("LINK") || upper.contains("CHAINLINK") -> "LINKUSD-OTC"
-                                upper.contains("DOGE") || upper.contains("DOGECOIN") -> "DOGEUSD-OTC"
-                                upper.contains("AAVE") -> "AAVEUSD-OTC"
-                                // R13/A2a: "Oro" es el nombre en español del mismo activo; sin
-                                // esta linea caia al `else` y producia el RIC `OROUS-OTC`.
-                                upper.contains("XAU") || upper.contains("GOLD") || upper.contains("ORO") -> "XAU/USD"
-                                upper.contains("EUR/USD") -> "Z-EUR/USD2"
-                                upper.contains("GBP/USD") -> "Z-GBP/USD2"
-                                upper.contains("USD/JPY") -> "Z-USD/JPY2"
-                                // R13/A2a: el `else` anterior hacia `replace(" ", "")`, que para
-                                // "Aave (OTC)" produce "Aave(OTC)" CON parentesis: un RIC que el
-                                // feed no reconoce, asi que el activo quedaba sin ticks y el HUD
-                                // pintaba "(0ms)" sin precio. La causa raiz no era el parser ni
-                                // el feed: era este mapeo, que no cubria AAVE y no normalizaba.
-                                // Ahora se deriva un RIC con el patron real de Binomo
-                                // (<BASE>USD-OTC): se quita el sufijo "(OTC)"/"OTC", se limpia a
-                                // alfanumerico y se le añade el sufijo correcto.
-                                else -> {
-                                    val base = upper
-                                        .replace("(OTC)", "")
-                                        .replace("OTC", "")
-                                        .replace("(CASH)", "")
-                                        .replace("/", "")
-                                        .filter { it.isLetterOrDigit() }
-                                    if (base.isBlank()) assetCandidate.replace(" ", "")
-                                    else "${base}USD-OTC"
-                                }
-                            }
+                            // Ronda 20: el mapeo se extrajo a `AssetRicMapper` porque el guard de
+                            // desajuste pantalla<->feed del motor necesita el MISMO mapeo, y
+                            // alguna clase tiene que ser la unica fuente de verdad.
+                            val formattedRic = AssetRicMapper.ricParaActivoVisible(assetCandidate)
                             ws.updateActiveAsset(formattedRic)
                             // R13 (adenda 3): los cambios de activo deben quedar en `/events`.
                             // Sin esto no habia forma de ver QUE RIC se estaba suscribiendo, que
