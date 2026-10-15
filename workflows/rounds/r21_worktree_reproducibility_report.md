@@ -1,6 +1,6 @@
 # R21 — REPORTE DE REPRODUCIBILIDAD EN WORKTREE LIMPIO (FRENTE G)
 
-**Fecha:** 2026-10-15 03:19:06 UTC  
+**Fecha:** 2026-10-15 03:22:30 UTC  
 **Herramienta:** `scripts/ci/verify_clean_worktree.py`  
 **Commit / Ref Verificado:** `HEAD` (`ef2932a00e69535ca618d9c5cb57eb1710fb9228`)  
 **Ruta Worktree Temporal:** `C:\Users\heidy\Tradedraw_repro_worktree`  
@@ -16,16 +16,16 @@
 | **Compilación Gradle** | `PASS` | `compileDebugKotlin` / `compileDebugJavaWithJavac` exitosos |
 | **Suite de Tests Unitarios** | **`366 tests`** (`0 fallos, 0 errores`) | 100% tests verdes sin dependencias ocultas |
 | **Clases de Test Ejecutadas** | `37 clases` | Suite completa ejecutada en JVM limpia |
-| **Tiempo de Ejecución Tests** | `2.69 s` | Rendimiento de suite unitaria |
+| **Tiempo de Ejecución Tests** | `1.67 s` | Rendimiento de suite unitaria |
 | **Limpieza y Desmantelamiento** | `PASS` | Eliminación segura de directorio y `git worktree prune` |
 
 ---
 
 ## 2. Detalle de Ejecución de Gradle (`testDebugUnitTest`)
 
-- **Comando ejecutado:** `"C:\Users\heidy\Tradedraw_repro_worktree\gradlew.bat" :app:parseDebugLocalResources :app:testDebugUnitTest`
+- **Comando ejecutado:** `cmd.exe /c C:\Users\heidy\Tradedraw_repro_worktree\gradlew.bat testDebugUnitTest --no-daemon`
 - **Código de salida:** `0`
-- **Duración total fase Gradle:** `152.12 s`
+- **Duración total fase Gradle:** `166.57 s`
 
 ```
 > Task :app:compileDebugJavaWithJavac NO-SOURCE
@@ -50,7 +50,7 @@ You can use '--warning-mode all' to show the individual deprecation warnings and
 
 For more on this, please refer to https://docs.gradle.org/9.5.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
 
-BUILD SUCCESSFUL in 2m 31s
+BUILD SUCCESSFUL in 2m 46s
 23 actionable tasks: 23 executed
 Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.5.0/userguide/configuration_cache_enabling.html
 ```
