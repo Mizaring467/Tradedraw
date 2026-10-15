@@ -275,11 +275,14 @@ def run_worktree_verification(
 
     try:
         # 1. Limpiar worktree previo si quedó huérfano
+        print(f"[FRENTE G] Limpiando worktree previo si existe en {worktree_dir}...")
+        run_cmd(["git", "worktree", "remove", "--force", worktree_dir], cwd=repo_root)
+        run_cmd(["git", "worktree", "prune", "--expire", "now"], cwd=repo_root)
+        wt_admin_dir = os.path.join(repo_root, ".git", "worktrees", os.path.basename(worktree_dir))
+        if os.path.exists(wt_admin_dir):
+            shutil.rmtree(wt_admin_dir, ignore_errors=True)
         if os.path.exists(worktree_dir):
-            print(f"[FRENTE G] Limpiando worktree previo en {worktree_dir}...")
-            run_cmd(["git", "worktree", "remove", "--force", worktree_dir], cwd=repo_root)
-            if os.path.exists(worktree_dir):
-                safe_rmtree(worktree_dir)
+            safe_rmtree(worktree_dir)
 
         # 2. Crear el worktree temporal
         print(f"[FRENTE G] Creando worktree limpio para {commit_to_checkout}...")
@@ -317,17 +320,15 @@ def run_worktree_verification(
                 print(f"[FRENTE G] {untracked_copied} rutas no trackeadas propagadas al worktree de prueba.")
 
         # 3. Ejecutar Gradle testDebugUnitTest dentro del worktree
-        use_shell = False
         if os.name == "nt":
-            use_shell = True
             gradle_bin = os.path.join(worktree_dir, "gradlew.bat")
             if not os.path.exists(gradle_bin):
                 gradle_bin = "gradlew.bat"
-            cmd_gradle = f'"{gradle_bin}" :app:parseDebugLocalResources :app:testDebugUnitTest'
-            gradle_cmd_str = cmd_gradle
+            cmd_gradle = ["cmd.exe", "/c", gradle_bin, "testDebugUnitTest", "--no-daemon"]
+            gradle_cmd_str = f"cmd.exe /c {gradle_bin} testDebugUnitTest --no-daemon"
         else:
-            cmd_gradle = ["./gradlew", ":app:parseDebugLocalResources", ":app:testDebugUnitTest"]
-            gradle_cmd_str = "./gradlew :app:parseDebugLocalResources :app:testDebugUnitTest"
+            cmd_gradle = ["./gradlew", "testDebugUnitTest", "--no-daemon"]
+            gradle_cmd_str = "./gradlew testDebugUnitTest --no-daemon"
 
         if skip_gradle:
             print("[FRENTE G] Flag --skip-gradle activo. Omitiendo compilación de Gradle.")
@@ -345,7 +346,7 @@ def run_worktree_verification(
                 cwd=worktree_dir,
                 timeout=timeout_gradle,
                 env=build_env,
-                shell=use_shell
+                shell=False
             )
             duration_gradle = round(time.time() - t0, 2)
             print(f"[FRENTE G] Gradle finalizado en {duration_gradle}s (código de salida: {gradle_exit}).")
@@ -358,7 +359,10 @@ def run_worktree_verification(
         # 4. Desmantelar y limpiar worktree garantizado
         print("[FRENTE G] Desmantelando worktree temporal...")
         run_cmd(["git", "worktree", "remove", "--force", worktree_dir], cwd=repo_root)
-        run_cmd(["git", "worktree", "prune"], cwd=repo_root)
+        run_cmd(["git", "worktree", "prune", "--expire", "now"], cwd=repo_root)
+        wt_admin_dir = os.path.join(repo_root, ".git", "worktrees", os.path.basename(worktree_dir))
+        if os.path.exists(wt_admin_dir):
+            shutil.rmtree(wt_admin_dir, ignore_errors=True)
         if os.path.exists(worktree_dir):
             safe_rmtree(worktree_dir)
         worktree_cleaned = not os.path.exists(worktree_dir)
