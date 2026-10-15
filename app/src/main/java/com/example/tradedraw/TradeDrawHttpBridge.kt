@@ -204,6 +204,14 @@ class TradeDrawHttpBridge(
                             """{"success":true,"total":${lineas.size},"events":[$cuerpo]}"""
                         )
                     }
+                    "/shadow_journal" -> {
+                        // R23 Iter 2: decisiones persistidas en disco por SHADOW MODE. Antes solo
+                        // eran legibles via `adb pull`; el validador necesita leerlas por HTTP sin
+                        // tocar ADB. Solo LECTURA: no escribe, no altera el journal ni el estado.
+                        val max = params["max"]?.toIntOrNull() ?: 50
+                        val (lineas, totalEnArchivo) = readShadowJournalTail(max)
+                        sendJsonResponse(output, 200, buildShadowJournalJson(lineas, totalEnArchivo))
+                    }
                     "/diag_multiric" -> {
                         // Ronda 15 / Frente C: experimento B0 (suscripcion multi-RIC) medido en el
                         // dispositivo. Existe SOLO para medir y tiene dos cierres de seguridad:
@@ -618,6 +626,7 @@ class TradeDrawHttpBridge(
                 "recentPriceRangeRatio": ${ws?.recentPriceRangeRatio() ?: -1.0},
                 "rangoRelativoMinimo": ${TradingEngine.RANGO_RELATIVO_MINIMO},
                 "rangoRelativoActual": ${ws?.recentPriceRangeRatio() ?: -1.0},
+                "volatilidadSuficiente": ${if (ws != null) ws.recentPriceRangeRatio() >= TradingEngine.RANGO_RELATIVO_MINIMO else false},
                 "payoutFromPercentLabel": ${AutoTradeAccessibilityService.observedPayout.fromPercentLabel ?: "null"},
                 "payoutFromButtonRatio": ${AutoTradeAccessibilityService.observedPayout.fromButtonRatio ?: "null"},
                 "payoutResolved": ${AutoTradeAccessibilityService.observedPayout.resolved ?: "null"},
@@ -703,4 +712,56 @@ class TradeDrawHttpBridge(
             .replace("\r", "\\r")
             .replace("\t", "\\t")
     }
+
+    /**
+     * R23 Iter 2: lee las ultimas [max] lineas de `shadow_journal.csv` tal como estan en disco.
+     *
+     * Solo LECTURA. Replica el orden de resolucion de directorios de [TradeJournalLogger]
+     * (externo `TradeDraw_Audits` si es escribible, interno `filesDir/TradeDraw_Audits` como
+     * respaldo) porque el logger lo mantiene privado. Se revisan AMBAS rutas y se prefiere la que
+     * realmente contenga el archivo, para no devolver `total:0` cuando el journal vive en un
+     * directorio distinto del que el logger consideraria escribible ahora mismo.
+     *
+     * Se devuelven las lineas crudas (cabecera incluida) para que la auditoria vea exactamente
+     * lo persistido. [max] se acota a [1, 2000] para no materializar respuestas sin limite.
+     *
+     * Devuelve `(tail, totalEnArchivo)`. Ver [buildShadowJournalJson] para el porque del segundo.
+     */
+    private fun readShadowJournalTail(max: Int): Pair<List<String>, Int> {
+        val limite = max.coerceIn(1, 2000)
+        return try {
+            val interno = java.io.File(overlayService.filesDir, "TradeDraw_Audits")
+            val externo = overlayService.getExternalFilesDir(null)?.let { java.io.File(it, "TradeDraw_Audits") }
+            val candidatos = listOfNotNull(externo, interno)
+            val archivo = candidatos.firstOrNull { java.io.File(it, "shadow_journal.csv").isFile }
+                ?.let { java.io.File(it, "shadow_journal.csv") }
+                ?: return emptyList<String>() to 0
+            val todas = archivo.readLines(Charsets.UTF_8).filter { it.isNotBlank() }
+            todas.takeLast(limite) to todas.size
+        } catch (e: Exception) {
+            Log.e("TradeDrawHttp", "Error leyendo shadow_journal.csv", e)
+            emptyList<String>() to 0
+        }
+    }
+}
+
+/**
+ * R23 Iter 2: serializa el tail del journal SHADOW a JSON valido.
+ *
+ * `total` = numero de lineas devueltas (0 cuando no hay archivo). `totalEnArchivo` se anade para
+ * que el validador distinga "no hay decisiones" de "hay mas de `max`": `total` solo no lo dice.
+ * Se conserva `total` con el sentido del caso vacio documentado en la spec.
+ */
+internal fun buildShadowJournalJson(lines: List<String>, totalEnArchivo: Int = lines.size): String {
+    val cuerpo = lines.joinToString(",") { "\"${escapeJsonForJournal(it)}\"" }
+    return """{"success":true,"total":${lines.size},"totalEnArchivo":$totalEnArchivo,"lines":[$cuerpo]}"""
+}
+
+/** Escapado de comillas/controles para incrustar cada linea cruda del CSV en el JSON de respuesta. */
+internal fun escapeJsonForJournal(str: String): String {
+    return str.replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
 }
