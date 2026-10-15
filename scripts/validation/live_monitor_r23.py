@@ -222,6 +222,13 @@ def main():
         with open(out_mode_log, "w", encoding="utf-8") as f_ml:
             json.dump(mode_log_data, f_ml, indent=2, ensure_ascii=False)
 
+    # Volcar shadow_journal (R23 Iter 2)
+    shadow_journal_data = fetch_json(f"{base_url}/shadow_journal?max=500")
+    if shadow_journal_data:
+        out_shadow_journal = os.path.join(out_dir, "shadow_journal.json")
+        with open(out_shadow_journal, "w", encoding="utf-8") as f_sj:
+            json.dump(shadow_journal_data, f_sj, indent=2, ensure_ascii=False)
+
     # Volcar decisiones CSV
     fieldnames = [
         "decision_id", "trade_id", "timestamp", "asset", "price_at_signal",
@@ -245,7 +252,7 @@ def main():
 
     # Ejecutar compare_live_replay.py si hay decisiones
     replay_summary = {"status": "NO_PAIRED_DECISIONS", "paired": 0, "exact_matches": 0, "match_rate": 0.0}
-    replay_report_text = "Paridad Live ↔ Replay: NO CONCLUYENTE (sin fuente de replay pareada para el activo actual)"
+    replay_report_text = "NO CONCLUYENTE (sin fuente de replay pareada para el activo actual)"
     if len(observed_decisions) > 0 and os.path.exists("scripts/validation/compare_live_replay.py"):
         print("\nEjecutando comparador Live <-> Replay...")
         cmd = [
@@ -269,9 +276,9 @@ def main():
                 matches = replay_summary.get("exact_matches", 0)
                 if paired > 0:
                     rate = replay_summary.get("match_rate_pct", (matches / paired) * 100.0)
-                    replay_report_text = f"Paridad Live ↔ Replay: {matches} exact matches de {paired} pareadas ({rate:.1f}% de paridad)."
+                    replay_report_text = f"{matches} exact matches de {paired} pareadas ({rate:.1f}% de paridad)."
                 else:
-                    replay_report_text = f"Paridad Live ↔ Replay: NO EVALUABLE (0 pares evaluados, {len(observed_decisions)} decisiones sin replay correspondiente)."
+                    replay_report_text = f"NO EVALUABLE (0 pares evaluados, {len(observed_decisions)} decisiones sin replay correspondiente)."
             except Exception:
                 pass
 
