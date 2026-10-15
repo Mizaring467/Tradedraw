@@ -261,14 +261,17 @@ def main():
         if os.path.exists(out_replay_json):
             try:
                 with open(out_replay_json, "r", encoding="utf-8") as f_rj:
-                    replay_summary = json.load(f_rj)
-                    paired = replay_summary.get("paired", 0)
-                    matches = replay_summary.get("exact_matches", 0)
-                    if paired > 0:
-                        rate = (matches / paired) * 100.0
-                        replay_report_text = f"Paridad Live ↔ Replay: {matches} exact matches de {paired} pareadas ({rate:.1f}% de paridad)."
-                    else:
-                        replay_report_text = f"Paridad Live ↔ Replay: NO EVALUABLE (0 pares evaluados, 140 decisiones sin replay correspondiente)."
+                    _rj = json.load(f_rj)
+                # El comparador anida el resumen bajo "summary" y usa las claves
+                # paired_decisions / match_rate_pct (no "paired" / "match_rate").
+                replay_summary = _rj.get("summary", _rj)
+                paired = replay_summary.get("paired_decisions", 0)
+                matches = replay_summary.get("exact_matches", 0)
+                if paired > 0:
+                    rate = replay_summary.get("match_rate_pct", (matches / paired) * 100.0)
+                    replay_report_text = f"Paridad Live ↔ Replay: {matches} exact matches de {paired} pareadas ({rate:.1f}% de paridad)."
+                else:
+                    replay_report_text = f"Paridad Live ↔ Replay: NO EVALUABLE (0 pares evaluados, {len(observed_decisions)} decisiones sin replay correspondiente)."
             except Exception:
                 pass
 
