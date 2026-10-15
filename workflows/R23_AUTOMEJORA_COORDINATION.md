@@ -14,7 +14,7 @@
 | Iteración | SHA base | Hipótesis | Cambio | SHA candidato | Resultado live | Decisión |
 |---|---|---|---|---|---|---|
 | (Inicial) | `e3253c0` | Baseline R22: Infraestructura y paridad live-replay validadas al 100%, pero 18/18 vetos por V2_RANGE en Crypto IDX (sin SHADOW_DECISION aprobada). | N/A (Punto de partida) | `e3253c0` | 95 muestras, 18 VETO V2, 0 SHADOW_DECISION, 0 taps | BASELINE |
-| **Iter 1** | `e3253c0` | Trazabilidad de Build en Runtime (gitSha, buildId, buildTimestamp en /status) + Telemetría Cuantitativa de V2_RANGE (rangoRelativoMinimo y rangoRelativoActual) para auditar la distancia al umbral durante 20 min live sin relajar guards. | Exponer metadatos de build y rango relativo en /status, bump a versionCode 6 (v1.4-r23-iter1) | (En progreso) | (Pendiente validación OpenCode) | PENDING |
+| **Iter 1** | `e3253c0` | Trazabilidad de Build en Runtime (gitSha, buildId, buildTimestamp en /status) + Telemetría Cuantitativa de V2_RANGE (rangoRelativoMinimo y rangoRelativoActual) para auditar la distancia al umbral durante 20 min live sin relajar guards. | Exponer metadatos de build y rango relativo en /status, bump a versionCode 6 (v1.4-r23-iter1) | `f5f9eaf` | 116 muestras (20 min), balance intacto 38.054.735,36 COP, taps=0, 140/140 vetos por V2_RANGE (rango 1.09e-10 a 6.62e-10 vs umbral 1.0e-05), trazabilidad de build 100% verificada en runtime. Reporte: `loops/r23/iter_1/LIVE_REPORT.md` | **KEEP** |
 
 ---
 
@@ -22,9 +22,9 @@
 
 | Agente | Rol | Archivos Reservados | Propósito | Estado |
 |---|---|---|---|---|
-| AGY | Orquestador / Auditor / Build / ADB | `workflows/R23_AUTOMEJORA_COORDINATION.md`, `workflows/rounds/r23_iter1_task_hermes.md` | Gestión del ciclo, decisiones y auditoría | ACTIVO |
-| HERMES | Implementador | `app/build.gradle.kts`, `app/src/main/java/com/example/tradedraw/TradeDrawHttpBridge.kt` | Implementación Iteración 1 (Build ID + Telemetría V2) | ASIGNADO |
-| OPENCODE | Validador LIVE (~20 min) | `loops/r23/iter_1/*` | Observación independiente en dispositivo real | EN ESPERA DE CANDIDATO |
+| AGY | Orquestador / Auditor / Build / ADB | `workflows/R23_AUTOMEJORA_COORDINATION.md`, `scripts/validation/live_monitor_r23.py` | Gestión del ciclo, decisiones y auditoría | ACTIVO |
+| HERMES | Implementador | Ninguno | Esperando asignación de Iteración 2 | IDLE |
+| OPENCODE | Validador LIVE (~20 min) | Ninguno | Reporte Iteración 1 entregado (KEEP) | IDLE |
 
 ---
 

@@ -244,21 +244,31 @@ def main():
     print("=" * 70)
 
     # Ejecutar compare_live_replay.py si hay decisiones
-    replay_summary = {"status": "NO_DECISIONS"}
+    replay_summary = {"status": "NO_PAIRED_DECISIONS", "paired": 0, "exact_matches": 0, "match_rate": 0.0}
+    replay_report_text = "Paridad Live ↔ Replay: NO CONCLUYENTE (sin fuente de replay pareada para el activo actual)"
     if len(observed_decisions) > 0 and os.path.exists("scripts/validation/compare_live_replay.py"):
         print("\nEjecutando comparador Live <-> Replay...")
         cmd = [
             sys.executable, "scripts/validation/compare_live_replay.py",
-            "--live-csv", out_decisions_csv,
-            "--out-json", out_replay_json,
-            "--out-md", out_replay_report
+            "--live-journal", out_decisions_csv,
+            "--output-json", out_replay_json,
+            "--output-md", out_replay_report
         ]
         res = subprocess.run(cmd, capture_output=True, text=True)
         print(res.stdout)
+        if res.stderr:
+            print("STDERR comparador:", res.stderr)
         if os.path.exists(out_replay_json):
             try:
                 with open(out_replay_json, "r", encoding="utf-8") as f_rj:
                     replay_summary = json.load(f_rj)
+                    paired = replay_summary.get("paired", 0)
+                    matches = replay_summary.get("exact_matches", 0)
+                    if paired > 0:
+                        rate = (matches / paired) * 100.0
+                        replay_report_text = f"Paridad Live ↔ Replay: {matches} exact matches de {paired} pareadas ({rate:.1f}% de paridad)."
+                    else:
+                        replay_report_text = f"Paridad Live ↔ Replay: NO EVALUABLE (0 pares evaluados, 140 decisiones sin replay correspondiente)."
             except Exception:
                 pass
 
@@ -286,7 +296,7 @@ def main():
 4. **Decisiones Observadas:** Se registraron {len(observed_decisions)} decisiones con `decision_id` UUID v4. Cero `trade_id` espurios en vetos/simulaciones.
 5. **Comportamiento de Guards:** {sum(veto_kinds_count.values())} decisiones vetadas. Distribución: {json.dumps(veto_kinds_count)}.
 6. **Rango Cuantitativo:** En {active_asset}, el rango relativo osciló entre {min_range_ratio:.2e} y {max_range_ratio:.2e} frente al umbral 1.00e-05.
-7. **Paridad Live ↔ Replay:** {replay_summary.get('exact_matches', 0)} exact matches de {replay_summary.get('paired', 0)} decisiones pareadas ({replay_summary.get('match_rate', 1.0)*100:.1f}% de paridad).
+7. **Paridad Live ↔ Replay:** {replay_report_text}
 
 ---
 
