@@ -591,8 +591,6 @@ class TradeDrawHttpBridge(
                 "inoperableRatio": ${te.inoperabilityDetector.lastRatio},
                 "inoperableReference": ${te.inoperabilityDetector.lastReference},
                 "ultimoInoperable": "${escapeJson(TradeEventLog.lastOf(TradeEventLog.Kind.INOPERABLE)?.detail ?: "")}",
-                // Ronda 20: contadores del guard de desajuste y de la recuperacion por falta de
-                // ticks. Viven en `TradingEngine`, por eso se anaden en el mismo commit que el.
                 "vetoActivoDesajustado": ${te.vetoActivoDesajustado},
                 "recuperacionesPorSinTicks": ${te.recuperacionesPorSinTicks()},
                 "shadowOrders": ${te.shadowOrdersGenerated}
