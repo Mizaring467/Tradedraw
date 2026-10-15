@@ -72,6 +72,13 @@ class ReplayBacktestTest {
          * es lo que permite al comparador emparejar ambos lados.
          */
         val decisionId: String,
+        /**
+         * R23A Iter 1: RIC del activo de la entrada. Se emite como columna `asset` en el CSV de
+         * replay para que el comparador Live <-> Replay pueda leer el mismo subyacente en ambos
+         * lados: sin esta columna el comparador caia a su heuristica de `source`/`reason` y emitia
+         * una divergencia espuria de `asset` (hallazgo de OpenCode en la Iter 4).
+         */
+        val assetRic: String = "",
         val source: String = ""
     )
 
@@ -255,7 +262,8 @@ class ReplayBacktestTest {
                     candleSecond = candleSec,
                     adaptiveStatus = result,
                     reason = reason,
-                    decisionId = TradingEngine.generateDeterministicDecisionId(sig.assetRic, entryTick.ts, action.name)
+                    decisionId = TradingEngine.generateDeterministicDecisionId(sig.assetRic, entryTick.ts, action.name),
+                    assetRic = sig.assetRic
                 )
             )
             balance = settledBalance
@@ -270,13 +278,17 @@ class ReplayBacktestTest {
             // R23 Iter 3: cabecera ampliada con `decision_id` (penultima columna, antes de `source`).
             // El orden replica el de la spec de la iteracion para que el comparador Live <-> Replay
             // lea la misma columna en ambos lados.
-            writer.write("timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason,decision_id,source\n")
+            // R23A Iter 1: se anade `asset` como PRIMERA columna despues de `timestamp`. El
+            // comparador Live <-> Replay la lee directamente (`row.get("asset")`) y sin ella caia a
+            // su heuristica por `source`/`reason`/nombre, que producia una divergencia espuria de
+            // activo en la Iter 4. El valor es el RIC, igual que en el lado live.
+            writer.write("timestamp,asset,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason,decision_id,source\n")
             for (t in trades) {
                 val cleanReason = t.reason.replace(",", ";").replace("\n", " ").take(140)
                 val line = String.format(
                     Locale.US,
-                    "%d,%s,%s,%s,%s,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\",%s,%s\n",
-                    t.timestamp, t.isoDate, t.strategy, t.submode, t.action.name, t.confidence,
+                    "%d,%s,%s,%s,%s,%s,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\",%s,%s\n",
+                    t.timestamp, t.assetRic, t.isoDate, t.strategy, t.submode, t.action.name, t.confidence,
                     t.entryPrice, t.stake, t.baseBalance, t.result, t.settledBalance, t.durationSec,
                     t.trend, t.distSupportRatio, t.distResistanceRatio, t.tickVelocity, t.impulse,
                     t.marketRegime, t.candleSecond, t.adaptiveStatus, cleanReason, t.decisionId, t.source

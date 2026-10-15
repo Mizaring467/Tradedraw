@@ -743,8 +743,63 @@ class TradingEngine(
          * volatilidad medible. Congelado en `workflows/PREREGISTRO_R12.md` ANTES de medir su
          * efecto. Referencias medidas: ETHUSD-OTC 4,164e-02 (3 ordenes por encima), Z-CRY/IDX
          * 2,547e-09 (4 ordenes por debajo). El umbral separa ambos casos con holgura amplia.
+         *
+         * R23A Iter 1: SIGUE VALIENDO PARA TODO ACTIVO QUE NO SEA `IDX`. No se ha relajado. La
+         * clasificacion por familia vive en [rangoRelativoMinimoParaActivo], que devuelve este
+         * mismo valor para cualquier activo no sintetico.
          */
         const val RANGO_RELATIVO_MINIMO = 1e-5
+
+        /**
+         * R23A Iter 1: umbral de volatilidad minima para activos sinteticos (`IDX`).
+         *
+         * POR QUE EXISTE. RANGO_RELATIVO_MINIMO=1e-5 se congelo en PREREGISTRO_R12 para separar
+         * ETHUSD-OTC (4,164e-02) de Z-CRY/IDX (2,547e-09). Ese umbral NO es un error para los
+         * activos para los que se calibro, pero aplicado al indice sintetico deja el veto V2
+         * matematicamente imposible de superar: en las 4 iteraciones de R23 se midieron 468 muestras
+         * de rango relativo con mediana ~2,9e-10 y maximo 6,8e-10, o sea 4 ordenes por debajo de
+         * 1e-5. El resultado observado es 244/244 decisiones vetadas por V2_RANGE y cero decisiones
+         * operables.
+         *
+         * POR QUE 1e-11 Y NO UN VALOR INVENTADO. `BinomoWebSocketClient.isPriceFrozen` ya usa
+         * exactamente este umbral para la misma familia de activos (misma clase de problema: paso de
+         * tick sub-micro), asi que el valor NO es nuevo: se reutiliza un umbral ya medido y en
+         * produccion para el mismo activo, en vez de calibrar uno a ojo.
+         *
+         * MARGEN. Con los ticks reales de `loops/r23/iter_4/live_ticks.csv` (2000 ticks,
+         * Z-CRY/IDX): rango relativo global 1,885e-09, y el rango de una ventana de 16 ticks ronda
+         * 2,9e-10 (mediana en vivo). Ambos quedan ~1,5-2 ordenes POR ENCIMA de 1e-11, asi que el
+         * activo pasa el veto con holgura y sin rozar el ruido de redondeo (0,0 exacto o el caso
+         * degenerado ~5e-12 siguen vetados).
+         *
+         * ADVERTENCIA DE PREREGISTRO (ver §3 del reporte de la iteracion). PREREGISTRO_R12 §2 dice
+         * literalmente que V2 "no se aplica a un activo concreto: es un veto por condicion de feed,
+         * no por nombre", y que "cualquier cambio posterior exige un preregistro nuevo". Este cambio
+         * SI introduce un umbral por familia de activo. La clasificacion esta tecnicamente fundada
+         * (el precio del indice no es comparable en escala con el de un par OTC) y reutiliza un
+         * umbral ya existente, pero MIENTRAS NO EXISTA UN PREREGISTRO_R23A FIRMADO, las muestras
+         * recogidas con este umbral NO son comparables con las de R12 ni validas para confirmar edge.
+         */
+        const val RANGO_RELATIVO_MINIMO_IDX = 1e-11
+
+        /**
+         * Umbral de volatilidad aplicable a [asset]: 1e-11 para sinteticos (`IDX`), 1e-5 para el
+         * resto. La discriminacion es por subcadena `IDX` (misma convencion que
+         * `BinomoWebSocketClient.isPriceFrozen` y `AssetRicMapper`), asi que sirve tanto con el
+         * nombre visible ("Crypto IDX") como con el RIC ("Z-CRY/IDX").
+         */
+        fun rangoRelativoMinimoParaActivo(asset: String): Double =
+            if (asset.contains("IDX", ignoreCase = true)) RANGO_RELATIVO_MINIMO_IDX
+            else RANGO_RELATIVO_MINIMO
+
+        /**
+         * R23A Iter 1: autorizacion de operacion autonoma. Funcion pura para poder fijarla por test.
+         *
+         * Fail-closed: solo el valor EXPLICITAMENTE demo autoriza. Se aisla en su propia funcion (en
+         * vez de un `if` suelto) para que la regla quede congelada por test y no se diluya en futuras
+         * ediciones del guard.
+         */
+        fun puedeOperarAutonomoEnDemo(esDemo: Boolean): Boolean = esDemo
 
         /**
          * R23 Iter 4: capacidad del buffer circular de ticks expuesto por `GET /ticks`.
@@ -2021,6 +2076,35 @@ class TradingEngine(
     ) {
         val currentDecisionId = decisionId
         Log.d("TradingEngine", "➡️ executeHeadlessTrade INICIO: $action | $reasonDescription | decisionId=$currentDecisionId")
+
+        // R23A Iter 1: GUARD DE SEGURIDAD FAIL-CLOSED (cuenta DEMO exclusiva).
+        //
+        // El modo AUTONOMOUS es el unico que despacha ordenes sin confirmacion humana, asi que es el
+        // unico que exige esta puerta. Cualquier otro modo (SHADOW, SEMIAUTOMATIC) sigue con su
+        // comportamiento actual: SHADOW no despacha taps por diseño y no debe verse afectado.
+        //
+        // SOBRE EL BALANCE. La spec proponia exigir ademas `latestObservedBalance >= 500_000.0`. NO
+        // se implementa como condicion de bloqueo, por dos razones concretas:
+        //  1. Duplicaria la logica de `RiskManager.canExecuteTrade`, que YA resuelve exactamente esa
+        //     pregunta (`currentBal >= 1e6 || (isDemoAccount && currentBal > 5e5)`) y es quien tiene
+        //     el suelo de equity y el resto de la politica de riesgo. Dos fuentes de verdad para el
+        //     mismo criterio divergen con el tiempo.
+        //  2. El balance es un DATO DEL DISPOSITIVO que puede llegar a 0.0 transitoriamente (lectura
+        //     aun no realizada, servicio de accesibilidad recien arrancado). Meterlo en un guard de
+        //     seguridad que apaga el motor a DISABLED convertiria un fallo de LECTURA en un apagon.
+        // La seguridad de "no operar en real" la da `isDemoAccount`, que es el dato del que depende
+        // toda la distincion demo/real y que ya no puede mentir por diseño fail-closed.
+        if (mode == AutoTradeMode.AUTONOMOUS && !puedeOperarAutonomoEnDemo(AutoTradeAccessibilityService.isDemoAccount)) {
+            Log.e("TradingEngine", "⛔ BLOQUEO CRÍTICO DE SEGURIDAD: Cuenta NO DEMO detectada. Abortando trade autónomo.")
+            TradeEventLog.add(
+                TradeEventLog.Kind.VETO,
+                "SEGURIDAD_NO_DEMO cuenta_real_bloqueada",
+                decisionId = currentDecisionId
+            )
+            setTradingMode(AutoTradeMode.DISABLED, "seguridad:no-demo")
+            return
+        }
+
         // GUARD DE FRESCURA DEL FEED (fail-closed, fuente única = WebSocket).
         // Sin tick reciente (<5000 ms) o sin conexión, se veta la operación: no se degrada
         // a ninguna otra fuente (la captura de pantalla fue retirada por consumo de batería).
@@ -2064,18 +2148,23 @@ class TradingEngine(
         // se aplica a cualquiera que no se mueva, con el umbral congelado en PREREGISTRO_R12.
         val rangoRelativo = recentPriceRangeRatio()
         val currentObservedAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
-        if (rangoRelativo >= 0.0 && rangoRelativo < RANGO_RELATIVO_MINIMO) {
+        // R23A Iter 1: el umbral se clasifica por familia de activo (`IDX` -> 1e-11, resto -> 1e-5)
+        // en vez de ser universal. Razon medida: el indice sintetico mueve 2,9e-10 de mediana, o sea
+        // 4 ordenes por debajo de 1e-5, asi que con el umbral universal V2 vetaba el 100% de las
+        // decisiones y el activo era inoperable por construccion. Ver el KDoc de la constante.
+        val umbralMinimo = rangoRelativoMinimoParaActivo(currentObservedAsset)
+        if (rangoRelativo >= 0.0 && rangoRelativo < umbralMinimo) {
             Log.w(
                 "TradingEngine",
                 "⛔ Headless Trade $action VETADO (V2) por feed sin volatilidad medible: " +
-                    "rangoRelativo=$rangoRelativo < $RANGO_RELATIVO_MINIMO (activo=$currentObservedAsset)"
+                    "rangoRelativo=$rangoRelativo < $umbralMinimo (activo=$currentObservedAsset)"
             )
             // R13/A5: sin logd no hay observabilidad por logcat, asi que el veto se registra
             // ademas en el buffer consultable por `/events`.
             TradeEventLog.add(
                 TradeEventLog.Kind.VETO,
                 "V2 rango=%.3e umbral=%.0e activo=%s".format(
-                    java.util.Locale.US, rangoRelativo, RANGO_RELATIVO_MINIMO, currentObservedAsset
+                    java.util.Locale.US, rangoRelativo, umbralMinimo, currentObservedAsset
                 ),
                 decisionId = currentDecisionId
             )

@@ -31,6 +31,18 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         var isDemoAccount: Boolean = true
             internal set
 
+        /**
+         * R23A Iter 1: guard de seguridad fail-closed para CUALQUIER tap.
+         *
+         * Funcion pura (recibe el estado, no lo lee) para poder fijarla por test sin Android.
+         * Fail-closed por construccion: solo autoriza el valor EXPLICITAMENTE `true`. `null`, un
+         * estado no observado o una cuenta real caen todos en el bloqueo.
+         *
+         * Se usa en las DOS puertas de despacho (`performClick` y `performClickAt`) y en
+         * `executeRootTap`, que es la primitiva que realmente teclea `input tap`.
+         */
+        fun puedeDespacharTap(esDemo: Boolean): Boolean = esDemo
+
         @Volatile
         var observedOrderAmount: Double = 0.0
             internal set
@@ -148,6 +160,20 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             tradeId: String?,
             onResult: ((Boolean, String?) -> Unit)? = null
         ) {
+            // R23A Iter 1: BLOQUEO CRITICO DE SEGURIDAD (fail-closed). Ningun tap puede salir si la
+            // cuenta observada no es DEMO. Va ANTES de hasRootAccess()/executeRootTap para que no se
+            // despache nada: el tap es la accion irreversible (coloca la orden en el broker).
+            if (!puedeDespacharTap(isDemoAccount)) {
+                Log.e("TradeDraw", "⛔ BLOQUEO DE SEGURIDAD: intento de click fuera de cuenta DEMO.")
+                TradeEventLog.add(
+                    TradeEventLog.Kind.VETO,
+                    "SEGURIDAD_CLICK_NO_DEMO",
+                    decisionId = decisionId,
+                    tradeId = tradeId
+                )
+                onResult?.invoke(false, "BLOQUEO_SEGURIDAD_NO_DEMO")
+                return
+            }
             // Ronda 3: en este dispositivo (root) Binomo FILTRA los eventos sintéticos de
             // dispatchGesture (el tap se "confirma" pero la orden no se registra → VOID),
             // mientras que `input tap` vía root SÍ coloca la orden. Por eso el root tap es
@@ -236,6 +262,20 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             onResult: ((Boolean, String?) -> Unit)? = null,
             bypassHud: Boolean = false
         ) {
+            // R23A Iter 1: TERCERA puerta de seguridad. `executeRootTap` es la primitiva que escribe
+            // `input tap` de verdad y se puede invocar directamente (fallbacks de accesibilidad,
+            // auto-heal). Sin este guard, un fallback podria saltarse los otros dos bloqueos.
+            if (!puedeDespacharTap(isDemoAccount)) {
+                Log.e("TradeDraw", "⛔ BLOQUEO DE SEGURIDAD: root tap bloqueado fuera de cuenta DEMO.")
+                TradeEventLog.add(
+                    TradeEventLog.Kind.VETO,
+                    "SEGURIDAD_ROOT_TAP_NO_DEMO",
+                    decisionId = decisionId,
+                    tradeId = tradeId
+                )
+                onResult?.invoke(false, "BLOQUEO_SEGURIDAD_NO_DEMO")
+                return
+            }
             Thread {
                 val inicioMs = System.currentTimeMillis()
                 lastTapStartTs = inicioMs
@@ -441,6 +481,16 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         y: Float,
         onResult: ((Boolean, String?) -> Unit)? = null
     ) {
+        // R23A Iter 1: mismo bloqueo que en `performClick`. Sin esto el guard tendria un BYPASE
+        // trivial: `/trade` (endpoint HTTP) y los botones CALL/PUT del HUD llaman a `performClickAt`
+        // directamente, sin pasar por `performClick`. Un guard que solo cubre una de las dos puertas
+        // de dispatch no es un guard.
+        if (!puedeDespacharTap(isDemoAccount)) {
+            Log.e("TradeDraw", "⛔ BLOQUEO DE SEGURIDAD: click por accesibilidad fuera de cuenta DEMO.")
+            TradeEventLog.add(TradeEventLog.Kind.VETO, "SEGURIDAD_CLICK_NO_DEMO")
+            onResult?.invoke(false, "BLOQUEO_SEGURIDAD_NO_DEMO")
+            return
+        }
         val overlay = OverlayService.instance
         if (overlay != null && overlay.isPointInsideHUD(x, y)) {
             overlay.temporarilyBypassHUD(250L) {
