@@ -212,6 +212,22 @@ class TradeDrawHttpBridge(
                         val (lineas, totalEnArchivo) = readShadowJournalTail(max)
                         sendJsonResponse(output, 200, buildShadowJournalJson(lineas, totalEnArchivo))
                     }
+                    "/ticks" -> {
+                        // R23 Iter 4: los ticks EXACTOS que entraron al motor durante la ventana viva.
+                        // Cierra el hallazgo de la Iter 3 (paridad Live<->Replay "NO EVALUABLE" por
+                        // falta de la fuente de ticks). Solo LECTURA: no altera estado ni guards.
+                        val max = params["max"]?.toIntOrNull() ?: 500
+                        val formato = params["format"]?.lowercase() ?: "json"
+                        val buffer = overlayService.tradingEngine.tickBuffer
+                        val ticks = buffer.tail(max)
+                        if (formato == "csv") {
+                            // `text/plain` y no `text/csv` a proposito: el consumidor lo baja con
+                            // curl y lo vuelca a un archivo que alimenta `loadTicks` del replay.
+                            sendCsvResponse(output, 200, buildTicksCsv(ticks))
+                        } else {
+                            sendJsonResponse(output, 200, buildTicksJson(ticks, buffer.size))
+                        }
+                    }
                     "/diag_multiric" -> {
                         // Ronda 15 / Frente C: experimento B0 (suscripcion multi-RIC) medido en el
                         // dispositivo. Existe SOLO para medir y tiene dos cierres de seguridad:
@@ -697,6 +713,19 @@ class TradeDrawHttpBridge(
         output.flush()
     }
 
+    /** R23 Iter 4: respuesta `text/plain` para `/ticks?format=csv`. Mismo contrato que sendJsonResponse. */
+    private fun sendCsvResponse(output: OutputStream, statusCode: Int, csv: String) {
+        val bytes = csv.toByteArray(Charsets.UTF_8)
+        val headers = "HTTP/1.1 $statusCode OK\r\n" +
+                "Content-Type: text/plain; charset=UTF-8\r\n" +
+                "Content-Length: ${bytes.size}\r\n" +
+                "Connection: close\r\n" +
+                "Access-Control-Allow-Origin: *\r\n\r\n"
+        output.write(headers.toByteArray(Charsets.UTF_8))
+        output.write(bytes)
+        output.flush()
+    }
+
     // DIAGNÓSTICO TEMPORAL: últimas tramas crudas del WebSocket, para identificar
     // qué campo del frame cambia entre ticks (precio vivo vs apertura de vela).
     private fun rawFramesJson(ws: com.example.tradedraw.BinomoWebSocketClient?): String {
@@ -764,4 +793,92 @@ internal fun escapeJsonForJournal(str: String): String {
         .replace("\n", "\\n")
         .replace("\r", "\\r")
         .replace("\t", "\\t")
+}
+
+/**
+ * R23 Iter 4: buffer circular, thread-safe y de capacidad FIJA de los ticks ya validados.
+ *
+ * Existe para cerrar el hallazgo de la Iter 3: la paridad Live <-> Replay seguia en "NO EVALUABLE"
+ * (0 pares) porque no habia forma de extraer del dispositivo los ticks EXACTOS que entraron durante
+ * la ventana viva, y por tanto el motor offline no podia reproducir las mismas decisiones. Con esta
+ * fuente, el pipeline de validacion se baja los ticks por HTTP y reejecuta el replay determinista
+ * sobre los mismos datos.
+ *
+ * Capacidad FIJA de [capacity] entradas: al llenarse se descarta la mas antigua. Es un buffer de
+ * observabilidad, no un historico: 2000 ticks cubren ~20-30 min al ritmo real del feed (1-2 tick/s),
+ * que es la ventana de validacion de R23. Un buffer sin tope en un servicio permanente es una fuga
+ * de memoria, no una mejora.
+ *
+ * Se guardan los valores TAL CUAL los recibio el motor. NO se redondean: el activo del ring
+ * (`Z-CRY/IDX`) tiene un paso por tick de ~1,6e-06 sobre ~641,87, o sea que su rango relativo entero
+ * (2,5e-09) vive en los ultimos decimales del sexto digito. Cualquier redondeo a 6 decimales lo
+ * borraria y el replay dejaria de reproducir la anomalia que R23 esta investigando.
+ */
+internal class TickRingBuffer(val capacity: Int = 2000) {
+
+    data class Entry(val ts: Long, val ric: String, val price: Double)
+
+    private val buffer = ArrayDeque<Entry>(minOf(capacity, 64))
+
+    /** Numero de entradas retenidas ahora mismo (<= [capacity]). */
+    val size: Int get() = synchronized(buffer) { buffer.size }
+
+    /** Total de ticks aceptados desde el arranque, incluidos los ya descartados por el borde. */
+    @Volatile
+    var totalRecibidos: Long = 0L
+        private set
+
+    /**
+     * Registra un tick validado. Ignora precios no finitos: un NaN o Infinity incrustado en el JSON
+     * lo invalidaria, y el feed ya filtra estos casos antes de llegar aqui.
+     */
+    fun record(ts: Long, ric: String, price: Double) {
+        if (!price.isFinite()) return
+        synchronized(buffer) {
+            if (buffer.size >= capacity) buffer.removeFirst()
+            buffer.addLast(Entry(ts, ric, price))
+        }
+        totalRecibidos++
+    }
+
+    /**
+     * Ultimas [max] entradas, en orden cronologico ASCENDENTE (la ultima es la mas reciente), que es
+     * el orden que espera `loadTicks` del replay. [max] se acota a `[1, capacity]`.
+     */
+    fun tail(max: Int): List<Entry> {
+        val limite = max.coerceIn(1, capacity)
+        return synchronized(buffer) { buffer.toList().takeLast(limite) }
+    }
+
+    fun clear() {
+        synchronized(buffer) { buffer.clear() }
+    }
+}
+
+/**
+ * R23 Iter 4: serializa el tail de ticks a JSON.
+ *
+ * `total` = ticks devueltos. `totalEnBuffer` se anade por la misma razon que en `/shadow_journal`
+ * (precedente aceptado en la Iter 2): con `?max=500` sobre 2000 en buffer, `total` solo no distingue
+ * "no hay ticks" de "hay mas de los que pediste".
+ */
+internal fun buildTicksJson(ticks: List<TickRingBuffer.Entry>, totalEnBuffer: Int = ticks.size): String {
+    val cuerpo = ticks.joinToString(",") { t ->
+        """{"ts":${t.ts},"ric":"${escapeJsonForJournal(t.ric)}","price":${t.price}}"""
+    }
+    return """{"success":true,"total":${ticks.size},"totalEnBuffer":$totalEnBuffer,"ticks":[$cuerpo]}"""
+}
+
+/**
+ * R23 Iter 4: serializa el tail de ticks a CSV con cabecera `ts,ric,price`.
+ *
+ * El formato de precio es el round-trip EXACTO de Kotlin (`Double.toString`), no `%.6f`: ver la nota
+ * de precision en [TickRingBuffer]. Ademas coincide con lo que `loadTicks` del replay espera leer
+ * (`toDoubleOrNull`), asi que el archivo se puede volcar a disco y alimentar el replay sin tocar el
+ * parser existente.
+ */
+internal fun buildTicksCsv(ticks: List<TickRingBuffer.Entry>): String {
+    val sb = StringBuilder("ts,ric,price\n")
+    for (t in ticks) sb.append(t.ts).append(',').append(t.ric).append(',').append(t.price).append('\n')
+    return sb.toString()
 }

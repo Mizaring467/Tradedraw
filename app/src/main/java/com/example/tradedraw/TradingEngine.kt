@@ -407,10 +407,22 @@ class TradingEngine(
     val inoperabilityDetector = MarketInoperabilityDetector()
 
     /**
+     * R23 Iter 4: buffer circular de los ultimos ticks VALIDADOS, expuesto por `GET /ticks`.
+     *
+     * Se alimenta en [onMarketTick], que es el punto donde el tick ya paso todos los filtros del
+     * feed (frescura, salto implausible, activo) y va a entrar al motor. Registrar antes de esos
+     * filtros volcaria ticks que el motor nunca vio y el replay no podria reproducir nada.
+     */
+    internal val tickBuffer = TickRingBuffer(TICK_BUFFER_CAPACITY)
+
+    /**
      * Invocado cuando llega un nuevo micro-tick en tiempo real vía WebSocket.
      */
     fun onMarketTick(tick: MarketTick) {
         latestMarketTick = tick
+        // El `asset` del MarketTick ya es el RIC del feed; se guarda tal cual para que el id
+        // determinista y el replay coincidan sin pasar por el mapeo de nombre visible.
+        tickBuffer.record(tick.timestampMs, tick.asset, tick.price)
         syntheticCandleEngine.subMode = autonomousSubMode
         syntheticCandleEngine.onNewTick(tick)
 
@@ -733,6 +745,15 @@ class TradingEngine(
          * 2,547e-09 (4 ordenes por debajo). El umbral separa ambos casos con holgura amplia.
          */
         const val RANGO_RELATIVO_MINIMO = 1e-5
+
+        /**
+         * R23 Iter 4: capacidad del buffer circular de ticks expuesto por `GET /ticks`.
+         *
+         * 2000 entradas cubren ~20-30 min al ritmo medido del feed (1-2 tick/s), que es exactamente
+         * la ventana de validacion live de R23. Es un tope FIJO a proposito: el buffer vive en un
+         * servicio permanente, y sin tope seria una fuga de memoria en vez de una mejora.
+         */
+        const val TICK_BUFFER_CAPACITY = 2000
 
         /**
          * R23 Iter 3: `decision_id` determinista para poder emparejar Live <-> Replay.
