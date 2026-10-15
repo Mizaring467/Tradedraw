@@ -229,6 +229,19 @@ def main():
         with open(out_shadow_journal, "w", encoding="utf-8") as f_sj:
             json.dump(shadow_journal_data, f_sj, indent=2, ensure_ascii=False)
 
+    # Volcar ticks de la sesión (R23 Iter 4)
+    out_ticks_csv = os.path.join(out_dir, "live_ticks.csv")
+    try:
+        req = urllib.request.Request(f"{base_url}/ticks?max=2000&format=csv", headers={"User-Agent": "R23-LiveMonitor/1.0"})
+        with urllib.request.urlopen(req, timeout=5.0) as resp:
+            ticks_raw = resp.read().decode("utf-8")
+            if ticks_raw.strip():
+                with open(out_ticks_csv, "w", encoding="utf-8") as f_tk:
+                    f_tk.write(ticks_raw)
+                print(f"Ticks de la sesión guardados en: {out_ticks_csv}")
+    except Exception as e:
+        print(f"Nota: /ticks no disponible o sin datos ({e})")
+
     # Volcar decisiones CSV
     fieldnames = [
         "decision_id", "trade_id", "timestamp", "asset", "price_at_signal",
@@ -250,6 +263,18 @@ def main():
     print(f"Balance inicial: {initial_balance:,.2f} | Final: {cur_bal:,.2f} (Discrepancia={balance_discrepancies})")
     print("=" * 70)
 
+    # Ejecutar replay offline si hay ticks recolectados
+    out_replay_journal = os.path.join(out_dir, "replay_journal.csv")
+    if os.path.exists(out_ticks_csv) and os.path.getsize(out_ticks_csv) > 30:
+        print(f"\nEjecutando motor de replay offline sobre {out_ticks_csv}...")
+        env = os.environ.copy()
+        env["BACKTEST_CSV"] = os.path.abspath(out_ticks_csv)
+        env["BACKTEST_OUT"] = os.path.abspath(out_replay_journal)
+        gradle_bin = ".\\gradlew.bat" if os.name == "nt" else "./gradlew"
+        if os.path.exists(gradle_bin):
+            r_res = subprocess.run([gradle_bin, "testDebugUnitTest", "--tests", "*ReplayBacktestTest*"], env=env, capture_output=True, text=True)
+            print(f"ReplayBacktestTest finalizado (exit code {r_res.returncode})")
+
     # Ejecutar compare_live_replay.py si hay decisiones
     replay_summary = {"status": "NO_PAIRED_DECISIONS", "paired": 0, "exact_matches": 0, "match_rate": 0.0}
     replay_report_text = "NO CONCLUYENTE (sin fuente de replay pareada para el activo actual)"
@@ -261,6 +286,8 @@ def main():
             "--output-json", out_replay_json,
             "--output-md", out_replay_report
         ]
+        if os.path.exists(out_replay_journal) and os.path.getsize(out_replay_journal) > 30:
+            cmd.extend(["--replay-journal", out_replay_journal])
         res = subprocess.run(cmd, capture_output=True, text=True)
         print(res.stdout)
         if res.stderr:

@@ -554,6 +554,27 @@ def compare_datasets(
     live_map = {r.decision_id: r for r in live_records}
     replay_map = {r.decision_id: r for r in replay_records}
 
+    # Emparejamiento con fallback temporal (asset, timestamp // 1000, direction)
+    paired_ids = set(live_map.keys()).intersection(replay_map.keys())
+    unpaired_live = [r for r in live_records if r.decision_id not in paired_ids]
+    unpaired_replay = [r for r in replay_records if r.decision_id not in paired_ids]
+
+    replay_temporal_index = {}
+    for r in unpaired_replay:
+        sec_key = (r.asset.upper().replace("/", "_"), r.timestamp // 1000, r.direction.upper())
+        replay_temporal_index.setdefault(sec_key, []).append(r)
+
+    for l in unpaired_live:
+        sec_key = (l.asset.upper().replace("/", "_"), l.timestamp // 1000, l.direction.upper())
+        candidates = replay_temporal_index.get(sec_key, [])
+        if candidates:
+            matched_r = candidates.pop(0)
+            orig_r_id = matched_r.decision_id
+            matched_r.decision_id = l.decision_id
+            replay_map[l.decision_id] = matched_r
+            if orig_r_id in replay_map and orig_r_id != l.decision_id:
+                del replay_map[orig_r_id]
+
     all_ids = list(dict.fromkeys(list(live_map.keys()) + list(replay_map.keys())))
 
     exact_matches = 0
