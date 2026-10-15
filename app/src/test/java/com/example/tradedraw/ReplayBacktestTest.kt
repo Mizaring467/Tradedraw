@@ -159,7 +159,17 @@ class ReplayBacktestTest {
             eng.currentStrategy = strategy
             eng.subMode = subMode
             eng.onSignalGenerated = { action, reason ->
-                val lastTick = ticks.lastOrNull { it.ts == eng.lastSignalTimestampMs } ?: ticks.first()
+                // R23A Iter 2: el tick de la senal se busca por el TIMESTAMP exacto que el motor
+                // registro al emitirla (`lastSignalTimestampMs`). Si no aparece —posible porque el
+                // motor puede emitir en un tick que el replay no conservo tras deduplicar por ts— el
+                // fallback anterior era `ticks.first()`, que es el PRIMER tick de TODO el archivo.
+                // Eso colocaba la senal en el segundo de vela 0 de la serie en vez de en el suyo, y
+                // contaminaba `candle_second`, `candleSecond` y el id determinista con un instante
+                // arbitrario. Ahora se cae al tick de la MISMA vela (el mas cercano hacia atras),
+                // que es el unico fallback que no inventa un instante.
+                val lastTick = ticks.lastOrNull { it.ts == eng.lastSignalTimestampMs }
+                    ?: ticks.lastOrNull { it.ts <= eng.lastSignalTimestampMs }
+                    ?: ticks.first()
                 val candleMinute = lastTick.ts / 60_000L
                 // Descartar si el tick cae en el enfriamiento de 120s tras un hueco > 10s
                 // o si la vela de este minuto ya fue operada (1 orden por vela máx)
@@ -258,7 +268,13 @@ class ReplayBacktestTest {
                     distResistanceRatio = sig.distResistanceRatio,
                     tickVelocity = entryTick.price.toFloat(),
                     impulse = "NEUTRAL",
-                    marketRegime = if (sig.isChop) "CHOP" else "TRENDING",
+                    // R23A Iter 2: vocabulario alineado con el lado live. Antes el replay emitia
+                    // "CHOP" mientras el monitor live emite "SIDEWAYS"/"TRENDING" (a partir de
+                    // `analysis.isMarketSideways`, que en el motor es
+                    // `syntheticCandleEngine.isChoppinessDetected()` — la MISMA fuente que `sig.isChop`
+                    // de aqui). Con vocabularios distintos la comparacion marcaba `market_regime` como
+                    // divergente SIEMPRE, aunque ambos lados describieran el mismo mercado.
+                    marketRegime = if (sig.isChop) "SIDEWAYS" else "TRENDING",
                     candleSecond = candleSec,
                     adaptiveStatus = result,
                     reason = reason,

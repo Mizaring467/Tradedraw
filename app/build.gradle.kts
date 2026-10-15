@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.tradedraw"
         minSdk = 24
         targetSdk = 34
-        versionCode = 10
-        versionName = "1.4-r23-auto-iter1"
+        versionCode = 11
+        versionName = "1.4-r23-auto-iter2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -27,7 +27,7 @@ android {
         }
 
         buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
-        buildConfigField("String", "BUILD_ID", "\"R23-AUTO-ITER1\"")
+        buildConfigField("String", "BUILD_ID", "\"R23-AUTO-ITER2\"")
         buildConfigField("Long", "BUILD_TIMESTAMP", "${System.currentTimeMillis()}L")
     }
 

@@ -26,6 +26,30 @@ class RiskManager(context: Context? = null) {
     companion object {
         const val MAX_PENDING_TRADE_TIMEOUT_SEC = 85L
         const val DEFAULT_COOLDOWN_SECONDS = 10
+
+        /**
+         * R23A Iter 2: stake EFECTIVO de la orden, en la misma unidad que el broker.
+         *
+         * HALLAZGO QUE LO MOTIVA (OpenCode, iter 1). `/status.risk` reportaba
+         * `investmentAmount = 1.0` y martingala `[M0 | $1.0]` mientras la UI de Binomo tenia
+         * `observedOrderAmount = 100.000 COP`. El bot pulsa los botones BUY/SELL sin tocar el campo
+         * de inversion, asi que el broker debita y liquida con la cantidad de PANTALLA. Resultado
+         * medido: perdida de -100.000 COP y ganancia de +82.000 COP, coherentes con 100.000 COP por
+         * operacion, no con 1.0. El modelado de riesgo y el journal quedaban desacoplados de la
+         * fisica del trade.
+         *
+         * Criterio: si la pantalla declara una cantidad (`observedOrderAmount > 0`), ESA es la
+         * cantidad que se opera. `observedOrderAmount <= 0` significa "aun no leida" (el sondeo de
+         * nodos puede no haber pasado) y NO "stake cero", asi que se cae al valor calculado por la
+         * politica de money management. Un cero contable aqui desactivaria el modelo de riesgo.
+         *
+         * `observedOrderAmount` se redondea a entero porque Binomo maneja la cantidad como entero de
+         * COP: en el caso medido el valor llega como 100000.0 exacto y no queremos arrastrar ruido de
+         * coma flotante al journal.
+         */
+        fun stakeEfectivo(observedOrderAmount: Double, stakeCalculado: Double): Double =
+            if (observedOrderAmount > 0.0) observedOrderAmount else stakeCalculado
+
         const val DEFAULT_LOSS_COOLDOWN_SECONDS = 180
         const val DEFAULT_YOLO_LOSS_COOLDOWN_SECONDS = 35 // Cooldown en modo continuo/YOLO (30 a 45s max)
         const val EXTENDED_LOSS_COOLDOWN_SECONDS = 180 // Pausa de 3m tras 2 derrotas consecutivas para salir de rango
@@ -888,6 +912,17 @@ class RiskManager(context: Context? = null) {
         }
         return amount
     }
+
+    /**
+     * R23A Iter 2: stake efectivo en unidades del broker. Ver [stakeEfectivo] en el companion.
+     *
+     * Es el valor que el broker REALMENTE debita: la cantidad visible en pantalla si existe, y si no
+     * el calculado por la politica de money management. Todo registro de journal y toda validacion de
+     * dimensionamiento deben usar esto, no `getCurrentInvestmentAmount()` a secas.
+     */
+    @Synchronized
+    fun getEffectiveStake(subMode: AutonomousSubMode? = null): Double =
+        stakeEfectivo(AutoTradeAccessibilityService.observedOrderAmount, getCurrentInvestmentAmount(subMode).toDouble())
 
     @Synchronized
     fun getMartingaleStatusBadge(subMode: AutonomousSubMode? = null): String {

@@ -604,6 +604,13 @@ class TradeDrawHttpBridge(
                 "currentLossStreak": ${rm.currentLossStreak},
                 "martingaleStatus": "${escapeJson(rm.getMartingaleStatusBadge())}",
                 "investmentAmount": ${rm.getCurrentInvestmentAmount()},
+                // R23A Iter 2: desacoplamiento de escala monetaria detectado en la iter 1.
+                // `observedStake` es lo que dice la pantalla de Binomo; `effectiveStake` es lo que el
+                // broker realmente debita y con lo que se registra el journal. Con stake 1.0 y
+                // pantalla 100.000 COP, `investmentAmount` coincidia con `effectiveStake` y ambos
+                // mentian: por eso se exponen los dos por separado.
+                "observedStake": ${AutoTradeAccessibilityService.observedOrderAmount},
+                "effectiveStake": ${rm.getEffectiveStake()},
                 "hasPendingTrade": ${rm.hasPendingTrade},
                 "orderState": "${rm.orderState.name}",
                 "hasConfirmedTrade": ${rm.hasConfirmedTrade},

@@ -532,6 +532,64 @@ class RiskManagerTest {
         assertTrue("Reason must warn about Cantidad exceeding balance", reason.contains("supera saldo"))
     }
 
+    // ------------------------------------------------------------------
+    // R23A Iter 2: sincronizacion del stake con la cantidad de pantalla
+    // ------------------------------------------------------------------
+
+    @Test
+    fun elStakeEfectivoUsaLaCantidadDePantallaCuandoExiste() {
+        // Caso medido por OpenCode en la iter 1: baseAmount interno 1.0 USD, pantalla 100.000 COP.
+        // El broker debita y liquida con 100.000: ESE es el stake del modelo, no 1.0.
+        AutoTradeAccessibilityService.observedOrderAmount = 100_000.0
+        riskManager.baseAmount = 1.0f
+
+        assertEquals(
+            "el stake efectivo debe ser la cantidad de pantalla, no el calculo interno",
+            100_000.0,
+            riskManager.getEffectiveStake(),
+            0.0
+        )
+    }
+
+    @Test
+    fun elStakeEfectivoCaeAlCalculadoSiLaPantallaAunNoSeLeyo() {
+        // observedOrderAmount == 0.0 significa "sin leer", no "apuesta cero". Si se tomara como cero,
+        // el journal registraria stake 0 y el dimensionamiento de riesgo quedaria desactivado.
+        AutoTradeAccessibilityService.observedOrderAmount = 0.0
+        riskManager.baseAmount = 10.0f
+
+        assertEquals(
+            "sin lectura de pantalla se usa el stake calculado",
+            10.0,
+            riskManager.getEffectiveStake(),
+            0.0
+        )
+        assertEquals(
+            "y coincide con el valor que devuelve la politica de money management",
+            riskManager.getCurrentInvestmentAmount().toDouble(),
+            riskManager.getEffectiveStake(),
+            0.0
+        )
+    }
+
+    @Test
+    fun elStakeEfectivoIgnoraLecturasNegativas() {
+        // Un valor negativo solo puede venir de una lectura corrupta: nunca es un stake valido.
+        AutoTradeAccessibilityService.observedOrderAmount = -5.0
+        riskManager.baseAmount = 10.0f
+
+        assertEquals("negativo no es stake valido", 10.0, riskManager.getEffectiveStake(), 0.0)
+    }
+
+    @Test
+    fun elStakeEfectivoEsPuroYNoDependeDelModo() {
+        // La funcion del companion es la fuente unica: si alguien la cambia, cambia el contrato de
+        // todo el journal. Se fija aparte del estado del singleton.
+        assertEquals(100_000.0, RiskManager.stakeEfectivo(100_000.0, 1.0), 0.0)
+        assertEquals(1.0, RiskManager.stakeEfectivo(0.0, 1.0), 0.0)
+        assertEquals(2.0, RiskManager.stakeEfectivo(-1.0, 2.0), 0.0)
+    }
+
     @Test
     fun testTrailingProfitLock_SecuresPeakProfitsOnRetracement() {
         AutoTradeAccessibilityService.isDemoAccount = true

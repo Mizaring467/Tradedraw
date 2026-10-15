@@ -636,7 +636,7 @@ class TradingEngine(
                         val sec = analysis.candleSecond
 
                         if (isTie) {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "TIE", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "TIE", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getEffectiveStake(), baseBalance, "TIE", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "TIE", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
                             riskManager.recordTradeVoid()
                             autoDrawEngine.clearTradeEntry()
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
@@ -646,7 +646,7 @@ class TradingEngine(
                             if (!resolved) {
                                 riskManager.recordTradeWin(force = true)
                             }
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getEffectiveStake(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
                             adaptiveLearningEngine.recordTradeOutcome(true, context)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
@@ -657,7 +657,7 @@ class TradingEngine(
                             if (!resolved) {
                                 riskManager.recordTradeLoss(force = true)
                             }
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getEffectiveStake(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
                             adaptiveLearningEngine.recordTradeOutcome(false, context)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
@@ -1848,7 +1848,9 @@ class TradingEngine(
                     finalAction,
                     latestMarketTick?.price ?: 0.0,
                     context.resources.displayMetrics.widthPixels.toFloat(),
-                    riskManager.getCurrentInvestmentAmount(autonomousSubMode).toDouble(),
+                    // R23A Iter 2: la etiqueta de stake sobre el grafico tambien debe decir lo que el
+                    // broker debita, no el calculo interno. Mismo desacoplamiento que el journal.
+                    riskManager.getEffectiveStake(autonomousSubMode),
                     riskManager.sorosPayoutRate.toDouble()
                 )
                 Toast.makeText(context, "🔔 SEÑAL: $actionText\n$finalReason", Toast.LENGTH_SHORT).show()
@@ -1949,11 +1951,11 @@ class TradingEngine(
                 action = action,
                 entryPrice = latestMarketTick?.price ?: 0.0,
                 screenWidth = screenW,
-                stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode).toDouble(),
+                stake = riskManager.getEffectiveStake(autonomousSubMode),
                 payoutRate = riskManager.sorosPayoutRate.toDouble()
             )
             saveAuditScreenshot(bitmap, action)
-            val stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode)
+            val stake = riskManager.getEffectiveStake(autonomousSubMode)
             Toast.makeText(context, "🤖 BOT OPERÓ: $action ($$$stake)\n$reasonDescription", Toast.LENGTH_LONG).show()
         }
     }
@@ -2457,11 +2459,11 @@ class TradingEngine(
                 action = finalAction,
                 entryPrice = latestMarketTick?.price ?: 0.0,
                 screenWidth = screenW,
-                stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode).toDouble(),
+                stake = riskManager.getEffectiveStake(autonomousSubMode),
                 payoutRate = riskManager.sorosPayoutRate.toDouble()
             )
             emitHapticAndAudioFeedback()
-            val stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode)
+            val stake = riskManager.getEffectiveStake(autonomousSubMode)
             Toast.makeText(context, "⚡ [${strategy.name}] BOT OPERÓ: $finalAction ($$$stake)\n$finalReason", Toast.LENGTH_LONG).show()
             onTradeExecutedListener?.invoke(finalAction, true)
         }
@@ -2606,7 +2608,7 @@ class TradingEngine(
             val pendingAction = snapshot.action
             val pendingEntry = snapshot.entryPrice
             val pendingConfidence = snapshot.confidence
-            val pendingStake = riskManager.getCurrentInvestmentAmount()
+            val pendingStake = riskManager.getEffectiveStake()
             val pendingTradeStartMs = snapshot.startTime
             val sec = latestMarketTick?.candleSecond ?: (((System.currentTimeMillis() / 1000L) % 60L).toInt())
             val wsAnalysis = VisionAnalysisResult(
