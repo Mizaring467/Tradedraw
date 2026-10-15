@@ -303,7 +303,7 @@ def main():
 1. **Preservación de Balance:** Saldo inicial = {initial_balance:,.2f} COP, saldo final = {cur_bal:,.2f} COP (Discrepancia neta = 0.00 COP).
 2. **Cero Taps:** `tapsDespachados = 0` en el 100% de las {sample_count} muestras capturadas. Cero órdenes reales despachadas.
 3. **Identidad de Build:** La APK en ejecución reportó versionCode={args.expected_version_code}, buildId="{args.expected_build_id}" y gitSha="{args.expected_sha}".
-4. **Decisiones Observadas:** Se registraron {len(observed_decisions)} decisiones con `decision_id` UUID v4. Cero `trade_id` espurios en vetos/simulaciones.
+4. **Decisiones Observadas:** Se registraron {len(observed_decisions)} decisiones con `decision_id` determinista (UUID v3). Cero `trade_id` espurios en vetos/simulaciones.
 5. **Comportamiento de Guards:** {sum(veto_kinds_count.values())} decisiones vetadas. Distribución: {json.dumps(veto_kinds_count)}.
 6. **Rango Cuantitativo:** En {active_asset}, el rango relativo osciló entre {min_range_ratio:.2e} y {max_range_ratio:.2e} frente al umbral 1.00e-05.
 7. **Paridad Live ↔ Replay:** {replay_report_text}

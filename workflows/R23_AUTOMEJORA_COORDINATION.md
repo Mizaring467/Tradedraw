@@ -16,6 +16,7 @@
 | (Inicial) | `e3253c0` | Baseline R22: Infraestructura y paridad live-replay validadas al 100%, pero 18/18 vetos por V2_RANGE en Crypto IDX (sin SHADOW_DECISION aprobada). | N/A (Punto de partida) | `e3253c0` | 95 muestras, 18 VETO V2, 0 SHADOW_DECISION, 0 taps | BASELINE |
 | **Iter 1** | `e3253c0` | Trazabilidad de Build en Runtime (gitSha, buildId, buildTimestamp en /status) + Telemetría Cuantitativa de V2_RANGE (rangoRelativoMinimo y rangoRelativoActual) para auditar la distancia al umbral durante 20 min live sin relajar guards. | Exponer metadatos de build y rango relativo en /status, bump a versionCode 6 (v1.4-r23-iter1) | `f5f9eaf` | 116 muestras (20 min), balance intacto 38.054.735,36 COP, taps=0, 140/140 vetos por V2_RANGE (rango 1.09e-10 a 6.62e-10 vs umbral 1.0e-05), trazabilidad de build 100% verificada en runtime. Reporte: `loops/r23/iter_1/LIVE_REPORT.md` | **KEEP** |
 | **Iter 2** | `2ef2b72` | Exposición de `/shadow_journal` (lectura directa en disco) y booleano `volatilidadSuficiente` en `/status.feed` para auditoría inmediata de persistencia física de decisiones shadow sin extraer archivos por ADB ni depender de ring buffers de memoria. | Endpoint `/shadow_journal`, campo `volatilidadSuficiente` en `/status`, bump a versionCode 7 (v1.4-r23-iter2) | `101a183` | 116 muestras (20 min), balance intacto 38.054.735,36 COP, taps=0, 17 decisiones (todas VETO V2_RANGE). Control negativo 100% consistente (9/9 vetos correlacionados con volatilidadSuficiente=false). `/shadow_journal` verificado operativo (0 entradas). Reporte: `loops/r23/iter_2/LIVE_REPORT.md` y `VALIDATOR_FINDINGS.md` | **KEEP** |
+| **Iter 3** | `fd74445` | Determinismo reproducible en `decision_id` (`UUID.nameUUIDFromBytes("$asset-$ms-$action")`) en motor live (`TradingEngine.kt`) y motor de replay (`ReplayBacktestTest.kt`) con normalización por `AssetRicMapper` y resolución a milisegundos para eliminar colisiones intra-segundo y habilitar emparejamiento exacto Live ↔ Replay. | `generateDeterministicDecisionId` en `TradingEngine.kt`, emisión de `decision_id` en `ReplayBacktestTest.kt`, bump a versionCode 8 (v1.4-r23-iter3) | `c08c842` | 116 muestras (20 min), balance intacto 38.054.735,36 COP, taps=0, 26 decisiones (todas VETO V2_RANGE). 37/37 UUID v3 válidos y únicos en /events (0 colisiones intra-segundo, eliminadas las 8 de Iter2). Control negativo 37/37 consistente. `/shadow_journal` operativo. Reporte: `loops/r23/iter_3/LIVE_REPORT.md` y `VALIDATOR_FINDINGS.md` | **KEEP** |
 
 ---
 
@@ -24,8 +25,8 @@
 | Agente | Rol | Archivos Reservados | Propósito | Estado |
 |---|---|---|---|---|
 | AGY | Orquestador / Auditor / Build / ADB | `workflows/R23_AUTOMEJORA_COORDINATION.md`, `scripts/validation/*` | Coordinación, decisiones, build y auditoría | ACTIVO |
-| HERMES | Implementador | Ninguno | Iteración 2 completada (KEEP). Esperando asignación de Iteración 3 | IDLE |
-| OPENCODE | Validador LIVE (~20 min) | Ninguno | Validación Iteración 2 completada (KEEP). Esperando Iteración 3 | IDLE |
+| HERMES | Implementador | Ninguno | Iteración 3 completada (KEEP). Esperando asignación de Iteración 4 | IDLE |
+| OPENCODE | Validador LIVE (~20 min) | Ninguno | Validación Iteración 3 completada (KEEP). Esperando Iteración 4 | IDLE |
 
 ---
 
