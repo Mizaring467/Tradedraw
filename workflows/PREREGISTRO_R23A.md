@@ -27,8 +27,7 @@ La premisa de un único umbral escalar universal colapsa cuando se pasa de pares
 
 Se enmienda formalmente la regla de V2 introduciendo la función pura:
 ```kotlin
-fun rangoRelativoMinimoParaActivo(asset: String?): Double {
-    if (asset == null) return RANGO_RELATIVO_MINIMO // 1e-5
+fun rangoRelativoMinimoParaActivo(asset: String): Double {
     return if (asset.contains("IDX", ignoreCase = true)) {
         RANGO_RELATIVO_MINIMO_IDX // 1e-11
     } else {
@@ -37,7 +36,7 @@ fun rangoRelativoMinimoParaActivo(asset: String?): Double {
 }
 ```
 
-**Consistencia Interna:** Esta diferenciación no es una invención ad-hoc, sino una alineación arquitectónica con el criterio ya presente y validado en `TradingEngine.isPriceFrozen(asset, ...)` (`1e-11` para índices sintéticos IDX, `1e-4` para otros).
+**Consistencia Interna:** Esta diferenciación no es una invención ad-hoc, sino una alineación arquitectónica con el criterio ya presente y validado en `BinomoWebSocketClient.isPriceFrozen` (`1e-11` para índices sintéticos IDX, frente a `MarketTickFilters.FROZEN_RANGE_RATIO = 1e-6` para el resto).
 
 ---
 
