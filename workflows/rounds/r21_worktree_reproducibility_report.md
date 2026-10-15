@@ -1,8 +1,8 @@
 # R21 — REPORTE DE REPRODUCIBILIDAD EN WORKTREE LIMPIO (FRENTE G)
 
-**Fecha:** 2026-10-15 03:12:39 UTC  
+**Fecha:** 2026-10-15 03:14:46 UTC  
 **Herramienta:** `scripts/ci/verify_clean_worktree.py`  
-**Commit / Ref Verificado:** `HEAD` (`4d433ed54bbc0c8541b64a05ef122079ca0d11b9`)  
+**Commit / Ref Verificado:** `HEAD` (`e6c50141e168f1b2b814a1c2280de9c95ac6d989`)  
 **Ruta Worktree Temporal:** `C:\Users\heidy\Tradedraw_repro_worktree`  
 **Veredicto Final:** **FAIL (NO REPRODUCIBLE)**  
 
@@ -25,25 +25,25 @@
 
 - **Comando ejecutado:** `"C:\Users\heidy\Tradedraw_repro_worktree\gradlew.bat" testDebugUnitTest --no-daemon`
 - **Código de salida:** `1`
-- **Duración total fase Gradle:** `142.68 s`
+- **Duración total fase Gradle:** `41.2 s`
 
 ```
-	at java.rmi/sun.rmi.transport.tcp.TCPTransport.handleMessages(Unknown Source)
-	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run0(Unknown Source)
-	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.lambda$run$0(Unknown Source)
-	at java.base/java.security.AccessController.doPrivileged(Unknown Source)
-	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run(Unknown Source)
-	... 3 more
-Caused by: java.nio.file.NoSuchFileException: C:\Users\heidy\Tradedraw_repro_worktree\app\build\kotlin\compileDebugKotlin\classpath-snapshot\shrunk-classpath-snapshot.bin
-	at java.base/sun.nio.fs.WindowsException.translateToIOException(Unknown Source)
-	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(Unknown Source)
-	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(Unknown Source)
-	at java.base/sun.nio.fs.WindowsFileSystemProvider.newFileChannel(Unknown Source)
-	... 29 more
-Using fallback strategy: Compile without Kotlin daemon
-Try ./gradlew --stop if this issue persists.
-
-> Task :app:compileDebugKotlin FAILED
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:generateDebugResValues
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:mergeDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:parseDebugLocalResources
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:processDebugManifestForPackage
+> Task :app:javaPreCompileDebug
+> Task :app:processDebugResources FAILED
 
 [Incubating] Problems report is available at: file:///C:/Users/heidy/Tradedraw_repro_worktree/build/reports/problems/problems-report.html
 
@@ -52,35 +52,31 @@ Deprecated Gradle features were used in this build, making it incompatible with 
 You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
 
 For more on this, please refer to https://docs.gradle.org/9.5.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
-17 actionable tasks: 17 executed
+15 actionable tasks: 15 executed
 ```
 
 **Salida de error (Stderr):**
 ```
-exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\TradeJournalLogger.kt
-exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\TradeLearningEngine.kt
-exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\TradingEngine.kt
-exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\TradingTool.kt
-exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\ui\theme\Color.kt
-exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\ui\theme\Theme.kt
-exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\ui\theme\Type.kt
-exception: error: source file or directory not found: C:\Users\heidy\Tradedraw_repro_worktree\app\src\main\java\com\example\tradedraw\VisionAnalyzer.kt
-exception: warning: classpath entry points to a non-existent location: C:\Users\heidy\Tradedraw_repro_worktree\app\build\intermediates\compile_and_runtime_not_namespaced_r_class_jar\debug\processDebugResources\R.jar
+Warning: SDK processing. This version only understands SDK XML versions up to 3 but an SDK XML file of version 4 was encountered. This can happen if you use versions of Android Studio and the command-line tools that were released at different times.
 
 FAILURE: Build failed with an exception.
 
 * What went wrong:
-Execution failed for task ':app:compileDebugKotlin' (registered by plugin 'org.jetbrains.kotlin.android').
-> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
-   > El sistema no puede encontrar la ruta especificada
+A problem was found with the configuration of task ':app:processDebugResources' (type 'LinkApplicationAndroidResourcesTask').
+  - In plugin 'com.android.internal.version-check' type 'com.android.build.gradle.internal.res.LinkApplicationAndroidResourcesTask' property 'localResourcesFile' specifies file 'C:\Users\heidy\Tradedraw_repro_worktree\app\build\intermediates\local_only_symbol_list\debug\parseDebugLocalResources\R-def.txt' which doesn't exist.
+    
+    Reason: An input file was expected to be present but it doesn't exist.
+    
+    Possible solutions:
+      1. Make sure the file exists before the task is called.
+      2. Make sure that the task which produces the file is declared as an input.
+    
+    For more information, please refer to https://docs.gradle.org/9.5.0/userguide/validation_problems.html#input_file_does_not_exist in the Gradle documentation.
 
 * Try:
-> Run with --stacktrace option to get the stack trace.
-> Run with --info or --debug option to get more log output.
 > Run with --scan to get full insights from a Build Scan (powered by Develocity).
-> Get more help at https://help.gradle.org.
 
-BUILD FAILED in 2m 21s
+BUILD FAILED in 40s
 No se ha encontrado el archivo por lotes.
 ```
 

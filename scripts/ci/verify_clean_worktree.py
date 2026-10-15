@@ -323,11 +323,11 @@ def run_worktree_verification(
             gradle_bin = os.path.join(worktree_dir, "gradlew.bat")
             if not os.path.exists(gradle_bin):
                 gradle_bin = "gradlew.bat"
-            cmd_gradle = f'"{gradle_bin}" testDebugUnitTest --no-daemon'
+            cmd_gradle = f'"{gradle_bin}" :app:parseDebugLocalResources :app:testDebugUnitTest'
             gradle_cmd_str = cmd_gradle
         else:
-            cmd_gradle = ["./gradlew", "testDebugUnitTest", "--no-daemon"]
-            gradle_cmd_str = "./gradlew testDebugUnitTest --no-daemon"
+            cmd_gradle = ["./gradlew", ":app:parseDebugLocalResources", ":app:testDebugUnitTest"]
+            gradle_cmd_str = "./gradlew :app:parseDebugLocalResources :app:testDebugUnitTest"
 
         if skip_gradle:
             print("[FRENTE G] Flag --skip-gradle activo. Omitiendo compilación de Gradle.")
