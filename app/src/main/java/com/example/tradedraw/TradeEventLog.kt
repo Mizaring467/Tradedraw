@@ -60,7 +60,16 @@ object TradeEventLog {
          *
          * Es PURA observabilidad: registrar el cambio no altera el cambio.
          */
-        MODE_CHANGE
+        MODE_CHANGE,
+        /**
+         * Ronda 20: el activo activo no entrego NI UN tick y el cliente volvio al ultimo RIC que
+         * si los entrego.
+         *
+         * Existe porque `subscribe` ACEPTADO no prueba que haya datos: medido con `AAVEUSD-OTC`,
+         * el servidor responde `success:true` y despues 0 ticks en 60 s. Sin este evento, volver
+         * a un activo sano seria indistinguible de un cambio de activo pedido por el usuario.
+         */
+        FEED_SIN_TICKS
     }
 
     data class Event(

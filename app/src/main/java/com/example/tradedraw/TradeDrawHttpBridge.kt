@@ -453,7 +453,10 @@ class TradeDrawHttpBridge(
                         if (name.isBlank()) {
                             sendJsonResponse(output, 400, """{"success":false,"error":"Parámetro 'name' requerido"}""")
                         } else {
-                            overlayService.binomoWebSocketClient?.updateActiveAsset(name)
+                            // Ronda 20: `/asset` es una orden EXPLICITA, asi que puede forzar un RIC
+                            // marcado sin feed (la via automatica de pantalla no puede). Sin esto la
+                            // proteccion contra el RIC muerto bloquearia su propio diagnostico.
+                            overlayService.binomoWebSocketClient?.forzarActivo(name)
                             sendJsonResponse(output, 200, """{"success":true,"asset":"$name"}""")
                         }
                     }
@@ -605,6 +608,9 @@ class TradeDrawHttpBridge(
                 "rawFrames": ${rawFramesJson(ws)},
                 "acceptedTicks": ${ws?.acceptedTicks ?: 0L},
                 "rejectedForeignAssetTicks": ${ws?.rejectedForeignAssetTicks ?: 0L},
+                "ultimoRicConTicks": "${escapeJson(ws?.ultimoRicConTicks ?: "")}",
+                "activoSinFeed": "${escapeJson(ws?.activoSinFeed ?: "")}",
+                "segundosSinTicks": ${ws?.segundosSinTicks ?: 0L},
                 "diagMultiRic": {
                     "ricSecundario": "${escapeJson(ws?.ricSecundario ?: "")}",
                     "ticksRicSecundario": ${ws?.ticksRicSecundario ?: 0L},

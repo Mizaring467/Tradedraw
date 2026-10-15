@@ -29,8 +29,42 @@ class BinomoWebSocketClient(private val context: Context) {
         get() = prefs.getString("ws_active_asset", "Z-CRY/IDX") ?: "Z-CRY/IDX"
         set(value) = prefs.edit().putString("ws_active_asset", value.trim()).apply()
 
+    /**
+     * Ronda 20: cambio de activo ordenado a proposito (por `/asset` o por diagnostico).
+     *
+     * Se distingue de [updateActiveAsset] —que es la via automatica desde la pantalla del broker—
+     * porque un RIC marcado sin feed SI debe poder forzarse a mano: si no, la propia proteccion
+     * impediria volver a comprobar si el servidor ha empezado a servirlo. Sin esta separacion, el
+     * diagnostico que descubrio el RIC muerto quedaria inhabilitado por la correccion de ese mismo
+     * hallazgo.
+     */
+    fun forzarActivo(newAsset: String) {
+        val clean = newAsset.trim()
+        if (clean.isBlank()) return
+        if (clean.equals(activoSinFeed, ignoreCase = true)) activoSinFeed = ""
+        updateActiveAsset(clean)
+    }
+
     fun updateActiveAsset(newAsset: String) {
         val clean = newAsset.trim()
+        // Ronda 20: ignorar un RIC que YA se midio como sin feed.
+        //
+        // Por que aqui y no en el vigilante. Medido en dispositivo: tras recuperar a ETHUSD-OTC, el
+        // siguiente recorrido de `AutoTradeAccessibilityService` volvia a imponer AAVEUSD-OTC
+        // (lo lee de la pantalla del broker, que sigue en Aave), el vigilante tardaba otros 20 s en
+        // recuperar, y asi indefinidamente: un parpadeo cada 20 s, que es justo la OSCILACION que el
+        // criterio A.3 del PREREGISTRO_R20 prohibe. Se probo primero un anti-flap por lista negra
+        // dentro del vigilante y la medicion lo refuto: recuperaba UNA vez y luego se quedaba mudo
+        // 75 s con `acceptedTicks` clavado en 477. El corte correcto es en la ENTRADA del RIC: no
+        // suscribir el que ya no sirve, en vez de suscribirlo y reaccionar tarde.
+        //
+        // Esto NO impide cambiar de activo: si el usuario pasa a un grafico cuyo RIC entrega ticks,
+        // se suscribe con normalidad. Solo se ignora un RIC concreto del que hay medicion de que el
+        // servidor no emite.
+        if (clean.isNotBlank() && clean.equals(activoSinFeed, ignoreCase = true)) {
+            Log.d(TAG, "Se ignora el RIC '$clean': ya se midio sin feed. Sigue activo '$activeAsset'.")
+            return
+        }
         if (clean.isNotBlank() && activeAsset != clean) {
             Log.i(TAG, "Sincronizando activo activo de WebSocket: $activeAsset -> $clean")
             activeAsset = clean
@@ -194,6 +228,125 @@ class BinomoWebSocketClient(private val context: Context) {
     private val workerHandler = Handler(workerThread.looper)
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    // ---------------------------------------------------------------------------------------
+    // Ronda 20: recuperacion de un activo que NO entrega ticks.
+    //
+    // Problema medido: `activeAsset` puede quedar apuntando a un RIC que el servidor ACEPTA pero
+    // no sirve. Medido con `AAVEUSD-OTC`: `subscribe` responde `success:true` y despues 1 frame
+    // (el propio ack) y 0 ticks en 60 s, mientras `ETHUSD-OTC` entrega ~2,4 ticks/s. El bot se
+    // quedaba mudo indefinidamente: `isFresh=false` -> el guard FEED_RANCIO vetaba todo disparo.
+    //
+    // OJO, hallazgo de la misma ronda: un RIC no servido NO solo se queda sin ticks, TAMBIEN
+    // congela el principal. Medido: con ETHUSD-OTC sano (acc=33) suscribir AAVEUSD-OTC dejo el
+    // contador congelado 25 s y se recupero al restaurar (36 -> 97 en 20 s). Por eso la
+    // recuperacion reafirma UN solo RIC en vez de anadir otro.
+    //
+    // LIMITE DE ALCANCE: esto recupera OBSERVABILIDAD, no autoriza a operar. Si el activo del
+    // feed acaba siendo distinto del grafico en pantalla, el guard de desajuste de
+    // `TradingEngine.executeHeadlessTrade` lo veta (fail-closed). Ver PREREGISTRO_R20 §3.
+    // ---------------------------------------------------------------------------------------
+
+    /** Segundos sin NINGUN tick propio tolerados antes de volver al ultimo RIC que si dio ticks. */
+    private val SIN_TICKS_TIMEOUT_MS = 20_000L
+
+    /**
+     * Ultimo RIC que entrego ticks de verdad. Es la unica evidencia de "este activo funciona":
+     * que el servidor acepte un `subscribe` NO lo prueba (AAVEUSD-OTC lo acepta y no emite).
+     */
+    var ultimoRicConTicks: String
+        get() = prefs.getString("ws_ultimo_ric_con_ticks", "") ?: ""
+        private set(value) = prefs.edit().putString("ws_ultimo_ric_con_ticks", value.trim()).apply()
+
+    /**
+     * Activo que se declaro sin feed. Es DIAGNOSTICO (para `/status`), NO un candado.
+     *
+     * La primera version de la Ronda 20 lo uso como lista negra permanente y la medicion en
+     * dispositivo demostro que era un defecto: tras recuperar una vez, `AutoTradeAccessibilityService`
+     * volvio a imponer el RIC muerto desde la pantalla del broker, el activo ya estaba marcado como
+     * "sin feed" y la recuperacion se nego a repetirse. Resultado medido: 75 s con el feed congelado
+     * (`acceptedTicks` clavado en 477) y `recuperaciones` en 1. Un anti-flap que impide recuperar no
+     * evita la oscilacion: la causa.
+     */
+    @Volatile
+    var activoSinFeed: String = ""
+        private set
+
+    /**
+     * Ronda 20: separacion minima entre dos recuperaciones.
+     *
+     * Esto es lo que evita la OSCILACION de verdad (criterio A.3), sin el defecto de la lista negra:
+     * si dos activos se alternan, con esta espera no se puede cambiar mas de una vez cada 30 s. Y si
+     * un RIC muerto vuelve a imponerse desde pantalla, la recuperacion SI se repite pasado el plazo,
+     * que es lo correcto: volver a un activo que probo dar ticks no es oscilar.
+     */
+    private val RECUPERACION_COOLDOWN_MS = 30_000L
+
+    @Volatile
+    private var ultimaRecuperacionTs = 0L
+
+    /** Recuperaciones aplicadas. Legible en `/status` para poder auditar la reaccion. */
+    @Volatile
+    var recuperacionesPorSinTicks: Long = 0L
+        private set
+
+    /** Diagnostico: segundos sin ticks propios en el momento de la ultima comprobacion. */
+    @Volatile
+    var segundosSinTicks: Long = 0L
+        private set
+
+    private val sinTicksRunnable = object : Runnable {
+        override fun run() {
+            if (!isConnected || !isEnabled) return
+            val edad = lastTickAgeMs
+            segundosSinTicks = if (edad == Long.MAX_VALUE) -1L else edad / 1000L
+            if (edad >= SIN_TICKS_TIMEOUT_MS) {
+                recuperarDeActivoSinFeed(edad)
+            }
+            workerHandler.postDelayed(this, SIN_TICKS_TIMEOUT_MS / 4)
+        }
+    }
+
+    private fun recuperarDeActivoSinFeed(edadMs: Long) {
+        val actual = activeAsset
+        val sano = ultimoRicConTicks
+        // El propio activo sano no puede contar como "sin feed": si `ultimoRicConTicks` ES el
+        // activo actual, no hay a donde volver y reintentar seria un bucle.
+        if (sano.isBlank() || sano.equals(actual, ignoreCase = true)) return
+        // Anti-flap por PLAZO, no por lista negra (ver RECUPERACION_COOLDOWN_MS).
+        val ahora = System.currentTimeMillis()
+        if (ahora - ultimaRecuperacionTs < RECUPERACION_COOLDOWN_MS) return
+
+        activoSinFeed = actual
+        ultimaRecuperacionTs = ahora
+        recuperacionesPorSinTicks++
+        // `Long.MAX_VALUE` significa "ningun tick desde el arranque", no una espera concreta. Sin
+        // esta guarda el evento salia con `segundos=9223372036854775` (medido), que es ilegible y
+        // no informa de nada.
+        val segundosLegibles = segundosSinTicksLegibles(edadMs)
+        Log.w(
+            TAG,
+            "Activo sin feed durante $segundosLegibles s: $actual -> $sano (ultimo que entrego ticks)"
+        )
+        // NO se anade el RIC ajeno al array `rics`: se reafirma uno solo, que es la unica forma
+        // que se ha medido que no congela el stream (ver PREREGISTRO_R20 §1, hecho 5).
+        activeAsset = sano
+        lastPrice = 0.0
+        lastPriceTimeMs = 0L
+        smoothedVelocity = 0f
+        recentTicks.clear()
+        webSocket?.let { subscribeToAsset(it, sano) }
+        TradeEventLog.add(
+            TradeEventLog.Kind.FEED_SIN_TICKS,
+            "activo=$actual segundos=$segundosLegibles recuperado=$sano"
+        )
+    }
+
+    /** Arranca el vigilante. Idempotente: reprogramar el mismo Runnable no duplica ejecuciones. */
+    private fun programarVigilanciaSinTicks() {
+        workerHandler.removeCallbacks(sinTicksRunnable)
+        workerHandler.postDelayed(sinTicksRunnable, SIN_TICKS_TIMEOUT_MS)
+    }
+
     var currentState: WebSocketState = WebSocketState.DISCONNECTED
         private set
 
@@ -333,12 +486,16 @@ class BinomoWebSocketClient(private val context: Context) {
             return
         }
         workerHandler.post { startConnectionInternal() }
+        // Ronda 20: arrancar tambien la vigilancia de activo sin ticks.
+        programarVigilanciaSinTicks()
     }
 
     fun stop() {
         workerHandler.post {
             reconnectAttempts = 0
             workerHandler.removeCallbacks(reconnectRunnable)
+            // Ronda 20: detener la vigilancia; si no, seguiria sondeando con el socket cerrado.
+            workerHandler.removeCallbacks(sinTicksRunnable)
             try {
                 webSocket?.close(1000, "Cierre voluntario TradeDraw")
             } catch (e: Exception) {
@@ -586,6 +743,12 @@ class BinomoWebSocketClient(private val context: Context) {
             lastTickSource = source
             if (source == "socket") socketTicks++
             acceptedTicks++
+            // Ronda 20: este RIC acaba de probar que entrega ticks. Es la unica evidencia valida:
+            // que el servidor acepte un `subscribe` NO implica que vaya a emitir (AAVEUSD-OTC lo
+            // acepta y no emite). Queda como destino de la recuperacion.
+            ultimoRicConTicks = parsed.asset
+            // Si el activo que recuperamos vuelve a dar ticks, deja de estar marcado como muerto.
+            if (activoSinFeed.equals(parsed.asset, ignoreCase = true)) activoSinFeed = ""
             emitTick(parsed.asset, parsed.price, System.currentTimeMillis())
         } catch (e: Exception) {
             // Mensaje informativo o frame no relacionado a precios
@@ -692,5 +855,15 @@ class BinomoWebSocketClient(private val context: Context) {
          * 5%: por encima de eso no es mercado intradía de 60s, es mezcla de activos o corrupción.
          */
         const val MAX_TICK_JUMP_RATIO = 0.05
+
+        /**
+         * Ronda 20: segundos legibles a partir de la antiguedad del ultimo tick.
+         *
+         * `lastTickAgeMs` vale `Long.MAX_VALUE` cuando NO ha llegado ningun tick desde el arranque.
+         * Dividirlo daba `segundos=9223372036854775` en el evento (medido en dispositivo), que es
+         * ilegible y no informa de nada. Devuelve -1 para significar "ninguno todavia".
+         */
+        internal fun segundosSinTicksLegibles(edadMs: Long): Long =
+            if (edadMs == Long.MAX_VALUE) -1L else edadMs / 1000L
     }
 }
