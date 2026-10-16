@@ -146,6 +146,153 @@ def emergency_shutdown(base_url: str):
         print(f"Error al enviar disabled: {e}")
 
 
+# ---------------------------------------------------------------------------
+# R23E (REQ 2): PIPELINE CONTRAFACTUAL SHADOW DE ADAPTIVE_BLOCK
+#
+# Mide, de forma puramente pasiva, que habria pasado con las senales que el guard
+# ADAPTIVE_BLOCK veto. Cero taps, cero fondos, cero alteracion de saldo: solo se
+# registra la oportunidad y se resuelve contra el feed de ticks ya capturado.
+# ---------------------------------------------------------------------------
+
+# Precio de entrada: ventana de busqueda del tick mas cercano a decision_ts.
+# Los ticks de Z-CRY/IDX llegan a ~2,4/s (~417 ms entre muestras). +-4000 ms acota la
+# busqueda a ~10 ticks y sigue siendo "el precio en el instante de la decision".
+COUNTERFACTUAL_ENTRY_TOLERANCE_MS = 4000
+
+# Horizonte de resolucion: 60 s exactos desde decision_ts (parametro congelado del preregistro).
+COUNTERFACTUAL_HORIZON_MS = 60_000
+
+# Ventana de ocupacion emulada: durante 60 s tras registrar un contrafactual en una
+# direccion, ninguna senal subsiguiente de la MISMA direccion cuenta como oportunidad
+# nueva (emula el OPERACION_EN_CURSO que habria impedido ordenes solapadas).
+COUNTERFACTUAL_OCCUPANCY_MS = 60_000
+
+# Payout de referencia congelado en el preregistro (b = 0.82).
+COUNTERFACTUAL_PAYOUT = 0.82
+
+# Stake unitario nominal del preregistro.
+COUNTERFACTUAL_STAKE = 100_000.0
+
+COUNTERFACTUAL_FIELDS = [
+    "counterfactual_id", "decision_id", "asset", "action", "decision_ts",
+    "entry_price", "expiry_ts", "exit_price", "result", "score", "similarity",
+    "market_regime", "trend", "payout", "theoretical_ev",
+]
+
+COUNTERFACTUAL_SIM_BUCKETS = [(90.0, 93.0), (93.0, 96.0), (96.0, 98.0), (98.0, 100.0)]
+COUNTERFACTUAL_SCORE_BUCKETS = [(75.0, 79.0), (80.0, 84.0), (85.0, 100.0)]
+
+
+def extract_adaptive_block_fields(detail: str) -> Dict[str, Any]:
+    """REQ 2 paso 1: saca `sim` y `score` del `detail` enriquecido por REQ 1.
+
+    El formato que emite `buildAdaptiveBlockDetail` es
+    `ADAPTIVE_BLOCK [sim:98%] [Confluencia: 85pts] <razon>`. Ambos prefijos son opcionales:
+    la rama de bloqueo por continuacion/reversion no mide similitud, y la confluencia solo
+    existe si la senal paso por la matriz. En esos casos el campo sale `None` en vez de un
+    valor por defecto, para no inventar una medicion que el motor nunca hizo.
+    """
+    sim = None
+    m_sim = re.search(r"\[sim:\s*(\d+(?:\.\d+)?)%\]", detail)
+    if m_sim:
+        try:
+            sim = float(m_sim.group(1))
+        except ValueError:
+            sim = None
+    score = None
+    m_sc = re.search(r"\[Confluencia:\s*(\d+(?:\.\d+)?)pts\]", detail)
+    if m_sc:
+        try:
+            score = float(m_sc.group(1))
+        except ValueError:
+            score = None
+    return {"similarity": sim, "score": score}
+
+
+def find_nearest_tick_price(
+    ticks: Dict[int, str], target_ts: int, tolerance_ms: int = COUNTERFACTUAL_ENTRY_TOLERANCE_MS
+) -> Optional[float]:
+    """Precio del tick mas cercano a `target_ts` dentro de `tolerance_ms`. `None` si no hay.
+
+    Se compara con `<=` en el desempate para que el tick ANTERIOR gane cuando dos estan
+    equidistantes: para un precio de ENTRADA es la lectura mas conservadora (no usa un
+    tick que aun no existia en el instante de la decision).
+    """
+    best_ts: Optional[int] = None
+    best_delta = tolerance_ms + 1
+    for ts in ticks:
+        delta = abs(ts - target_ts)
+        if delta <= tolerance_ms and delta <= best_delta:
+            if delta == best_delta and best_ts is not None and ts > best_ts:
+                continue
+            best_ts, best_delta = ts, delta
+    if best_ts is None:
+        return None
+    try:
+        return float(ticks[best_ts].split(",")[-1])
+    except (ValueError, IndexError):
+        return None
+
+
+def dedupe_counterfactual(
+    action: str,
+    decision_ts: int,
+    open_until: Dict[str, int],
+    last_candle: Dict[str, int],
+) -> bool:
+    """REQ 2 paso 2: decide si una senal bloqueada es una oportunidad NUEVA.
+
+    Devuelve `True` si debe registrarse. Dos reglas del preregistro, ambas por direccion:
+      1. Ventana de ocupacion: no registrar si ya hay un contrafactual activo de la misma
+         accion cuyo horizonte de 60 s no ha concluido.
+      2. Maximo 1 por vela de 60 s por direccion (la vela se identifica por
+         `decision_ts // 60000`).
+    """
+    if action not in ("BUY", "SELL"):
+        return False
+    if open_until.get(action, 0) > decision_ts:
+        return False
+    if last_candle.get(action, -1) == decision_ts // COUNTERFACTUAL_HORIZON_MS:
+        return False
+    return True
+
+
+def resolve_counterfactual(action: str, entry_price: float, exit_price: float) -> str:
+    """REQ 2 paso 3: resuelve WIN/LOSS/VOID contra las reglas del preregistro."""
+    if exit_price == entry_price:
+        return "COUNTERFACTUAL_VOID"
+    if action == "BUY":
+        return "COUNTERFACTUAL_WIN" if exit_price > entry_price else "COUNTERFACTUAL_LOSS"
+    if action == "SELL":
+        return "COUNTERFACTUAL_WIN" if exit_price < entry_price else "COUNTERFACTUAL_LOSS"
+    return "COUNTERFACTUAL_VOID"
+
+
+def counterfactual_ev(result: str, payout: float = COUNTERFACTUAL_PAYOUT,
+                      stake: float = COUNTERFACTUAL_STAKE) -> float:
+    """Valor esperado teorico de un contrafactual con stake unitario nominal."""
+    if result == "COUNTERFACTUAL_WIN":
+        return payout * stake
+    if result == "COUNTERFACTUAL_LOSS":
+        return -stake
+    return 0.0
+
+
+def counterfactual_id(decision_id: str, decision_ts: int) -> str:
+    """Id determinista derivado de `decision_id` y `decision_ts` (preregistro §6.3)."""
+    return f"CF-{decision_id}-{decision_ts}"
+
+
+def bucket_label(value: Optional[float], buckets, suffix: str = "") -> str:
+    """Etiqueta el bucket preregistrado al que cae `value`. 'N/A' si no hay medicion."""
+    if value is None:
+        return "N/A"
+    for lo, hi in buckets:
+        if lo <= value < hi or (hi == buckets[-1][1] and value == hi):
+            return f"[{lo:g},{hi:g}]{suffix}"
+    return "N/A"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Monitor Live R23 MODO AUTÓNOMO DEMO")
     parser.add_argument("--iter", type=int, default=1, help="Número de iteración R23 Autónomo (default: 1)")
@@ -237,6 +384,91 @@ def main():
     outlier_count = 0
     min_validated_balance: Optional[float] = None
     max_validated_balance: Optional[float] = None
+
+    # R23E (REQ 2): estado del pipeline contrafactual.
+    # `cf_pending` son las oportunidades registradas y aun sin resolver; `cf_open_until` y
+    # `cf_last_candle` implementan la deduplicacion por direccion (ocupacion 60s + 1 por vela);
+    # `cf_rows` acumula TODAS las oportunidades, resueltas o no, para el volcado del CSV.
+    cf_pending: List[Dict[str, Any]] = []
+    cf_rows: List[Dict[str, Any]] = []
+    cf_open_until: Dict[str, int] = {}
+    cf_last_candle: Dict[str, int] = {}
+    cf_blocked_seen = 0
+    cf_deduplicated = 0
+    cf_seen_decision_ids: set = set()
+
+    # R23E: payout con el que valorar el EV. Se prefiere el REAL resuelto por el lector de
+    # pantalla del broker y se cae al de referencia del preregistro (0.82) si no llega.
+    cf_payout_actual = fetch_json(f"{base_url}/status") or {}
+    cf_payout_live = (
+        cf_payout_actual.get("feed", {}).get("payoutResolved")
+        or COUNTERFACTUAL_PAYOUT
+    )
+
+    def registrar_contrafactuales(now_ms: int) -> None:
+        """Registra oportunidades nuevas y resuelve las que ya cumplieron el horizonte de 60s."""
+        nonlocal cf_blocked_seen, cf_deduplicated
+        # -- Registro: se recorre la copia de decisiones ya observadas buscando vetos
+        # ADAPTIVE_BLOCK que aun no tengan contrafactual asociado.
+        for did, dec in observed_decisions.items():
+            if did in cf_seen_decision_ids:
+                continue
+            if dec.get("kind") != "VETO":
+                continue
+            if "ADAPTIVE_BLOCK" not in (dec.get("detail") or "").upper():
+                continue
+            cf_seen_decision_ids.add(did)
+            cf_blocked_seen += 1
+            action = dec.get("action")
+            decision_ts = int(dec.get("timestamp") or now_ms)
+            if not dedupe_counterfactual(action, decision_ts, cf_open_until, cf_last_candle):
+                cf_deduplicated += 1
+                continue
+            campos = extract_adaptive_block_fields(dec.get("detail") or "")
+            cf_open_until[action] = decision_ts + COUNTERFACTUAL_OCCUPANCY_MS
+            cf_last_candle[action] = decision_ts // COUNTERFACTUAL_HORIZON_MS
+            cf_pending.append({
+                "counterfactual_id": counterfactual_id(did, decision_ts),
+                "decision_id": did,
+                "asset": dec.get("asset") or active_asset,
+                "action": action,
+                "decision_ts": decision_ts,
+                "expiry_ts": decision_ts + COUNTERFACTUAL_HORIZON_MS,
+                "score": campos["score"],
+                "similarity": campos["similarity"],
+                "market_regime": dec.get("market_regime"),
+                "trend": dec.get("trend"),
+                "payout": cf_payout_live,
+            })
+
+        # -- Resolucion: solo las que ya cumplieron 60s desde decision_ts.
+        aun_pendientes: List[Dict[str, Any]] = []
+        for cf in cf_pending:
+            if now_ms < cf["expiry_ts"]:
+                aun_pendientes.append(cf)
+                continue
+            entry_price = find_nearest_tick_price(accumulated_ticks, cf["decision_ts"])
+            exit_price = find_nearest_tick_price(accumulated_ticks, cf["expiry_ts"])
+            if entry_price is None or exit_price is None:
+                # Sin dato de feed no se inventa un resultado: la fila queda sin resolver.
+                cf["entry_price"] = entry_price
+                cf["exit_price"] = exit_price
+                cf["result"] = ""
+                cf["theoretical_ev"] = ""
+                cf_rows.append(cf)
+                continue
+            result = resolve_counterfactual(cf["action"], entry_price, exit_price)
+            cf["entry_price"] = entry_price
+            cf["exit_price"] = exit_price
+            cf["result"] = result
+            cf["theoretical_ev"] = counterfactual_ev(result, cf["payout"])
+            cf_rows.append(cf)
+            print(
+                f"[{int((now_ms - start_time * 1000) / 1000):4d}s] 🧪 CONTRAFACTUAL {result}: {cf['action']} "
+                f"#{cf['counterfactual_id'][-12:]} entry={entry_price} exit={exit_price} "
+                f"sim={cf['similarity']} score={cf['score']}"
+            )
+        cf_pending[:] = aun_pendientes
 
     with open(out_samples_jsonl, "a", encoding="utf-8") as f_samples, \
          open(out_status_jsonl, "a", encoding="utf-8") as f_status:
@@ -513,6 +745,7 @@ def main():
 
         while time.time() < end_time:
             capturar_ciclo(time.time())
+            registrar_contrafactuales(int(time.time() * 1000))
             time.sleep(args.interval_sec)
 
     # ---------------------------------------------------------------------------
@@ -546,7 +779,9 @@ def main():
                 if time.time() >= deadline_grace:
                     break
                 capturar_ciclo(time.time())
-
+                # R23E: la gracia de settlement tambien resuelve contrafactuales cuyo horizonte
+                # de 60s ya vencio, para no perder oportunidades registradas al borde del cierre.
+                registrar_contrafactuales(int(time.time() * 1000))
                 eventos_resueltos_ventana = (cur_wins - initial_wins) + (cur_losses - initial_losses)
                 if not hay_trade_sin_resolver(
                     cur_order_state,
@@ -615,6 +850,58 @@ def main():
     }
     with open(out_metadata_json, "w", encoding="utf-8") as f_meta:
         json.dump(metadata, f_meta, indent=2, ensure_ascii=False)
+
+    # R23E (REQ 2): resolucion final de contrafactuales.
+    # Los que quedaron pendientes al cerrar la ventana pueden cumplir su horizonte de 60s con
+    # ticks ya capturados (el monitor dejo de muestrear pero el feed sigue en `accumulated_ticks`).
+    # Se fuerzan contra el ultimo instante capturado; los que aun no lleguen a su expiry se
+    # vuelcan SIN resolver en vez de inventarles un resultado.
+    registrar_contrafactuales(int(max(actual_capture_end_ts, time.time()) * 1000))
+    for cf_pend in cf_pending:
+        cf_pend.setdefault("entry_price", None)
+        cf_pend.setdefault("exit_price", None)
+        cf_pend.setdefault("result", "")
+        cf_pend.setdefault("theoretical_ev", "")
+        cf_rows.append(cf_pend)
+    cf_pending.clear()
+
+    # R23E (REQ 2): volcado de counterfactual_adaptive_block.csv
+    out_cf_csv = os.path.join(out_dir, "counterfactual_adaptive_block.csv")
+    cf_resueltos = [c for c in cf_rows if c.get("result")]
+    cf_w = sum(1 for c in cf_resueltos if c["result"] == "COUNTERFACTUAL_WIN")
+    cf_l = sum(1 for c in cf_resueltos if c["result"] == "COUNTERFACTUAL_LOSS")
+    cf_v = sum(1 for c in cf_resueltos if c["result"] == "COUNTERFACTUAL_VOID")
+    cf_denom = cf_w + cf_l + cf_v
+    cf_wr = (cf_w / cf_denom * 100.0) if cf_denom > 0 else 0.0
+    cf_ev_total = sum(float(c["theoretical_ev"]) for c in cf_resueltos)
+    cf_ev_unit = cf_ev_total / cf_denom if cf_denom > 0 else 0.0
+
+    with open(out_cf_csv, "w", newline="", encoding="utf-8") as f_cf:
+        w_cf = csv.DictWriter(f_cf, fieldnames=COUNTERFACTUAL_FIELDS, extrasaction="ignore")
+        w_cf.writeheader()
+        for c in sorted(cf_rows, key=lambda x: x.get("decision_ts") or 0):
+            w_cf.writerow(c)
+
+    # Segmentacion preregistrada (§8): por similitud y por score de confluencia.
+    seg_sim: Dict[str, List[str]] = {}
+    seg_score: Dict[str, List[str]] = {}
+    for c in cf_resueltos:
+        seg_sim.setdefault(bucket_label(c.get("similarity"), COUNTERFACTUAL_SIM_BUCKETS, "%"), []).append(c["result"])
+        seg_score.setdefault(bucket_label(c.get("score"), COUNTERFACTUAL_SCORE_BUCKETS, "pts"), []).append(c["result"])
+
+    def _seg_lines(segs: Dict[str, List[str]]) -> str:
+        if not segs:
+            return "  (sin contrafactuales resueltos con este campo)\n"
+        out = ""
+        for etiqueta in sorted(segs):
+            res = segs[etiqueta]
+            w = sum(1 for r in res if r == "COUNTERFACTUAL_WIN")
+            l = sum(1 for r in res if r == "COUNTERFACTUAL_LOSS")
+            v = sum(1 for r in res if r == "COUNTERFACTUAL_VOID")
+            n = w + l + v
+            wr_b = (w / n * 100.0) if n > 0 else 0.0
+            out += f"  - {etiqueta}: n={n} W={w} L={l} VOID={v} WR={wr_b:.1f}%\n"
+        return out
 
     # 1. Guardar decisions.csv
     fieldnames = [
@@ -778,6 +1065,25 @@ def main():
 
 ---
 
+## 2B. CONTRAFACTUAL SHADOW DE `ADAPTIVE_BLOCK` (R23E)
+
+**Naturaleza:** 100% pasivo. El bot real opero con `ADAPTIVE_BLOCK` ACTIVO; estas filas miden que
+HABRIA pasado con las señales vetadas. Cero taps, cero fondos expuestos, saldo intacto.
+
+- N_blocked_evaluated (vetos ADAPTIVE_BLOCK vistos): {cf_blocked_seen}
+- N_cf_deduplicated (descartados por ocupacion 60s / 1 por vela): {cf_deduplicated}
+- Contrafactuales registrados: {len(cf_rows)}
+- Resueltos: {cf_denom} (CF_W={cf_w}, CF_L={cf_l}, CF_VOID={cf_v})
+- **CF_WR = {cf_wr:.2f}%** (breakeven del preregistro = 54.95%)
+- **CF_EV unitario = {cf_ev_unit:+,.2f} COP** | CF_EV total = {cf_ev_total:+,.2f} COP (stake 100,000 COP, payout {cf_payout_live})
+- Sin resolver (faltaba tick de entrada/salida): {len(cf_rows) - cf_denom}
+
+**Bucket de similitud (preregistrado §8.3):**
+{_seg_lines(seg_sim)}
+**Bucket de score de confluencia (preregistrado §8.4):**
+{_seg_lines(seg_score)}
+---
+
 ## 3. EVIDENCE (Rutas y Archivos de Prueba)
 - Telemetría periódica: `{out_samples_jsonl}`
 - Muestras de `/status`: `{out_status_jsonl}`
@@ -786,6 +1092,7 @@ def main():
 - Operaciones ejecutadas: `{out_trades_csv}`
 - Ticks capturados en crudo: `{out_ticks_csv}`
 - Metadata de la ventana (REQ 1/REQ 2): `{out_metadata_json}`
+- Contrafactuales ADAPTIVE_BLOCK (R23E): `{out_cf_csv}`
 - Comparación de replay: `{out_replay_json}` y `{out_replay_report}`
 
 ---

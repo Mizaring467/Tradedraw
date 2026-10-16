@@ -2302,7 +2302,15 @@ class TradingEngine(
         when (adaptiveDecision) {
             is AdaptiveDecision.Block -> {
                 Log.w("TradingEngine", "⛔ Headless Trade $action VETADO por Autoaprendizaje: ${adaptiveDecision.reason}")
-                TradeEventLog.add(TradeEventLog.Kind.VETO, "ADAPTIVE_BLOCK ${adaptiveDecision.reason}", decisionId = currentDecisionId)
+                // R23E (REQ 1): el detail se enriquece con `[sim:NN%]` y `[Confluencia: NNpts]`
+                // para que el pipeline contrafactual pueda segmentar por similitud y por score
+                // sin parsear prosa. `reasonDescription` trae el score real cuando la senal paso
+                // por la matriz de confluencia.
+                TradeEventLog.add(
+                    TradeEventLog.Kind.VETO,
+                    buildAdaptiveBlockDetail(adaptiveDecision.reason, reasonDescription),
+                    decisionId = currentDecisionId
+                )
                 handler.post {
                     Toast.makeText(context, "⛔ [Autoaprendizaje] Entrada bloqueada: ${adaptiveDecision.reason}", Toast.LENGTH_SHORT).show()
                 }
@@ -2720,4 +2728,47 @@ class TradingEngine(
         setTradingMode(AutoTradeMode.DISABLED, "engine:stop()")
         autoDrawEngine.clearAutoDrawings()
     }
+}
+
+/**
+ * R23E (REQ 1): extrae la similitud porcentual del `reason` de un `AdaptiveDecision.Block`.
+ *
+ * POR QUE EXISTE. El veto `ADAPTIVE_BLOCK` es el guard que concentra el 96.8% de los vetos de la
+ * campana R23D, y hasta R23D su `detail` solo llevaba el texto libre de la razon. El pipeline
+ * contrafactual (Fase 3) necesita `similarity` como NUMERO para poder segmentar por buckets
+ * preregistrados (90-93%, 93-96%, 96-98%, 98-100%), asi que la similitud tiene que viajar de
+ * forma parseable y no embebida en prosa.
+ *
+ * Acepta las dos formas que emite `AdaptiveLearningEngine`: la del anti-patron por similitud
+ * (`... (98% similitud en contexto S/R=41%)`) y la de las ramas de continuacion/reversion, que no
+ * miden similitud. Devuelve `None` en ese segundo caso: un `0` seria indistinguible de "similitud
+ * medida y nula", que es justo el dato que no existe.
+ */
+internal fun extractAdaptiveSimPct(reason: String): Int? {
+    if (reason.isBlank()) return null
+    val m = Regex("""(\d{1,3})\s*%\s*similitud""").find(reason)
+    return m?.groupValues?.get(1)?.toIntOrNull()
+}
+
+/**
+ * R23E (REQ 1): compone el `detail` del evento de veto `ADAPTIVE_BLOCK`.
+ *
+ * Formato: `ADAPTIVE_BLOCK [sim:98%] [Confluencia: 85pts] <razon>`
+ *
+ * `sim` y `[Confluencia: Npts]` son OPCIONALES y solo aparecen cuando el dato existe de verdad:
+ * - La confluencia llega en la `reason` de la senal, que `SyntheticCandleEngine.dispatchSniperSignal`
+ *   enriquece al final del pipeline con `[Confluencia: Npts]`. Se propaga aqui para que el score
+ *   REAL llegue al log de eventos (en R23D el monitor no tenia de donde sacarlo: ver el hallazgo
+ *   de la Fase 1 de R23D, donde las 529 decisiones salian sin score).
+ * - Cuando no hay marcador, el prefijo se omite en vez de escribir un valor por defecto. Un
+ *   `[Confluencia: 0pts]` inventado envenenaria la segmentacion por score del preregistro.
+ */
+internal fun buildAdaptiveBlockDetail(reason: String, signalReason: String): String {
+    val sb = StringBuilder("ADAPTIVE_BLOCK")
+    val sim = extractAdaptiveSimPct(reason)
+    if (sim != null) sb.append(" [sim:").append(sim).append("%]")
+    val m = Regex("""\[Confluencia:\s*(\d+(?:\.\d+)?)pts\]""").find(signalReason)
+    if (m != null) sb.append(" [Confluencia: ").append(m.groupValues[1]).append("pts]")
+    sb.append(" ").append(reason)
+    return sb.toString()
 }
