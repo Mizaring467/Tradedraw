@@ -183,6 +183,23 @@ COUNTERFACTUAL_SIM_BUCKETS = [(90.0, 93.0), (93.0, 96.0), (96.0, 98.0), (98.0, 1
 COUNTERFACTUAL_SCORE_BUCKETS = [(75.0, 79.0), (80.0, 84.0), (85.0, 100.0)]
 
 
+def extract_action(detail: str, engine_last_action: Optional[str] = None) -> str:
+    """Extrae la accion (BUY o SELL) del detail del evento con fallback al motor.
+
+    El detail puede contener 'BUY', 'CALL', 'SELL', 'PUT' (ej: señales o trades).
+    Si es un evento de veto como ADAPTIVE_BLOCK donde el texto no trae la direccion,
+    se usa la ultima accion registrada por el motor (engine.lastSignalAction).
+    """
+    u = (detail or "").upper()
+    if "BUY" in u or "CALL" in u:
+        return "BUY"
+    if "SELL" in u or "PUT" in u:
+        return "SELL"
+    if engine_last_action and str(engine_last_action).upper() in ("BUY", "SELL"):
+        return str(engine_last_action).upper()
+    return "NONE"
+
+
 def extract_adaptive_block_fields(detail: str) -> Dict[str, Any]:
     """REQ 2 paso 1: saca `sim` y `score` del `detail` enriquecido por REQ 1.
 
@@ -420,6 +437,9 @@ def main():
             cf_seen_decision_ids.add(did)
             cf_blocked_seen += 1
             action = dec.get("action")
+            if action not in ("BUY", "SELL"):
+                action = extract_action(dec.get("detail", ""), status.get("engine", {}).get("lastSignalAction"))
+                dec["action"] = action
             decision_ts = int(dec.get("timestamp") or now_ms)
             if not dedupe_counterfactual(action, decision_ts, cf_open_until, cf_last_candle):
                 cf_deduplicated += 1
@@ -594,11 +614,7 @@ def main():
                         at_ms = ev.get("atMs", int(now_ts * 1000))
 
                         if did and did not in observed_decisions:
-                            action = "NONE"
-                            if "BUY" in detail.upper() or "CALL" in detail.upper():
-                                action = "BUY"
-                            elif "SELL" in detail.upper() or "PUT" in detail.upper():
-                                action = "SELL"
+                            action = extract_action(detail, status.get("engine", {}).get("lastSignalAction"))
 
                             veto_kind = "NONE"
                             if kind == "VETO":

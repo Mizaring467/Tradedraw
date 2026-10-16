@@ -53,6 +53,26 @@ class TestExtractAdaptiveBlockFields(unittest.TestCase):
         self.assertIsNone(campos["similarity"])
 
 
+class TestExtractAction(unittest.TestCase):
+    """Prueba la extraccion de accion de detail y el fallback al motor."""
+
+    def test_extrae_buy_y_sell_directo_del_detail(self):
+        self.assertEqual("BUY", mon.extract_action("ADAPTIVE_BLOCK [BUY] [sim:98%]"))
+        self.assertEqual("BUY", mon.extract_action("Señal CALL validada"))
+        self.assertEqual("SELL", mon.extract_action("ADAPTIVE_BLOCK [SELL] [sim:99%]"))
+        self.assertEqual("SELL", mon.extract_action("Señal PUT confluencia alta"))
+
+    def test_fallback_al_motor_cuando_detail_no_trae_accion(self):
+        detalle_sin_accion = "ADAPTIVE_BLOCK [sim:98%] [Confluencia: 75pts] Anti-patrón perdedor recurrente"
+        self.assertEqual("BUY", mon.extract_action(detalle_sin_accion, "BUY"))
+        self.assertEqual("SELL", mon.extract_action(detalle_sin_accion, "SELL"))
+
+    def test_none_cuando_no_hay_accion_en_ningun_lado(self):
+        detalle_sin_accion = "ADAPTIVE_BLOCK [sim:98%] Anti-patrón perdedor recurrente"
+        self.assertEqual("NONE", mon.extract_action(detalle_sin_accion, None))
+        self.assertEqual("NONE", mon.extract_action(detalle_sin_accion, "HOLD"))
+
+
 class TestDedupe(unittest.TestCase):
     """REQ 2 paso 2: unidad experimental del preregistro (§6)."""
 
