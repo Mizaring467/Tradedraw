@@ -238,8 +238,8 @@ def main():
                                 "veto_reason": veto_kind,
                             }
 
-                        # Solo registrar como trade si es confirmación u orden de estado, evitando eventos TAP puros
-                        is_trade_event = (kind == "ORDER_STATE") or ("saldo movido" in detail.lower())
+                        # Solo registrar como trade si es confirmación real de saldo movido (excluye NINGUNA y ENVIADA)
+                        is_trade_event = ("CONFIRMADA" in detail.upper()) and ("saldo movido" in detail.lower())
                         if tid and tid not in seen_trade_ids and is_trade_event:
                             seen_trade_ids.add(tid)
                             trade_action = ev.get("action")
