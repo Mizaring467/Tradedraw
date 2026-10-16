@@ -102,8 +102,12 @@ class HealthSupervisor {
         if (tradingEngine?.inoperabilityDetector?.isInoperable == true) {
             degradedReasons.add("MARKET_INOPERABLE")
         }
-        if (riskManager != null && riskManager.getRemainingCooldown() > 0) {
-            degradedReasons.add("COOLDOWN_ACTIVE: ${riskManager.getRemainingCooldown()}s")
+        // R23D Fase 1 (REQ 3): se consulta el submodo EFECTIVO del RiskManager (espejo del motor),
+        // no la llamada sin argumento. El no-arg usa el fallback `currentSubMode`, que si no se
+        // sincroniza queda en CONSERVATIVE y reporta el cooldown de perdidas de 180s en YOLO.
+        val cdSec = riskManager?.getRemainingCooldown(riskManager.currentSubMode) ?: 0
+        if (cdSec > 0) {
+            degradedReasons.add("COOLDOWN_ACTIVE: ${cdSec}s")
         }
         val isBalanceFresh = AutoTradeAccessibilityService.lastBalanceReadMs > 0L &&
                 (nowMs - AutoTradeAccessibilityService.lastBalanceReadMs) <= 5000L

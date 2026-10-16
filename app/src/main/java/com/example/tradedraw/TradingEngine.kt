@@ -146,6 +146,14 @@ class TradingEngine(
         set(value) {
             field = value
             syntheticCandleEngine.subMode = value
+            // R23D Fase 1 (REQ 3): sincronizacion del submodo EFECTIVO hacia el RiskManager.
+            // `RiskManager.currentSubMode` es el fallback de `getRemainingCooldown()` /
+            // `canExecuteTrade()` cuando el caller no pasa argumento explicito. Su default es
+            // CONSERVATIVE (fail-safe), asi que sin esta linea HealthSupervisor y el endpoint
+            // `/status` calculaban el cooldown con la politica de perdidas de CONSERVATIVE (180s)
+            // aunque el motor estuviera en YOLO (35s), publicando un `COOLDOWN_ACTIVE: 178s`
+            // espurio. El motor es la fuente de verdad del submodo; el RiskManager solo lo espeja.
+            riskManager.currentSubMode = value
         }
 
     var timeframe: CandleTimeframe = CandleTimeframe.M1

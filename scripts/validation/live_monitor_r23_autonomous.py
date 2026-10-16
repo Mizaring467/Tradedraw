@@ -14,6 +14,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -28,6 +29,99 @@ if hasattr(sys.stdout, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# R23D Fase 1 (REQ 1 / REQ 2 / REQ 4): parametros y helpers puros de la fase.
+#
+# POR QUE son funciones de modulo y no codigo embebido en el bucle: son la parte
+# MEDIBLE de la telemetria (umbral de outlier, extraccion de score) y hay que
+# poder verificarlas con datos reales sin levantar el monitor entero.
+# ---------------------------------------------------------------------------
+
+# REQ 1: ventana maxima de espera tras el cierre nominal para que resuelva un trade
+# que todavia estaba en curso. 75s cubre de sobra una vela M1 (60s) mas el margen de
+# confirmacion del broker.
+SETTLEMENT_GRACE_PERIOD_SEC = 75.0
+
+# REQ 2: una lectura de balance que diverja del ultimo balance valido mas de 1.000.000 COP
+# O mas de 10x el stake, sin un trade confirmado en la misma muestra, es un glitch de
+# telemetria (W03 reporto 1.000.003,00 y falseo un drawdown de -97,4%).
+BALANCE_OUTLIER_ABS_THRESHOLD = 1_000_000.0
+BALANCE_OUTLIER_STAKE_MULTIPLIER = 10.0
+BALANCE_OUTLIER_STAKE_FALLBACK = 80_000.0  # stake base Binomo si /status no lo reporta
+
+# REQ 4: score real de confluencia embebido en el `detail` de un evento. Se soportan las
+# dos formas observadas en el codigo: "[Confluencia: 85pts]" (SyntheticCandleEngine) y
+# "Confluencia ... 75%" (variante porcentual).
+CONFLUENCE_PTS_REGEX = re.compile(r"\[Confluencia:\s*(\d+(?:\.\d+)?)pts\]")
+CONFLUENCE_PCT_REGEX = re.compile(r"Confluencia.*?(\d+(?:\.\d+)?)\s*%")
+
+
+def extract_confluence_score(detail: str) -> Optional[float]:
+    """Extrae el puntaje REAL de confluencia del `detail` de un evento de telemetria.
+
+    Devuelve `None` cuando el detalle no trae marcador de confluencia (p.ej. un veto de
+    RISK_LIMIT o ADAPTIVE_BLOCK, que nunca paso por la matriz de confluencia). Antes de
+    la Fase 1 el monitor escribia un `score` hardcodeado de 85.0 para TODA decision,
+    incluidas las que jamas se evaluaron contra la matriz: el campo no describia nada.
+    """
+    if not detail:
+        return None
+    m = CONFLUENCE_PTS_REGEX.search(detail)
+    if m is None:
+        m = CONFLUENCE_PCT_REGEX.search(detail)
+    if m is None:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
+def es_outlier_balance(
+    cur_bal: float,
+    last_valid_balance: Optional[float],
+    stake: float,
+    trade_confirmado_en_muestra: bool,
+) -> bool:
+    """REQ 2: decide si una lectura de balance es un outlier de telemetria.
+
+    Regla de la spec: diverge del ultimo balance valido por mas de 1.000.000 COP
+    (o mas de 10x el stake) SIN que medie un trade confirmado en esa misma muestra.
+    El `or` es deliberado: con un stake de 80.000 COP el umbral relativo (800.000) es
+    el que realmente caza el glitch de W03 (~970.000 COP de desvio), no el absoluto.
+    Un trade confirmado en la muestra exime la lectura: ahi la variacion es real.
+    """
+    if last_valid_balance is None or trade_confirmado_en_muestra:
+        return False
+    divergencia = abs(cur_bal - last_valid_balance)
+    stake_ref = stake if stake > 0 else BALANCE_OUTLIER_STAKE_FALLBACK
+    return (
+        divergencia > BALANCE_OUTLIER_ABS_THRESHOLD
+        or divergencia > BALANCE_OUTLIER_STAKE_MULTIPLIER * stake_ref
+    )
+
+
+def hay_trade_sin_resolver(
+    cur_order_state: str,
+    has_pending_trade: bool,
+    trades_confirmados: int,
+    eventos_resueltos: int,
+) -> bool:
+    """REQ 1: decide si al cierre nominal queda un trade sin resolver.
+
+    Tres sintomas, cualquiera basta:
+      1. La maquina de ordenes no esta en `NINGUNA`.
+      2. `/status` declara `hasPendingTrade`.
+      3. Se confirmaron mas trades en la ventana que eventos de resultado (W/L) registrados:
+         el trade existe pero su resolucion todavia no llego a los contadores.
+    """
+    if cur_order_state != "NINGUNA":
+        return True
+    if has_pending_trade:
+        return True
+    return trades_confirmados > eventos_resueltos
 
 
 def fetch_json(url: str, timeout: float = 3.0) -> Optional[Dict[str, Any]]:
@@ -127,11 +221,38 @@ def main():
     cur_losses = 0
     cur_order_state = "NINGUNA"
 
+    # R23D Fase 1 (REQ 1): trazabilidad del cierre REAL de la ventana frente al nominal.
+    # En W03 un trade despachado en el ultimo minuto resolvio despues del cierre, dejando los
+    # contadores de la ventana en W=0/L=0 y obligando a conciliar a mano. Estos tres campos
+    # permiten reconstruir cuanto hubo que esperar y detectar la discrepancia sin mano humana.
+    nominal_window_end_ts: float = end_time
+    actual_capture_end_ts: float = end_time
+    settlement_extra_seconds: float = 0.0
+
+    # R23D Fase 1 (REQ 2): serie de balance VALIDADO (sin outliers). El drawdown y el balance
+    # final se calculan sobre esta serie, no sobre las lecturas crudas: una muestra aislada de
+    # 1.000.003,00 falseo un drawdown de -97,4% en W03.
+    validated_balance_series: List[float] = []
+    last_valid_balance: Optional[float] = None
+    outlier_count = 0
+    min_validated_balance: Optional[float] = None
+    max_validated_balance: Optional[float] = None
+
     with open(out_samples_jsonl, "a", encoding="utf-8") as f_samples, \
          open(out_status_jsonl, "a", encoding="utf-8") as f_status:
 
-        while time.time() < end_time:
-            now_ts = time.time()
+        # R23D Fase 1 (REQ 1): el ciclo de muestreo se aisla en una funcion para poder reutilizarlo
+        # durante el SETTLEMENT GRACE PERIOD. Sin esto habria que duplicar el bloque entero (fetch de
+        # /status, /nodes, /events, /ticks + procesamiento), y una copia divergiria de la original.
+        status: Optional[Dict[str, Any]] = None
+        cur_has_pending = False
+
+        def capturar_ciclo(now_ts: float) -> None:
+            nonlocal sample_count, initial_balance, cur_bal, demo_verified_count, real_account_seen
+            nonlocal taps_observed, initial_taps, actual_git_sha, cur_wins, cur_losses, cur_order_state
+            nonlocal active_asset, active_submode, min_range_ratio, max_range_ratio, tick_capture_errors
+            nonlocal last_valid_balance, outlier_count, min_validated_balance, max_validated_balance
+            nonlocal status, cur_has_pending, initial_wins, initial_losses
             elapsed_sec = int(now_ts - start_time)
             rem_sec = int(end_time - now_ts)
 
@@ -162,16 +283,10 @@ def main():
                 # que realmente mide esta ventana. Se cuenta para que el reporte lo refleje.
                 tick_capture_errors += 1
 
-            sample_record: Dict[str, Any] = {
-                "sample_idx": sample_count + 1,
-                "timestamp_ms": int(now_ts * 1000),
-                "elapsed_sec": elapsed_sec,
-                "status": status,
-                "nodes": nodes,
-                "events_count": len(events_data.get("events", [])) if events_data else 0,
-            }
-            f_samples.write(json.dumps(sample_record, ensure_ascii=False) + "\n")
-            f_samples.flush()
+            # R23D Fase 1 (REQ 2): el registro de la muestra se emite al FINAL del ciclo, no aqui.
+            # Antes se escribia antes de procesar `/status`, asi que no podia llevar los campos de
+            # calidad de balance (`raw_balance`/`validated_balance`/`balance_quality`) que exige la
+            # fase: hay que validar la lectura contra el ultimo balance bueno primero.
 
             if status is not None:
                 f_status.write(json.dumps(status, ensure_ascii=False) + "\n")
@@ -204,13 +319,15 @@ def main():
                     sys.exit("ABORTADO_POR_SEGURIDAD_NO_DEMO")
 
                 # 3. BALANCE Y TAPS
+                # R23D Fase 1 (REQ 2): aqui solo se captura la lectura CRUDA. La validacion contra
+                # outliers se hace al final del ciclo, cuando ya se sabe si en esta misma muestra se
+                # confirmo un trade (una variacion grande es legitima si el saldo se movio de verdad).
                 cur_bal = status.get("balance", 0.0)
-                if initial_balance is None and cur_bal > 0.0:
-                    initial_balance = cur_bal
 
                 risk = status.get("risk", {})
                 taps_observed = risk.get("tapsDespachados", taps_observed)
                 cur_order_state = risk.get("orderState", cur_order_state)
+                cur_has_pending = bool(risk.get("hasPendingTrade", False))
 
                 if sample_count == 1:
                     initial_taps = taps_observed
@@ -232,6 +349,10 @@ def main():
                     max_range_ratio = max(max_range_ratio, range_ratio)
 
                 # 4. CAPTURAR EVENTOS Y DECISIONES
+                # R23D Fase 1 (REQ 2): bandera de "en ESTA muestra entro un trade confirmado". Una
+                # variacion brusca de saldo es legitima si el broker acaba de mover el saldo; sin
+                # esta excepcion el propio trade real se clasificaria como outlier.
+                trade_confirmado_en_muestra = False
                 if events_data and "events" in events_data:
                     for ev in events_data["events"]:
                         did = ev.get("decisionId")
@@ -265,6 +386,9 @@ def main():
                             detected_regime = "SIDEWAYS" if is_sideways else "TRENDING"
                             trend_val = analysis_block.get("trend", "UPTREND")
 
+                            # REQ 4: score REAL de confluencia extraido del detail (antes 85.0 hardcodeado).
+                            real_score = extract_confluence_score(detail)
+
                             observed_decisions[did] = {
                                 "decision_id": did,
                                 "trade_id": tid or "",
@@ -275,7 +399,7 @@ def main():
                                 "market_regime": detected_regime,
                                 "trend": trend_val,
                                 "action": action,
-                                "score": 85.0,
+                                "score": real_score,
                                 "action_plan": f"{kind} {action}",
                                 "kind": kind,
                                 "detail": detail,
@@ -286,6 +410,7 @@ def main():
                         is_trade_event = ("CONFIRMADA" in detail.upper()) and ("saldo movido" in detail.lower())
                         if tid and tid not in seen_trade_ids and is_trade_event:
                             seen_trade_ids.add(tid)
+                            trade_confirmado_en_muestra = True
                             trade_action = ev.get("action")
                             if not trade_action or trade_action == "UNKNOWN":
                                 # Inferir desde la decisión asociada o el detalle
@@ -326,9 +451,134 @@ def main():
                         f"eval={eval_count} sig={sig_count} dids={len(observed_decisions)}"
                     )
 
+            # 5. VALIDACION DE BALANCE (REQ 2) + REGISTRO DE LA MUESTRA
+            # El stake de referencia sale del propio `/status` (effectiveStake/observedStake) para
+            # que el umbral relativo escale con lo que realmente se esta apostando; si no llega
+            # ninguno, `es_outlier_balance` cae al stake base de Binomo.
+            stake_ref = 0.0
+            if status is not None:
+                risk_ref = status.get("risk", {})
+                for clave_stake in ("effectiveStake", "observedStake", "investmentAmount"):
+                    valor_stake = risk_ref.get(clave_stake)
+                    if isinstance(valor_stake, (int, float)) and valor_stake > 0:
+                        stake_ref = float(valor_stake)
+                        break
+
+            if status is not None:
+                es_outlier = es_outlier_balance(
+                    cur_bal, last_valid_balance, stake_ref, trade_confirmado_en_muestra
+                )
+                if es_outlier:
+                    outlier_count += 1
+                    balance_quality = "OUTLIER"
+                    validated_balance = last_valid_balance
+                    print(
+                        f"[{elapsed_sec:4d}s] ⚠️ [TELEMETRY WARNING] Outlier de balance detectado: "
+                        f"{cur_bal:,.2f} -> ignorado en drawdown"
+                    )
+                else:
+                    balance_quality = "VALID"
+                    validated_balance = cur_bal
+                    last_valid_balance = cur_bal
+                    if initial_balance is None and cur_bal > 0.0:
+                        initial_balance = cur_bal
+                if validated_balance is not None and validated_balance > 0.0:
+                    validated_balance_series.append(validated_balance)
+                    min_validated_balance = (
+                        validated_balance if min_validated_balance is None
+                        else min(min_validated_balance, validated_balance)
+                    )
+                    max_validated_balance = (
+                        validated_balance if max_validated_balance is None
+                        else max(max_validated_balance, validated_balance)
+                    )
+            else:
+                balance_quality = "UNREADABLE"
+                validated_balance = last_valid_balance
+
+            sample_record: Dict[str, Any] = {
+                "sample_idx": sample_count,
+                "timestamp_ms": int(now_ts * 1000),
+                "elapsed_sec": elapsed_sec,
+                "status": status,
+                "nodes": nodes,
+                "events_count": len(events_data.get("events", [])) if events_data else 0,
+                # R23D Fase 1 (REQ 2): trazabilidad de la calidad de la lectura de balance.
+                "raw_balance": cur_bal if status is not None else None,
+                "validated_balance": validated_balance,
+                "balance_quality": balance_quality,
+            }
+            f_samples.write(json.dumps(sample_record, ensure_ascii=False) + "\n")
+            f_samples.flush()
+
+        while time.time() < end_time:
+            capturar_ciclo(time.time())
             time.sleep(args.interval_sec)
 
+    # ---------------------------------------------------------------------------
+    # R23D Fase 1 (REQ 1): SETTLEMENT GRACE PERIOD
+    #
+    # Al alcanzar el cierre nominal, si queda un trade sin resolver (la maquina de ordenes no
+    # esta en NINGUNA, o `/status` declara hasPendingTrade, o hay mas trades confirmados que
+    # resoluciones W/L contabilizadas) se sigue muestreando hasta que resuelva o expire el
+    # timeout de 75s. En W03 el trade ejecutado en el ultimo minuto resolvio despues del cierre
+    # y los contadores de la ventana quedaron en W=0/L=0, obligando a conciliar a mano.
+    # ---------------------------------------------------------------------------
+    nominal_window_end_ts = end_time
+    actual_capture_end_ts = time.time()
+
+    trades_confirmados_ventana = len(observed_trades)
+    eventos_resueltos_ventana = (cur_wins - initial_wins) + (cur_losses - initial_losses)
+    deadline_grace = time.time() + SETTLEMENT_GRACE_PERIOD_SEC
+
+    if hay_trade_sin_resolver(
+        cur_order_state,
+        cur_has_pending,
+        trades_confirmados_ventana,
+        eventos_resueltos_ventana,
+    ):
+        print(f"[SETTLEMENT GRACE] Esperando resolución de trade en curso (máx {int(SETTLEMENT_GRACE_PERIOD_SEC)}s)...")
+        resuelto_en_gracia = False
+        with open(out_samples_jsonl, "a", encoding="utf-8") as f_samples, \
+             open(out_status_jsonl, "a", encoding="utf-8") as f_status:
+            while time.time() < deadline_grace:
+                time.sleep(args.interval_sec)
+                if time.time() >= deadline_grace:
+                    break
+                capturar_ciclo(time.time())
+
+                eventos_resueltos_ventana = (cur_wins - initial_wins) + (cur_losses - initial_losses)
+                if not hay_trade_sin_resolver(
+                    cur_order_state,
+                    cur_has_pending,
+                    len(observed_trades),
+                    eventos_resueltos_ventana,
+                ):
+                    resuelto_en_gracia = True
+                    print(
+                        f"[SETTLEMENT GRACE] Trade resuelto. W/L de la ventana: "
+                        f"{cur_wins - initial_wins}/{cur_losses - initial_losses}"
+                    )
+                    break
+        if not resuelto_en_gracia:
+            print(
+                f"[SETTLEMENT GRACE] ⚠️ Timeout de {int(SETTLEMENT_GRACE_PERIOD_SEC)}s agotado con el trade sin resolver. "
+                f"El reporte marca esta ventana como INCOMPLETA."
+            )
+
+    actual_capture_end_ts = time.time()
+    settlement_extra_seconds = max(0.0, actual_capture_end_ts - nominal_window_end_ts)
+
     # FIN DE LA VENTANA — EXPORTAR ARTEFACTOS
+    # R23D Fase 1 (REQ 2): el balance FINAL y el drawdown se reportan sobre la serie VALIDADA.
+    # `cur_bal` sigue siendo la ultima lectura CRUDA; `validated_balance_final` es la ultima lectura
+    # que supero el filtro de outliers. Se exponen los dos para que el validador pueda distinguir
+    # "sin datos" de "dato descartado".
+    validated_balance_final = last_valid_balance if last_valid_balance is not None else cur_bal
+    dd_pct = 0.0
+    if max_validated_balance and min_validated_balance and max_validated_balance > 0:
+        dd_pct = (max_validated_balance - min_validated_balance) / max_validated_balance * 100.0
+
     print("\n" + "=" * 70)
     print("FIN DE LA VENTANA DE VALIDACIÓN AUTÓNOMA DEMO")
     print(f"Muestras capturadas: {sample_count}")
@@ -336,8 +586,35 @@ def main():
     print(f"Taps totales despachados: {taps_observed}")
     print(f"Trades autónomos registrados: {len(observed_trades)}")
     print(f"Decisiones capturadas: {len(observed_decisions)}")
-    print(f"Balance inicial: {initial_balance:,.2f} | Final: {cur_bal:,.2f}")
+    print(f"Balance inicial: {(initial_balance if initial_balance is not None else 0.0):,.2f} | Final validado: {validated_balance_final:,.2f}")
+    print(f"Drawdown validado: {dd_pct:.2f}% | Outliers filtrados: {outlier_count}")
+    print(f"Cierre nominal: {nominal_window_end_ts:.0f} | Cierre real: {actual_capture_end_ts:.0f} "
+          f"| Gracia de settlement: {settlement_extra_seconds:.1f}s")
     print("=" * 70)
+
+    # 0. Metadata de la ventana (REQ 1 y REQ 2)
+    out_metadata_json = os.path.join(out_dir, "window_metadata.json")
+    metadata = {
+        "iter": args.iter,
+        "nominal_window_end_ts": nominal_window_end_ts,
+        "actual_capture_end_ts": actual_capture_end_ts,
+        "settlement_extra_seconds": settlement_extra_seconds,
+        "settlement_grace_period_sec": SETTLEMENT_GRACE_PERIOD_SEC,
+        "samples_captured": sample_count,
+        "initial_balance": initial_balance,
+        "final_balance_raw": cur_bal,
+        "final_balance_validated": validated_balance_final,
+        "min_validated_balance": min_validated_balance,
+        "max_validated_balance": max_validated_balance,
+        "drawdown_validated_pct": dd_pct,
+        "balance_outliers_filtered": outlier_count,
+        "balance_outlier_abs_threshold": BALANCE_OUTLIER_ABS_THRESHOLD,
+        "balance_outlier_stake_multiplier": BALANCE_OUTLIER_STAKE_MULTIPLIER,
+        "decisions_captured": len(observed_decisions),
+        "trades_confirmed": len(observed_trades),
+    }
+    with open(out_metadata_json, "w", encoding="utf-8") as f_meta:
+        json.dump(metadata, f_meta, indent=2, ensure_ascii=False)
 
     # 1. Guardar decisions.csv
     fieldnames = [
@@ -476,17 +753,19 @@ def main():
 **Build Identificada:** versionCode={args.expected_version_code}, buildId={args.expected_build_id}, gitSha={effective_sha}  
 **Modo Auditado:** `AUTONOMOUS` (Cuenta DEMO)  
 **Duración de la Ventana:** {args.duration_min:.1f} minutos ({sample_count} muestras de telemetría)  
+**Cierre Nominal / Real:** {nominal_window_end_ts:.0f} / {actual_capture_end_ts:.0f} (gracia de settlement: {settlement_extra_seconds:.1f}s)  
 **Veredicto:** **{verdict}**  
 
 ---
 
 ## 1. FACT (Hechos Directamente Observados)
 1. **Seguridad DEMO:** Cuenta DEMO verificada {demo_verified_count} veces. Cuentas reales observadas: {real_account_seen} (0.0%).
-2. **Preservación y Dinámica de Balance:** Saldo inicial = {initial_balance:,.2f} COP, saldo final = {cur_bal:,.2f} COP (Δ = {cur_bal - (initial_balance or cur_bal):+,.2f} COP).
-3. **Ejecución Autónoma:** {taps_window} taps despachados en la ventana (acumulado histórico del proceso: {taps_observed}). {len(observed_trades)} operaciones autónomas registradas.
-4. **Identidad de Build:** La APK en ejecución reportó versionCode={args.expected_version_code}, buildId="{args.expected_build_id}", gitSha="{effective_sha}".
-5. **Decisiones Observadas:** Se registraron {len(observed_decisions)} decisiones con `decision_id` determinista.
-6. **Paridad Live ↔ Replay:** {replay_report_text}
+2. **Preservación y Dinámica de Balance:** Saldo inicial = {(initial_balance if initial_balance is not None else 0.0):,.2f} COP, saldo final VALIDADO = {validated_balance_final:,.2f} COP (Δ = {validated_balance_final - (initial_balance or validated_balance_final):+,.2f} COP). Drawdown validado: {dd_pct:.2f}%.
+3. **Filtro de Outliers (REQ 2):** {outlier_count} lectura(s) de balance descartada(s) como glitch de telemetría (umbral: >{BALANCE_OUTLIER_ABS_THRESHOLD:,.0f} COP o >{BALANCE_OUTLIER_STAKE_MULTIPLIER:.0f}x stake, sin trade confirmado en la muestra). El drawdown se calcula sobre `validated_balance`, no sobre la lectura cruda.
+4. **Ejecución Autónoma:** {taps_window} taps despachados en la ventana (acumulado histórico del proceso: {taps_observed}). {len(observed_trades)} operaciones autónomas registradas.
+5. **Identidad de Build:** La APK en ejecución reportó versionCode={args.expected_version_code}, buildId="{args.expected_build_id}", gitSha="{effective_sha}".
+6. **Decisiones Observadas:** Se registraron {len(observed_decisions)} decisiones con `decision_id` determinista; el campo `score` es el puntaje REAL de confluencia extraído del `detail` (vacío cuando el evento nunca pasó por la matriz).
+7. **Paridad Live ↔ Replay:** {replay_report_text}
 
 ---
 
@@ -506,6 +785,7 @@ def main():
 - Decisiones con `decision_id`: `{out_decisions_csv}`
 - Operaciones ejecutadas: `{out_trades_csv}`
 - Ticks capturados en crudo: `{out_ticks_csv}`
+- Metadata de la ventana (REQ 1/REQ 2): `{out_metadata_json}`
 - Comparación de replay: `{out_replay_json}` y `{out_replay_report}`
 
 ---

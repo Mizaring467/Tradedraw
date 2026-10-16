@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.tradedraw"
         minSdk = 24
         targetSdk = 34
-        versionCode = 15
-        versionName = "1.5-r23c-phase3"
+        versionCode = 16
+        versionName = "1.6-r23d-telemetry"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -27,7 +27,7 @@ android {
         }
 
         buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
-        buildConfigField("String", "BUILD_ID", "\"R23C-PHASE3\"")
+        buildConfigField("String", "BUILD_ID", "\"R23D-TELEMETRY\"")
         buildConfigField("Long", "BUILD_TIMESTAMP", "${System.currentTimeMillis()}L")
     }
 

@@ -419,6 +419,10 @@ class TradeDrawHttpBridge(
                         try {
                             val sm = AutonomousSubMode.valueOf(subStr)
                             overlayService.tradingEngine.autonomousSubMode = sm
+                            // R23D Fase 1 (REQ 3): el setter del motor ya espeja el submodo al
+                            // RiskManager, pero se reafirma aqui de forma explicita para que la ruta
+                            // HTTP no dependa de que ese efecto se mantenga en el futuro.
+                            overlayService.riskManager.currentSubMode = sm
                             overlayService.updateHUDView()
                             sendJsonResponse(output, 200, """{"success":true,"submode":"${sm.name}"}""")
                         } catch (e: Exception) {
@@ -621,7 +625,7 @@ class TradeDrawHttpBridge(
                 "hasPendingTrade": ${rm.hasPendingTrade},
                 "orderState": "${rm.orderState.name}",
                 "hasConfirmedTrade": ${rm.hasConfirmedTrade},
-                "remainingCooldown": ${rm.getRemainingCooldown()},
+                "remainingCooldown": ${rm.getRemainingCooldown(te.autonomousSubMode)},
                 "vetoV1": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO, "V1")},
                 "vetoV2": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO, "V2")},
                 "vetoTotal": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO)},
