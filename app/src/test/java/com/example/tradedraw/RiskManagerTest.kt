@@ -1086,5 +1086,114 @@ class RiskManagerTest {
         assertFalse("sin submodo explicito NO se debe desbloquear la sesion", canTradeSinArgs)
         assertTrue("La razón debe mencionar el lock", reason.contains("Trailing Profit Lock"))
     }
+
+    // ==================================================================
+    // R23B Iter 2: accion deterministica en los eventos de orden
+    // ==================================================================
+
+    /**
+     * Extrae el ultimo evento ORDER_STATE del log. Se usa `lastOf` porque `snapshot()` no existe en
+     * `TradeEventLog` (la API real es `recent()` / `lastOf()`), a diferencia de lo que sugeria la
+     * especificacion. Ojo: `recent()` devuelve los MAS RECIENTES PRIMERO, asi que `lastOrNull` sobre
+     * esa lista da el mas ANTIGUO — usar `lastOf`.
+     */
+    private fun ultimoEventoDeOrden(): TradeEventLog.Event? =
+        TradeEventLog.lastOf(TradeEventLog.Kind.ORDER_STATE)
+
+    @Test
+    fun testSetOrderStateIncludesPendingTradeAction() {
+        TradeEventLog.clear()
+        riskManager.pendingTradeAction = TradeAction.BUY
+
+        riskManager.setOrderState(RiskManager.OrderState.CONFIRMADA, "saldo movido")
+
+        val evento = ultimoEventoDeOrden()
+        assertNotNull("Debe existir un evento ORDER_STATE", evento)
+        assertEquals(
+            "El detalle debe llevar la accion para que el parser no tenga que adivinar",
+            "CONFIRMADA BUY saldo movido",
+            evento?.detail
+        )
+    }
+
+    @Test
+    fun testSetOrderStateIncludesPendingTradeActionSell() {
+        TradeEventLog.clear()
+        riskManager.pendingTradeAction = TradeAction.SELL
+
+        riskManager.setOrderState(RiskManager.OrderState.CONFIRMADA, "saldo movido")
+
+        assertEquals(
+            "Misma garantia para SELL",
+            "CONFIRMADA SELL saldo movido",
+            ultimoEventoDeOrden()?.detail
+        )
+    }
+
+    @Test
+    fun testSetOrderStateWithoutPendingActionKeepsLegacyFormat() {
+        TradeEventLog.clear()
+        // `setOrderState` retorna temprano si el estado no cambia, asi que hay que mover el estado a
+        // otro valor primero o no se emite evento alguno.
+        riskManager.setOrderState(RiskManager.OrderState.ENVIADA, "previo")
+        TradeEventLog.clear()
+        riskManager.pendingTradeAction = null
+
+        riskManager.setOrderState(RiskManager.OrderState.NINGUNA, "sin operacion en curso")
+
+        // Compatibilidad regresiva: sin accion pendiente el formato es el de antes, sin dobles
+        // espacios ni prefijo vacio.
+        assertEquals(
+            "Sin accion no debe quedar prefijo ni espacio doble",
+            "NINGUNA sin operacion en curso",
+            ultimoEventoDeOrden()?.detail
+        )
+        assertFalse(
+            "No debe aparecer un espacio doble por el prefijo vacio",
+            ultimoEventoDeOrden()?.detail?.contains("  ") == true
+        )
+    }
+
+    @Test
+    fun testOrderStateEventChainCarriesActionEndToEnd() {
+        // La cadena completa de una orden real: ENVIADA -> CONFIRMADA. LOS DOS eventos deben llevar la
+        // direccion. El de ENVIADA era el hueco original: `setOrderState` se llamaba antes de asignar
+        // `pendingTradeAction`, asi que salia sin accion.
+        TradeEventLog.clear()
+
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.markOrderConfirmed()
+
+        val eventos = TradeEventLog.recent()
+            .filter { it.kind == TradeEventLog.Kind.ORDER_STATE }
+            .map { it.detail }
+
+        assertTrue(
+            "El evento ENVIADA debe llevar la accion. Eventos: $eventos",
+            eventos.any { it.startsWith("ENVIADA BUY") }
+        )
+        assertTrue(
+            "El evento CONFIRMADA debe llevar la accion. Eventos: $eventos",
+            eventos.any { it.startsWith("CONFIRMADA BUY") }
+        )
+    }
+
+    @Test
+    fun testOrderStateUnprocessedCarriesActionDespiteCleanup() {
+        // `markOrderUnprocessed` llama a `clearPendingTrade()` (que pone la accion en null) ANTES de
+        // emitir el evento. Sin preservarla, el unico evento que registra el FALLO de envio saldria
+        // sin direccion. Mismo tratamiento que ya recibian los ids.
+        TradeEventLog.clear()
+
+        riskManager.recordTradeSent(TradeAction.SELL)
+        riskManager.markOrderUnprocessed()
+
+        val evento = ultimoEventoDeOrden()
+        assertEquals(RiskManager.OrderState.NO_PROCESADA, riskManager.orderState)
+        assertTrue(
+            "El evento NO_PROCESADA debe llevar la accion. Detalle: ${evento?.detail}",
+            evento?.detail?.startsWith("NO_PROCESADA SELL") == true
+        )
+    }
 }
 

@@ -276,9 +276,13 @@ class RiskManager(context: Context? = null) {
     internal fun setOrderState(nuevo: OrderState, motivo: String) {
         if (orderState == nuevo) return
         orderState = nuevo
+        // R23B Iter 2: la direccion de la orden se inyecta en el detalle para que los parsers del
+        // validador la extraigan de forma deterministica. Antes el evento era "CONFIRMADA saldo
+        // movido" y `trades.csv` acababa con `action = UNKNOWN`, obligando al parser a adivinar.
+        val actionPrefix = pendingTradeAction?.name?.let { "$it " } ?: ""
         TradeEventLog.add(
             TradeEventLog.Kind.ORDER_STATE,
-            "${nuevo.name} $motivo",
+            "${nuevo.name} $actionPrefix$motivo".trim(),
             decisionId = pendingTradeDecisionId.ifBlank { null },
             tradeId = pendingTradeTradeId.ifBlank { null }
         )
@@ -684,8 +688,11 @@ class RiskManager(context: Context? = null) {
         // Ronda 12 (B1): al despachar el tap la orden solo esta ENVIADA, nunca confirmada.
         // Antes se marcaba como operacion en curso directamente y el HUD lo presentaba como
         // "Trade Activo" aunque el broker no hubiera registrado nada.
-        setOrderState(OrderState.ENVIADA, "tap despachado")
+        // R23B Iter 2: `pendingTradeAction` se asigna ANTES de `setOrderState` para que el evento
+        // ENVIADA tambien lleve la direccion ("ENVIADA BUY tap despachado"). Al reves, este evento
+        // salia sin accion y era el unico hueco que quedaba en la telemetria de la orden.
         pendingTradeAction = action
+        setOrderState(OrderState.ENVIADA, "tap despachado")
         pendingTradeStartTime = now
         pendingTradeEntryPrice = entryPrice
         pendingTradeEntryPriceY = entryPriceY
@@ -746,9 +753,14 @@ class RiskManager(context: Context? = null) {
         // pisaba el NO_PROCESADA con NINGUNA y el fallo se perdia.
         val decId = pendingTradeDecisionId
         val trId = pendingTradeTradeId
+        // R23B Iter 2: la accion tambien se preserva por la misma razon que los ids. `clearPendingTrade`
+        // la deja en null, asi que sin esto el evento NO_PROCESADA (el unico que registra el FALLO de
+        // envio) saldria sin direccion — justo el caso que mas interesa auditar.
+        val accionPendiente = pendingTradeAction
         clearPendingTrade()
         pendingTradeDecisionId = decId
         pendingTradeTradeId = trId
+        pendingTradeAction = accionPendiente
         setOrderState(OrderState.NO_PROCESADA, "ventana agotada sin movimiento de saldo")
         pendingTradeDecisionId = ""
         pendingTradeTradeId = ""
