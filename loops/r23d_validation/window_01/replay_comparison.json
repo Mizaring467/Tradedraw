@@ -1,0 +1,268 @@
+{
+  "mode": "trades",
+  "summary": {
+    "total_live_trades": 4,
+    "total_replay_trades": 13,
+    "paired_decisions": 1,
+    "exact_matches": 0,
+    "divergences": 1,
+    "missing_live": 12,
+    "missing_replay": 3,
+    "match_rate_pct": 0.0,
+    "pass": false
+  },
+  "divergence_breakdown": {
+    "candle_second": 1
+  },
+  "pairs": [
+    {
+      "live": {
+        "decision_id": "5834d812-4ea6-3c5a-8481-d95fe22e295d",
+        "trade_id": "84763fc9-d1c2-4141-867c-7253004b0eca",
+        "timestamp": 1792169406026,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "CONFIRMADA SELL saldo movido",
+        "balance": 38224737.28,
+        "candle_second": 6
+      },
+      "replay": null,
+      "status": "MISSING_REPLAY"
+    },
+    {
+      "live": {
+        "decision_id": "a3b136bd-3676-3169-8566-902b411b7e4b",
+        "trade_id": "9dd0b005-6ce6-45cd-a168-81491c5c7f1f",
+        "timestamp": 1792169524248,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "CONFIRMADA BUY saldo movido",
+        "balance": 38307737.6,
+        "candle_second": 4
+      },
+      "replay": null,
+      "status": "MISSING_REPLAY"
+    },
+    {
+      "live": {
+        "decision_id": "e0e292db-320a-375c-b1c8-4c3861e7285d",
+        "trade_id": "fc1bdd6b-64c6-466c-8c0a-6498c0ac60f5",
+        "timestamp": 1792169824270,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "CONFIRMADA SELL saldo movido",
+        "balance": 38490736.64,
+        "candle_second": 4
+      },
+      "replay": {
+        "decision_id": "e0e292db-320a-375c-b1c8-4c3861e7285d",
+        "trade_id": "",
+        "timestamp": 1792169821526,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_REVERSAL: Sobrecompra Extrema en Resistencia (RSI: 83 | Dist R: 21% | ⏱ 1s) -> PUT [Confluencia: 82pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 1
+      },
+      "status": "DIVERGENT",
+      "matched_by": "decision_id",
+      "first_divergence": "candle_second",
+      "delta_ms": -2744
+    },
+    {
+      "live": {
+        "decision_id": "9ec75d85-2b78-383f-945b-ba1496d867d4",
+        "trade_id": "2946aa6c-387e-4cd2-88e5-3ae25eabfb99",
+        "timestamp": 1792169945733,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "CONFIRMADA SELL saldo movido",
+        "balance": 38290736.64,
+        "candle_second": 5
+      },
+      "replay": null,
+      "status": "MISSING_REPLAY"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "5035adc0-f302-307f-adfb-c923eaaf0f2c",
+        "trade_id": "",
+        "timestamp": 1792168682145,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_MOMENTUM: Impulso Alcista Temprano (Dist R: 75% | ⏱ 2s) -> CALL [Confluencia: 95pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 2
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "82bac5e6-7829-3c89-ba62-0d426801e7f5",
+        "trade_id": "",
+        "timestamp": 1792168861127,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 55% | Dist S: 3% | ⏱ 1s) -> CALL [Confluencia: 90pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "a51db4da-be42-3f97-a1da-1955a40121a3",
+        "trade_id": "",
+        "timestamp": 1792169043530,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 53% | Dist S: 0% | ⏱ 3s) -> CALL [Confluencia: 95pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 3
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "e4086d9d-09d9-3b99-aeaf-5b7d20fa7845",
+        "trade_id": "",
+        "timestamp": 1792169222326,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REVERSAL: Sobreventa Extrema en Soporte (RSI: 23 | Dist S: 3% | ⏱ 2s) -> CALL [Confluencia: 82pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 2
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "41b04a21-82c0-396f-b3ea-58b04850528c",
+        "trade_id": "",
+        "timestamp": 1792169342330,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REVERSAL: Sobreventa Extrema en Soporte (RSI: 22 | Dist S: 7% | ⏱ 2s) -> CALL [Confluencia: 83pts]",
+        "price": 641.87,
+        "result": "TIE",
+        "candle_second": 2
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "28978513-73e1-3471-8bbd-a1a8c4b5e712",
+        "trade_id": "",
+        "timestamp": 1792169461162,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_FALSE_BREAKOUT: Trampa en Resistencia (Mecha: 39% | ⏱ 1s) -> PUT [Confluencia: 95pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "22b978ce-3a25-3f8f-83c6-bf2f0a387058",
+        "trade_id": "",
+        "timestamp": 1792169583532,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_ENGULFING: Vela Envolvente en Soporte (⏱ 3s) -> CALL [Confluencia: 75pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 3
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "a68c8711-8fdf-3919-a1a9-ee6d38f357cd",
+        "trade_id": "",
+        "timestamp": 1792169941122,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_REJECTION: Rechazo en Resistencia (Mecha: 67% | Dist R: 2% | ⏱ 1s) -> PUT [Confluencia: 95pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "79e67a62-6917-31c2-be48-72f5a9c9b890",
+        "trade_id": "",
+        "timestamp": 1792170062333,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 43% | Dist S: 2% | ⏱ 2s) -> CALL [Confluencia: 75pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 2
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "9471262f-fdf8-379f-aa57-59a25b30c810",
+        "trade_id": "",
+        "timestamp": 1792170361223,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 62% | Dist S: 0% | ⏱ 1s) -> CALL [Confluencia: 80pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "8c963d59-f4ae-3216-bf0b-f7f86ed72fc5",
+        "trade_id": "",
+        "timestamp": 1792170481127,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 54% | Dist S: 2% | ⏱ 1s) -> CALL [Confluencia: 90pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "044ac664-6da2-3a87-9ccd-9237bd300a6d",
+        "trade_id": "",
+        "timestamp": 1792170601183,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 36% | Dist S: 4% | ⏱ 1s) -> CALL [Confluencia: 95pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    }
+  ]
+}
