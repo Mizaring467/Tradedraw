@@ -103,6 +103,22 @@ def main():
     min_range_ratio = 1e9
     max_range_ratio = 0.0
     active_asset = ""
+    # R23C Fase 2B (REQ 2): submodo activo de la ventana, leido de `/status`. Arranca en el fallback
+    # conservador para que, si `/status` nunca lo reportara, el replay no se desbloquee por accidente.
+    active_submode = "CONSERVATIVE"
+    # R23C Fase 2B (REQ 1): acumulador de ticks de TODA la ventana.
+    #
+    # POR QUE. El endpoint `/ticks` es un buffer CIRCULAR de 2000 entradas (R23 Iter 4). A la tasa
+    # medida de ~2,43 ticks/s eso son ~13,8 minutos, asi que al terminar una ventana de 20 min el
+    # telefono ya habia descartado los primeros ~6 minutos: medido en 4 ventanas, solo 11 de 20
+    # trades tenian ticks que los alimentaran. Sin datos de mercado, el motor offline no puede
+    # reproducir esos trades y la paridad queda topada en el 55% por construccion.
+    #
+    # Se consulta `/ticks` en CADA ciclo (~10 s) y se acumula por `ts` en un dict, que deduplica
+    # gratis: los solapamientos entre ciclos no duplican lineas. Al final se vuelca TODO ordenado,
+    # reconstruyendo la ventana completa en el host.
+    accumulated_ticks: Dict[int, str] = {}
+    tick_capture_errors = 0
 
     # Métricas de riesgo y motor
     initial_wins = 0
@@ -122,6 +138,29 @@ def main():
             status = fetch_json(f"{base_url}/status")
             nodes = fetch_json(f"{base_url}/nodes")
             events_data = fetch_json(f"{base_url}/events?max=100")
+
+            # R23C Fase 2B (REQ 1): acumular los ticks de este ciclo. Se pide el buffer entero
+            # (max=2000) para que el solapamiento entre ciclos cubra cualquier tick perdido si un
+            # ciclo tardara mas de lo previsto; el dict por `ts` absorbe los repetidos.
+            try:
+                req_tk = urllib.request.Request(
+                    f"{base_url}/ticks?max=2000&format=csv",
+                    headers={"User-Agent": "R23-AutoMonitor/1.0"},
+                )
+                with urllib.request.urlopen(req_tk, timeout=5.0) as resp_tk:
+                    for linea in resp_tk.read().decode("utf-8").splitlines():
+                        linea = linea.strip()
+                        if not linea or linea.startswith("ts"):
+                            continue
+                        primera = linea.split(",", 1)[0]
+                        try:
+                            accumulated_ticks[int(primera)] = linea
+                        except ValueError:
+                            continue  # linea corrupta o de otro formato: se ignora
+            except Exception:
+                # El feed de ticks es telemetria: si falla no puede tumbar la validacion, que es lo
+                # que realmente mide esta ventana. Se cuenta para que el reporte lo refleje.
+                tick_capture_errors += 1
 
             sample_record: Dict[str, Any] = {
                 "sample_idx": sample_count + 1,
@@ -182,6 +221,11 @@ def main():
 
                 feed = status.get("feed", {})
                 active_asset = feed.get("activeAsset", active_asset)
+                # R23C Fase 2B (REQ 2): submodo activo, leido de `/status` (campo expuesto en R23B
+                # Iter 1). Se captura en el bucle para tenerlo disponible al invocar el replay; sin
+                # esto el replay correria en CONSERVATIVE y suprimiria señales que el motor real si
+                # emitio, invalidando la comparacion.
+                active_submode = status.get("submode", active_submode) or active_submode
                 range_ratio = feed.get("recentPriceRangeRatio", -1.0)
                 if range_ratio > 0.0:
                     min_range_ratio = min(min_range_ratio, range_ratio)
@@ -315,18 +359,37 @@ def main():
         for tr in observed_trades:
             tw.writerow(tr)
 
-    # 3. Volcar ticks de la sesión
+    # 3. Volcar ticks de la sesión (ventana COMPLETA, no la cola del buffer)
+    # R23C Fase 2B (REQ 1): se escribe lo ACUMULADO en el bucle, no la respuesta puntual de /ticks.
+    # El buffer del telefono solo retiene ~13,8 min (2000 entradas a 2,43 ticks/s); lo acumulado por
+    # el monitor cubre los 20 min. Si la captura incremental fallo por completo (p.ej. build antigua
+    # sin /ticks), se cae al volcado directo para no quedarse sin ningun dato.
     out_ticks_csv = os.path.join(out_dir, "ticks_live.csv")
-    try:
-        req = urllib.request.Request(f"{base_url}/ticks?max=2000&format=csv", headers={"User-Agent": "R23-AutoMonitor/1.0"})
-        with urllib.request.urlopen(req, timeout=5.0) as resp:
-            ticks_raw = resp.read().decode("utf-8")
-            if ticks_raw.strip():
-                with open(out_ticks_csv, "w", encoding="utf-8") as f_tk:
-                    f_tk.write(ticks_raw)
-                print(f"Ticks de la sesión guardados en: {out_ticks_csv}")
-    except Exception as e:
-        print(f"Nota: /ticks no disponible o sin datos ({e})")
+    if accumulated_ticks:
+        with open(out_ticks_csv, "w", encoding="utf-8", newline="") as f_tk:
+            f_tk.write("ts,ric,price\n")
+            for ts in sorted(accumulated_ticks):
+                f_tk.write(accumulated_ticks[ts] + "\n")
+        print(
+            f"Ticks de la ventana COMPLETA guardados en: {out_ticks_csv} "
+            f"({len(accumulated_ticks)} ticks"
+            + (f", {tick_capture_errors} ciclos sin respuesta" if tick_capture_errors else "")
+            + ")"
+        )
+    else:
+        try:
+            req = urllib.request.Request(f"{base_url}/ticks?max=2000&format=csv", headers={"User-Agent": "R23-AutoMonitor/1.0"})
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                ticks_raw = resp.read().decode("utf-8")
+                if ticks_raw.strip():
+                    with open(out_ticks_csv, "w", encoding="utf-8", newline="") as f_tk:
+                        f_tk.write(ticks_raw)
+                    print(
+                        f"AVISO: sin captura incremental ({tick_capture_errors} ciclos fallidos); "
+                        f"volcado directo de /ticks en {out_ticks_csv} (solo la cola del buffer)"
+                    )
+        except Exception as e:
+            print(f"Nota: /ticks no disponible o sin datos ({e})")
 
     # 4. Volcar /mode_log
     mode_log_data = fetch_json(f"{base_url}/mode_log")
@@ -344,10 +407,14 @@ def main():
     # 6. Replay offline y comparador Live <-> Replay
     out_replay_journal = os.path.join(out_dir, "replay_journal.csv")
     if os.path.exists(out_ticks_csv) and os.path.getsize(out_ticks_csv) > 30:
-        print(f"\nEjecutando motor de replay offline sobre {out_ticks_csv}...")
+        print(f"\nEjecutando motor de replay offline sobre {out_ticks_csv} (submodo={active_submode})...")
         env = os.environ.copy()
         env["BACKTEST_CSV"] = os.path.abspath(out_ticks_csv)
         env["BACKTEST_OUT"] = os.path.abspath(out_replay_journal)
+        # R23C Fase 2B (REQ 2): el replay debe correr en el MISMO submodo que la ventana. Comparar una
+        # sesion YOLO contra un replay CONSERVATIVE suprime señales que el motor real si emitio y la
+        # paridad mide la diferencia de politica, no la fidelidad del motor.
+        env["BACKTEST_SUBMODE"] = active_submode
         gradle_bin = ".\\gradlew.bat" if os.name == "nt" else "./gradlew"
         if os.path.exists(gradle_bin):
             subprocess.run([gradle_bin, "testDebugUnitTest", "--tests", "*ReplayBacktestTest*"], env=env, capture_output=True, text=True)
@@ -355,13 +422,21 @@ def main():
     replay_summary = {"status": "NO_PAIRED_DECISIONS", "paired": 0, "exact_matches": 0, "match_rate": 0.0}
     replay_report_text = "NO CONCLUYENTE"
     if len(observed_decisions) > 0 and os.path.exists("scripts/validation/compare_live_replay.py"):
+        # R23C Fase 2B (REQ 2): se compara en MODO TRADES contra `trades.csv` (ordenes confirmadas),
+        # no contra `decisions.csv`. Este ultimo incluye todos los vetos del pipeline
+        # (`ADAPTIVE_BLOCK`, `COOLDOWN`, `OPERACION_EN_CURSO`...), universo que el replay no produce:
+        # cruzarlos daba 0 pares por construccion. Requiere que el replay exista; si no, se conserva
+        # el cruce por decisiones como respaldo.
+        usar_trades = os.path.exists(out_replay_journal) and os.path.getsize(out_replay_journal) > 30
         cmd = [
             sys.executable, "scripts/validation/compare_live_replay.py",
-            "--live-journal", out_decisions_csv,
+            "--live-journal", out_trades_csv if usar_trades else out_decisions_csv,
             "--output-json", out_replay_json,
-            "--output-md", out_replay_report
+            "--output-md", out_replay_report,
         ]
-        if os.path.exists(out_replay_journal) and os.path.getsize(out_replay_journal) > 30:
+        if usar_trades:
+            cmd.extend(["--mode", "trades"])
+        if usar_trades:
             cmd.extend(["--replay-journal", out_replay_journal])
         res = subprocess.run(cmd, capture_output=True, text=True)
         if os.path.exists(out_replay_json):
@@ -375,7 +450,8 @@ def main():
                     rate = replay_summary.get("match_rate_pct", (matches / paired) * 100.0)
                     replay_report_text = f"{matches} exact matches de {paired} pareadas ({rate:.1f}% de paridad)."
                 else:
-                    replay_report_text = f"NO EVALUABLE (0 pares evaluados, {len(observed_decisions)} decisiones sin replay correspondiente)."
+                    universo = len(observed_trades) if usar_trades else len(observed_decisions)
+                    replay_report_text = f"NO EVALUABLE (0 pares evaluados, {universo} elementos sin replay correspondiente)."
             except Exception:
                 pass
 
