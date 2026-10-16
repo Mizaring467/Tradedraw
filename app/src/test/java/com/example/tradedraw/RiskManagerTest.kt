@@ -369,6 +369,10 @@ class RiskManagerTest {
 
     @Test
     fun testFix1_canTradeReturnsFalseWhenLossStreakReachesStopLossInYolo() {
+        // R23B Iter 1: POLITICA INVERTIDA A PROPOSITO. Este test exigia que YOLO se bloqueara al
+        // alcanzar `stopLossStreak`; el requerimiento 1.2 de R23B pide que YOLO omita ese limite de
+        // sesion para que la operativa sea continua. El test se actualiza a la politica nueva, no se
+        // borra: el caso sigue cubierto en la direccion contraria (CONSERVATIVE SI bloquea).
         riskManager.stopLossStreak = 3
         riskManager.maxMartingaleLevel = 1
         riskManager.martingaleEnabled = true
@@ -386,7 +390,6 @@ class RiskManagerTest {
         assertEquals(2, riskManager.currentLossStreak)
         riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
 
-        // Verificar que con racha 2 tras cooldown puede operar y la racha se preserva en 2
         val (canTradeAt2, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
         assertTrue("Con racha 2 y stopLoss 3 puede operar tras anti-tilt", canTradeAt2)
         assertEquals("La racha perdedora se preserva en 2", 2, riskManager.currentLossStreak)
@@ -397,11 +400,17 @@ class RiskManagerTest {
         assertEquals(3, riskManager.currentLossStreak)
         riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
 
-        // canTrade() DEBE devolver false
-        assertFalse("canTrade() debe devolver false al alcanzar stopLossStreak en YOLO", riskManager.canTrade())
-        val (canTrade, reason) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
-        assertFalse("canExecuteTrade debe bloquear por Stop Loss en YOLO", canTrade)
-        assertTrue("Razón debe mencionar Stop Loss alcanzado", reason.contains("Stop Loss alcanzado"))
+        // En YOLO el stop loss de racha YA NO es terminal (R23B Iter 1). OJO: `canTrade()` sin
+        // argumento cae al `currentSubMode` (CONSERVATIVE, fail-safe), asi que aqui hay que pasar el
+        // submodo explicito — que es justo lo que hacen los callers de produccion.
+        val (canTrade, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue("YOLO no se bloquea por Stop Loss de racha", canTrade)
+
+        // ...pero CONSERVATIVE lo sigue aplicando sin cambios.
+        riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
+        val (canTradeCons, reasonCons) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.CONSERVATIVE)
+        assertFalse("CONSERVATIVE SI bloquea por Stop Loss de racha", canTradeCons)
+        assertTrue("Razón debe mencionar Stop Loss alcanzado", reasonCons.contains("Stop Loss alcanzado"))
     }
 
     @Test
@@ -437,15 +446,23 @@ class RiskManagerTest {
 
     @Test
     fun testBug1_StopLossIsTerminal() {
+        // R23B Iter 1: POLITICA INVERTIDA A PROPOSITO para YOLO. El nombre original del test
+        // ("StopLossIsTerminal") describia la politica vieja: "stop loss must be terminal and block
+        // trading even in YOLO". REQ 1.2 pide lo contrario. Se conserva el escenario y se afirma la
+        // politica nueva en YOLO y la vieja en CONSERVATIVE, para que el cambio quede fijado en ambos
+        // sentidos y no se pueda revertir por accidente.
         riskManager.stopLossStreak = 3
         riskManager.currentLossStreak = 3
         riskManager.yoloLossCooldownSeconds = 30
         riskManager.lossCooldownSeconds = 30
-        // Simulate time passed beyond all cooldowns
         riskManager.lastTradeTime = System.currentTimeMillis() - 100_000L
 
-        val (canTrade, reason) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
-        assertFalse("Stop loss must be terminal and block trading even in YOLO", canTrade)
+        val (canTradeYolo, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue("YOLO ya NO trata el stop loss de racha como terminal (R23B Iter 1)", canTradeYolo)
+
+        riskManager.lastTradeTime = System.currentTimeMillis() - 100_000L
+        val (canTradeCons, reason) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.CONSERVATIVE)
+        assertFalse("En CONSERVATIVE el stop loss de racha sigue siendo terminal", canTradeCons)
         assertTrue("Reason must be Stop Loss", reason.contains("Stop Loss alcanzado"))
     }
 
@@ -916,6 +933,158 @@ class RiskManagerTest {
         assertEquals(1, riskManager.totalLosses)
         assertFalse("Segunda llamada de loss debe ser rechazada", riskManager.resolvePendingTradeLoss())
         assertEquals("Total losses no debe incrementar dos veces", 1, riskManager.totalLosses)
+    }
+
+    // ==================================================================
+    // R23B Iter 1: desbloqueo de limites de SESION en el submodo YOLO
+    // ==================================================================
+
+    /**
+     * Monta una sesion valida en DEMO con un pico de ganancia y un retroceso posterior, que es el
+     * estado exacto del baseline donde OpenCode midio 75/101 vetos por Trailing Profit Lock.
+     */
+    private fun montarSesionConPicoYRetroceso() {
+        riskManager.absoluteEquityFloor = 20_000_000.0
+        AutoTradeAccessibilityService.isDemoAccount = true
+        riskManager.sessionStartBalance = 40_500_000.0
+        riskManager.sessionPeakBalance = 40_650_000.0
+        riskManager.minPeakProfitToLock = 80_000.0
+        riskManager.trailingProfitRetracementRatio = 0.40f
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+        riskManager.yoloLossCooldownSeconds = 0
+        riskManager.lastTradeTime = 0L
+        riskManager.martingaleEnabled = false
+        // Suelo trailing = 40.650.000 - (150.000 * 0.40) = 40.590.000; el saldo queda por debajo.
+        AutoTradeAccessibilityService.latestObservedBalance = 40_580_000.0
+    }
+
+    @Test
+    fun canExecuteTrade_yoloIgnoresTrailingProfitLockAndSessionFloor() {
+        montarSesionConPicoYRetroceso()
+
+        // YOLO: la operativa es continua, el retroceso desde el pico no bloquea.
+        val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue(
+            "YOLO debe ignorar el Trailing Profit Lock: $reasonYolo",
+            canTradeYolo
+        )
+
+        // CONSERVATIVE: exactamente el mismo estado SI se bloquea. Esto es lo que fija que el
+        // desbloqueo es especifico de YOLO y no una relajacion global.
+        val (canTradeCons, reasonCons) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.CONSERVATIVE)
+        assertFalse("CONSERVATIVE debe seguir bloqueado por Trailing Profit Lock", canTradeCons)
+        assertTrue(
+            "La razón en CONSERVATIVE debe mencionar el lock",
+            reasonCons.contains("Trailing Profit Lock")
+        )
+    }
+
+    @Test
+    fun canExecuteTrade_yoloIgnoresSessionFloorStopLoss() {
+        // Variante del anterior sin pico: el saldo cae por debajo del SUELO DE SESION (perdida del 3%
+        // del startBalance). YOLO debe ignorarlo igual que el trailing.
+        riskManager.absoluteEquityFloor = 20_000_000.0
+        AutoTradeAccessibilityService.isDemoAccount = true
+        riskManager.sessionStartBalance = 40_500_000.0
+        riskManager.sessionPeakBalance = 40_500_000.0
+        riskManager.sessionMaxLossRatio = 0.03f
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+        riskManager.yoloLossCooldownSeconds = 0
+        riskManager.lastTradeTime = 0L
+        riskManager.martingaleEnabled = false
+        // Suelo de sesion = 40.500.000 - max(1.215.000, 100.000) = 39.285.000. Saldo por debajo.
+        AutoTradeAccessibilityService.latestObservedBalance = 39_000_000.0
+
+        val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue("YOLO debe ignorar el suelo de sesion: $reasonYolo", canTradeYolo)
+
+        val (canTradeCons, reasonCons) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.CONSERVATIVE)
+        assertFalse("CONSERVATIVE debe seguir bloqueado por el suelo de sesion", canTradeCons)
+        assertTrue("La razón debe mencionar el suelo de sesion", reasonCons.contains("Stop Loss Sesion Alcanzado"))
+    }
+
+    @Test
+    fun canExecuteTrade_yoloIgnoresStopLossStreak() {
+        riskManager.stopLossStreak = 3
+        riskManager.martingaleEnabled = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+        riskManager.yoloLossCooldownSeconds = 0
+        riskManager.currentLossStreak = 3
+        riskManager.lastTradeTime = 0L
+
+        val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue("YOLO debe ignorar el stop loss de racha: $reasonYolo", canTradeYolo)
+
+        val (canTradeCons, reasonCons) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.CONSERVATIVE)
+        assertFalse("CONSERVATIVE debe seguir bloqueado por racha", canTradeCons)
+        assertTrue("La razón debe mencionar Stop Loss alcanzado", reasonCons.contains("Stop Loss alcanzado"))
+    }
+
+    @Test
+    fun canExecuteTrade_yoloRespectsAbsoluteEquityFloor() {
+        // El suelo de equity absoluto es la proteccion que NO se relaja ni en YOLO: sin el, el
+        // submodo continuo vaciaria la cuenta demo. Es el limite entre "operativa continua" y
+        // "sin limites en absoluto".
+        riskManager.absoluteEquityFloor = 20_000_000.0
+        AutoTradeAccessibilityService.isDemoAccount = true
+        riskManager.martingaleEnabled = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+        riskManager.yoloLossCooldownSeconds = 0
+        riskManager.lastTradeTime = 0L
+        // Saldo por debajo del suelo absoluto (y aun asi es una cuenta demo valida).
+        AutoTradeAccessibilityService.latestObservedBalance = 19_500_000.0
+
+        val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("YOLO SI debe detenerse por suelo de equity absoluto", canTradeYolo)
+        assertTrue("La razón debe mencionar el Stop Equity", reasonYolo.contains("Stop Equity"))
+    }
+
+    @Test
+    fun canExecuteTrade_yoloStillRespectsAntiTiltAndPendingTrade() {
+        // Los guards que la especificacion pide MANTENER, verificados que siguen mordiendo en YOLO.
+        riskManager.absoluteEquityFloor = 20_000_000.0
+        AutoTradeAccessibilityService.isDemoAccount = true
+        AutoTradeAccessibilityService.latestObservedBalance = 40_000_000.0
+        riskManager.martingaleEnabled = true
+        riskManager.maxMartingaleLevel = 1
+        riskManager.yoloLossCooldownSeconds = 35
+
+        // Operacion en curso: bloquea.
+        riskManager.recordTradeSent(TradeAction.BUY)
+        val (canTradePending, reasonPending) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("YOLO debe respetar la operacion en curso", canTradePending)
+        assertTrue("La razón debe mencionar la operación abierta", reasonPending.contains("Operación abierta"))
+
+        // Pausa anti-tilt tras fallo de martingala (> maxMartingaleLevel): bloquea.
+        riskManager.recordTradeLoss()
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.lastTradeTime = System.currentTimeMillis()
+        val (canTradeTilt, reasonTilt) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("YOLO debe respetar la pausa anti-tilt", canTradeTilt)
+        assertTrue("La razón debe mencionar la pausa anti-tilt", reasonTilt.contains("Pausa Anti-Tilt"))
+    }
+
+    @Test
+    fun elFallbackSinSubmodoEsFailSafe() {
+        // `canTrade(confidence)` no recibe submodo, asi que cae al `currentSubMode`. Si ese default
+        // fuera YOLO, una llamada sin argumento quedaria SIN limites de sesion (fail-open). El default
+        // debe ser CONSERVATIVE: sin argumento se aplican todos los guards.
+        assertEquals(
+            "el fallback por defecto debe ser fail-safe",
+            AutonomousSubMode.CONSERVATIVE,
+            riskManager.currentSubMode
+        )
+
+        // Comprobacion de comportamiento: mismo estado de sesion, sin pasar submodo -> bloqueado.
+        montarSesionConPicoYRetroceso()
+        val (canTradeSinArgs, reason) = riskManager.canExecuteTrade()
+        assertFalse("sin submodo explicito NO se debe desbloquear la sesion", canTradeSinArgs)
+        assertTrue("La razón debe mencionar el lock", reason.contains("Trailing Profit Lock"))
     }
 }
 

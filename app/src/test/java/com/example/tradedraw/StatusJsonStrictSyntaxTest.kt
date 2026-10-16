@@ -154,6 +154,22 @@ class StatusJsonStrictSyntaxTest {
         )
     }
 
+    @Test
+    fun elStatusExponeElSubmodoActivo() {
+        assumeTrue("Sin fuentes disponibles: se omite", fuente.isFile)
+
+        // R23B Iter 1: `/status` debe exponer el submodo para que la telemetria pueda auditar de forma
+        // continua que submodo esta activo (CONSERVATIVE / YOLO / SNIPER). Sin este campo, el
+        // experimento de YOLO no es atribuible: no se puede demostrar que la ventana corrio en YOLO.
+        val raiz = JSONObject(renderStatusJson())
+
+        assertTrue("submode presente", raiz.has("submode"))
+        // `submode` ES una cadena (nombre del enum), a diferencia de los campos numericos.
+        assertEquals("submode es cadena", "P", raiz.getString("submode"))
+        assertTrue("mode sigue presente", raiz.has("mode"))
+        assertTrue("strategy sigue presente", raiz.has("strategy"))
+    }
+
     private companion object {
         const val FUNCTION_SIGNATURE = "private fun buildStatusJson(): String {"
     }

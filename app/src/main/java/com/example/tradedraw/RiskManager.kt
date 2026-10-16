@@ -407,7 +407,7 @@ class RiskManager(context: Context? = null) {
     var unitTradeAmount: Double = 80000.0 // Monto de inversión base en Binomo (Col$80,000)
 
     @Volatile
-    var currentSubMode: AutonomousSubMode = AutonomousSubMode.YOLO
+    var currentSubMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE
 
     @Synchronized
     fun getRemainingCooldown(subMode: AutonomousSubMode? = null): Int {
@@ -429,6 +429,12 @@ class RiskManager(context: Context? = null) {
         subMode: AutonomousSubMode? = null,
         confidence: Float = 1.0f
     ): Pair<Boolean, String> {
+        // R23B Iter 1: submodo EFECTIVO. Los callers de produccion siempre pasan el submodo explicito
+        // (`canExecuteTrade(autonomousSubMode)`), pero `canTrade(confidence)` no. El fallback es
+        // `currentSubMode`, que por defecto es CONSERVATIVE (fail-safe: sin argumento se aplican TODOS
+        // los guards). Antes su default era YOLO, que con la bifurcacion de abajo habria convertido
+        // cualquier llamada sin argumento en "sin limites de sesion" — un fail-open latente.
+        val effectiveSubMode = subMode ?: currentSubMode
         val currentBal = AutoTradeAccessibilityService.latestObservedBalance
         val isDemo = currentBal >= 1_000_000.0 || (AutoTradeAccessibilityService.isDemoAccount && currentBal > 500_000.0)
         if (currentBal > 0.0) {
@@ -464,7 +470,19 @@ class RiskManager(context: Context? = null) {
 
             if (sessionStartBalance > 0.0) {
                 val isConsistentSession = (isDemo && sessionStartBalance > 1_000_000.0) || (!isDemo && sessionStartBalance <= 1_000_000.0)
-                if (isConsistentSession) {
+                // R23B Iter 1: en YOLO la operativa es CONTINUA. `sessionFloor` y `Trailing Profit Lock`
+                // son limites de SESION: miden el saldo acumulado de la ronda, no la calidad del setup
+                // actual. Medido por OpenCode en el baseline: de 74 señales, 75/101 vetos fueron
+                // `Trailing Profit Lock` (74,3%) por un pico previo en la cuenta demo, dejando la
+                // frecuencia del submodo INOBSERVABLE. Eso es contaminacion de la medicion, no riesgo:
+                // el stake por orden esta acotado y el suelo de equity absoluto (abajo) sigue en pie.
+                // NOTA IMPORTANTE: esto NO relaja el guard en produccion de forma accidental. El modo
+                // YOLO no se selecciona en ningun flujo automatico; el submodo activo lo elige el
+                // operador, y `currentSubMode` (el fallback cuando no se pasa argumento) tiene default
+                // YOLO. Consecuencia: `canTrade(confidence)` sin submodo explicito tambien queda sin
+                // limites de sesion. Es la letra de la especificacion, pero debe quedar declarado.
+                val esYolo = effectiveSubMode == AutonomousSubMode.YOLO
+                if (isConsistentSession && !esYolo) {
                     val minLossAllowance = if (isDemo) 100000.0 else 8000.0
                     val maxLossAmt = maxOf(sessionStartBalance * sessionMaxLossRatio, minLossAllowance)
                     val sessionFloor = sessionStartBalance - maxLossAmt
@@ -503,7 +521,15 @@ class RiskManager(context: Context? = null) {
             }
         }
 
-        if (stopLossStreak > 0 && currentLossStreak >= stopLossStreak) {
+        // R23B Iter 1: `stopLossStreak` es un limite de SESION (pausa terminal tras N derrotas), no una
+        // medida de la calidad del setup actual. En YOLO se omite para que la operativa sea continua.
+        // ALCANCE DECLARADO: esto REVIERTE una decision anterior del repo. Los tests
+        // `testFix1_canTradeReturnsFalseWhenLossStreakReachesStopLossInYolo` y
+        // `testBug1_StopLossIsTerminal` afirmaban textualmente "stop loss must be terminal and block
+        // trading even in YOLO"; quedan actualizados a la politica nueva. Lo que sigue protegiendo la
+        // cuenta en YOLO: el suelo de equity absoluto (arriba, se evalua antes que todo), la pausa
+        // anti-tilt tras fallo de martingala (abajo), el cooldown YOLO y el guard DEMO fail-closed.
+        if (effectiveSubMode != AutonomousSubMode.YOLO && stopLossStreak > 0 && currentLossStreak >= stopLossStreak) {
             return Pair(false, "Stop Loss alcanzado ($stopLossStreak derrotas)")
         }
 
@@ -522,7 +548,7 @@ class RiskManager(context: Context? = null) {
         // pero con pausa extendida de 180s (3m) si ya van >= 2 derrotas consecutivas
         if (martingaleEnabled && currentLossStreak > maxMartingaleLevel) {
             val elapsed = (System.currentTimeMillis() - lastTradeTime) / 1000
-            val effectiveLossCooldown = if (subMode == AutonomousSubMode.YOLO) yoloLossCooldownSeconds else if (currentLossStreak >= 2) EXTENDED_LOSS_COOLDOWN_SECONDS else lossCooldownSeconds
+            val effectiveLossCooldown = if (effectiveSubMode == AutonomousSubMode.YOLO) yoloLossCooldownSeconds else if (currentLossStreak >= 2) EXTENDED_LOSS_COOLDOWN_SECONDS else lossCooldownSeconds
             val remaining = effectiveLossCooldown - elapsed
             if (remaining > 0) {
                 return Pair(false, "Pausa Anti-Tilt tras fallo Martingala (${remaining}s)")
@@ -531,7 +557,7 @@ class RiskManager(context: Context? = null) {
 
         // En SUBMODO YOLO: Cooldown controlado tras pérdida de 30-45s máximo para permitir tomar
         // la operación Martingala M1 en la siguiente vela sin perder el impulso del mercado
-        if (subMode == AutonomousSubMode.YOLO) {
+        if (effectiveSubMode == AutonomousSubMode.YOLO) {
             val remaining = getRemainingCooldown(subMode)
             if (remaining > 0) {
                 return Pair(false, "Pausa de Cooldown YOLO: ${remaining}s")
@@ -552,7 +578,7 @@ class RiskManager(context: Context? = null) {
         // 2. Stop Loss diario estricto: máximo 2 pérdidas consecutivas o acumuladas en la sesión
         // 3. Take Profit diario: 2 victorias
         // 4. Máximo 3 operaciones ejecutadas por sesión diaria (acumulando W + L + Voids)
-        if (subMode == AutonomousSubMode.SNIPER) {
+        if (effectiveSubMode == AutonomousSubMode.SNIPER) {
             val currentAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
             val isSynthetic = AutoTradeAccessibilityService.isSyntheticOrOTC ||
                 currentAsset.contains("IDX", ignoreCase = true) ||

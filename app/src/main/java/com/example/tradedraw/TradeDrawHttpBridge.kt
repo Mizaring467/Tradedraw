@@ -590,6 +590,7 @@ class TradeDrawHttpBridge(
             "isDemoAccount": ${AutoTradeAccessibilityService.isDemoAccount},
             "health": ${healthReport.toJson()},
             "mode": "$mode",
+            "submode": "${te.autonomousSubMode.name}",
             "lastModeChangeSource": "${escapeJson(te.lastModeChange)}",
             "lastModeChangeTs": ${te.lastModeChangeTs},
             "strategy": "$strat",
