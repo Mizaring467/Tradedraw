@@ -12,20 +12,20 @@
 
 ## 1. RESUMEN ACUMULADO GLOBAL (R23C)
 
-- **Total Trades Confirmados ($N$):** **18** (Meta mínima: 30, meta preferida: 50)
+- **Total Trades Confirmados ($N$):** **21** (Meta mínima: 30, meta preferida: 50)
 - **Victorias ($W$):** 9
-- **Derrotas ($L$):** 9
+- **Derrotas ($L$):** 12
 - **Empates / VOID:** 0
-- **Win Rate Acumulado ($WR$):** **50.0%**
+- **Win Rate Acumulado ($WR$):** **42.86%**
 - **Payout Promedio:** 82.0%
 - **Break-Even Win Rate ($WR_{BE}$):** **54.95%** (con payout al 82%)
-- **Margen sobre Break-Even:** **−4.95%**
-- **Delta Balance Total (COP):** **−62.000,64 COP** (Recuperado desde el valle de −272k)
-- **Balance Actual de la Cuenta DEMO:** **38.546.736,64 COP**
-- **Máximo Drawdown Acumulado:** **−300.001,28 COP** (−0.777%)
+- **Margen sobre Break-Even:** **−12.09%**
+- **Delta Balance Total (COP):** **−416.000,00 COP** (desde 38.826.736,64 hasta 38.410.736,64 COP)
+- **Balance Actual de la Cuenta DEMO:** **38.410.736,64 COP**
+- **Máximo Drawdown Acumulado:** **−497.999,36 COP** (−1.28%)
 - **Máxima Racha de Victorias ($Max_W$):** 2 (en w02, w03 y w04)
-- **Máxima Racha de Derrotas ($Max_L$):** 2 (en w01 y w02)
-- **Estado Actual de la Fase:** **INCONCLUSIVE** (Acumulando muestra: 18 / 30 trades, 60.0% de la meta mínima).
+- **Máxima Racha de Derrotas ($Max_L$):** 3 (en w05: L, L, L)
+- **Estado Actual de la Fase:** **INCONCLUSIVE / WEAK** (Acumulando muestra: 21 / 30 trades, 70.0% de la meta mínima).
 
 ---
 
@@ -37,7 +37,7 @@
 | **w02** | 2026-10-16 01:04 | 6 | 3 | 3 | 50.0% | 82.0% | −54.000,64 | 38.554.736,64 | 2 | 2 | −300.001,28 | Completada |
 | **w03** | 2026-10-16 01:27 | 3 | 2 | 1 | 66.7% | 82.0% | +64.000,00 | 38.618.736,64 | 2 | 1 | −200.000,00 | Completada |
 | **w04** | 2026-10-16 02:15 | 5 | 3 | 2 | 60.0% | 82.0% | +145.999,36 | 38.546.736,64 | 2 | 1 | −200.000,00 | Completada |
-| **w05** | Pendiente | - | - | - | - | - | - | - | - | - | - | En cola |
+| **w05** | 2026-10-16 02:40 | 3 | 0 | 3 | 0.0% | 82.0% | −217.999,36 | 38.410.736,64 | 0 | 3 | −299.998,72 | Completada |
 | **w06** | Pendiente | - | - | - | - | - | - | - | - | - | - | En cola |
 
 ---
@@ -45,24 +45,24 @@
 ## 3. DISTRIBUCIÓN POR DIRECCIÓN Y RÉGIMEN
 
 ### Por Dirección:
-- **BUY Trades:** 6 | W: 4 | L: 2 | **WR: 66.7%** (Superando el break-even)
-- **SELL Trades:** 12 | W: 5 | L: 7 | **WR: 41.7%** (Sub-óptimo)
-- **Asimetría Direccional Detectada:** El 66.7% de los disparos han sido SELL (12/18). Sin embargo, el WR de BUY es notablemente superior (66.7% vs 41.7%). Las últimas 4 compras consecutivas han sido ganadoras.
+- **BUY Trades:** 8 | W: 4 | L: 4 | **WR: 50.0%** (2 L en w05 bajo DOWNTREND)
+- **SELL Trades:** 13 | W: 5 | L: 8 | **WR: 38.5%** (Sub-óptimo)
+- **Asimetría Direccional Detectada:** El 61.9% de los disparos han sido SELL (13/21). El WR de SELL (38.5%) continúa arrastrando el sistema hacia abajo. En w05, los BUY fallaron bajo un régimen de DOWNTREND predominante (70/117 muestras).
 
 ### Por Régimen de Mercado:
 - **TRENDING (UPTREND):** 15 trades | W: 7 | L: 8 | WR: 46.7%
-- **TRENDING (DOWNTREND):** 3 trades | W: 2 | L: 1 | WR: 66.7%
+- **TRENDING (DOWNTREND):** 6 trades | W: 2 | L: 4 | WR: 33.3%
 - **SIDEWAYS / RANGE:** 0 trades | WR: 0.0%
 
 ---
 
 ## 4. REGISTRO DE RACHAS NOTABLES ($\ge 5$ consecutivas)
-*(Ninguna racha $\ge 5$ registrada en R23C. Secuencia combinada w01+w02+w03+w04: L, L, W, L, L, L, W, W, L, W, L, W, W, L, W, W, L, W)*
+*(Ninguna racha $\ge 5$ registrada en R23C. Secuencia combinada w01..w05: L, L, W, L, L, L, W, W, L, W, L, W, W, L, W, W, L, W, L, L, L)*
 
 ---
 
 ## 5. REGLAS DE PARADA Y CRITERIOS DE SALIDA
 - **Meta Mínima:** $N \ge 30$ trades resueltos.
-- **Progreso Actual:** 18 / 30 trades (60.0% de la meta mínima acumulada).
-- **Límite de Ventanas:** 4 de 6 ventanas ejecutadas.
+- **Progreso Actual:** 21 / 30 trades (70.0% de la meta mínima acumulada).
+- **Límite de Ventanas:** 5 de 6 ventanas ejecutadas.
 - **Abort Inmediato:** Si `isDemoAccount != true` o fallo de seguridad.
