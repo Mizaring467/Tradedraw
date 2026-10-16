@@ -238,17 +238,19 @@ def main():
                                 "veto_reason": veto_kind,
                             }
 
-                        if tid and tid not in seen_trade_ids:
+                        # Solo registrar como trade si es confirmación u orden de estado, evitando eventos TAP puros
+                        is_trade_event = (kind == "ORDER_STATE") or ("saldo movido" in detail.lower())
+                        if tid and tid not in seen_trade_ids and is_trade_event:
                             seen_trade_ids.add(tid)
                             trade_action = ev.get("action")
                             if not trade_action or trade_action == "UNKNOWN":
                                 # Inferir desde la decisión asociada o el detalle
-                                if did and did in observed_decisions and observed_decisions[did]["action"] != "NONE":
-                                    trade_action = observed_decisions[did]["action"]
-                                elif "BUY" in detail.upper() or "CALL" in detail.upper():
+                                if "BUY" in detail.upper() or "CALL" in detail.upper():
                                     trade_action = "BUY"
                                 elif "SELL" in detail.upper() or "PUT" in detail.upper():
                                     trade_action = "SELL"
+                                elif did and did in observed_decisions and observed_decisions[did]["action"] != "NONE":
+                                    trade_action = observed_decisions[did]["action"]
                                 else:
                                     trade_action = "UNKNOWN"
 
