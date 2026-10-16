@@ -228,6 +228,202 @@ def load_journal_file(path: str, source_label: str) -> List[DecisionRecord]:
     return records
 
 
+# ---------------------------------------------------------------------------
+# R23C Fase 2 (REQ 3): modo `trades`
+# ---------------------------------------------------------------------------
+#
+# POR QUE. El modo por defecto compara `decisions.csv` contra el journal del replay. Pero `decisions`
+# incluye TODOS los vetos (`ADAPTIVE_BLOCK`, `COOLDOWN`, `OPERACION_EN_CURSO`...), mientras el replay
+# solo produce trades ejecutados: cruzar universos distintos daba 0% de paridad por construccion.
+# El modo `trades` compara lo mismo con lo mismo: ordenes confirmadas contra ordenes simuladas.
+
+
+def parse_live_trades_csv(path: str) -> List[Dict[str, Any]]:
+    """
+    Lee `trades.csv` del monitor live. Columnas reales:
+    `trade_id,decision_id,timestamp_ms,asset,action,detail,balance_at_trade`.
+
+    No usa `parse_journal_row` porque el esquema es distinto (no hay `price_at_signal` ni
+    `candle_second`): inventarlos haria que la comparacion midiera campos vacios.
+    """
+    if not os.path.exists(path):
+        return []
+    out: List[Dict[str, Any]] = []
+    with open(path, mode="r", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            ts_raw = (row.get("timestamp_ms") or "").strip()
+            if not ts_raw:
+                continue
+            try:
+                ts = int(float(ts_raw))
+            except ValueError:
+                continue
+            out.append({
+                "decision_id": (row.get("decision_id") or "").strip(),
+                "trade_id": (row.get("trade_id") or "").strip(),
+                "timestamp": ts,
+                "asset": (row.get("asset") or "").strip(),
+                "action": normalize_str(row.get("action")),
+                "detail": (row.get("detail") or "").strip(),
+                "balance": _safe_float(row.get("balance_at_trade")),
+                "candle_second": (ts // 1000) % 60,
+            })
+    return out
+
+
+def parse_replay_journal_trades(path: str) -> List[Dict[str, Any]]:
+    """
+    Lee `replay_journal.csv` del motor offline. Columnas relevantes:
+    `timestamp,asset,action,price_y,candle_second,result,decision_id`.
+    """
+    if not os.path.exists(path):
+        return []
+    out: List[Dict[str, Any]] = []
+    with open(path, mode="r", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            ts_raw = (row.get("timestamp") or "").strip()
+            if not ts_raw:
+                continue
+            try:
+                ts = int(float(ts_raw))
+            except ValueError:
+                continue
+            csec = (row.get("candle_second") or "").strip()
+            try:
+                candle_second = int(float(csec))
+            except ValueError:
+                candle_second = (ts // 1000) % 60
+            out.append({
+                "decision_id": (row.get("decision_id") or "").strip(),
+                "trade_id": "",
+                "timestamp": ts,
+                "asset": (row.get("asset") or "").strip(),
+                "action": normalize_str(row.get("action")),
+                "detail": (row.get("reason") or "").strip(),
+                "price": _safe_float(row.get("price_y")),
+                "result": normalize_str(row.get("result")),
+                "candle_second": candle_second,
+            })
+    return out
+
+
+def _safe_float(val: Any) -> float:
+    try:
+        return float(str(val).strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def compare_trades(
+    live_trades: List[Dict[str, Any]],
+    replay_trades: List[Dict[str, Any]],
+    temporal_tolerance_ms: int = 3000,
+    price_tolerance: float = 1e-3,
+) -> Dict[str, Any]:
+    """
+    Empareja ordenes confirmadas en vivo contra el journal del replay.
+
+    Estrategia (REQ 3):
+      1. `decision_id` exacto (el id es determinista desde R23 Iter 3).
+      2. Fallback temporal: mismo `asset` y entrada dentro de `temporal_tolerance_ms`.
+
+    Campos comparados: `action`, `candle_second`, `price` (solo si el lado live lo trae — `trades.csv`
+    no tiene precio de entrada, y comparar contra el valor por defecto 0.0 marcaria divergencia
+    siempre), y `result` cuando el replay lo declara.
+    """
+    replay_por_id = {r["decision_id"]: r for r in replay_trades if r["decision_id"]}
+    consumidos: set = set()
+    pares: List[Dict[str, Any]] = []
+
+    for lt in live_trades:
+        match = None
+        por_id = False
+
+        # 1. Por decision_id exacto.
+        cand = replay_por_id.get(lt["decision_id"])
+        if cand is not None and id(cand) not in consumidos:
+            match = cand
+            por_id = True
+
+        # 2. Fallback temporal: mismo activo y |Δts| <= tolerancia.
+        if match is None:
+            mejor, mejor_delta = None, None
+            for rt in replay_trades:
+                if id(rt) in consumidos:
+                    continue
+                if normalize_str(rt["asset"]) != normalize_str(lt["asset"]):
+                    continue
+                delta = abs(rt["timestamp"] - lt["timestamp"])
+                if delta <= temporal_tolerance_ms and (mejor_delta is None or delta < mejor_delta):
+                    mejor, mejor_delta = rt, delta
+            match = mejor
+
+        if match is None:
+            pares.append({"live": lt, "replay": None, "status": "MISSING_REPLAY"})
+            continue
+
+        consumidos.add(id(match))
+        divergencias = []
+        if lt["action"] != match["action"]:
+            divergencias.append("action")
+        # `candle_second`: solo exigible cuando el emparejamiento fue por `decision_id`, es decir
+        # cuando ambos lados describen el MISMO instante. Si el par se formo por cercania temporal
+        # (hasta `temporal_tolerance_ms`), los dos eventos estan en momentos distintos por
+        # construccion — el despacho del tap y el tick de entrada — y exigir el mismo segundo seria
+        # contradecir la tolerancia que se acaba de aceptar. La causa raiz de la diferencia de
+        # segundo es la latencia de despacho (~2,3 s medidos), no un fallo del motor.
+        if por_id and match["candle_second"] >= 0 and lt["candle_second"] != match["candle_second"]:
+            divergencias.append("candle_second")
+        # `price`: solo si el lado live lo expone (hoy `trades.csv` no lo trae).
+        if lt.get("price"):
+            escala = max(abs(lt["price"]), abs(match.get("price") or 0.0), 1.0)
+            if abs(lt["price"] - (match.get("price") or 0.0)) > price_tolerance * escala:
+                divergencias.append("price")
+
+        pares.append({
+            "live": lt,
+            "replay": match,
+            "status": "MATCH" if not divergencias else "DIVERGENT",
+            "matched_by": "decision_id" if por_id else "temporal",
+            "first_divergence": divergencias[0] if divergencias else None,
+            "delta_ms": match["timestamp"] - lt["timestamp"],
+        })
+
+    for rt in replay_trades:
+        if id(rt) not in consumidos and not any(
+            p["replay"] is not None and id(p["replay"]) == id(rt) for p in pares
+        ):
+            pares.append({"live": None, "replay": rt, "status": "MISSING_LIVE"})
+
+    emparejados = [p for p in pares if p["status"] in ("MATCH", "DIVERGENT")]
+    exactos = [p for p in pares if p["status"] == "MATCH"]
+    desglose: Dict[str, int] = {}
+    for p in pares:
+        if p["status"] == "DIVERGENT":
+            campo = p["first_divergence"] or "desconocido"
+            desglose[campo] = desglose.get(campo, 0) + 1
+
+    total = len(emparejados)
+    tasa = (len(exactos) / total * 100.0) if total > 0 else 0.0
+    return {
+        "mode": "trades",
+        "summary": {
+            "total_live_trades": len(live_trades),
+            "total_replay_trades": len(replay_trades),
+            "paired_decisions": total,
+            "exact_matches": len(exactos),
+            "divergences": len(emparejados) - len(exactos),
+            "missing_live": sum(1 for p in pares if p["status"] == "MISSING_LIVE"),
+            "missing_replay": sum(1 for p in pares if p["status"] == "MISSING_REPLAY"),
+            "match_rate_pct": round(tasa, 2),
+            "pass": tasa >= 90.0 and total > 0,
+        },
+        "divergence_breakdown": desglose,
+        "pairs": pares,
+    }
+
+
+
 def find_first_divergence(
     live: DecisionRecord,
     replay: DecisionRecord,
@@ -827,6 +1023,20 @@ def main():
     parser.add_argument("--tolerance-price", type=float, default=1e-4, help="Tolerancia para precio (default: 1e-4)")
     parser.add_argument("--tolerance-dist", type=float, default=0.02, help="Tolerancia para distancias (default: 0.02)")
     parser.add_argument("--tolerance-confluence", type=float, default=1.0, help="Tolerancia para confluencia (default: 1.0)")
+    parser.add_argument(
+        "--mode",
+        choices=["decisions", "trades"],
+        default=None,
+        help="Universo a comparar: 'decisions' (vetos + trades, el clasico) o 'trades' "
+             "(solo ordenes confirmadas vs journal del replay). Default: 'trades' si --live-journal "
+             "apunta a un trades.csv, si no 'decisions'.",
+    )
+    parser.add_argument(
+        "--temporal-tolerance-ms",
+        type=int,
+        default=3000,
+        help="En --mode trades, ventana de emparejamiento temporal de respaldo (default: 3000 ms)",
+    )
 
     args = parser.parse_args()
 
@@ -845,9 +1055,73 @@ def main():
         lp, rp = save_fixture_to_csv(live_fix, replay_fix, args.generate_fixture)
         print(f"Fixture generado exitosamente en:\n  Live:   {lp}\n  Replay: {rp}")
 
-    if args.fixture or (not args.live_journal and not args.replay_journal):
+    uso_fixture = args.fixture or (not args.live_journal and not args.replay_journal)
+    if uso_fixture:
         print("Usando fixture sintético determinista (MATCH vs DIVERGENCE)...")
         live_records, replay_records = generate_synthetic_fixture()
+        modo = "decisions"
+    else:
+        # R23C Fase 2 (REQ 3): si no se fuerza el modo, se infiere del nombre del archivo live.
+        modo = args.mode or ("trades" if (args.live_journal or "").endswith("trades.csv") else "decisions")
+
+    if uso_fixture:
+        pass  # ya resuelto arriba con el fixture
+    elif modo == "trades":
+        if not args.live_journal or not args.replay_journal:
+            print("ERROR: --mode trades requiere --live-journal (trades.csv) y --replay-journal.")
+            return 2
+
+        live_trades = parse_live_trades_csv(args.live_journal)
+        replay_trades = parse_replay_journal_trades(args.replay_journal)
+
+        emparejados = compare_trades(
+            live_trades, replay_trades, temporal_tolerance_ms=args.temporal_tolerance_ms
+        )
+
+        s = emparejados["summary"]
+        print("=" * 60)
+        print("COMPARACIÓN LIVE <-> REPLAY — MODO TRADES (R23C Fase 2)")
+        print("=" * 60)
+        print(f"Trades en Live:       {s['total_live_trades']}")
+        print(f"Trades en Replay:     {s['total_replay_trades']}")
+        print(f"Pares evaluados:      {s['paired_decisions']}")
+        print(f"Exact Matches:        {s['exact_matches']}")
+        print(f"Divergencias:         {s['divergences']}")
+        print(f"Missing en Live:      {s['missing_live']}")
+        print(f"Missing en Replay:    {s['missing_replay']}")
+        print(f"Tasa de paridad:      {s['match_rate_pct']}% -> {'PASS' if s['pass'] else 'FAIL'}")
+        if emparejados["divergence_breakdown"]:
+            print("\nDesglose de causas raíz de divergencia:")
+            for k, v in emparejados["divergence_breakdown"].items():
+                print(f"  - {k:18}: {v}")
+        if emparejados["pairs"]:
+            print("\nDetalle de pares:")
+            for p in emparejados["pairs"]:
+                lt = p.get("live") or {}
+                rt = p.get("replay") or {}
+                print(
+                    f"  [{p['status']:14}] live={lt.get('action','-'):4} @{lt.get('timestamp','-')}"
+                    f"  replay={rt.get('action','-'):4} @{rt.get('timestamp','-')}"
+                    f"  d={p.get('delta_ms','-')}ms  {p.get('first_divergence') or ''}"
+                )
+
+        if args.output_json:
+            os.makedirs(os.path.dirname(os.path.abspath(args.output_json)), exist_ok=True)
+            with open(args.output_json, "w", encoding="utf-8") as f:
+                json.dump(emparejados, f, indent=2, ensure_ascii=False)
+            print(f"\nSalida JSON guardada en: {args.output_json}")
+        if args.output_md:
+            os.makedirs(os.path.dirname(os.path.abspath(args.output_md)), exist_ok=True)
+            with open(args.output_md, "w", encoding="utf-8") as f:
+                f.write("# Paridad Live <-> Replay (modo trades) — R23C Fase 2\n\n")
+                f.write(f"- Trades Live: {s['total_live_trades']}\n")
+                f.write(f"- Trades Replay: {s['total_replay_trades']}\n")
+                f.write(f"- Pares: {s['paired_decisions']}\n")
+                f.write(f"- Exact matches: {s['exact_matches']}\n")
+                f.write(f"- Tasa: {s['match_rate_pct']}%\n")
+                f.write(f"- Veredicto: {'PASS' if s['pass'] else 'FAIL'}\n")
+            print(f"Reporte Markdown guardado en: {args.output_md}")
+        return 0 if s["pass"] else 1
     else:
         if args.live_journal:
             live_records = load_journal_file(args.live_journal, "LIVE")

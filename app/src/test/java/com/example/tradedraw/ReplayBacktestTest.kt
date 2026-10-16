@@ -153,6 +153,12 @@ class ReplayBacktestTest {
         val pendingSignals = mutableListOf<SignalSnapshot>()
         var lastExecutedCandleMinute = -1L
         var cooldownUntilTs = 0L
+        // R23C Fase 2 (REQ 2.2/2.3): una operacion binaria ocupa 60 s. Mientras este abierta no se
+        // puede emitir otra (`OPERACION_EN_CURSO`), y al expirar corre un cooldown post-trade. Sin
+        // esto el replay disparaba trades superpuestos en minutos distintos que en vivo eran
+        // imposibles: es una de las causas del 0% de paridad.
+        var blockedUntilTs = 0L
+        val cooldownMs = if (subMode == AutonomousSubMode.YOLO) YOLO_COOLDOWN_MS else CONSERVATIVE_COOLDOWN_MS
 
         fun createEngine(): SyntheticCandleEngine {
             val eng = SyntheticCandleEngine()
@@ -171,10 +177,19 @@ class ReplayBacktestTest {
                     ?: ticks.lastOrNull { it.ts <= eng.lastSignalTimestampMs }
                     ?: ticks.first()
                 val candleMinute = lastTick.ts / 60_000L
-                // Descartar si el tick cae en el enfriamiento de 120s tras un hueco > 10s
-                // o si la vela de este minuto ya fue operada (1 orden por vela máx)
-                if (lastTick.ts >= cooldownUntilTs && candleMinute != lastExecutedCandleMinute) {
+                // R23C Fase 2 (REQ 2.1): ventana sniper. En vivo `executeHeadlessTrade` veta toda
+                // senal fuera de :00-:05 y :58-:59, asi que el replay debe hacer lo mismo o genera
+                // trades que el motor real nunca habria despachado.
+                val sigCandleSec = ((lastTick.ts / 1000L) % 60L).toInt()
+                val inSniperWindow = sigCandleSec in 0..5 || sigCandleSec in 58..59
+                // Descartar si: la señal cae fuera de la ventana sniper, o estamos dentro de una
+                // operacion abierta / su cooldown, o el tick cae en el enfriamiento de 120s tras un
+                // hueco > 10s, o la vela de este minuto ya fue operada (1 orden por vela máx).
+                if (inSniperWindow && lastTick.ts >= cooldownUntilTs && lastTick.ts >= blockedUntilTs &&
+                    candleMinute != lastExecutedCandleMinute) {
                     lastExecutedCandleMinute = candleMinute
+                    // La operacion ocupa 60 s desde la entrada y luego corre el cooldown del submodo.
+                    blockedUntilTs = lastTick.ts + TRADE_DURATION_MS + cooldownMs
                     pendingSignals.add(
                         SignalSnapshot(
                             tick = lastTick,
@@ -360,7 +375,7 @@ class ReplayBacktestTest {
             val ticks = if (t0Val != null && t0Val > 0L) allTicks.filter { it.ts <= t0Val } else allTicks
             if (ticks.size < 10) continue
 
-            val trades = runBacktestOnStrategy(ticks, AutoTradeStrategy.AUTO_ADAPTIVE)
+            val trades = runBacktestOnStrategy(ticks, AutoTradeStrategy.AUTO_ADAPTIVE, submodoDeEntorno())
             val labeledTrades = trades.map { it.copy(source = f.name) }
             allTrades.addAll(labeledTrades)
             if (filesToProcess.size > 1 && (idx + 1) % 25 == 0) {
@@ -400,11 +415,36 @@ class ReplayBacktestTest {
         val ticks = if (t0Val != null && t0Val > 0L) allTicks.filter { it.ts <= t0Val } else allTicks
         println("=== REPORTE MULTIESTRATEGIA DE REPLAY KOTLIN ===" + (if (t0Val != null) " (filtrado hasta T0=$t0Val)" else ""))
         for (strategy in AutoTradeStrategy.values()) {
-            val trades = runBacktestOnStrategy(ticks, strategy)
+            val trades = runBacktestOnStrategy(ticks, strategy, submodoDeEntorno())
             val wins = trades.count { it.result == "WIN" }
             val losses = trades.count { it.result == "LOSS" }
             val wr = if (wins + losses > 0) (wins.toDouble() / (wins + losses) * 100.0) else 0.0
             println(String.format(Locale.US, "%-28s -> Señales: %2d | W: %2d, L: %2d | WR: %5.1f%%", strategy.name, trades.size, wins, losses, wr))
         }
+    }
+
+    private companion object {
+        /**
+         * R23C Fase 2 (REQ 1): submodo del replay. Por defecto CONSERVATIVE (fail-safe: reproduce la
+         * politica mas restrictiva). En vivo R23C corre YOLO, asi que la invocacion de paridad debe
+         * exportar `BACKTEST_SUBMODE=YOLO` o el replay suprimiria señales que el motor real si emitio.
+         */
+        fun submodoDeEntorno(): AutonomousSubMode {
+            val raw = System.getenv("BACKTEST_SUBMODE") ?: System.getProperty("BACKTEST_SUBMODE") ?: "CONSERVATIVE"
+            return try {
+                AutonomousSubMode.valueOf(raw.trim().uppercase())
+            } catch (_: Exception) {
+                AutonomousSubMode.CONSERVATIVE
+            }
+        }
+
+        /** Duracion de una operacion binaria, en ms. Coincide con `durationSec = 60` de la fila. */
+        const val TRADE_DURATION_MS = 60_000L
+
+        /** Cooldown post-trade en YOLO (`yoloLossCooldownSeconds` = 35 s no aplica sin racha). */
+        const val YOLO_COOLDOWN_MS = 8_000L
+
+        /** Cooldown post-trade en CONSERVATIVE. */
+        const val CONSERVATIVE_COOLDOWN_MS = 35_000L
     }
 }
