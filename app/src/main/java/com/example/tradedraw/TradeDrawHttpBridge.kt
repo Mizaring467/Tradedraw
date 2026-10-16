@@ -514,6 +514,17 @@ class TradeDrawHttpBridge(
         }
     }
 
+    /**
+     * R23A Iter 3: este string NO admite comentarios `//` dentro del literal multilínea. Los `//` se
+     * emiten literalmente sobre el HTTP y rompen el JSON (RFC 8259 prohibe comentarios), lo que hacía
+     * fallar a `json.loads`/`jq`/`ConvertFrom-Json`. La explicación va aquí, fuera del literal.
+     *
+     * `observedStake` es lo que dice la pantalla de Binomo; `effectiveStake` es lo que el broker
+     * realmente debita y con lo que se registra el journal. Con stake 1.0 y pantalla 100.000 COP,
+     * `investmentAmount` coincidia con `effectiveStake` y ambos mentían: por eso se exponen los dos
+     * por separado. Deliberadamente NO se añade campo de comentario en el JSON: un campo `_comment`
+     * sería válido pero ensuciaría el contrato que consumen los validadores.
+     */
     private fun buildStatusJson(): String {
         val te = overlayService.tradingEngine
         val rm = overlayService.riskManager
@@ -604,11 +615,6 @@ class TradeDrawHttpBridge(
                 "currentLossStreak": ${rm.currentLossStreak},
                 "martingaleStatus": "${escapeJson(rm.getMartingaleStatusBadge())}",
                 "investmentAmount": ${rm.getCurrentInvestmentAmount()},
-                // R23A Iter 2: desacoplamiento de escala monetaria detectado en la iter 1.
-                // `observedStake` es lo que dice la pantalla de Binomo; `effectiveStake` es lo que el
-                // broker realmente debita y con lo que se registra el journal. Con stake 1.0 y
-                // pantalla 100.000 COP, `investmentAmount` coincidia con `effectiveStake` y ambos
-                // mentian: por eso se exponen los dos por separado.
                 "observedStake": ${AutoTradeAccessibilityService.observedOrderAmount},
                 "effectiveStake": ${rm.getEffectiveStake()},
                 "hasPendingTrade": ${rm.hasPendingTrade},
