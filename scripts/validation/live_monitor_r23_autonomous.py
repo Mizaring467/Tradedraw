@@ -60,9 +60,10 @@ def main():
     parser.add_argument("--expected-sha", default="", help="Git SHA esperado en /status")
     parser.add_argument("--expected-build-id", default="R23-AUTO-ITER1", help="Build ID esperado")
     parser.add_argument("--expected-version-code", type=int, default=10, help="versionCode esperado")
+    parser.add_argument("--out-dir", default="", help="Directorio de salida explícito (default: loops/r23_autonomous/iter_<iter>)")
     args = parser.parse_args()
 
-    out_dir = f"loops/r23_autonomous/iter_{args.iter}"
+    out_dir = args.out_dir if args.out_dir else f"loops/r23_autonomous/iter_{args.iter}"
     os.makedirs(out_dir, exist_ok=True)
     out_samples_jsonl = os.path.join(out_dir, "live_samples.jsonl")
     out_status_jsonl = os.path.join(out_dir, "status_samples.jsonl")
