@@ -66,12 +66,25 @@ def reprocess_window(window_dir: str):
                     continue
     print(f"[+] Señales únicas de engine en status_samples: {len(signal_actions)}")
 
-    # 3. Cargar eventos VETO
-    events_path = os.path.join(window_dir, "events.jsonl")
+    # 3. Cargar eventos VETO (desde decisions.csv preferentemente para abarcar toda la ventana)
     decisions_csv = os.path.join(window_dir, "decisions.csv")
+    events_path = os.path.join(window_dir, "events.jsonl")
     
     events_to_process = []
-    if os.path.exists(events_path):
+    if os.path.exists(decisions_csv):
+        with open(decisions_csv, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("kind") == "VETO" and "ADAPTIVE_BLOCK" in (row.get("detail") or "").upper():
+                    events_to_process.append({
+                        "decisionId": row.get("decision_id"),
+                        "detail": row.get("detail"),
+                        "atMs": int(row.get("timestamp", 0)),
+                        "market_regime": row.get("market_regime", "TRENDING"),
+                        "trend": row.get("trend", "UPTREND"),
+                        "asset": row.get("asset", "Z-CRY/IDX"),
+                    })
+    elif os.path.exists(events_path):
         with open(events_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
