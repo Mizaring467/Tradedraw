@@ -93,6 +93,8 @@ def main():
     demo_verified_count = 0
     real_account_seen = 0
     taps_observed = 0
+    initial_taps: Optional[int] = None
+    actual_git_sha = ""
     observed_decisions: Dict[str, Dict[str, Any]] = {}
     observed_trades: List[Dict[str, Any]] = []
     seen_trade_ids = set()
@@ -142,6 +144,7 @@ def main():
                 b_sha = status.get("gitSha", "")
                 b_id = status.get("buildId", "")
                 if sample_count == 1:
+                    actual_git_sha = b_sha
                     print(f"[VERIFICACIÓN BUILD] APK: versionCode={b_code}, versionName={b_name}, gitSha={b_sha}, buildId={b_id}")
 
                 # 2. VERIFICACIÓN CRÍTICA DE SEGURIDAD: CUENTA DEMO
@@ -170,6 +173,7 @@ def main():
                 cur_order_state = risk.get("orderState", cur_order_state)
 
                 if sample_count == 1:
+                    initial_taps = taps_observed
                     initial_wins = risk.get("totalWins", 0)
                     initial_losses = risk.get("totalLosses", 0)
                 cur_wins = risk.get("totalWins", 0)
@@ -381,13 +385,16 @@ def main():
     verdict = "PASS" if real_account_seen == 0 and demo_verified_count > 0 else "FAIL"
     rec = "KEEP" if verdict == "PASS" else "REVERT"
 
+    effective_sha = actual_git_sha or args.expected_sha or status.get("gitSha", "") if status else (actual_git_sha or args.expected_sha)
+    taps_window = taps_observed - (initial_taps if initial_taps is not None else taps_observed)
+
     report_content = f"""# REPORTE DE VALIDACIÓN LIVE — R23 AUTÓNOMO ITERACIÓN {args.iter} (CUENTA DEMO)
 
 **Fecha:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}  
 **Validador:** OPENCODE (`w1:pT`)  
 **Orquestador:** AGY (`w1:p1`)  
 **Dispositivo Auditado:** Xiaomi Redmi A1 (`UGU8KFUKM7E6CE8D`)  
-**Build Identificada:** versionCode={args.expected_version_code}, buildId={args.expected_build_id}, gitSha={args.expected_sha}  
+**Build Identificada:** versionCode={args.expected_version_code}, buildId={args.expected_build_id}, gitSha={effective_sha}  
 **Modo Auditado:** `AUTONOMOUS` (Cuenta DEMO)  
 **Duración de la Ventana:** {args.duration_min:.1f} minutos ({sample_count} muestras de telemetría)  
 **Veredicto:** **{verdict}**  
@@ -397,8 +404,8 @@ def main():
 ## 1. FACT (Hechos Directamente Observados)
 1. **Seguridad DEMO:** Cuenta DEMO verificada {demo_verified_count} veces. Cuentas reales observadas: {real_account_seen} (0.0%).
 2. **Preservación y Dinámica de Balance:** Saldo inicial = {initial_balance:,.2f} COP, saldo final = {cur_bal:,.2f} COP (Δ = {cur_bal - (initial_balance or cur_bal):+,.2f} COP).
-3. **Ejecución Autónoma:** {taps_observed} taps despachados a la interfaz DEMO. {len(observed_trades)} operaciones autónomas registradas.
-4. **Identidad de Build:** La APK en ejecución reportó versionCode={args.expected_version_code}, buildId="{args.expected_build_id}".
+3. **Ejecución Autónoma:** {taps_window} taps despachados en la ventana (acumulado histórico del proceso: {taps_observed}). {len(observed_trades)} operaciones autónomas registradas.
+4. **Identidad de Build:** La APK en ejecución reportó versionCode={args.expected_version_code}, buildId="{args.expected_build_id}", gitSha="{effective_sha}".
 5. **Decisiones Observadas:** Se registraron {len(observed_decisions)} decisiones con `decision_id` determinista.
 6. **Paridad Live ↔ Replay:** {replay_report_text}
 
