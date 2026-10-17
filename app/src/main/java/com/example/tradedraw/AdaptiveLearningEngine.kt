@@ -47,6 +47,10 @@ sealed class AdaptiveDecision {
  */
 class AdaptiveLearningEngine {
 
+    companion object {
+        const val ADAPTIVE_BLOCK_SIMILARITY_THRESHOLD = 0.99f
+    }
+
     private val TAG = "AdaptiveLearningEngine"
     private val STATE_FILE_NAME = "adaptive_learning_state.json"
 
@@ -256,7 +260,10 @@ class AdaptiveLearningEngine {
             }
         }
 
-        if (highestSimilarity >= 0.90f && matchingLossSig != null &&
+        // R23F: umbral de similitud elevado a 0.99f tras auditoría contrafactual R23E.
+        // Las señales con sim < 0.99f (ej. 98%) demostraron WR = 66.67% (+325k COP) y se liberan.
+        // Sólo se bloquean anti-patrones cuasi-idénticos (>= 99.0%, WR = 47.83%, -290k COP).
+        if (highestSimilarity >= ADAPTIVE_BLOCK_SIMILARITY_THRESHOLD && matchingLossSig != null &&
             isTightlyMatchingContext(candidateSignature, matchingLossSig!!)) {
             val loss = matchingLossSig!!
             val simPct = (highestSimilarity * 100).toInt()
@@ -286,7 +293,7 @@ class AdaptiveLearningEngine {
      * Para vetar se exige coincidencia plena: misma acción, misma tendencia, mismo régimen
      * lateral y S/R dentro de ±0.10. Así solo se bloquean anti-patrones genuinamente idénticos.
      */
-    private fun isTightlyMatchingContext(a: TradeContextSignature, b: TradeContextSignature): Boolean {
+    internal fun isTightlyMatchingContext(a: TradeContextSignature, b: TradeContextSignature): Boolean {
         if (a.action != b.action) return false
         if (a.trend != b.trend) return false
         if (a.isMarketSideways != b.isMarketSideways) return false
@@ -298,7 +305,7 @@ class AdaptiveLearningEngine {
     /**
      * Calcula la distancia/similitud matemática entre dos firmas contextuales (0.0 = totalmente opuestas, 1.0 = idénticas).
      */
-    private fun calculateSignatureSimilarity(a: TradeContextSignature, b: TradeContextSignature): Float {
+    internal fun calculateSignatureSimilarity(a: TradeContextSignature, b: TradeContextSignature): Float {
         var score = 0f
 
         // 1. Misma acción (0.20 peso)
@@ -463,6 +470,12 @@ class AdaptiveLearningEngine {
         totalInvertedAntiPatterns = 0
         if (context != null) {
             saveState(context)
+        }
+    }
+
+    internal fun addLossSignatureForTesting(sig: TradeContextSignature) {
+        synchronized(lossSignatures) {
+            lossSignatures.add(sig)
         }
     }
 }
