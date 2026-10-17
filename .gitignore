@@ -58,3 +58,6 @@ loops/screenshots/**/status_log.txt
 
 # Ronda 13: temporales de analisis y scripts de dispositivo
 .tmp_*
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

@@ -747,6 +747,17 @@ class TradingEngine(
 
     companion object {
         /**
+         * R23H Fase 1: umbral de `callPower` a partir del cual una compra en UPTREND se considera
+         * agotamiento de liquidez compradora en techo, y NO fuerza de continuacion.
+         *
+         * Origen: `workflows/R23H_BUY_FEATURE_ANALYSIS.md` §5. En la muestra R23G reconciliada el
+         * bucket `BUY + UPTREND + callPower >= 70` fue el unico con poder discriminante (ratio 6:1
+         * perdidas/ganancias). El umbral se congela en 70 y NO se recalibra dentro de esta fase: es
+         * la hipotesis a medir en vivo, no una optimizacion cerrada.
+         */
+        const val VETO_BUY_UPTREND_MAX_CALL_POWER = 70
+
+        /**
          * Ronda 12 (B2, veto V2): rango relativo minimo para considerar que un feed tiene
          * volatilidad medible. Congelado en `workflows/PREREGISTRO_R12.md` ANTES de medir su
          * efecto. Referencias medidas: ETHUSD-OTC 4,164e-02 (3 ordenes por encima), Z-CRY/IDX
@@ -1792,6 +1803,23 @@ class TradingEngine(
             return
         }
 
+        // R23H Fase 1: VETO_BUY_EXHAUSTION_CLIMAX en la ruta de vision.
+        // `executeHeadlessTrade` ya lo aplica, pero esta es la OTRA puerta que acaba en un tap
+        // real (via `executeAutonomousTrade`). Sin cubrir ambas, el veto seria un bypase parcial:
+        // una señal nacida del analisis de imagen en AUTONOMOUS seguiria comprando en el techo.
+        // Se usa `analysis.signalPowerCall`, que es el mismo campo que esta ruta propaga al HUD.
+        // Sin `decisionId`: esta ruta (vision) no tiene uno asignado todavia; el evento se emite
+        // sin el para no inventar un id que luego no case con el trade.
+        motivoVetoPorAgotamientoDeCompra(
+            action = action,
+            trend = analysis.trend,
+            callPower = analysis.signalPowerCall
+        )?.let { motivoVeto ->
+            android.util.Log.w("TradingEngine", "⛔ Señal $action VETADA por agotamiento de compra: $motivoVeto")
+            TradeEventLog.add(TradeEventLog.Kind.VETO, motivoVeto)
+            return
+        }
+
         // Evaluación por el Motor de Autoaprendizaje Adaptativo de Errores
         val adaptiveDecision = adaptiveLearningEngine.evaluateSignalSuitability(
             candidateAction = action,
@@ -2289,6 +2317,22 @@ class TradingEngine(
         // ceros en modo WebSocket puro y vetaban señales sobre datos nulos.
         val effectiveAnalysis = buildAnalysisFromSyntheticEngine(latestMarketTick ?: return)
 
+        // 2.b R23H Fase 1: VETO_BUY_EXHAUSTION_CLIMAX (hipótesis ganadora de compras).
+        // Va ANTES del motor adaptativo a propósito: un veto de política no debe registrar la
+        // firma de entrada en `AdaptiveLearningEngine` ni consumir su evaluación. Solo mira BUY;
+        // SELL, `ADAPTIVE_BLOCK` (0.99f), stake y payout quedan intactos.
+        // El `callPower` sale del MISMO análisis sintético que alimenta al motor adaptativo, así
+        // que el veto y el resto de filtros miran el mismo instante de mercado.
+        motivoVetoPorAgotamientoDeCompra(
+            action = action,
+            trend = effectiveAnalysis.trend,
+            callPower = effectiveAnalysis.signalPowerCall
+        )?.let { motivoVeto ->
+            Log.d("TradingEngine", "⛔ Headless Trade $action VETADO por agotamiento de compra: $motivoVeto")
+            TradeEventLog.add(TradeEventLog.Kind.VETO, motivoVeto, decisionId = currentDecisionId)
+            return
+        }
+
         val adaptiveDecision = adaptiveLearningEngine.evaluateSignalSuitability(
             candidateAction = action,
             analysis = effectiveAnalysis,
@@ -2771,4 +2815,36 @@ internal fun buildAdaptiveBlockDetail(reason: String, signalReason: String): Str
     if (m != null) sb.append(" [Confluencia: ").append(m.groupValues[1]).append("pts]")
     sb.append(" ").append(reason)
     return sb.toString()
+}
+
+/**
+ * R23H Fase 1: decide si una compra debe vetarse por AGOTAMIENTO DE CLIMAX en techo.
+ *
+ * HIPOTESIS QUE IMPLEMENTA (no optimizacion validada). `workflows/R23H_BUY_FEATURE_ANALYSIS.md`
+ * §5 aisla `BUY + UPTREND + callPower >= 70` como el unico bucket de compra con poder
+ * discriminante en la muestra R23G reconciliada: 6 perdidas evitadas por 1 victoria cedida. El
+ * fundamento microestructural es que un `callPower` extremo en pleno UPTREND mide liquidez
+ * compradora agotandose en resistencia, no fuerza para continuar. Es la unica hipotesis de la fase
+ * y se mide en vivo; el umbral queda congelado en [TradingEngine.VETO_BUY_UPTREND_MAX_CALL_POWER].
+ *
+ * POR QUE ES UNA FUNCION PURA Y NO UN `if` INLINE. El veto tiene que poder auditarse sin levantar
+ * el motor entero (que exige `Context`, `Handler`, `RiskManager` y el servicio de accesibilidad).
+ * Aislado aqui, el contrato completo — dispara en UPTREND+>=70, NO dispara por debajo, NO dispara
+ * en DOWNTREND/SIDEWAYS, NO toca SELL — se verifica en tests JVM puros.
+ *
+ * ALCANCE DELIBERADAMENTE MINIMO. Solo mira `BUY`. SELL, `ADAPTIVE_BLOCK` (0.99f), stake y payout
+ * quedan fuera: no se leen ni se escriben. Este veto se evalua ANTES del motor adaptativo para que
+ * un bloqueo por agotamiento no consuma ni contamine la firma de aprendizaje.
+ *
+ * @return el `detail` del evento de veto si procede vetar, o `null` si la orden sigue adelante.
+ */
+internal fun motivoVetoPorAgotamientoDeCompra(
+    action: TradeAction,
+    trend: TrendDirection,
+    callPower: Int
+): String? {
+    if (action != TradeAction.BUY) return null
+    if (trend != TrendDirection.UPTREND) return null
+    if (callPower < TradingEngine.VETO_BUY_UPTREND_MAX_CALL_POWER) return null
+    return "VETO_BUY_EXHAUSTION_CLIMAX UPTREND con callPower >= 70% (callPower=$callPower)"
 }
