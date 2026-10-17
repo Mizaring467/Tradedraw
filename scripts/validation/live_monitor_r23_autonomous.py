@@ -377,6 +377,7 @@ def main():
     # reconstruyendo la ventana completa en el host.
     accumulated_ticks: Dict[int, str] = {}
     tick_capture_errors = 0
+    window_interrupted_by_security = False
 
     # Métricas de riesgo y motor
     initial_wins = 0
@@ -504,7 +505,7 @@ def main():
             nonlocal taps_observed, initial_taps, actual_git_sha, cur_wins, cur_losses, cur_order_state
             nonlocal active_asset, active_submode, min_range_ratio, max_range_ratio, tick_capture_errors
             nonlocal last_valid_balance, outlier_count, min_validated_balance, max_validated_balance
-            nonlocal status, cur_has_pending, initial_wins, initial_losses
+            nonlocal status, cur_has_pending, initial_wins, initial_losses, window_interrupted_by_security
             elapsed_sec = int(now_ts - start_time)
             rem_sec = int(end_time - now_ts)
 
@@ -568,7 +569,8 @@ def main():
                     real_account_seen += 1
                     print(f"[{elapsed_sec:4d}s] 🛑🛑🛑 ALERTA CRÍTICA: Cuenta DEMO NO VERIFICADA! Abortando.")
                     emergency_shutdown(base_url)
-                    sys.exit("ABORTADO_POR_SEGURIDAD_NO_DEMO")
+                    window_interrupted_by_security = True
+                    return
 
                 # 3. BALANCE Y TAPS
                 # R23D Fase 1 (REQ 2): aqui solo se captura la lectura CRUDA. La validacion contra
@@ -761,6 +763,8 @@ def main():
 
         while time.time() < end_time:
             capturar_ciclo(time.time())
+            if window_interrupted_by_security:
+                break
             registrar_contrafactuales(int(time.time() * 1000))
             time.sleep(args.interval_sec)
 
@@ -780,7 +784,7 @@ def main():
     eventos_resueltos_ventana = (cur_wins - initial_wins) + (cur_losses - initial_losses)
     deadline_grace = time.time() + SETTLEMENT_GRACE_PERIOD_SEC
 
-    if hay_trade_sin_resolver(
+    if not window_interrupted_by_security and hay_trade_sin_resolver(
         cur_order_state,
         cur_has_pending,
         trades_confirmados_ventana,
@@ -1126,6 +1130,9 @@ HABRIA pasado con las señales vetadas. Cero taps, cero fondos expuestos, saldo 
         f_rep.write(report_content)
 
     print(f"\nReporte formal generado en: {out_report_md}")
+
+    if window_interrupted_by_security:
+        sys.exit("ABORTADO_POR_SEGURIDAD_NO_DEMO")
 
 
 if __name__ == "__main__":
