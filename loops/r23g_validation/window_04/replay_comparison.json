@@ -1,0 +1,259 @@
+{
+  "mode": "trades",
+  "summary": {
+    "total_live_trades": 7,
+    "total_replay_trades": 10,
+    "paired_decisions": 4,
+    "exact_matches": 0,
+    "divergences": 4,
+    "missing_live": 6,
+    "missing_replay": 3,
+    "match_rate_pct": 0.0,
+    "pass": false
+  },
+  "divergence_breakdown": {
+    "candle_second": 4
+  },
+  "pairs": [
+    {
+      "live": {
+        "decision_id": "c55fd3d7-d807-3070-b379-a296048614a5",
+        "trade_id": "a211bdfc-2eaf-43d3-a907-f63a73ea788d",
+        "timestamp": 1792211943831,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "CONFIRMADA BUY saldo movido",
+        "balance": 38434736.64,
+        "candle_second": 3
+      },
+      "replay": {
+        "decision_id": "c55fd3d7-d807-3070-b379-a296048614a5",
+        "trade_id": "",
+        "timestamp": 1792211941105,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 74% | Dist S: 12% | ⏱ 1s) -> CALL [Confluencia: 90pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 1
+      },
+      "status": "DIVERGENT",
+      "matched_by": "decision_id",
+      "first_divergence": "candle_second",
+      "delta_ms": -2726
+    },
+    {
+      "live": {
+        "decision_id": "e15f7f70-d9c2-3d65-8e10-647f7d54ad29",
+        "trade_id": "094cb9da-b361-41a8-a206-c15fc41491d2",
+        "timestamp": 1792212064688,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "CONFIRMADA BUY saldo movido",
+        "balance": 38517736.96,
+        "candle_second": 4
+      },
+      "replay": null,
+      "status": "MISSING_REPLAY"
+    },
+    {
+      "live": {
+        "decision_id": "cf487411-d664-3513-9e2f-995115649bca",
+        "trade_id": "b5465942-b515-4226-a267-2bc87ca04707",
+        "timestamp": 1792212423194,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "CONFIRMADA SELL saldo movido",
+        "balance": 38417735.68,
+        "candle_second": 3
+      },
+      "replay": {
+        "decision_id": "cf487411-d664-3513-9e2f-995115649bca",
+        "trade_id": "",
+        "timestamp": 1792212421105,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_REJECTION: Rechazo en Resistencia (Mecha: 91% | Dist R: 6% | ⏱ 1s) -> PUT [Confluencia: 95pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 1
+      },
+      "status": "DIVERGENT",
+      "matched_by": "decision_id",
+      "first_divergence": "candle_second",
+      "delta_ms": -2089
+    },
+    {
+      "live": {
+        "decision_id": "bc7265e9-b7bc-354c-ae32-90459f490ef9",
+        "trade_id": "3e7c8246-b4eb-4837-99a2-08c91ce445bd",
+        "timestamp": 1792212544110,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "CONFIRMADA SELL saldo movido",
+        "balance": 38417735.68,
+        "candle_second": 4
+      },
+      "replay": {
+        "decision_id": "bc7265e9-b7bc-354c-ae32-90459f490ef9",
+        "trade_id": "",
+        "timestamp": 1792212541106,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_ENGULFING: Vela Envolvente en Resistencia (⏱ 1s) -> PUT [Confluencia: 90pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 1
+      },
+      "status": "DIVERGENT",
+      "matched_by": "decision_id",
+      "first_divergence": "candle_second",
+      "delta_ms": -3004
+    },
+    {
+      "live": {
+        "decision_id": "7a78f98b-a644-3a87-a68f-dcd69b695ae1",
+        "trade_id": "abda4ca8-8e5c-4d68-b845-af3a76598ff2",
+        "timestamp": 1792212666131,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "CONFIRMADA BUY saldo movido",
+        "balance": 38217735.68,
+        "candle_second": 6
+      },
+      "replay": null,
+      "status": "MISSING_REPLAY"
+    },
+    {
+      "live": {
+        "decision_id": "5daf1448-fb9a-33f7-b34d-ca8f1a43435c",
+        "trade_id": "9860af90-3bf6-47b6-ba1f-cc5ff228629f",
+        "timestamp": 1792212904283,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "CONFIRMADA SELL saldo movido",
+        "balance": 38300736.0,
+        "candle_second": 4
+      },
+      "replay": {
+        "decision_id": "5daf1448-fb9a-33f7-b34d-ca8f1a43435c",
+        "trade_id": "",
+        "timestamp": 1792212901115,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_REJECTION: Rechazo en Resistencia (Mecha: 80% | Dist R: 7% | ⏱ 1s) -> PUT [Confluencia: 85pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 1
+      },
+      "status": "DIVERGENT",
+      "matched_by": "decision_id",
+      "first_divergence": "candle_second",
+      "delta_ms": -3168
+    },
+    {
+      "live": {
+        "decision_id": "fb3a90a1-4e88-3a98-808b-05a5fb169658",
+        "trade_id": "f1f33034-4107-4fb9-93d7-b6c6122894d8",
+        "timestamp": 1792213085049,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "CONFIRMADA SELL saldo movido",
+        "balance": 38383736.32,
+        "candle_second": 5
+      },
+      "replay": null,
+      "status": "MISSING_REPLAY"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "ac7540bd-c7f3-3475-9a40-974f2baccb88",
+        "trade_id": "",
+        "timestamp": 1792211282308,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_FALSE_BREAKOUT: Trampa en Soporte (Mecha: 36% | ⏱ 2s) -> CALL [Confluencia: 75pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 2
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "f9dae28c-8af2-3bba-926e-1b48123287ba",
+        "trade_id": "",
+        "timestamp": 1792211521503,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_REJECTION: Rechazo en Resistencia (Mecha: 42% | Dist R: 21% | ⏱ 1s) -> PUT [Confluencia: 90pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "379c6ff5-3349-3d9b-8ebf-07e8fbe3897c",
+        "trade_id": "",
+        "timestamp": 1792211643131,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 54% | Dist S: 1% | ⏱ 3s) -> CALL [Confluencia: 75pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 3
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "9bc56f07-9e33-3842-863e-02bcbb5a6447",
+        "trade_id": "",
+        "timestamp": 1792212061107,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 55% | Dist S: 2% | ⏱ 1s) -> CALL [Confluencia: 95pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "e80b565d-c186-32c2-a5fe-043aef2bb906",
+        "trade_id": "",
+        "timestamp": 1792212661116,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 66% | Dist S: 5% | ⏱ 1s) -> CALL [Confluencia: 75pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "a2940c8d-8aab-3016-968e-1e41d77ae3c7",
+        "trade_id": "",
+        "timestamp": 1792213023504,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_ENGULFING: Vela Envolvente en Soporte (⏱ 3s) -> CALL [Confluencia: 78pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 3
+      },
+      "status": "MISSING_LIVE"
+    }
+  ]
+}
