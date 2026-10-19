@@ -16,35 +16,35 @@
 +----------------------------------------------------------------------------------------------------+
 |                                    LOS 3 CUBOS EPISTÉMICOS R23K                                    |
 +----------------------------------------------------------------------------------------------------+
-| CUBO 1: PARIDAD POST-CONGELADO (W07 a W15)                                                         |
-|   - Pares Formales Evaluados: N = 13 (11 Matches, 2 Divergencias)                                           |
-|   - Tasa de Paridad (Match Rate): 84.62%                                                                         |
-|   - Intervalo Wilson al 95%: [57.77%, 95.67%]                                                     |
-|   - Veredicto Preregistro §2: FAIL (N=13 >= 10, tasa 84.62% < 90%)                                             |
+| CUBO 1: PARIDAD POST-CONGELADO (W07 a W16)                                                         |
+|   - Pares Formales Evaluados: N = 14 (12 Matches, 2 Divergencias)                                           |
+|   - Tasa de Paridad (Match Rate): 85.71%                                                                         |
+|   - Intervalo Wilson al 95%: [60.06%, 95.99%]                                                     |
+|   - Veredicto Preregistro §2: FAIL (N=14 >= 10, tasa 85.71% < 90%)                                             |
 +----------------------------------------------------------------------------------------------------+
-| CUBO 2: DESEMPEÑO HOMOGÉNEO CON VETO (W04 a W15 + Trade Frontera W10)                              |
-|   - Operaciones Reales: N = 35 (20 Wins / 15 Losses)                                                     |
-|   - Win Rate: 57.14% (Breakeven payout 83% = 54.64%)                                              |
-|   - Intervalo Wilson al 95%: [40.86%, 72.02%]                                                      |
-|   - EV (Retorno unitario R): +0.0426 [IC95%: -0.2700, +0.3546]                                     |
-|   - Veredicto Preregistro §3: NO CONCLUYENTE (N=35 < 40 y límite inf Wilson 40.86% <= BE 54.64%) |
+| CUBO 2: DESEMPEÑO HOMOGÉNEO CON VETO (W04 a W16 + Trade Frontera W10)                              |
+|   - Operaciones Reales: N = 38 (21 Wins / 16 Losses / 1 Voids)                                        |
+|   - Win Rate (sobre resueltos): 56.76% (Breakeven payout 83% = 54.64%)                             |
+|   - Intervalo Wilson al 95%: [40.91%, 71.33%]                                                      |
+|   - EV (Retorno unitario R): +0.0347 [IC95%: -0.2534, +0.3026]                                     |
+|   - Veredicto Preregistro §3: NO CONCLUYENTE (N=38 < 40 y límite inf Wilson 40.91% <= BE 54.64%) |
 +----------------------------------------------------------------------------------------------------+
 | CUBO 3: HISTÓRICO HETEROGÉNEO PRE-VETO (W01 + W02 + W03)                                           |
 |   - Operaciones Reales: N = 11 (7 Wins / 4 Losses, WR = 63.64%)                                         |
 |   - Intervalo Wilson al 95%: [35.38%, 84.83%]                                                      |
 |   - EV (Retorno unitario R): +0.1582 [IC95%: -0.3382, +0.6545]                                     |
 +----------------------------------------------------------------------------------------------------+
-| TOTAL CONSOLIDADO INFORMATIVO (W01 A W15):                                                         |
-|   - Total Operaciones: N = 46 trades reales (27 Wins / 19 Losses, WR = 58.70%)                       |
-|   - Variación Neta de Capital: +326,000.64 COP DEMO                                               |
-|   - Intervalo Wilson al 95%: [44.34%, 71.71%]                                                      |
-|   - Desglose Direccional: BUY 14W/13L (51.85%) | SELL 13W/6L (68.42%)                               |
+| TOTAL CONSOLIDADO INFORMATIVO (W01 A W16):                                                         |
+|   - Total Operaciones: N = 49 trades reales (28 Wins / 20 Losses / 1 Voids, WR = 58.33%)           |
+|   - Variación Neta de Capital: +308,999.68 COP DEMO                                               |
+|   - Intervalo Wilson al 95%: [44.28%, 71.15%]                                                      |
+|   - Desglose Direccional: BUY 14W/13L (51.85%) | SELL 14W/7L (66.67%)                               |
 +----------------------------------------------------------------------------------------------------+
 ```
 
 ---
 
-## 2. TABLA CONSOLIDADA VENTANA POR VENTANA (W01 A W15)
+## 2. TABLA CONSOLIDADA VENTANA POR VENTANA (W01 A W16)
 
 | Ventana | $N$ | Wins | Losses | Win Rate | IC Wilson 95% | Payout | Breakeven | Delta Real (COP) | Max DD |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -63,7 +63,8 @@
 | **W13** | 5 | 2 | 3 | 40.00% | [11.8%, 76.9%] | 83.0% | 54.64% | -133,998.08 COP | 0.68% |
 | **W14** | 1 | 0 | 1 | 0.00% | [0.0%, 79.3%] | 83.0% | 54.64% | -100,001.28 COP | 0.26% |
 | **W15** | 0 | 0 | 0 | 0.00% | [0.0%, 0.0%] | 83.0% | 54.64% | +0.00 COP | 0.00% |
-| **TOTAL** | **46** | **27** | **19** | **58.70%** | **[44.3%, 71.7%]** | **82.7%** | **54.73%** | **+326,000.64 COP** | **1.71%** |
+| **W16** | 3 | 1 | 1 | 50.00% | [9.5%, 90.5%] | 83.0% | 54.64% | -17,000.96 COP | 0.52% |
+| **TOTAL** | **49** | **28** | **20** | **58.33%** | **[44.3%, 71.2%]** | **82.7%** | **54.73%** | **+308,999.68 COP** | **1.96%** |
 
 ---
 
@@ -71,9 +72,9 @@
 
 | Sensibilidad | $N$ | Wins | Losses | Win Rate | IC Wilson 95% | EV (R) [IC 95%] | Delta COP |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Cubo 2 sin W04** | 27 | 13 | 14 | 48.15% | [30.74%, 66.01%] | -0.1204 [-0.4585, +0.2181] | -326,000.64 COP |
-| **Solo W07+ (post-congelado)** | 18 | 7 | 11 | 38.89% | [20.31%, 61.38%] | -0.2883 [-0.6950, +0.1183] | -520,000.00 COP |
-| **2.ª mitad cronológica trades** | 23 | 11 | 12 | 47.83% | [29.24%, 67.04%] | -0.1257 [-0.5226, +0.2713] | -289,999.36 COP |
+| **Cubo 2 sin W04** | 30 | 14 | 15 | 48.28% | [31.39%, 65.57%] | -0.1140 [-0.4190, +0.2183] | -343,001.60 COP |
+| **Solo W07+ (post-congelado)** | 21 | 8 | 12 | 40.00% | [21.88%, 61.34%] | -0.2552 [-0.6038, +0.1329] | -537,000.96 COP |
+| **2.ª mitad cronológica trades** | 25 | 11 | 13 | 45.83% | [27.89%, 64.93%] | -0.1552 [-0.5072, +0.1776] | -388,999.68 COP |
 
 ---
 
@@ -96,6 +97,7 @@
 | **W13** | 38,985,735.68 | 38,851,737.60 | -133,998.08 | -133,998.08 | $0.00 COP | `CONTINUO` |
 | **W14** | 38,851,737.60 | 38,751,736.32 | -100,001.28 | -100,001.28 | $0.00 COP | `CONTINUO` |
 | **W15** | 38,751,736.32 | 38,751,736.32 | +0.00 | +0.00 | $0.00 COP | `CONTINUO` |
+| **W16** | 38,751,736.32 | 38,734,735.36 | -17,000.96 | -17,000.96 | $0.00 COP | `CONTINUO` |
 
 ### Registro de Incidentes y Explicación de Huecos Inter-Ventana:
 - **`DUPLICATE_DEDUPLICATED`**: Trade ya registrado previamente; descartado de esta ventana. (Trade ID: `daa48cfa...`)
@@ -104,7 +106,7 @@
 
 ---
 
-## 5. LEDGER CANÓNICO AUDITADO TRADE POR TRADE (46 OPERACIONES)
+## 5. LEDGER CANÓNICO AUDITADO TRADE POR TRADE (49 OPERACIONES)
 
 | # | Trade ID | Timestamp (ms) | Ventana | Acción | Saldo Pre | Saldo Post | Delta (COP) | Resultado |
 | :-: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -154,3 +156,6 @@
 | **44** | `401e3193...` | 1792394823600 | **W13** | **BUY** | 39,051,735.04 | 38,951,736.32 | -99,998.72 | **LOSS** |
 | **45** | `8f6436b2...` | 1792394947152 | **W13** | **BUY** | 38,951,736.32 | 38,851,737.60 | -99,998.72 | **LOSS** |
 | **46** | `62bee090...` | 1792396862812 | **W14** | **BUY** | 38,851,737.60 | 38,751,736.32 | -100,001.28 | **LOSS** |
+| **47** | `8d08b3c3...` | 1792399984482 | **W16** | **SELL** | 38,751,736.32 | 38,651,735.04 | -100,001.28 | **LOSS** |
+| **48** | `e9a3fd70...` | 1792400103955 | **W16** | **SELL** | 38,651,735.04 | 38,651,735.04 | +0.00 | **VOID** |
+| **49** | `db9e644b...` | 1792400285958 | **W16** | **SELL** | 38,651,735.04 | 38,734,735.36 | +83,000.32 | **WIN** |
