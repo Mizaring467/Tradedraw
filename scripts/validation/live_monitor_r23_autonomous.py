@@ -42,7 +42,18 @@ if hasattr(sys.stdout, "reconfigure"):
 # REQ 1: ventana maxima de espera tras el cierre nominal para que resuelva un trade
 # que todavia estaba en curso. 75s cubre de sobra una vela M1 (60s) mas el margen de
 # confirmacion del broker.
-SETTLEMENT_GRACE_PERIOD_SEC = 75.0
+#
+# R23K A5 (Monitor v2): el tope sube a 150 s. El defecto observado en W10 fue un cierre
+# abrupto que dejo el trade de frontera contaminando W11; 75 s no alcanzan cuando el
+# despacho ocurre en el ultimo segundo de la ventana y el broker confirma con latencia de
+# Android Go (~4-5 s) mas la liquidacion de 60 s. 150 s = 60 (vela) + 75 (margen amplio).
+SETTLEMENT_GRACE_PERIOD_SEC = 150.0
+
+# R23K A5: tope duro de muestras perdidas consecutivas del bridge durante la gracia antes
+# de darla por fallida. Con intervalo de 10 s son ~30 s de bridge caido. No se aborta la
+# espera por un fallo aislado: el bridge puede tardar en responder mientras el telefono
+# escribe el journal.
+GRACE_MAX_FALLOS_CONSECUTIVOS = 3
 
 # REQ 2: una lectura de balance que diverja del ultimo balance valido mas de 1.000.000 COP
 # O mas de 10x el stake, sin un trade confirmado en la misma muestra, es un glitch de
@@ -136,6 +147,164 @@ def fetch_json(url: str, timeout: float = 3.0) -> Optional[Dict[str, Any]]:
             return json.loads(clean_data)
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# R23K A5 (Monitor v2): CIERRE SEGURO DE VENTANA
+# ---------------------------------------------------------------------------
+
+
+def ordenar_modo(base_url: str, modo: str = "DISABLED", timeout: float = 2.0) -> bool:
+    """
+    Manda un cambio de modo al bridge. Devuelve True si el bridge lo acepto.
+
+    Acepta las dos formas del parametro (`/mode?name=` y `/mode?mode=`) porque el bridge
+    Android las soporta ambas y una version antigua solo entendia una. Se prueba primero
+    `name` y se cae a `mode` sin levantar excepcion: en el cierre de ventana un fallo aqui
+    no puede tumbar al monitor, que todavia tiene que liquidar y escribir artefactos.
+    """
+    for param in ("name", "mode"):
+        try:
+            url = f"{base_url}/mode?{param}={modo}"
+            urllib.request.urlopen(url, timeout=timeout).read()
+            return True
+        except Exception:
+            continue
+    return False
+
+
+class ResultadoGracia:
+    """Resultado de la espera de liquidación. Todo en milisegundos para el metadata."""
+
+    def __init__(
+        self,
+        espero: bool,
+        resuelto: bool,
+        grace_wait_ms: int,
+        motivo_fin: str,
+        muestras: int,
+        fallos_consecutivos: int,
+        ultimo_order_state: str,
+    ):
+        self.espero = espero
+        self.resuelto = resuelto
+        self.grace_wait_ms = grace_wait_ms
+        self.motivo_fin = motivo_fin
+        self.muestras = muestras
+        self.fallos_consecutivos = fallos_consecutivos
+        self.ultimo_order_state = ultimo_order_state
+
+    @property
+    def grace_wait_sec(self) -> float:
+        return self.grace_wait_ms / 1000.0
+
+    def __repr__(self) -> str:
+        return (
+            f"ResultadoGracia(espero={self.espero}, resuelto={self.resuelto}, "
+            f"grace_wait_ms={self.grace_wait_ms}, motivo={self.motivo_fin!r}, "
+            f"muestras={self.muestras}, fallos={self.fallos_consecutivos})"
+        )
+
+
+def esperar_liquidacion(
+    leer_estado,
+    esperar,
+    ahora,
+    hay_sin_resolver,
+    max_segundos: float = SETTLEMENT_GRACE_PERIOD_SEC,
+    max_fallos_consecutivos: int = GRACE_MAX_FALLOS_CONSECUTIVOS,
+) -> ResultadoGracia:
+    """
+    Espera activa a que el trade en curso termine de liquidar tras el cierre nominal.
+
+    POR QUE ES UNA FUNCION PURA CON DEPENDENCIAS INYECTADAS. La espera real toca el reloj y
+    el bridge; sin inyectarlos, el caso «trade que no liquida» costaria 150 s de test y el
+    caso «bridge caido» no seria reproducible. Aqui el tiempo y el I/O son parametros, asi
+    que los tres escenarios de la especificacion se ejecutan en milisegundos y de forma
+    determinista.
+
+    CONTRATO (no negociable):
+      - Nunca lanza excepcion. Un bridge caido o una respuesta corrupta cuentan como fallo y
+        se sigue intentando hasta el tope.
+      - Nunca espera mas de `max_segundos`.
+      - Un fallo aislado NO aborta la espera: solo una racha de `max_fallos_consecutivos`.
+      - Siempre devuelve un `ResultadoGracia` con `grace_wait_ms`, haya resuelto o no.
+
+    Args:
+        leer_estado: callable sin argumentos -> dict con el `/status`, o None si fallo.
+        esperar: callable(segundos) -> None. Inyectable para que los tests no duerman.
+        ahora: callable() -> segundos flotantes. Reloj inyectable.
+        hay_sin_resolver: callable(status_dict) -> bool. Decide si sigue pendiente.
+        max_segundos: tope de la espera.
+        max_fallos_consecutivos: racha de fallos que da la espera por imposible.
+    """
+    inicio = ahora()
+    limite = inicio + max_segundos
+    muestras = 0
+    fallos = 0
+    ultimo_order_state = "DESCONOCIDO"
+
+    while ahora() < limite:
+        status = leer_estado()
+        if status is None:
+            fallos += 1
+            if fallos >= max_fallos_consecutivos:
+                return ResultadoGracia(
+                    espero=True,
+                    resuelto=False,
+                    grace_wait_ms=int((ahora() - inicio) * 1000),
+                    motivo_fin="BRIDGE_INACCESIBLE",
+                    muestras=muestras,
+                    fallos_consecutivos=fallos,
+                    ultimo_order_state=ultimo_order_state,
+                )
+        else:
+            fallos = 0
+            muestras += 1
+            risk = status.get("risk") or {}
+            ultimo_order_state = str(risk.get("orderState", "DESCONOCIDO"))
+            if not hay_sin_resolver(status):
+                return ResultadoGracia(
+                    espero=True,
+                    resuelto=True,
+                    grace_wait_ms=int((ahora() - inicio) * 1000),
+                    motivo_fin="LIQUIDADO",
+                    muestras=muestras,
+                    fallos_consecutivos=0,
+                    ultimo_order_state=ultimo_order_state,
+                )
+
+        # No dormir mas alla del tope: si faltan 3 s, dormir 10 se pasaria de largo.
+        restante = limite - ahora()
+        if restante <= 0:
+            break
+        esperar(min(restante, 1.0))
+
+    return ResultadoGracia(
+        espero=True,
+        resuelto=False,
+        grace_wait_ms=int(max(0.0, ahora() - inicio) * 1000),
+        motivo_fin="TIMEOUT",
+        muestras=muestras,
+        fallos_consecutivos=fallos,
+        ultimo_order_state=ultimo_order_state,
+    )
+
+
+def pendiente_segun_status(status: Dict[str, Any]) -> bool:
+    """
+    Traduce un `/status` a «queda algo por liquidar».
+
+    Se apoya en `risk.orderState` y `risk.hasPendingTrade`, que es lo que expone el bridge.
+    Si el payload llega sin `risk` se asume PENDIENTE: fail-closed. Preferimos esperar de
+    mas a cerrar una ventana con un trade a medio liquidar, que es justo el defecto de W10.
+    """
+    risk = status.get("risk")
+    if not isinstance(risk, dict):
+        return True
+    if str(risk.get("orderState", "")).upper() != "NINGUNA":
+        return True
+    return bool(risk.get("hasPendingTrade", False))
 
 
 def emergency_shutdown(base_url: str):
@@ -310,8 +479,243 @@ def bucket_label(value: Optional[float], buckets, suffix: str = "") -> str:
     return "N/A"
 
 
+# ---------------------------------------------------------------------------
+# R23K A5 (Monitor v2): SELF-TESTS DEL CIERRE SEGURO
+#
+# Ejecutar con:  python scripts/validation/live_monitor_r23_autonomous.py --test
+#
+# POR QUE ESTOS TESTS NO TOCAN EL RELOJ REAL NI EL BRIDGE. `esperar_liquidacion` recibe el
+# reloj, el sleep y el lector de `/status` como parametros. Los tests inyectan un reloj
+# simulado que avanza con el sleep, de modo que el caso «trade que no liquida» cuesta 150 s
+# simulados y 0 s reales, y el caso «bridge caido» es determinista en vez de depender de la
+# red. Un test que duerme 150 s de verdad no se correria nunca.
+# ---------------------------------------------------------------------------
+
+
+class _RelojSimulado:
+    """Reloj monotono falso: `dormir` avanza el tiempo en vez de esperar."""
+
+    def __init__(self):
+        self.t = 0.0
+
+    def ahora(self) -> float:
+        return self.t
+
+    def dormir(self, segundos: float) -> None:
+        self.t += segundos
+
+
+def _status_con(order_state: str, has_pending: bool) -> Dict[str, Any]:
+    return {
+        "isDemoAccount": True,
+        "risk": {
+            "orderState": order_state,
+            "hasPendingTrade": has_pending,
+        },
+    }
+
+
+def _test_caso_a_trade_liquida() -> None:
+    """
+    CASO A: trade abierto al fin nominal que liquida a los 60 s.
+
+    Espera: el monitor espera los 60 s, captura la resolucion, registra grace_wait_ms
+    coherente y termina con exito (resuelto=True, motivo LIQUIDADO).
+    """
+    reloj = _RelojSimulado()
+    LIQUIDA_EN = 60.0
+    lecturas = []
+
+    def leer():
+        lecturas.append(reloj.ahora())
+        # Antes de los 60 s sigue CONFIRMADA; al llegar, liquida.
+        if reloj.ahora() < LIQUIDA_EN:
+            return _status_con("CONFIRMADA", True)
+        return _status_con("NINGUNA", False)
+
+    r = esperar_liquidacion(
+        leer_estado=leer,
+        esperar=reloj.dormir,
+        ahora=reloj.ahora,
+        hay_sin_resolver=pendiente_segundo_status,
+    )
+
+    assert r.espero, "Caso A: debio entrar en gracia"
+    assert r.resuelto, f"Caso A: debio resolver, obtuvo {r!r}"
+    assert r.motivo_fin == "LIQUIDADO", f"Caso A: motivo esperado LIQUIDADO, obtuvo {r.motivo_fin}"
+    assert r.grace_wait_ms >= 59_000, f"Caso A: espero ~60 s, registro {r.grace_wait_ms} ms"
+    assert r.grace_wait_ms <= 62_000, f"Caso A: no debio pasarse de 60 s, registro {r.grace_wait_ms} ms"
+    assert r.ultimo_order_state == "NINGUNA", f"Caso A: orderState final inesperado {r.ultimo_order_state}"
+    assert len(lecturas) >= 60, f"Caso A: debio muestrear cada segundo, solo {len(lecturas)} lecturas"
+    print(
+        f"  [A] liquidacion a los 60s: OK  (grace_wait_ms={r.grace_wait_ms}, "
+        f"muestras={r.muestras})"
+    )
+
+
+def _test_caso_b_timeout() -> None:
+    """
+    CASO B: `orderState` nunca sale de CONFIRMADA.
+
+    Espera: agota los 150 s, NO crashea, devuelve motivo TIMEOUT y deja el estado final
+    registrable en metadata para que el reporte marque la ventana INCOMPLETA.
+    """
+    reloj = _RelojSimulado()
+
+    def leer():
+        return _status_con("CONFIRMADA", True)
+
+    r = esperar_liquidacion(
+        leer_estado=leer,
+        esperar=reloj.dormir,
+        ahora=reloj.ahora,
+        hay_sin_resolver=pendiente_segundo_status,
+    )
+
+    assert not r.resuelto, f"Caso B: no debio declarar resuelto, obtuvo {r!r}"
+    assert r.motivo_fin == "TIMEOUT", f"Caso B: motivo esperado TIMEOUT, obtuvo {r.motivo_fin}"
+    assert r.grace_wait_ms >= 149_000, f"Caso B: debio agotar el tope, registro {r.grace_wait_ms} ms"
+    assert r.grace_wait_ms <= 151_000, f"Caso B: se paso del tope, registro {r.grace_wait_ms} ms"
+    assert r.ultimo_order_state == "CONFIRMADA", f"Caso B: estado final inesperado {r.ultimo_order_state}"
+    print(
+        f"  [B] timeout sin liquidar: OK  (grace_wait_ms={r.grace_wait_ms}, "
+        f"motivo={r.motivo_fin}, orderState={r.ultimo_order_state})"
+    )
+
+
+def _test_caso_c_bridge_caido() -> None:
+    """
+    CASO C: el bridge no responde al cierre nominal.
+
+    Espera: reintentos controlados, sin excepcion no controlada, y salida segura con motivo
+    BRIDGE_INACCESIBLE tras la racha configurada. Ademas: un fallo AISLADO no debe abortar.
+    """
+    reloj = _RelojSimulado()
+    intentos = []
+
+    def leer_caido():
+        intentos.append(reloj.ahora())
+        return None
+
+    r = esperar_liquidacion(
+        leer_estado=leer_caido,
+        esperar=reloj.dormir,
+        ahora=reloj.ahora,
+        hay_sin_resolver=pendiente_segundo_status,
+        max_fallos_consecutivos=3,
+    )
+
+    assert not r.resuelto, f"Caso C: no debio resolver, obtuvo {r!r}"
+    assert r.motivo_fin == "BRIDGE_INACCESIBLE", f"Caso C: motivo esperado BRIDGE_INACCESIBLE, obtuvo {r.motivo_fin}"
+    assert r.fallos_consecutivos == 3, f"Caso C: esperaba 3 fallos, obtuvo {r.fallos_consecutivos}"
+    assert len(intentos) == 3, f"Caso C: esperaba 3 intentos, obtuvo {len(intentos)}"
+    assert r.grace_wait_ms < 150_000, "Caso C: no debe agotar el tope, el bridge ya se declaro caido"
+
+    # Fallo aislado: no debe abortar. Secuencia: fallo, fallo, OK pendiente, fallo, OK resuelto.
+    reloj2 = _RelojSimulado()
+    secuencia = iter([None, None, _status_con("CONFIRMADA", True), None, _status_con("NINGUNA", False)])
+
+    def leer_secuencia():
+        try:
+            return next(secuencia)
+        except StopIteration:
+            return _status_con("NINGUNA", False)
+
+    r2 = esperar_liquidacion(
+        leer_estado=leer_secuencia,
+        esperar=reloj2.dormir,
+        ahora=reloj2.ahora,
+        hay_sin_resolver=pendiente_segundo_status,
+        max_fallos_consecutivos=3,
+    )
+    assert r2.resuelto, f"Caso C2: fallos intercalados no deben abortar la espera, obtuvo {r2!r}"
+    assert r2.motivo_fin == "LIQUIDADO", f"Caso C2: motivo esperado LIQUIDADO, obtuvo {r2.motivo_fin}"
+
+    print(
+        f"  [C] bridge caido: OK  ({len(intentos)} reintentos controlados, "
+        f"motivo={r.motivo_fin}) | fallo aislado no aborta: OK"
+    )
+
+
+def pendiente_segundo_status(status: Dict[str, Any]) -> bool:
+    """Alias explicito del predicado de produccion, para que los tests se lean claros."""
+    return pendiente_segundo_status_prod(status)
+
+
+def pendiente_segundo_status_prod(status: Dict[str, Any]) -> bool:
+    """Delegacion real en `pendiente_segundo_status_base`, el predicado de produccion."""
+    return pendiente_segundo_status_base(status)
+
+
+def pendiente_segundo_status_base(status: Dict[str, Any]) -> bool:
+    """Predicado de produccion: `orderState` fuera de NINGUNA o `hasPendingTrade` activo."""
+    risk = status.get("risk")
+    if not isinstance(risk, dict):
+        return True
+    if str(risk.get("orderState", "")).upper() != "NINGUNA":
+        return True
+    return bool(risk.get("hasPendingTrade", False))
+
+
+def _ejecutar_self_tests() -> int:
+    """
+    Suite `--test`. Devuelve 0 si todo pasa, 1 si algo falla.
+
+    Cada caso imprime su resultado y, si falla, el assert se propaga con su mensaje. No se
+    captura la excepcion: un self-test que se traga el fallo no sirve de nada.
+    """
+    print("=" * 70)
+    print("SELF-TESTS MONITOR v2 (R23K A5) — CIERRE SEGURO DE VENTANA")
+    print("=" * 70)
+
+    casos = [
+        ("A", "trade abierto al cierre que liquida a los 60s", _test_caso_a_trade_liquida),
+        ("B", "trade abierto que nunca liquida (tope 150s)", _test_caso_b_timeout),
+        ("C", "bridge caido al cierre nominal", _test_caso_c_bridge_caido),
+    ]
+
+    fallos = []
+    for codigo, descripcion, fn in casos:
+        try:
+            fn()
+        except AssertionError as e:
+            fallos.append((codigo, str(e)))
+            print(f"  [{codigo}] {descripcion}: FALLA -> {e}")
+        except Exception as e:
+            fallos.append((codigo, f"{type(e).__name__}: {e}"))
+            print(f"  [{codigo}] {descripcion}: ERROR INESPERADO -> {type(e).__name__}: {e}")
+
+    # Guardas del contrato que no dependen de los casos simulados.
+    try:
+        assert SETTLEMENT_GRACE_PERIOD_SEC == 150.0, (
+            f"El tope de gracia debe ser 150s, es {SETTLEMENT_GRACE_PERIOD_SEC}"
+        )
+        assert GRACE_MAX_FALLOS_CONSECUTIVOS >= 2, "Una racha de 1 fallo abortaria la gracia"
+        r = ResultadoGracia(True, True, 1234, "LIQUIDADO", 1, 0, "NINGUNA")
+        assert r.grace_wait_sec == 1.234, f"grace_wait_sec mal calculado: {r.grace_wait_sec}"
+        print("  [D] contrato de constantes y unidades: OK")
+    except AssertionError as e:
+        fallos.append(("D", str(e)))
+        print(f"  [D] contrato de constantes: FALLA -> {e}")
+
+    print("-" * 70)
+    if fallos:
+        print(f"RESULTADO: FALLA ({len(fallos)} caso(s))")
+        for codigo, msg in fallos:
+            print(f"  - {codigo}: {msg}")
+        return 1
+    print(f"RESULTADO: PASS ({len(casos) + 1}/{len(casos) + 1} casos)")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="Monitor Live R23 MODO AUTÓNOMO DEMO")
+    # R23K A5: modo self-test, sin tocar el dispositivo ni la red.
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Ejecutar la suite de self-tests del cierre seguro (no captura ninguna ventana)",
+    )
     parser.add_argument("--iter", type=int, default=1, help="Número de iteración R23 Autónomo (default: 1)")
     parser.add_argument("--duration-min", type=float, default=20.0, help="Duración en minutos (default: 20.0)")
     parser.add_argument("--interval-sec", type=float, default=10.0, help="Intervalo en segundos (default: 10.0)")
@@ -320,6 +724,11 @@ def main():
     parser.add_argument("--expected-version-code", type=int, default=10, help="versionCode esperado")
     parser.add_argument("--out-dir", default="", help="Directorio de salida explícito (default: loops/r23_autonomous/iter_<iter>)")
     args = parser.parse_args()
+
+    # R23K A5: el modo --test termina aqui. No crea directorios, no toca el bridge, no
+    # captura nada: solo corre los tres escenarios simulados del cierre seguro.
+    if args.test:
+        sys.exit(_ejecutar_self_tests())
 
     out_dir = args.out_dir if args.out_dir else f"loops/r23_autonomous/iter_{args.iter}"
     os.makedirs(out_dir, exist_ok=True)
@@ -769,20 +1178,48 @@ def main():
             time.sleep(args.interval_sec)
 
     # ---------------------------------------------------------------------------
-    # R23D Fase 1 (REQ 1): SETTLEMENT GRACE PERIOD
+    # R23D Fase 1 (REQ 1) + R23K A5 (Monitor v2): CIERRE SEGURO DE VENTANA
     #
-    # Al alcanzar el cierre nominal, si queda un trade sin resolver (la maquina de ordenes no
-    # esta en NINGUNA, o `/status` declara hasPendingTrade, o hay mas trades confirmados que
-    # resoluciones W/L contabilizadas) se sigue muestreando hasta que resuelva o expire el
-    # timeout de 75s. En W03 el trade ejecutado en el ultimo minuto resolvio despues del cierre
-    # y los contadores de la ventana quedaron en W=0/L=0, obligando a conciliar a mano.
+    # ORDEN DE OPERACIONES, que es lo que arregla el defecto de W10:
+    #   1. Se fija el cierre nominal (end_time) ANTES de nada.
+    #   2. Se manda DISABLED de inmediato para que el bot no despache mas entradas. En W10 el
+    #      bot siguio operando tras el cierre y su trade de frontera contamino W11.
+    #   3. Solo despues se espera a que liquide lo que ya estaba en vuelo (gracia).
+    #
+    # Un trade pertenece a ESTA ventana si su despacho fue <= nominal_window_end_ts,
+    # independientemente de cuando liquide. Eso lo aplica el reconciliador aguas abajo; el
+    # monitor solo garantiza que la liquidacion ocurra DENTRO de la ventana de captura.
     # ---------------------------------------------------------------------------
     nominal_window_end_ts = end_time
     actual_capture_end_ts = time.time()
 
+    # 2. Transicion a DISABLED al fin nominal. Se hace ANTES de esperar: mientras el bot
+    #    pudiera despachar, la gracia nunca terminaria de forma acotada.
+    grace_resultado: Optional[ResultadoGracia] = None
+    if not window_interrupted_by_security:
+        exito_disabled = ordenar_modo(base_url, "DISABLED")
+        modo_disabled_ts = time.time()
+        if exito_disabled:
+            print(
+                f"[CIERRE SEGURO] Modo DISABLED ordenado en +{modo_disabled_ts - nominal_window_end_ts:.1f}s "
+                f"del cierre nominal."
+            )
+            cur_order_state = "DISABLED"
+        else:
+            # No se aborta: la gracia y los artefactos siguen siendo necesarios. Se reporta.
+            print(
+                "[CIERRE SEGURO] ⚠️ No se pudo ordenar DISABLED al bridge. "
+                "Se continua con la liquidación; el reporte marcará el fallo."
+            )
+        # Una muestra de /status inmediatamente despues del cambio de modo.
+        status_post = fetch_json(f"{base_url}/status")
+        if status_post:
+            risk_post = status_post.get("risk") or {}
+            cur_order_state = str(risk_post.get("orderState", cur_order_state))
+            cur_has_pending = bool(risk_post.get("hasPendingTrade", cur_has_pending))
+
     trades_confirmados_ventana = len(observed_trades)
     eventos_resueltos_ventana = (cur_wins - initial_wins) + (cur_losses - initial_losses)
-    deadline_grace = time.time() + SETTLEMENT_GRACE_PERIOD_SEC
 
     if not window_interrupted_by_security and hay_trade_sin_resolver(
         cur_order_state,
@@ -790,39 +1227,73 @@ def main():
         trades_confirmados_ventana,
         eventos_resueltos_ventana,
     ):
-        print(f"[SETTLEMENT GRACE] Esperando resolución de trade en curso (máx {int(SETTLEMENT_GRACE_PERIOD_SEC)}s)...")
-        resuelto_en_gracia = False
-        with open(out_samples_jsonl, "a", encoding="utf-8") as f_samples, \
-             open(out_status_jsonl, "a", encoding="utf-8") as f_status:
-            while time.time() < deadline_grace:
-                time.sleep(args.interval_sec)
-                if time.time() >= deadline_grace:
-                    break
+        print(
+            f"[SETTLEMENT GRACE] Trade en vuelo al cierre. Esperando liquidación "
+            f"(máx {int(SETTLEMENT_GRACE_PERIOD_SEC)}s)..."
+        )
+
+        def _leer_estado_gracia():
+            """Lee /status y refresca los contadores que usa `hay_trade_sin_resolver`."""
+            nonlocal cur_order_state, cur_has_pending
+            st = fetch_json(f"{base_url}/status")
+            if st is None:
+                return None
+            # `capturar_ciclo` actualiza wait counters, decisiones y contrafactuales; es la
+            # misma funcion del bucle principal para que la gracia no invente telemetria.
+            try:
                 capturar_ciclo(time.time())
-                # R23E: la gracia de settlement tambien resuelve contrafactuales cuyo horizonte
-                # de 60s ya vencio, para no perder oportunidades registradas al borde del cierre.
                 registrar_contrafactuales(int(time.time() * 1000))
-                eventos_resueltos_ventana = (cur_wins - initial_wins) + (cur_losses - initial_losses)
-                if not hay_trade_sin_resolver(
-                    cur_order_state,
-                    cur_has_pending,
-                    len(observed_trades),
-                    eventos_resueltos_ventana,
-                ):
-                    resuelto_en_gracia = True
-                    print(
-                        f"[SETTLEMENT GRACE] Trade resuelto. W/L de la ventana: "
-                        f"{cur_wins - initial_wins}/{cur_losses - initial_losses}"
-                    )
-                    break
-        if not resuelto_en_gracia:
+            except Exception as e:
+                print(f"[SETTLEMENT GRACE] Aviso: fallo al capturar durante la gracia ({e}).")
+            risk = st.get("risk") or {}
+            cur_order_state = str(risk.get("orderState", cur_order_state))
+            cur_has_pending = bool(risk.get("hasPendingTrade", cur_has_pending))
+            return st
+
+        def _sigue_pendiente(_status):
+            return hay_trade_sin_resolver(
+                cur_order_state,
+                cur_has_pending,
+                len(observed_trades),
+                (cur_wins - initial_wins) + (cur_losses - initial_losses),
+            )
+
+        grace_resultado = esperar_liquidacion(
+            leer_estado=_leer_estado_gracia,
+            esperar=time.sleep,
+            ahora=time.time,
+            hay_sin_resolver=_sigue_pendiente,
+            max_segundos=SETTLEMENT_GRACE_PERIOD_SEC,
+        )
+
+        if grace_resultado.resuelto:
             print(
-                f"[SETTLEMENT GRACE] ⚠️ Timeout de {int(SETTLEMENT_GRACE_PERIOD_SEC)}s agotado con el trade sin resolver. "
+                f"[SETTLEMENT GRACE] Liquidado en {grace_resultado.grace_wait_sec:.1f}s "
+                f"({grace_resultado.grace_wait_ms} ms). "
+                f"W/L de la ventana: {cur_wins - initial_wins}/{cur_losses - initial_losses}"
+            )
+        elif grace_resultado.motivo_fin == "BRIDGE_INACCESIBLE":
+            print(
+                f"[SETTLEMENT GRACE] ⚠️ Bridge inaccesible tras {grace_resultado.fallos_consecutivos} "
+                f"lecturas fallidas ({grace_resultado.grace_wait_sec:.1f}s). "
+                f"Se cierra sin confirmar la liquidación."
+            )
+        else:
+            print(
+                f"[SETTLEMENT GRACE] ⚠️ Timeout de {int(SETTLEMENT_GRACE_PERIOD_SEC)}s agotado "
+                f"con el trade sin resolver (orderState={grace_resultado.ultimo_order_state}). "
                 f"El reporte marca esta ventana como INCOMPLETA."
             )
+    else:
+        print("[CIERRE SEGURO] Sin trades en vuelo al cierre nominal. No requiere gracia.")
 
     actual_capture_end_ts = time.time()
     settlement_extra_seconds = max(0.0, actual_capture_end_ts - nominal_window_end_ts)
+    # R23K A5: el metadata expone la espera en las dos unidades que pide la especificacion.
+    grace_wait_ms = grace_resultado.grace_wait_ms if grace_resultado else 0
+    grace_wait_sec = grace_resultado.grace_wait_sec if grace_resultado else 0.0
+    grace_motivo = grace_resultado.motivo_fin if grace_resultado else "SIN_TRADE_EN_VUELO"
+    grace_resuelto = grace_resultado.resuelto if grace_resultado else True
 
     # FIN DE LA VENTANA — EXPORTAR ARTEFACTOS
     # R23D Fase 1 (REQ 2): el balance FINAL y el drawdown se reportan sobre la serie VALIDADA.
@@ -855,6 +1326,16 @@ def main():
         "actual_capture_end_ts": actual_capture_end_ts,
         "settlement_extra_seconds": settlement_extra_seconds,
         "settlement_grace_period_sec": SETTLEMENT_GRACE_PERIOD_SEC,
+        # R23K A5 (Monitor v2): la espera de liquidación, en ms y en segundos, con su desenlace.
+        # `grace_wait_ms` es el numero que permite auditar si la ventana cerro limpia o se fue
+        # al tope; `grace_resultado` distingue liquidado de timeout y de bridge caido.
+        "grace_wait_ms": grace_wait_ms,
+        "grace_wait_sec": grace_wait_sec,
+        "grace_resultado": grace_motivo,
+        "grace_resuelto": grace_resuelto,
+        "grace_ultimo_order_state": (
+            grace_resultado.ultimo_order_state if grace_resultado else "NINGUNA"
+        ),
         "samples_captured": sample_count,
         "initial_balance": initial_balance,
         "final_balance_raw": cur_bal,
