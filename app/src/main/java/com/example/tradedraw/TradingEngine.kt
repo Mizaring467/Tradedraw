@@ -470,34 +470,18 @@ class TradingEngine(
         val rsi = syntheticCandleEngine.syntheticTickRsi
         val isChoppy = syntheticCandleEngine.cachedChoppiness || trend == TrendDirection.SIDEWAYS
 
-        // Cálculo dinámico de probabilidades para termómetro del HUD y telemetría
-        var callPower = 50
-        var putPower = 50
-        when (trend) {
-            TrendDirection.UPTREND -> {
-                callPower = 68
-                putPower = 32
-                if (distSup <= 0.25f) callPower += 10
-                if (rsi in 40.0..68.0) callPower += 8
-                if (tick.isBullishImpulse) callPower += 6
-            }
-            TrendDirection.DOWNTREND -> {
-                callPower = 32
-                putPower = 68
-                if (distRes <= 0.25f) putPower += 10
-                if (rsi in 32.0..60.0) putPower += 8
-                if (tick.isBearishImpulse) putPower += 6
-            }
-            TrendDirection.SIDEWAYS -> {
-                if (distSup <= 0.20f) { callPower = 62; putPower = 38 }
-                else if (distRes <= 0.20f) { callPower = 38; putPower = 62 }
-            }
-        }
-        callPower = callPower.coerceIn(15, 95)
-        putPower = putPower.coerceIn(15, 95)
-        // Termometro coherente: CALL + PUT = 100. Antes cada lado se ajustaba por separado y sumaban
-        // hasta 118% (p.ej. 32% CALL / 86% PUT). El lado dominante manda; el otro es su complemento.
-        if (callPower >= putPower) putPower = 100 - callPower else callPower = 100 - putPower
+        // Cálculo dinámico de probabilidades para termómetro del HUD y telemetría.
+        // R23H Fase 2: extraido a `calcularPoderesDeMercado` para que el arnes de replay
+        // (`ReplayBacktestTest`) pueda reproducir el MISMO callPower sin duplicar la formula.
+        // Duplicarla habria hecho que replay y vivo divergieran en silencio al primer ajuste.
+        val (callPower, putPower) = calcularPoderesDeMercado(
+            trend = trend,
+            distSupportRatio = distSup,
+            distResistanceRatio = distRes,
+            rsi = rsi,
+            isBullishImpulse = tick.isBullishImpulse,
+            isBearishImpulse = tick.isBearishImpulse
+        )
 
         val streak = when {
             syntheticCandleEngine.consecutiveUpTicks >= 2 -> "${syntheticCandleEngine.consecutiveUpTicks}T 🟢"
@@ -2815,6 +2799,56 @@ internal fun buildAdaptiveBlockDetail(reason: String, signalReason: String): Str
     if (m != null) sb.append(" [Confluencia: ").append(m.groupValues[1]).append("pts]")
     sb.append(" ").append(reason)
     return sb.toString()
+}
+
+/**
+ * R23H Fase 2: calcula el par (callPower, putPower) del termometro de mercado.
+ *
+ * Extraido de `buildAnalysisFromSyntheticEngine` SIN cambiar una sola constante: mismos valores
+ * base, mismos incrementos, mismos umbrales, mismo `coerceIn` y misma normalizacion a 100. La
+ * formula es la MISMA que decide en vivo; sacarla a funcion pura solo permite que el arnes de
+ * replay (`ReplayBacktestTest`) la invoque para reproducir el veto por agotamiento con identico
+ * `callPower`. Duplicar el calculo en el test habria garantizado divergencia silenciosa al primer
+ * ajuste de estrategia.
+ *
+ * CONGELADO: esta funcion NO es un punto de calibracion. Cualquier cambio de valores aqui altera la
+ * estrategia y queda fuera del alcance de una correccion de infraestructura.
+ */
+internal fun calcularPoderesDeMercado(
+    trend: TrendDirection,
+    distSupportRatio: Float,
+    distResistanceRatio: Float,
+    rsi: Double,
+    isBullishImpulse: Boolean,
+    isBearishImpulse: Boolean
+): Pair<Int, Int> {
+    var callPower = 50
+    var putPower = 50
+    when (trend) {
+        TrendDirection.UPTREND -> {
+            callPower = 68
+            putPower = 32
+            if (distSupportRatio <= 0.25f) callPower += 10
+            if (rsi in 40.0..68.0) callPower += 8
+            if (isBullishImpulse) callPower += 6
+        }
+        TrendDirection.DOWNTREND -> {
+            callPower = 32
+            putPower = 68
+            if (distResistanceRatio <= 0.25f) putPower += 10
+            if (rsi in 32.0..60.0) putPower += 8
+            if (isBearishImpulse) putPower += 6
+        }
+        TrendDirection.SIDEWAYS -> {
+            if (distSupportRatio <= 0.20f) { callPower = 62; putPower = 38 }
+            else if (distResistanceRatio <= 0.20f) { callPower = 38; putPower = 62 }
+        }
+    }
+    callPower = callPower.coerceIn(15, 95)
+    putPower = putPower.coerceIn(15, 95)
+    // Termometro coherente: CALL + PUT = 100. El lado dominante manda; el otro es su complemento.
+    if (callPower >= putPower) putPower = 100 - callPower else callPower = 100 - putPower
+    return callPower to putPower
 }
 
 /**
