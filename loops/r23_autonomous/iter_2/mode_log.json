@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "total": 2,
+  "capacidad": 100,
+  "count": 2,
+  "events": [
+    {
+      "atMs": 1792106015802,
+      "kind": "MODE_CHANGE",
+      "detail": "de=DISABLED a=AUTONOMOUS source=ui:showAutonomousSubModeDialog(conservador) origen=TradingEngine.modeChangeOrigin:130<OverlayService.setTradingMode:943<OverlayService.showAutonomousSubModeDialog$lambda$36:880<OverlayService.$r8$lambda$48m9i1dNFS5bl8XvA5cu1mFH7y8:0<OverlayService$$ExternalSyntheticLambda53.onClick:0"
+    },
+    {
+      "atMs": 1792105880667,
+      "kind": "MODE_CHANGE",
+      "detail": "de=NINGUNO a=DISABLED source=onCreate(servicio recreado) origen=onCreate(servicio recreado)"
+    }
+  ]
+}

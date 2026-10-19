@@ -1,0 +1,28 @@
+{
+  "success": true,
+  "total": 4,
+  "capacidad": 100,
+  "count": 4,
+  "events": [
+    {
+      "atMs": 1792282045709,
+      "kind": "MODE_CHANGE",
+      "detail": "de=DISABLED a=AUTONOMOUS source=bridge:/mode origen=TradingEngine.modeChangeOrigin:130<TradeDrawHttpBridge.handleClient:169<TradeDrawHttpBridge.start$lambda$1$lambda$0:48<TradeDrawHttpBridge.$r8$lambda$Ydz80wqhl_6ciJqVN3iPfSx-r88:0<TradeDrawHttpBridge$$ExternalSyntheticLambda1.run:0"
+    },
+    {
+      "atMs": 1792280755397,
+      "kind": "MODE_CHANGE",
+      "detail": "de=AUTONOMOUS a=DISABLED source=bridge:/mode origen=TradingEngine.modeChangeOrigin:130<TradeDrawHttpBridge.handleClient:169<TradeDrawHttpBridge.start$lambda$1$lambda$0:48<TradeDrawHttpBridge.$r8$lambda$Ydz80wqhl_6ciJqVN3iPfSx-r88:0<TradeDrawHttpBridge$$ExternalSyntheticLambda1.run:0"
+    },
+    {
+      "atMs": 1792279418913,
+      "kind": "MODE_CHANGE",
+      "detail": "de=DISABLED a=AUTONOMOUS source=bridge:/mode origen=TradingEngine.modeChangeOrigin:130<TradeDrawHttpBridge.handleClient:169<TradeDrawHttpBridge.start$lambda$1$lambda$0:48<TradeDrawHttpBridge.$r8$lambda$Ydz80wqhl_6ciJqVN3iPfSx-r88:0<TradeDrawHttpBridge$$ExternalSyntheticLambda1.run:0"
+    },
+    {
+      "atMs": 1792279234249,
+      "kind": "MODE_CHANGE",
+      "detail": "de=NINGUNO a=DISABLED source=onCreate(servicio recreado) origen=onCreate(servicio recreado)"
+    }
+  ]
+}
