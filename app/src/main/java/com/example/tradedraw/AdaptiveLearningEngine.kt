@@ -48,6 +48,16 @@ sealed class AdaptiveDecision {
 class AdaptiveLearningEngine {
 
     companion object {
+        /**
+         * Umbral de similitud a partir del cual un contexto se considera anti-patron recurrente.
+         *
+         * R23F: elevado a 0.99f tras auditoria contrafactual R23E. Las senales con sim < 0.99f
+         * (ej. 98%) demostraron WR = 66.67% (+325k COP) y se liberan. Solo se bloquean
+         * anti-patrones cuasi-identicos (>= 99.0%, WR = 47.83%, -290k COP).
+         *
+         * CONGELADO: el valor es parte de la estrategia. La extraccion de R23J Fase B movio la
+         * LOGICA a funciones puras del archivo, no este numero.
+         */
         const val ADAPTIVE_BLOCK_SIMILARITY_THRESHOLD = 0.99f
     }
 
@@ -246,36 +256,25 @@ class AdaptiveLearningEngine {
             isReversionTrade = isReversion
         )
 
-        var highestSimilarity = 0f
-        var matchingLossSig: TradeContextSignature? = null
-
-        synchronized(lossSignatures) {
-            val recentLosses = lossSignatures.takeLast(20)
-            for (loss in recentLosses) {
-                val sim = calculateSignatureSimilarity(candidateSignature, loss)
-                if (sim > highestSimilarity) {
-                    highestSimilarity = sim
-                    matchingLossSig = loss
-                }
-            }
+        // R23J Fase B: la busqueda del anti-patron y la decision viven en funciones puras compartidas
+        // con el arnes de replay. Antes estaban duplicadas aqui y el replay no las tenia, asi que el
+        // replay simulaba trades que en vivo se bloqueaban.
+        val (highestSimilarity, matchingLossSig) = synchronized(lossSignatures) {
+            mejorCoincidenciaEnMemoria(candidateSignature, lossSignatures)
         }
 
-        // R23F: umbral de similitud elevado a 0.99f tras auditoría contrafactual R23E.
-        // Las señales con sim < 0.99f (ej. 98%) demostraron WR = 66.67% (+325k COP) y se liberan.
-        // Sólo se bloquean anti-patrones cuasi-idénticos (>= 99.0%, WR = 47.83%, -290k COP).
-        if (highestSimilarity >= ADAPTIVE_BLOCK_SIMILARITY_THRESHOLD && matchingLossSig != null &&
-            isTightlyMatchingContext(candidateSignature, matchingLossSig!!)) {
-            val loss = matchingLossSig!!
+        // R23F: umbral de similitud elevado a 0.99f tras auditoria contrafactual R23E.
+        // Las senales con sim < 0.99f (ej. 98%) demostraron WR = 66.67% (+325k COP) y se liberan.
+        // Solo se bloquean anti-patrones cuasi-identicos (>= 99.0%, WR = 47.83%, -290k COP).
+        motivoBloqueoPorAntiPatron(candidateSignature, matchingLossSig, highestSimilarity)?.let { motivo ->
             val simPct = (highestSimilarity * 100).toInt()
 
-            // H3: veto total de la inversión adaptativa (governance Master Traders).
-            // Ante un anti-patrón perdedor recurrente se BLOQUEA la señal; nunca se invierte
-            // (la inversión forzaba ventas en soporte y compras en resistencia).
+            // H3: veto total de la inversion adaptativa (governance Master Traders).
+            // Ante un anti-patron perdedor recurrente se BLOQUEA la senal; nunca se invierte
+            // (la inversion forzaba ventas en soporte y compras en resistencia).
             totalBlockedAntiPatterns++
-            Log.w(TAG, "⛔ Autoaprendizaje: Anti-patrón perdedor bloqueado ($simPct% similitud con pérdida previa en ${loss.strategyName}) - inversión deshabilitada")
-            return AdaptiveDecision.Block(
-                "Anti-patrón perdedor recurrente ($simPct% similitud en contexto S/R=${(loss.distanceToSupportRatio * 100).toInt()}%) - inversión deshabilitada"
-            )
+            Log.w(TAG, "⛔ Autoaprendizaje: Anti-patron perdedor bloqueado ($simPct% similitud con perdida previa en ${matchingLossSig?.strategyName}) - inversion deshabilitada")
+            return AdaptiveDecision.Block(motivo)
         }
 
         val modifier = if (isReversion) reversionBonusWeight else continuationPenaltyWeight
@@ -288,54 +287,22 @@ class AdaptiveLearningEngine {
 
     /**
      * H6: Compuerta de contexto ESTRICTA para el veto por anti-patrón.
-     * En activos near-static (Crypto IDX) las distancias S/R y el régimen son casi constantes,
-     * por lo que la similitud puede rozar 0.80-0.85 sin que exista identidad real de setup.
-     * Para vetar se exige coincidencia plena: misma acción, misma tendencia, mismo régimen
-     * lateral y S/R dentro de ±0.10. Así solo se bloquean anti-patrones genuinamente idénticos.
+     *
+     * R23J Fase B: el cuerpo se movió a la función pura [contextoEstrictamenteCoincidente], para
+     * que el arnés de replay pueda evaluar exactamente la misma compuerta. Este método queda como
+     * delegación de una línea: no hay lógica duplicada entre Live y Replay.
      */
-    internal fun isTightlyMatchingContext(a: TradeContextSignature, b: TradeContextSignature): Boolean {
-        if (a.action != b.action) return false
-        if (a.trend != b.trend) return false
-        if (a.isMarketSideways != b.isMarketSideways) return false
-        val ds = Math.abs(a.distanceToSupportRatio - b.distanceToSupportRatio)
-        val dr = Math.abs(a.distanceToResistanceRatio - b.distanceToResistanceRatio)
-        return ds <= 0.10f && dr <= 0.10f
-    }
+    internal fun isTightlyMatchingContext(a: TradeContextSignature, b: TradeContextSignature): Boolean =
+        contextoEstrictamenteCoincidente(a, b)
 
     /**
      * Calcula la distancia/similitud matemática entre dos firmas contextuales (0.0 = totalmente opuestas, 1.0 = idénticas).
+     *
+     * R23J Fase B: el cuerpo se movió a [similitudDeFirmas], funcion pura compartida con el arnes
+     * de replay. Los pesos viven alli y son los originales.
      */
-    internal fun calculateSignatureSimilarity(a: TradeContextSignature, b: TradeContextSignature): Float {
-        var score = 0f
-
-        // 1. Misma acción (0.20 peso)
-        if (a.action == b.action) score += 0.20f
-
-        // 2. Misma tendencia (0.20 peso)
-        if (a.trend == b.trend) score += 0.20f
-
-        // 3. Proximidad a Soporte/Resistencia (0.30 peso)
-        val distSupDiff = Math.abs(a.distanceToSupportRatio - b.distanceToSupportRatio)
-        val distResDiff = Math.abs(a.distanceToResistanceRatio - b.distanceToResistanceRatio)
-        val srSimilarity = ((1.0f - distSupDiff) + (1.0f - distResDiff)) / 2.0f
-        score += (srSimilarity.coerceIn(0f, 1f) * 0.30f)
-
-        // 4. Velocidad e impulso de tick (0.15 peso)
-        if (a.isBullishImpulse == b.isBullishImpulse && a.isBearishImpulse == b.isBearishImpulse) {
-            score += 0.15f
-        } else {
-            val velDiff = Math.abs(a.tickVelocityNormalized - b.tickVelocityNormalized)
-            val velSim = (1.0f - (velDiff / 4.0f)).coerceIn(0f, 1f)
-            score += (velSim * 0.15f)
-        }
-
-        // 5. Régimen de mercado lateral / micro-rango (0.15 peso)
-        if (a.isMarketSideways == b.isMarketSideways && a.isConsolidationTight == b.isConsolidationTight) {
-            score += 0.15f
-        }
-
-        return score.coerceIn(0f, 1f)
-    }
+    internal fun calculateSignatureSimilarity(a: TradeContextSignature, b: TradeContextSignature): Float =
+        similitudDeFirmas(a, b)
 
     /**
      * Guarda el estado completo de firmas y pesos aprendidos en archivo JSON local de la aplicación.
@@ -478,4 +445,131 @@ class AdaptiveLearningEngine {
             lossSignatures.add(sig)
         }
     }
+}
+
+
+// ============================================================================================
+// R23J FASE B — LOGICA PURA COMPARTIDA LIVE <-> REPLAY
+//
+// PROBLEMA QUE RESUELVE. `AdaptiveLearningEngine` decidia el bloqueo por anti-patron con tres
+// piezas (similitud, compuerta estricta, umbral) encerradas en metodos de instancia. El arnes de
+// replay (`ReplayBacktestTest`) NO replicaba ninguna, asi que el replay simulaba trades que en
+// vivo habrian sido bloqueados por `ADAPTIVE_BLOCK`. Eso produce divergencias que parecen fallos
+// del motor cuando en realidad son instrumentacion incompleta.
+//
+// QUE SE EXTRAJO. Las tres piezas, copiadas LITERALMENTE del codigo previo, sin tocar un solo
+// numero: pesos 0.20/0.20/0.30/0.15/0.15, tolerancia S/R de 0.10, divisor de velocidad 4.0 y el
+// umbral 0.99f que sigue viviendo en `AdaptiveLearningEngine.ADAPTIVE_BLOCK_SIMILARITY_THRESHOLD`.
+//
+// ESTADO CONGELADO. Estas funciones NO son puntos de calibracion. Cualquier cambio de constante
+// aqui altera la estrategia y exige su propio ciclo.
+// ============================================================================================
+
+/**
+ * Similitud entre dos firmas contextuales. 0.0 = opuestas, 1.0 = identicas.
+ *
+ * Copia literal de `calculateSignatureSimilarity` (AdaptiveLearningEngine), que ahora delega aqui.
+ * Pesos: accion 0.20, tendencia 0.20, proximidad S/R 0.30, velocidad/impulso 0.15, regimen 0.15.
+ */
+internal fun similitudDeFirmas(a: TradeContextSignature, b: TradeContextSignature): Float {
+    var score = 0f
+
+    // 1. Misma accion (0.20 peso)
+    if (a.action == b.action) score += 0.20f
+
+    // 2. Misma tendencia (0.20 peso)
+    if (a.trend == b.trend) score += 0.20f
+
+    // 3. Proximidad a Soporte/Resistencia (0.30 peso)
+    val distSupDiff = Math.abs(a.distanceToSupportRatio - b.distanceToSupportRatio)
+    val distResDiff = Math.abs(a.distanceToResistanceRatio - b.distanceToResistanceRatio)
+    val srSimilarity = ((1.0f - distSupDiff) + (1.0f - distResDiff)) / 2.0f
+    score += (srSimilarity.coerceIn(0f, 1f) * 0.30f)
+
+    // 4. Velocidad e impulso de tick (0.15 peso)
+    if (a.isBullishImpulse == b.isBullishImpulse && a.isBearishImpulse == b.isBearishImpulse) {
+        score += 0.15f
+    } else {
+        val velDiff = Math.abs(a.tickVelocityNormalized - b.tickVelocityNormalized)
+        val velSim = (1.0f - (velDiff / 4.0f)).coerceIn(0f, 1f)
+        score += (velSim * 0.15f)
+    }
+
+    // 5. Regimen de mercado lateral / micro-rango (0.15 peso)
+    if (a.isMarketSideways == b.isMarketSideways && a.isConsolidationTight == b.isConsolidationTight) {
+        score += 0.15f
+    }
+
+    return score.coerceIn(0f, 1f)
+}
+
+/**
+ * H6: compuerta de contexto ESTRICTA para el veto por anti-patron.
+ *
+ * En activos near-static (Crypto IDX) las distancias S/R y el regimen son casi constantes, por lo
+ * que la similitud puede rozar 0.80-0.85 sin que exista identidad real de setup. Para vetar se exige
+ * coincidencia plena: misma accion, misma tendencia, mismo regimen lateral y S/R dentro de +-0.10.
+ *
+ * Copia literal de `isTightlyMatchingContext`, que ahora delega aqui.
+ */
+internal fun contextoEstrictamenteCoincidente(a: TradeContextSignature, b: TradeContextSignature): Boolean {
+    if (a.action != b.action) return false
+    if (a.trend != b.trend) return false
+    if (a.isMarketSideways != b.isMarketSideways) return false
+    val ds = Math.abs(a.distanceToSupportRatio - b.distanceToSupportRatio)
+    val dr = Math.abs(a.distanceToResistanceRatio - b.distanceToResistanceRatio)
+    return ds <= 0.10f && dr <= 0.10f
+}
+
+/**
+ * Decide si una firma candidata debe BLOQUEARSE por coincidir con un anti-patron de la memoria.
+ *
+ * Replica exactamente la condicion del motor vivo:
+ *
+ *     highestSimilarity >= ADAPTIVE_BLOCK_SIMILARITY_THRESHOLD
+ *       && matchingLossSig != null
+ *       && isTightlyMatchingContext(candidata, matchingLossSig)
+ *
+ * `highestSimilarity` y `matchingLossSig` los calcula quien llama (el motor los obtiene recorriendo
+ * su memoria de perdidas; el replay, su propia lista), porque esa busqueda depende del estado
+ * acumulado y no de la firma. La DECISION, que es lo que debe coincidir entre Live y Replay, vive
+ * aqui y en un solo lugar.
+ *
+ * @return el motivo del bloqueo, o `null` si la senal pasa.
+ */
+internal fun motivoBloqueoPorAntiPatron(
+    candidata: TradeContextSignature,
+    firmaPerdedoraMasSimilar: TradeContextSignature?,
+    similitudMaxima: Float
+): String? {
+    if (similitudMaxima < AdaptiveLearningEngine.ADAPTIVE_BLOCK_SIMILARITY_THRESHOLD) return null
+    val perdida = firmaPerdedoraMasSimilar ?: return null
+    if (!contextoEstrictamenteCoincidente(candidata, perdida)) return null
+    val simPct = (similitudMaxima * 100).toInt()
+    return "Anti-patron perdedor recurrente ($simPct% similitud en contexto S/R=" +
+        "${(perdida.distanceToSupportRatio * 100).toInt()}%) - inversion deshabilitada"
+}
+
+/**
+ * Recorre una memoria de firmas perdedoras y devuelve (similitud maxima, firma mas parecida).
+ *
+ * Extraido del cuerpo de `evaluateSignalSuitability` para que el replay pueda recorrer SU memoria
+ * con el mismo criterio: solo las ultimas 20 perdidas, y el maximo estricto (`>`), no `>=`. Ese
+ * detalle importa: con `>=` la firma elegida ante empate seria la ultima, y el motivo del bloqueo
+ * cambiaria aunque la decision no.
+ */
+internal fun mejorCoincidenciaEnMemoria(
+    candidata: TradeContextSignature,
+    memoriaPerdidas: List<TradeContextSignature>
+): Pair<Float, TradeContextSignature?> {
+    var similitudMaxima = 0f
+    var mejor: TradeContextSignature? = null
+    for (perdida in memoriaPerdidas.takeLast(20)) {
+        val sim = similitudDeFirmas(candidata, perdida)
+        if (sim > similitudMaxima) {
+            similitudMaxima = sim
+            mejor = perdida
+        }
+    }
+    return similitudMaxima to mejor
 }

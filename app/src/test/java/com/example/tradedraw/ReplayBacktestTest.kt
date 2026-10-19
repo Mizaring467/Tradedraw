@@ -145,6 +145,44 @@ class ReplayBacktestTest {
         return if (won) Pair("WIN", "GANANCIA por acción del precio a 60s") else Pair("LOSS", "PÉRDIDA por acción del precio a 60s")
     }
 
+    /**
+     * R23J Fase B: construye la firma contextual del replay con los MISMOS campos que
+     * `AdaptiveLearningEngine.recordTradeOpened`. El replay no tiene `MarketTick` ni
+     * `VisionAnalysisResult` completos, asi que los campos sin equivalente se fijan a su valor
+     * neutro y se declara la limitacion en el informe de B3.
+     */
+    private fun firmaDeContexto(
+        action: TradeAction,
+        trend: TrendDirection,
+        distSupportRatio: Float,
+        distResistanceRatio: Float,
+        isMarketSideways: Boolean,
+        isConsolidationTight: Boolean,
+        tickVelocity: Float,
+        isBullishImpulse: Boolean,
+        isBearishImpulse: Boolean,
+        strategy: AutoTradeStrategy,
+        candleSecond: Int
+    ): TradeContextSignature = TradeContextSignature(
+        action = action,
+        trend = trend,
+        distanceToSupportRatio = distSupportRatio,
+        distanceToResistanceRatio = distResistanceRatio,
+        isNearSupportZone = distSupportRatio <= 0.30f,
+        isNearResistanceZone = distResistanceRatio <= 0.30f,
+        tickVelocityNormalized = tickVelocity,
+        isBullishImpulse = isBullishImpulse,
+        isBearishImpulse = isBearishImpulse,
+        isDojiOrLowVolume = false,
+        isConsolidationTight = isConsolidationTight,
+        isMarketSideways = isMarketSideways,
+        strategyName = strategy.name,
+        candleSecond = candleSecond,
+        timestampMs = 0L,
+        isContinuationTrade = false,
+        isReversionTrade = false
+    )
+
     private fun runBacktestOnStrategy(
         ticks: List<RawTick>,
         strategy: AutoTradeStrategy,
@@ -165,6 +203,12 @@ class ReplayBacktestTest {
         // del tick actual cuando se leen. Se usan para reproducir el `callPower` exacto del motor.
         var tickImpulseBullish = false
         var tickImpulseBearish = false
+
+        // R23J Fase B: memoria de anti-patrones del replay. Se alimenta con las perdidas ya resueltas
+        // de ESTA corrida, igual que el motor vivo alimenta la suya con `recordTradeResult`. Sin
+        // esto, el replay no podia reproducir `ADAPTIVE_BLOCK` ni por casualidad.
+        val memoriaPerdidas = mutableListOf<TradeContextSignature>()
+        var bloqueosAdaptativos = 0
 
         fun createEngine(): SyntheticCandleEngine {
             val eng = SyntheticCandleEngine()
@@ -211,6 +255,11 @@ class ReplayBacktestTest {
                         // de modo que un tick posterior de la misma vela sigue siendo evaluable.
                         return@senal
                     }
+                    // R23J Fase B: `ADAPTIVE_BLOCK` NO se evalua aqui. La memoria de anti-patrones
+                    // crece con los trades ya RESUELTOS, y en este punto ninguno lo esta todavia
+                    // (el callback solo acumula senales). Se evalua en el bucle de resolucion, donde
+                    // la memoria si tiene el estado que tendria en vivo. Evaluarlo aqui daria memoria
+                    // vacia siempre y bloquearia el 0%.
                     lastExecutedCandleMinute = candleMinute
                     // La operacion ocupa 60 s desde la entrada y luego corre el cooldown del submodo.
                     blockedUntilTs = lastTick.ts + TRADE_DURATION_MS + cooldownMs
@@ -280,8 +329,35 @@ class ReplayBacktestTest {
             val entryTick = sig.tick
             val action = sig.action
             val reason = sig.reason
+
+            // R23J Fase B: ADAPTIVE_BLOCK se evalua AQUI, contra la memoria de perdidas acumulada
+            // hasta este punto del replay. Es el unico lugar donde la memoria refleja el estado que
+            // tendria el motor vivo al llegar esta senal.
+            val firmaCandidata = firmaDeContexto(
+                action = action,
+                trend = runCatching { TrendDirection.valueOf(sig.trend) }.getOrDefault(TrendDirection.SIDEWAYS),
+                distSupportRatio = sig.distSupportRatio,
+                distResistanceRatio = sig.distResistanceRatio,
+                isMarketSideways = sig.isChop || sig.trend == TrendDirection.SIDEWAYS.name,
+                isConsolidationTight = sig.isChop,
+                tickVelocity = 0f,
+                isBullishImpulse = false,
+                isBearishImpulse = false,
+                strategy = strategy,
+                candleSecond = ((entryTick.ts / 1000L) % 60L).toInt()
+            )
+            val (simMax, coincidencia) = mejorCoincidenciaEnMemoria(firmaCandidata, memoriaPerdidas)
+            if (motivoBloqueoPorAntiPatron(firmaCandidata, coincidencia, simMax) != null) {
+                bloqueosAdaptativos++
+                continue
+            }
+
             val exitPrice = priceAt(ticks, entryTick.ts + 60_000L)
             val (result, _) = resolveTrade(entryTick.price, exitPrice, action)
+
+            // El motor vivo alimenta su memoria SOLO con perdidas (`recordTradeResult`). El replay
+            // hace lo mismo, o la similitud no seria comparable.
+            if (result == "LOSS") memoriaPerdidas.add(firmaCandidata)
 
             val settledBalance = when (result) {
                 "WIN" -> balance + (stake * 0.82)
