@@ -949,14 +949,31 @@ def main():
     # el monitor cubre los 20 min. Si la captura incremental fallo por completo (p.ej. build antigua
     # sin /ticks), se cae al volcado directo para no quedarse sin ningun dato.
     out_ticks_csv = os.path.join(out_dir, "ticks_live.csv")
-    if accumulated_ticks:
+    # R23H Fase 2 (paridad live<->replay): el primer ciclo de captura arrastra la COLA del buffer
+    # del APK, que contiene ticks anteriores al inicio de la ventana. Esos ticks pre-ventana hacian
+    # que el replay reconstruyera velas y un trend distintos a los que el motor vivo vio, y es una
+    # de las causas del match rate 0%. Se poda aqui, en el volcado, y no en la captura: el bucle
+    # necesita la cola para `find_nearest_tick_price` de los contrafactuales previos.
+    window_start_ts_ms = int(start_time * 1000.0)
+    ticks_in_window = {
+        ts: linea
+        for ts, linea in accumulated_ticks.items()
+        if ts >= window_start_ts_ms
+    }
+    pruned_ticks = len(accumulated_ticks) - len(ticks_in_window)
+    if accumulated_ticks and pruned_ticks:
+        print(
+            f"Poda de borde de ventana: {pruned_ticks} ticks pre-ventana descartados "
+            f"(< {window_start_ts_ms} ms)"
+        )
+    if ticks_in_window:
         with open(out_ticks_csv, "w", encoding="utf-8", newline="") as f_tk:
             f_tk.write("ts,ric,price\n")
-            for ts in sorted(accumulated_ticks):
-                f_tk.write(accumulated_ticks[ts] + "\n")
+            for ts in sorted(ticks_in_window):
+                f_tk.write(ticks_in_window[ts] + "\n")
         print(
             f"Ticks de la ventana COMPLETA guardados en: {out_ticks_csv} "
-            f"({len(accumulated_ticks)} ticks"
+            f"({len(ticks_in_window)} ticks"
             + (f", {tick_capture_errors} ciclos sin respuesta" if tick_capture_errors else "")
             + ")"
         )
