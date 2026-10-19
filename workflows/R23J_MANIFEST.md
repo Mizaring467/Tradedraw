@@ -12,12 +12,12 @@ medirán todas las ventanas de R23J
 
 | Campo | Valor | Verificación |
 |---|---|---|
-| **Commit SHA** | `9442c1f` | `git log --oneline -1` |
+| **Commit SHA** | `8cdb61f` | `git log --oneline -1` |
 | **SHA-256 del comparador** | `4CB5082E4F8C52BCD775F0C5F3D53D992A3730007D1738D463A171F2C0794B5F` | `sha256sum scripts/validation/compare_live_replay.py` |
 | `versionCode` | `19` | `/status` |
 | `versionName` | `1.9-r23h-exhaustion` | `/status` |
 | `BUILD_ID` | `R23H-BUY-EXHAUSTION` | `/status` |
-| `gitSha` en BuildConfig | `9442c1f` | `/status` + `BuildConfig.java` generado |
+| `gitSha` en BuildConfig | `8cdb61f` | `/status` + `BuildConfig.java` generado |
 
 El `gitSha` que reporta la app coincide con el commit del árbol sobre el que se compiló. No hay
 deriva entre el código medido y el binario instalado.
@@ -49,17 +49,17 @@ manda para el cálculo de breakeven: `1/(1+0.83) = 54.64%`.
 
 ## 3. ESTADO DE SALUD DEL DISPOSITIVO
 
-Telemetría literal de `GET http://localhost:8080/status` **tras restablecer la salud** (estado vigente
-del binario `9442c1f`). El estado previo, ya superado, era `BLOCKED` con
-`SCREEN_FEED_MISMATCH` + `BALANCE_UNREADABLE` y `balance: 0.0`, causado por tener la app del broker
-minimizada; se conserva documentado en §3.2.
+Telemetría literal de `GET http://localhost:8080/status` **tras instalar el build `8cdb61f`** (estado
+vigente del binario sobre el que se medirán las ventanas). El estado previo en `9442c1f` era
+`BLOCKED` con `SCREEN_FEED_MISMATCH` + `BALANCE_UNREADABLE` y `balance: 0.0`, causado por tener la
+app del broker minimizada; se conserva documentado en §3.2.
 
 ```json
 {
   "app": "TradeDraw",
   "versionCode": 19,
   "versionName": "1.9-r23h-exhaustion",
-  "gitSha": "9442c1f",
+  "gitSha": "8cdb61f",
   "buildId": "R23H-BUY-EXHAUSTION",
   "isDemoAccount": true,
   "accessibilityActive": true,
@@ -91,7 +91,7 @@ minimizada; se conserva documentado en §3.2.
 | `versionName` | — | `1.9-r23h-exhaustion` | OK |
 | `versionCode` | — | `19` | OK |
 | `BUILD_ID` | — | `R23H-BUY-EXHAUSTION` | OK |
-| `gitSha` | `9442c1f` | `9442c1f` | OK — coincide |
+| `gitSha` | `8cdb61f` | `8cdb61f` | OK — coincide |
 | `accessibilityActive` | `true` | `true` | OK |
 | feed conectado y fresco | sí | `connected=true`, `isFresh=true`, `lastTickAgeMs=129` | OK |
 
@@ -184,6 +184,32 @@ adb -s UGU8KFUKM7E6CE8D install -r app/build/outputs/apk/debug/app-debug.apk
 Base de tests: 466 antes de R23J + 2 de `PoderesDeMercadoEquivalenciaTest` = **468**. Los 2 skipped
 son `ReplayBacktestTest` con `assumeTrue` sobre `BACKTEST_CSV`, preexistentes y ajenos a este ciclo.
 
+### 4.1 Rebuild post-Fase B (build vigente)
+
+Tras los commits B1 (`47a34f4`) y B2/B3 (`8cdb61f`), se recompiló e instaló desde el commit limpio:
+
+```
+./gradlew.bat assembleDebug
+  -> EXIT=0  BUILD SUCCESSFUL in 20s
+
+BuildConfig.java generado
+  -> GIT_SHA = "8cdb61f"
+
+adb -s UGU8KFUKM7E6CE8D install -r app/build/outputs/apk/debug/app-debug.apk
+  -> Performing Streamed Install / Success
+```
+
+Verificación en `/status` del binario instalado:
+
+| Criterio | Exigido | Observado | Veredicto |
+|---|---|---|---|
+| `gitSha` | `8cdb61f` | `8cdb61f` | **OK** |
+| `health.state` | `READY` | `READY` (`reasons: []`) | **OK** |
+| `isDemoAccount` | `true` | `true` | **OK** |
+
+Tests del commit `8cdb61f`: **479** (468 + 11 de `AdaptiveBlockParityTest`), 0 fallos, 2 skipped.
+
+
 ---
 
 ## 5. CONGELACIÓN Y ALCANCE
@@ -220,6 +246,12 @@ captura, no sólo al arrancar.
 curl -s "http://localhost:8080/mode?name=AUTONOMOUS"
 curl -s "http://localhost:8080/submode?name=YOLO"
 ```
+
+**Detalle que se pierde al reinstalar:** el reinicio del servicio devuelve el submode a
+`CONSERVATIVE` (su valor por defecto), aunque el manifiesto fije `YOLO`. Verificado en esta
+instalación: tras arrancar el build `8cdb61f` el `/status` reportaba `submode = CONSERVATIVE` y hubo
+que reenviar el `POST /submode?name=YOLO`. Quien arranque una ventana debe comprobar el submode
+**después** de instalar, no confiar en el que tenía la sesión anterior.
 
 Recordatorio del preregistro: una ventana con menos de 10 pares formales se declara **`NO
 CONCLUYENTE`**, por bien que haya operado. El PASS de paridad exige `pares_formales >= 10` **y**
