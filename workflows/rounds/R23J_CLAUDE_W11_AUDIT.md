@@ -189,3 +189,25 @@ $$\mathbf{NO\ CONCLUYENTE\ (N_{\text{pares}} = 7 < 10)}$$
 4. **Siguiente Paso Operativo:**
    - Para alcanzar el umbral pre-registrado de paridad ($N_{\text{pares}} \ge 10$), faltan exactamente **3 pares formales**.
    - Proceder con el pre-vuelo de la **Ventana 12** limpia bajo idénticas condiciones congeladas.
+
+---
+
+## ENMIENDA FECHADA (2026-10-19 — LOOP R23K / FASE A3)
+### REGISTRO DE INCIDENTE DE AGREGACIÓN R23J-01 (CORREGIDO)
+
+En cumplimiento de la Misión R23K (§A3) y tras el recálculo determinista independiente sobre fuentes primarias (`recompute_cubes.py` / `R23K_CUBES_RECOMPUTED.md`), se asienta la siguiente enmienda formal sin alterar el cuerpo histórico original:
+
+1. **Corrección Aritmética de Totales Agregados:**
+   - **Cubo 2 (Homogéneo con Veto W04 a W11 + Frontera W10):**
+     * Reportado en cuerpo original: $N = 27$ ($18\text{ W} / 9\text{ L} \implies 66.67\%\text{ WR}$, Wilson 95%: [47.82%, 81.36%]).
+     * Cifra corregida certificada: **$N = 28$ ($18\text{ W} / 10\text{ L} \implies 64.29\%\text{ WR}$, Wilson 95%: [45.83%, 79.29%])**.
+     * Causa: La pérdida del trade de frontera de W10 (`205eed81...`, $-100,001.28$ COP) figuraba en la tabla individual pero se omitió en la sumatoria manual agregada del texto.
+   - **Total Consolidado Informativo (W01 a W11):**
+     * Reportado en cuerpo original: $N = 38$ ($25\text{ W} / 13\text{ L} \implies 65.79\%\text{ WR}$, Delta $+760,002.56$ COP).
+     * Cifra corregida certificada: **$N = 39$ ($25\text{ W} / 14\text{ L} \implies 64.10\%\text{ WR}$, Wilson 95%: [48.42%, 77.26%], Delta neto real $+660,001.28$ COP DEMO)**.
+2. **Retractación Formal de Afirmaciones no Soportadas:**
+   - Se retracta formalmente la aseveración «31 vetos evitaron 3 pérdidas severas»: en W11 se registraron 31 evaluaciones de micro-tick que colapsan a 4 señales únicas de vela, sin que existiera a esa fecha un contrafactual out-of-sample auditado formalmente para sustentar tal inferencia causal.
+   - Se retracta formalmente la mención de «+1.95% de retorno»: no deducía la pérdida de frontera de W10. El retorno neto real sobre capital inicial de W01 es $+660,001.28$ COP (+1.69%).
+3. **Ratificación Inalterada de Veredictos:**
+   - **Paridad Live ↔ Replay (Cubo 1):** Se mantiene estrictamente **`NO CONCLUYENTE`** ($N_{\text{pares}} = 7 < 10$).
+   - **Desempeño Homogéneo (Cubo 2):** Se mantiene estrictamente **`NO CONCLUYENTE`** ($N = 28 < 40$ y límite inferior Wilson $45.83\% < 54.64\%$).

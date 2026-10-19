@@ -31,6 +31,25 @@
 | **Ventana 11** | Ejecución y Validación W11 | OpenCode (ejecuta/valida) | `8cdb61f` | 2026-10-19 00:30 | **PASS / NO CONCLUYENTE** | Ventana limpia de 20 min en `loops/r23j_validation/window_11_clean`. 1 trade BUY WIN (WR 100.0%), delta +82.001,92 COP DEMO, discrepancia $0.00 COP, Max DD 0.47% < 3.5%. Paridad Replay 0.0% (1 par evaluado con divergencia de acción). Cubo 1 acumulado: 5/7 matches (71.43%, N=7 < 10 -> NO CONCLUYENTE). Reporte en [`WINDOW_REPORT.md`](file:///C:/Users/heidy/Tradedraw/loops/r23j_validation/window_11_clean/WINDOW_REPORT.md). |
 | **Ventana 11** | Auditoría W11 | Claude (audita) | `8cdb61f` | 2026-10-19 00:35 | **PASS / NO CONCLUYENTE** | Auditoría W11 finalizada. Ecuación canónica exacta ($1 = 1 + 0 + 0$, $0.00 discrepancia). Max DD 0.47% < 3.5%. Seguridad 100% DEMO en 119 muestras. Invarianza SHA-256 intacta (`4CB5...4B5F`). Paridad Replay W11 0.0% (1 par con div de acción); Cubo 1 acumulado N=7 < 10 pares -> NO CONCLUYENTE. Cubo 2 acumulado N=27 < 40 trades -> NO CONCLUYENTE. Auditado en [`R23J_CLAUDE_W11_AUDIT.md`](file:///C:/Users/heidy/Tradedraw/workflows/rounds/R23J_CLAUDE_W11_AUDIT.md). |
 
+---
+
+## ENMIENDA FECHADA (2026-10-19 — LOOP R23K / FASE A3)
+### REGISTRO DE INCIDENTE DE AGREGACIÓN R23J-01 (CORREGIDO)
+
+En cumplimiento de la Misión R23K (§A3) y tras el recálculo determinista independiente sobre fuentes primarias (`recompute_cubes.py` / `R23K_CUBES_RECOMPUTED.md`), se asienta la siguiente enmienda formal sin alterar las filas históricas de progreso:
+
+1. **Corrección Aritmética de Totales Agregados en R23J:**
+   - **Cubo 2 (Homogéneo con Veto W04 a W11 + Frontera W10):**
+     * Registrado en notas de W11: $N = 27$ ($18\text{ W} / 9\text{ L}$).
+     * Cifra corregida certificada: **$N = 28$ ($18\text{ W} / 10\text{ L} \implies 64.29\%\text{ WR}$, Wilson 95%: [45.83%, 79.29%])**.
+   - **Total Acumulado W01–W11:**
+     * Registrado previamente: $N = 38$ ($25\text{ W} / 13\text{ L}$).
+     * Cifra corregida certificada: **$N = 39$ ($25\text{ W} / 14\text{ L} \implies 64.10\%\text{ WR}$, Wilson 95%: [48.42%, 77.26%], Delta neto real $+660,001.28$ COP DEMO)**.
+2. **Retractación Formal:** Se retractan formalmente las afirmaciones no soportadas «31 vetos evitaron 3 pérdidas severas» y «+1.95% de retorno» (retorno real neto acumulado $+660,001.28$ COP, +1.69% sobre W01).
+3. **Ratificación de Veredictos:** Los veredictos de R23J se mantienen rigurosamente inalterados:
+   - Paridad Live ↔ Replay (Cubo 1): **`NO CONCLUYENTE`** ($N=7 < 10$).
+   - Desempeño Homogéneo (Cubo 2): **`NO CONCLUYENTE`** ($N=28 < 40$ y límite inferior Wilson $45.83\% < 54.64\%$).
+
 
 
 

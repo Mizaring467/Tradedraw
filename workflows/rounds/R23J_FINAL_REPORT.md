@@ -150,3 +150,24 @@ AUDITOR:          CLAUDE CODE (`w1:pC`) [PASS AUDITORÍA FASE 0, A, B Y W07]
 VALIDADOR:        OPENCODE (`w1:pB`)    [PASS VALIDACIÓN INDEPENDIENTE B Y W07, DISCREPANCIA $0.00]
 ====================================================================================================
 ```
+
+---
+
+## ENMIENDA FECHADA (2026-10-19 — LOOP R23K / FASE A3)
+### REGISTRO DE INCIDENTE DE AGREGACIÓN R23J-01 (CORREGIDO)
+
+En cumplimiento de la Misión R23K (§A3) y tras el recálculo determinista independiente sobre fuentes primarias (`recompute_cubes.py` / `R23K_CUBES_RECOMPUTED.md`), se asienta la siguiente enmienda formal sin alterar el cuerpo histórico original de cierre de R23J:
+
+1. **Contexto de la Enmienda:**
+   El informe de cierre original de R23J consolidaba la evidencia hasta la Ventana 07 ($N=20$ en Cubo 2 y $N=31$ global). Posteriormente, la extensión de ventanas homogéneas (W08 a W11) más el trade de frontera de W10 acumularon 8 trades adicionales. En la auditoría de cierre de W11 se produjo un error de agregación manual en la sumatoria que omitió la pérdida del trade de frontera de W10.
+2. **Cifras Corregidas Certificadas por `recompute_cubes.py` (Cierre Integral W01–W11):**
+   - **Cubo 2 (Homogéneo con Veto W04 a W11 + Frontera W10):**
+     * Cifra corregida certificada: **$N = 28$ ($18\text{ W} / 10\text{ L} \implies 64.29\%\text{ WR}$, Wilson 95%: [45.83%, 79.29%], Breakeven 54.64%, Delta $+481,999.36$ COP DEMO)**.
+   - **Total Acumulado W01–W11:**
+     * Cifra corregida certificada: **$N = 39$ ($25\text{ W} / 14\text{ L} \implies 64.10\%\text{ WR}$, Wilson 95%: [48.42%, 77.26%], Breakeven 54.73%, Delta neto real $+660,001.28$ COP DEMO)**.
+3. **Retractación Formal de Declaraciones:**
+   - Se retracta formalmente la aseveración «31 vetos evitaron 3 pérdidas severas» en W11: correspondió a 31 micro-ticks sobre 4 señales únicas de vela, sin contrafactual out-of-sample auditado en ese momento.
+   - Se retracta formalmente la afirmación «+1.95% de retorno»: no descontaba la pérdida del trade de frontera de W10. El retorno neto real sobre capital inicial de W01 es $+660,001.28$ COP (+1.69%).
+4. **Confirmación Inalterada de Veredictos:**
+   - **Paridad Live ↔ Replay (Cubo 1):** **`NO CONCLUYENTE`** ($N_{\text{pares}} = 7 < 10$).
+   - **Desempeño Homogéneo (Cubo 2):** **`NO CONCLUYENTE`** ($N = 28 < 40$ y límite inferior Wilson $45.83\% < 54.64\%$).
