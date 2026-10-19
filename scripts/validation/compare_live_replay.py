@@ -314,10 +314,66 @@ def _safe_float(val: Any) -> float:
         return 0.0
 
 
+def _latencia_explica_segundo_de_vela(
+    live: Dict[str, Any],
+    replay: Dict[str, Any],
+    temporal_tolerance_ms: int,
+) -> bool:
+    """
+    Decide si la diferencia de `candle_second` entre un par live y su replay es explicable por la
+    latencia fisica de lectura de saldo en Android Go, en vez de por una divergencia real del motor.
+
+    POR QUE EXISTE. `trades.csv` del lado live fecha la orden con el instante en que el broker
+    confirma el movimiento de saldo, no con el tick que origino la senal. Ese retardo medido esta
+    entre 2,3 s y 5,5 s. Como `candle_second` es `(ts // 1000) % 60`, un desfase de 4 s cambia el
+    segundo de vela aunque ambos lados describan la MISMA decision (mismo `decision_id`). Marcarlo
+    como divergencia castigaba al comparador por tener mas evidencia, no por encontrar un fallo.
+
+    DOBLE CONDICION, las dos obligatorias:
+      1. El desfase temporal debe caber en `temporal_tolerance_ms`. Fuera de esa ventana no hay
+         latencia que explique nada: es otra orden.
+      2. La diferencia de segundo debe quedar explicada por el desfase REALMENTE observado
+         (`ceil(delta_ms / 1000)`), **con wrap de 60 s**: `candle_second` salta de 59 a 0, asi que
+         una diferencia cruda de 58 puede ser en realidad un desfase de 2 s cruzando el borde del
+         minuto. Comparar los segundos sin wrap marcaria divergencia justo en los trades de fin de
+         vela, que son los mas valiosos para el analisis (ventana sniper `:58-:59`).
+
+    POR QUE EL LIMITE SALE DEL DESFASE REAL Y NO DE LA TOLERANCIA. Usar
+    `temporal_tolerance_ms // 1000` como tope absoluto dejaria pasar un par con 1 s de desfase y 6 s
+    de diferencia de vela: la tolerancia es el MAXIMO admisible, no una explicacion. Atar el limite
+    al desfase observado mantiene la exigencia donde corresponde — si los dos lados se separan 1 s,
+    sus segundos de vela no pueden diferir en 6.
+
+    NO relaja la comparacion de `action`, `price` ni `result`: solo el segundo de vela, y solo
+    cuando la aritmetica del tiempo lo explica.
+    """
+    delta_ms = abs(int(replay["timestamp"]) - int(live["timestamp"]))
+    if delta_ms > temporal_tolerance_ms:
+        return False
+    cs_live = int(live["candle_second"])
+    cs_replay = int(replay["candle_second"])
+    if cs_live < 0 or cs_replay < 0:
+        return False
+    # Distancia circular en la esfera de 60 s: 58 vs 1 => 3 s, no 57.
+    diff_directa = abs(cs_live - cs_replay)
+    diff_circular = min(diff_directa, 60 - diff_directa)
+    if diff_circular == 0:
+        # Sin diferencia de vela no hay nada que absolver: nunca es divergencia.
+        return True
+    # Tope duro: ni con la tolerancia mas generosa se absuelve mas que la tolerancia misma.
+    max_segundos_absorbibles = min(
+        -(-delta_ms // 1000),  # ceil(delta_ms / 1000), sin importar math
+        temporal_tolerance_ms // 1000,
+    )
+    if max_segundos_absorbibles <= 0:
+        return False
+    return diff_circular <= max_segundos_absorbibles
+
+
 def compare_trades(
     live_trades: List[Dict[str, Any]],
     replay_trades: List[Dict[str, Any]],
-    temporal_tolerance_ms: int = 3000,
+    temporal_tolerance_ms: int = 6000,
     price_tolerance: float = 1e-3,
 ) -> Dict[str, Any]:
     """
@@ -326,6 +382,12 @@ def compare_trades(
     Estrategia (REQ 3):
       1. `decision_id` exacto (el id es determinista desde R23 Iter 3).
       2. Fallback temporal: mismo `asset` y entrada dentro de `temporal_tolerance_ms`.
+
+    R23H Fase 2: la tolerancia por defecto sube de 3000 a 6000 ms. En hardware Android Go el
+    timestamp de la orden en vivo es el del TAP observado en /status, que llega ~4,5-5,0 s despues
+    del instante en que el motor decidio la senal; el replay fecha por el tick de la senal. Con
+    3000 ms el emparejamiento temporal —el unico que funciona cuando el `decision_id` diverge por
+    `candle_second` o por el RIC— descartaba pares correctos y hundia el match rate.
 
     Campos comparados: `action`, `candle_second`, `price` (solo si el lado live lo trae — `trades.csv`
     no tiene precio de entrada, y comparar contra el valor por defecto 0.0 marcaria divergencia
@@ -372,8 +434,18 @@ def compare_trades(
         # construccion — el despacho del tap y el tick de entrada — y exigir el mismo segundo seria
         # contradecir la tolerancia que se acaba de aceptar. La causa raiz de la diferencia de
         # segundo es la latencia de despacho (~2,3 s medidos), no un fallo del motor.
+        #
+        # R23I Fase 4: la exencion anterior solo cubria el fallback temporal, lo que producia una
+        # paradoja medida en `window_06_clean`: un par con `decision_id` IDENTICO y |dt| = 4.283 ms
+        # se marcaba DIVERGENT por `candle_second`, mientras que el mismo par emparejado por
+        # cercania temporal se declaraba MATCH. Es decir, el comparador penalizaba tener MAS
+        # evidencia (identidad exacta). Ahora la latencia fisica de Android Go se absorbe en ambos
+        # caminos: si el desfase esta dentro de `temporal_tolerance_ms`, el segundo de vela no puede
+        # ser una divergencia porque no es un segundo distinto del mismo instante, es el mismo
+        # instante leido 4 s mas tarde. Fuera de esa ventana SI se exige coincidencia.
         if por_id and match["candle_second"] >= 0 and lt["candle_second"] != match["candle_second"]:
-            divergencias.append("candle_second")
+            if not _latencia_explica_segundo_de_vela(lt, match, temporal_tolerance_ms):
+                divergencias.append("candle_second")
         # `price`: solo si el lado live lo expone (hoy `trades.csv` no lo trae).
         if lt.get("price"):
             escala = max(abs(lt["price"]), abs(match.get("price") or 0.0), 1.0)
@@ -983,6 +1055,33 @@ def self_test():
     assert b.get("dist_support") == 1, f"Expected 1 dist_support divergence, got {b}"
     assert b.get("direction") == 1, f"Expected 1 direction divergence, got {b}"
 
+    # R23I Fase 4: contrato de absorcion de latencia en `candle_second`. Fija los dos sentidos:
+    # lo que DEBE absolverse (latencia fisica real) y lo que NO (divergencia de vela genuina).
+    casos_latencia = [
+        # (nombre, ts_live, cs_live, ts_replay, cs_replay, tol_ms, esperado)
+        ("latencia 4.2s", 1792368186234, 6, 1792368181951, 1, 6000, True),
+        ("latencia 3.8s", 1792367704964, 4, 1792367701109, 0, 6000, True),
+        ("segundos iguales", 1792367704964, 4, 1792367704964, 4, 6000, True),
+        ("wrap 59->1", 1792300000000, 1, 1792299998000, 59, 6000, True),
+        ("wrap 58->2", 1792300000000, 2, 1792299996000, 58, 6000, True),
+        ("dt 1s con 6s de vela", 1792300001000, 7, 1792300000000, 1, 6000, False),
+        ("dt 30s fuera de tol", 1792300030000, 35, 1792300000000, 5, 6000, False),
+        ("20s de vela con dt 2s", 1792300018000, 23, 1792300016000, 3, 6000, False),
+        ("7s de vela con dt 5s", 1792300007000, 12, 1792300002000, 5, 6000, False),
+        ("dt 6001 > tol", 1792300006001, 6, 1792300000000, 0, 6000, False),
+        ("cs desconocido", 1792300000000, -1, 1792300000000, 0, 6000, False),
+        ("tol 0", 1792300004000, 4, 1792300000000, 0, 0, False),
+        ("borde ceil dt 5.9s cs 6", 1792300005900, 6, 1792300000000, 0, 6000, True),
+        ("borde dt 5.9s cs 7", 1792300005900, 7, 1792300000000, 0, 6000, False),
+    ]
+    for nombre, tsl, csl, tsr, csr, tol, esperado in casos_latencia:
+        got = _latencia_explica_segundo_de_vela(
+            {"timestamp": tsl, "candle_second": csl},
+            {"timestamp": tsr, "candle_second": csr},
+            tol,
+        )
+        assert got == esperado, f"latencia '{nombre}': esperado {esperado}, obtenido {got}"
+
     print("ALL SELF-TEST ASSERTIONS PASSED (OK)")
 
 
@@ -1034,8 +1133,9 @@ def main():
     parser.add_argument(
         "--temporal-tolerance-ms",
         type=int,
-        default=3000,
-        help="En --mode trades, ventana de emparejamiento temporal de respaldo (default: 3000 ms)",
+        default=6000,
+        help="En --mode trades, ventana de emparejamiento temporal de respaldo "
+             "(default: 6000 ms, absorbe la latencia fisica de lectura de saldo en Android Go)",
     )
 
     args = parser.parse_args()
