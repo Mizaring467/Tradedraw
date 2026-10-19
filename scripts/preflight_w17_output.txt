@@ -1,0 +1,127 @@
+﻿=== ADB FORWARD ===
+=== BATERIA ===
+Current Battery Service state:
+  AC powered: false
+  USB powered: true
+  Wireless powered: false
+  Max charging current: 500000
+  Max charging voltage: 5000000
+  Charge counter: 4937240
+  status: 2
+  health: 2
+  present: true
+  level: 98
+  scale: 100
+  voltage: 4290
+  temperature: 457
+  technology: Li-poly
+=== CURRENT FOCUS ===
+  mCurrentFocus=Window{7f6be15 u0 com.marketly.trading/com.marketly.trading.modules.trading.TradingActivity}
+=== APP STATUS ===
+{
+            "app": "TradeDraw",
+            "versionCode": 19,
+            "versionName": "1.9-r23h-exhaustion",
+            "gitSha": "8cdb61f",
+            "buildId": "R23H-BUY-EXHAUSTION",
+            "buildTimestamp": 1792375144504,
+            "isDemoAccount": true,
+            "health": {"state":"READY","reasons":[],"sinceMs":1792400360844},
+            "mode": "DISABLED",
+            "submode": "YOLO",
+            "lastModeChangeSource": "AUTONOMOUS -> DISABLED | source=bridge:/mode",
+            "lastModeChangeTs": 1792401053083,
+            "strategy": "AUTO_ADAPTIVE",
+            "accessibilityActive": true,
+            "balance": 3.873473536E7,
+            "analysis": {
+                "currentPriceY": 641.8673,
+                "dynamicResistanceY": 0.0,
+                "dynamicSupportY": 0.0,
+                "dynamicResistancePrice": 641.8673133,
+                "dynamicSupportPrice": 641.867313225,
+                "callPower": 22,
+                "putPower": 78,
+                "isMarketSideways": false,
+                "trend": "DOWNTREND",
+                "candleCount": 60,
+                "streak": "TREND ­ƒö┤"
+            },
+            "risk": {
+                "totalWins": 3,
+                "totalLosses": 6,
+                "winRate": 33.333336,
+                "currentLossStreak": 0,
+                "martingaleStatus": "[M0 | $1.0]",
+                "investmentAmount": 1.0,
+                "observedStake": 100000.0,
+                "effectiveStake": 100000.0,
+                "hasPendingTrade": false,
+                "orderState": "NINGUNA",
+                "hasConfirmedTrade": false,
+                "remainingCooldown": 0,
+                "vetoV1": 14,
+                "vetoV2": 0,
+                "vetoTotal": 712,
+                "ultimoVeto": "",
+                "tapsDespachados": 44,
+                "inoperableCount": 0,
+                "inoperableNow": false,
+                "inoperableSeconds": 0,
+                "inoperableRatio": -1.0,
+                "inoperableReference": -1.0,
+                "ultimoInoperable": "",
+                "vetoActivoDesajustado": 0,
+                "recuperacionesPorSinTicks": 0,
+                "shadowOrders": 0
+            },
+            "activeSignal": null,
+            "feed": {
+                "source": "websocket",
+                "lastTickAgeMs": 53,
+                "activeAsset": "Z-CRY/IDX",
+                "ws_active_asset": "Z-CRY/IDX",
+                "connected": true,
+                "isFresh": true,
+                "tickSource": "socket",
+                "rawSocketMessages": 30123,
+                "socketTicks": 30121,
+                "journalWrites": 21,
+                "lastJournalWriteMs": 1692155,
+                "journalError": "",
+                "journalDuplicatesRejected": 0,
+                "journalRotations": 0,
+                "priceFrozen": false,
+                "recentPriceRangeRatio": 5.998122973104918E-10,
+                "rangoRelativoMinimo": 1.0E-11,
+                "rangoRelativoActual": 5.998122973104918E-10,
+                "volatilidadSuficiente": true,
+                "payoutFromPercentLabel": null,
+                "payoutFromButtonRatio": 0.8300000000000001,
+                "payoutResolved": 0.8300000000000001,
+                "payoutDiscrepant": false,
+                "payoutConfigured": 0.8500000238418579,
+                "rawFrames": ["{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-19T09:27:18.099994Z\",\"provider_time\":\"2026-10-19T09:27:18.098000Z\",\"rate\":641.867313225,\"created_at_with_millis\":\"2026-10-19T09:27:18.099000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.86731325,\"created_at\":\"2026-10-19T09:27:19.000000Z\",\"bid\":641.8673132,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}","{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-19T09:27:18.500229Z\",\"provider_time\":\"2026-10-19T09:27:18.498000Z\",\"rate\":641.86731323,\"created_at_with_millis\":\"2026-10-19T09:27:18.499000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.86731325,\"created_at\":\"2026-10-19T09:27:19.000000Z\",\"bid\":641.86731321,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}","{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-19T09:27:18.900145Z\",\"provider_time\":\"2026-10-19T09:27:18.898000Z\",\"rate\":641.86731327,\"created_at_with_millis\":\"2026-10-19T09:27:18.899000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.86731329,\"created_at\":\"2026-10-19T09:27:19.000000Z\",\"bid\":641.86731325,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}"],
+                "acceptedTicks": 30121,
+                "rejectedForeignAssetTicks": 0,
+                "ultimoRicConTicks": "Z-CRY/IDX",
+                "activoSinFeed": "",
+                "segundosSinTicks": 0,
+                "diagMultiRic": {
+                    "ricSecundario": "",
+                    "ticksRicSecundario": 0,
+                    "ultimoTickRicSecundarioMs": 0,
+                    "desconexiones": 1,
+                    "reconexiones": 1
+                }
+            },
+            "engine": {
+                "signalsGenerated": 759,
+                "lastSignalTimestampMs": 1792402025221,
+                "lastSignalAction": "BUY",
+                "evaluatedCount": 2575,
+                "suppressedByConfluence": 883,
+                "suppressedByChop": 0,
+                "suppressedByMicroCompression": 0
+            }
+        }
