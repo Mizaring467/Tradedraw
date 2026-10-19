@@ -183,6 +183,21 @@ class ReplayBacktestTest {
         isReversionTrade = false
     )
 
+    /**
+     * R23J Fase B (B2): bloqueos `ADAPTIVE_BLOCK` que el replay habria aplicado, con el instante y la
+     * similitud observada. Se acumulan por estrategia para poder contrastarlos contra los vetos
+     * reales de `decisions.csv`. Solo diagnostico: no altera el journal ni el comparador congelado.
+     */
+    data class BloqueoAdaptativo(
+        val ts: Long,
+        val action: TradeAction,
+        val similitud: Float,
+        val simPct: Int,
+        val strategy: String
+    )
+
+    private val bloqueosRegistrados = mutableListOf<BloqueoAdaptativo>()
+
     private fun runBacktestOnStrategy(
         ticks: List<RawTick>,
         strategy: AutoTradeStrategy,
@@ -209,6 +224,46 @@ class ReplayBacktestTest {
         // esto, el replay no podia reproducir `ADAPTIVE_BLOCK` ni por casualidad.
         val memoriaPerdidas = mutableListOf<TradeContextSignature>()
         var bloqueosAdaptativos = 0
+
+        // R23J Fase B (B2): en vivo la memoria de anti-patrones PERSISTE entre ventanas
+        // (`files/adaptive_learning_state.json`, 19 firmas al momento de este analisis). Un replay
+        // que arranque con memoria vacia no puede reproducir un bloqueo que depende de perdidas de
+        // dias anteriores. Si el operador exporta ese JSON y pasa su ruta en ADAPTIVE_STATE_JSON,
+        // el arnes arranca con la MISMA memoria que tenia el telefono.
+        System.getenv("ADAPTIVE_STATE_JSON")?.takeIf { it.isNotBlank() }?.let { ruta ->
+            runCatching {
+                val texto = java.io.File(ruta).readText(Charsets.UTF_8)
+                val raiz = org.json.JSONObject(texto)
+                val arr = raiz.optJSONArray("lossSignatures")
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        val o = arr.getJSONObject(i)
+                        memoriaPerdidas.add(
+                            TradeContextSignature(
+                                action = runCatching { TradeAction.valueOf(o.getString("action")) }.getOrDefault(TradeAction.BUY),
+                                trend = runCatching { TrendDirection.valueOf(o.getString("trend")) }.getOrDefault(TrendDirection.SIDEWAYS),
+                                distanceToSupportRatio = o.optDouble("distSup", 0.0).toFloat(),
+                                distanceToResistanceRatio = o.optDouble("distRes", 0.0).toFloat(),
+                                isNearSupportZone = o.optBoolean("nearSup", false),
+                                isNearResistanceZone = o.optBoolean("nearRes", false),
+                                tickVelocityNormalized = o.optDouble("tickVelNorm", 0.0).toFloat(),
+                                isBullishImpulse = o.optBoolean("bullishImp", false),
+                                isBearishImpulse = o.optBoolean("bearishImp", false),
+                                isDojiOrLowVolume = o.optBoolean("doji", false),
+                                isConsolidationTight = o.optBoolean("tight", false),
+                                isMarketSideways = o.optBoolean("sideways", false),
+                                strategyName = o.optString("strat", "AUTO_ADAPTIVE"),
+                                candleSecond = o.optInt("sec", 0),
+                                timestampMs = o.optLong("ts", 0L),
+                                isContinuationTrade = o.optBoolean("continuation", false),
+                                isReversionTrade = o.optBoolean("reversion", false)
+                            )
+                        )
+                    }
+                }
+                println("Memoria de anti-patrones precargada desde $ruta: ${memoriaPerdidas.size} firmas")
+            }.onFailure { println("AVISO: no se pudo precargar ADAPTIVE_STATE_JSON ($it)") }
+        }
 
         fun createEngine(): SyntheticCandleEngine {
             val eng = SyntheticCandleEngine()
@@ -349,6 +404,17 @@ class ReplayBacktestTest {
             val (simMax, coincidencia) = mejorCoincidenciaEnMemoria(firmaCandidata, memoriaPerdidas)
             if (motivoBloqueoPorAntiPatron(firmaCandidata, coincidencia, simMax) != null) {
                 bloqueosAdaptativos++
+                synchronized(bloqueosRegistrados) {
+                    bloqueosRegistrados.add(
+                        BloqueoAdaptativo(
+                            ts = entryTick.ts,
+                            action = action,
+                            similitud = simMax,
+                            simPct = (simMax * 100).toInt(),
+                            strategy = strategy.name
+                        )
+                    )
+                }
                 continue
             }
 
@@ -497,6 +563,19 @@ class ReplayBacktestTest {
         val wr = if (nonTies > 0) (wins.toDouble() / nonTies * 100.0) else 0.0
 
         println(String.format(Locale.US, "Resultado: W=%d, L=%d, TIE=%d | WR=%.2f%%", wins, losses, ties, wr))
+        // R23J Fase B (B2): volcar los bloqueos adaptativos para poder contrastarlos con los vetos
+        // reales. Se escribe junto al journal, con sufijo propio, para no tocar el contrato del CSV
+        // que consume el comparador congelado.
+        val outBloqueos = File(outFile.parentFile ?: File("."), "adaptive_blocks_replay.csv")
+        synchronized(bloqueosRegistrados) {
+            FileWriter(outBloqueos, false).use { w ->
+                w.write("timestamp,action,similarity,sim_pct,strategy\n")
+                for (b in bloqueosRegistrados) {
+                    w.write("${b.ts},${b.action},${b.similitud},${b.simPct},${b.strategy}\n")
+                }
+            }
+        }
+        println("Bloqueos ADAPTIVE_BLOCK del replay: ${bloqueosRegistrados.size} -> ${outBloqueos.absolutePath}")
         println("Archivo de salida simulado: ${outFile.absolutePath}")
 
         if (filesToProcess.size <= 5) {
