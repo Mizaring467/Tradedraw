@@ -1,0 +1,128 @@
+=== ADB FORWARD ===
+=== BATERIA ===
+Current Battery Service state:
+  AC powered: false
+  USB powered: true
+  Wireless powered: false
+  Max charging current: 500000
+  Max charging voltage: 5000000
+  Charge counter: 4937240
+  status: 2
+  health: 2
+  present: true
+  level: 98
+  scale: 100
+  voltage: 4292
+  temperature: 457
+  technology: Li-poly
+=== CURRENT FOCUS ===
+  mCurrentFocus=Window{d358d5d u0 Application Error: com.marketly.trading}
+  mCurrentFocus=Window{7f6be15 u0 com.marketly.trading/com.marketly.trading.modules.trading.TradingActivity}
+=== APP STATUS ===
+{
+            "app": "TradeDraw",
+            "versionCode": 19,
+            "versionName": "1.9-r23h-exhaustion",
+            "gitSha": "8cdb61f",
+            "buildId": "R23H-BUY-EXHAUSTION",
+            "buildTimestamp": 1792375144504,
+            "isDemoAccount": true,
+            "health": {"state":"READY","reasons":[],"sinceMs":1792395059288},
+            "mode": "DISABLED",
+            "submode": "YOLO",
+            "lastModeChangeSource": "AUTONOMOUS -> DISABLED | source=bridge:/mode",
+            "lastModeChangeTs": 1792395445675,
+            "strategy": "AUTO_ADAPTIVE",
+            "accessibilityActive": true,
+            "balance": 3.88517376E7,
+            "analysis": {
+                "currentPriceY": 641.8673,
+                "dynamicResistanceY": 0.0,
+                "dynamicSupportY": 0.0,
+                "dynamicResistancePrice": 641.86731361,
+                "dynamicSupportPrice": 641.86731353,
+                "callPower": 62,
+                "putPower": 38,
+                "isMarketSideways": false,
+                "trend": "SIDEWAYS",
+                "candleCount": 60,
+                "streak": "1D ⚪"
+            },
+            "risk": {
+                "totalWins": 2,
+                "totalLosses": 4,
+                "winRate": 33.333336,
+                "currentLossStreak": 2,
+                "martingaleStatus": "[M2 | $2.0]",
+                "investmentAmount": 2.0,
+                "observedStake": 100000.0,
+                "effectiveStake": 100000.0,
+                "hasPendingTrade": false,
+                "orderState": "NINGUNA",
+                "hasConfirmedTrade": false,
+                "remainingCooldown": 0,
+                "vetoV1": 14,
+                "vetoV2": 0,
+                "vetoTotal": 524,
+                "ultimoVeto": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 90pts] Anti-patron perdedor recurrente (99% similitud en contexto S/R=1%) - inversion deshabilitada",
+                "tapsDespachados": 36,
+                "inoperableCount": 0,
+                "inoperableNow": false,
+                "inoperableSeconds": 0,
+                "inoperableRatio": -1.0,
+                "inoperableReference": -1.0,
+                "ultimoInoperable": "",
+                "vetoActivoDesajustado": 0,
+                "recuperacionesPorSinTicks": 0,
+                "shadowOrders": 0
+            },
+            "activeSignal": null,
+            "feed": {
+                "source": "websocket",
+                "lastTickAgeMs": 46,
+                "activeAsset": "Z-CRY/IDX",
+                "ws_active_asset": "Z-CRY/IDX",
+                "connected": true,
+                "isFresh": true,
+                "tickSource": "socket",
+                "rawSocketMessages": 15186,
+                "socketTicks": 15184,
+                "journalWrites": 17,
+                "lastJournalWriteMs": 869184,
+                "journalError": "",
+                "journalDuplicatesRejected": 0,
+                "journalRotations": 0,
+                "priceFrozen": false,
+                "recentPriceRangeRatio": 1.246364502124244E-10,
+                "rangoRelativoMinimo": 1.0E-11,
+                "rangoRelativoActual": 1.246364502124244E-10,
+                "volatilidadSuficiente": true,
+                "payoutFromPercentLabel": null,
+                "payoutFromButtonRatio": 0.8300000000000001,
+                "payoutResolved": 0.8300000000000001,
+                "payoutDiscrepant": false,
+                "payoutConfigured": 0.8500000238418579,
+                "rawFrames": ["{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-19T07:44:44.900688Z\",\"provider_time\":\"2026-10-19T07:44:44.898000Z\",\"rate\":641.867313535,\"created_at_with_millis\":\"2026-10-19T07:44:44.900000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.86731355,\"created_at\":\"2026-10-19T07:44:45.000000Z\",\"bid\":641.86731352,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}","{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-19T07:44:45.300661Z\",\"provider_time\":\"2026-10-19T07:44:45.298000Z\",\"rate\":641.86731358,\"created_at_with_millis\":\"2026-10-19T07:44:45.300000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.8673136,\"created_at\":\"2026-10-19T07:44:46.000000Z\",\"bid\":641.86731356,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}","{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-19T07:44:45.700626Z\",\"provider_time\":\"2026-10-19T07:44:45.698000Z\",\"rate\":641.867313585,\"created_at_with_millis\":\"2026-10-19T07:44:45.700000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.8673136,\"created_at\":\"2026-10-19T07:44:46.000000Z\",\"bid\":641.86731357,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}"],
+                "acceptedTicks": 15184,
+                "rejectedForeignAssetTicks": 0,
+                "ultimoRicConTicks": "Z-CRY/IDX",
+                "activoSinFeed": "",
+                "segundosSinTicks": 0,
+                "diagMultiRic": {
+                    "ricSecundario": "",
+                    "ticksRicSecundario": 0,
+                    "ultimoTickRicSecundarioMs": 0,
+                    "desconexiones": 1,
+                    "reconexiones": 1
+                }
+            },
+            "engine": {
+                "signalsGenerated": 331,
+                "lastSignalTimestampMs": 1792395845917,
+                "lastSignalAction": "BUY",
+                "evaluatedCount": 1298,
+                "suppressedByConfluence": 423,
+                "suppressedByChop": 0,
+                "suppressedByMicroCompression": 0
+            }
+        }
