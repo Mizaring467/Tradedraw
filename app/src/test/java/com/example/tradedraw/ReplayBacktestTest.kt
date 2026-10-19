@@ -160,11 +160,17 @@ class ReplayBacktestTest {
         var blockedUntilTs = 0L
         val cooldownMs = if (subMode == AutonomousSubMode.YOLO) YOLO_COOLDOWN_MS else CONSERVATIVE_COOLDOWN_MS
 
+        // R23H Fase 2: impulso del tick que esta siendo procesado, expuesto al callback de senal.
+        // El callback se dispara DENTRO de `onNewTick`, asi que estas variables ya tienen el valor
+        // del tick actual cuando se leen. Se usan para reproducir el `callPower` exacto del motor.
+        var tickImpulseBullish = false
+        var tickImpulseBearish = false
+
         fun createEngine(): SyntheticCandleEngine {
             val eng = SyntheticCandleEngine()
             eng.currentStrategy = strategy
             eng.subMode = subMode
-            eng.onSignalGenerated = { action, reason ->
+            eng.onSignalGenerated = senal@{ action, reason ->
                 // R23A Iter 2: el tick de la senal se busca por el TIMESTAMP exacto que el motor
                 // registro al emitirla (`lastSignalTimestampMs`). Si no aparece —posible porque el
                 // motor puede emitir en un tick que el replay no conservo tras deduplicar por ts— el
@@ -187,6 +193,24 @@ class ReplayBacktestTest {
                 // hueco > 10s, o la vela de este minuto ya fue operada (1 orden por vela máx).
                 if (inSniperWindow && lastTick.ts >= cooldownUntilTs && lastTick.ts >= blockedUntilTs &&
                     candleMinute != lastExecutedCandleMinute) {
+                    // R23H Fase 2 (paridad live<->replay): el motor vivo aplica
+                    // `VETO_BUY_EXHAUSTION_CLIMAX` antes de despachar. Sin replicarlo aqui, el replay
+                    // simulaba compras en techo que en vivo nunca se ejecutaron, y el comparador las
+                    // contaba como faltantes del lado live. El `callPower` NO se recalcula a mano: sale
+                    // de `calcularPoderesDeMercado`, la misma funcion pura que alimenta al motor real.
+                    val (callPowerEnSenal, _) = calcularPoderesDeMercado(
+                        trend = eng.detectedTrend,
+                        distSupportRatio = eng.distanceToSupportRatio,
+                        distResistanceRatio = eng.distanceToResistanceRatio,
+                        rsi = eng.syntheticTickRsi,
+                        isBullishImpulse = tickImpulseBullish,
+                        isBearishImpulse = tickImpulseBearish
+                    )
+                    if (motivoVetoPorAgotamientoDeCompra(action, eng.detectedTrend, callPowerEnSenal) != null) {
+                        // Vetada por politica: NO se simula trade y NO se marca la vela como operada,
+                        // de modo que un tick posterior de la misma vela sigue siendo evaluable.
+                        return@senal
+                    }
                     lastExecutedCandleMinute = candleMinute
                     // La operacion ocupa 60 s desde la entrada y luego corre el cooldown del submodo.
                     blockedUntilTs = lastTick.ts + TRADE_DURATION_MS + cooldownMs
@@ -239,6 +263,10 @@ class ReplayBacktestTest {
                 smoothedVelocity = velocity
             )
 
+            // Asignar ANTES de onNewTick: el callback de senal se dispara dentro de esa llamada y
+            // necesita los flags del tick actual, no los del anterior.
+            tickImpulseBullish = isBullish
+            tickImpulseBearish = isBearish
             currentEngine.onNewTick(tick)
             prevTs = raw.ts
             prevPrice = raw.price
