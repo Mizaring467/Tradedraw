@@ -36,6 +36,7 @@ deriva entre el código medido y el binario instalado.
 | **Stake** | `100.000 COP` (cuenta **DEMO**) |
 | **Payout observado** | `83%` (0.83) |
 | **Dispositivo** | `UGU8KFUKM7E6CE8D` |
+| **App de broker** | `com.marketly.trading` (Marketly / Pocket Option), en primer plano |
 | **Estrategia** | `AUTO_ADAPTIVE` (congelada desde R23H) |
 | **Política de veto activa** | `VETO_BUY_EXHAUSTION_CLIMAX` — BUY + UPTREND + callPower >= 70 |
 
@@ -46,9 +47,12 @@ manda para el cálculo de breakeven: `1/(1+0.83) = 54.64%`.
 
 ---
 
-## 3. ESTADO DE SALUD AL MOMENTO DE LA INSTALACIÓN
+## 3. ESTADO DE SALUD DEL DISPOSITIVO
 
-Telemetría literal de `GET http://localhost:8080/status` tras instalar y arrancar `9442c1f`:
+Telemetría literal de `GET http://localhost:8080/status` **tras restablecer la salud** (estado vigente
+del binario `9442c1f`). El estado previo, ya superado, era `BLOCKED` con
+`SCREEN_FEED_MISMATCH` + `BALANCE_UNREADABLE` y `balance: 0.0`, causado por tener la app del broker
+minimizada; se conserva documentado en §3.2.
 
 ```json
 {
@@ -59,25 +63,23 @@ Telemetría literal de `GET http://localhost:8080/status` tras instalar y arranc
   "buildId": "R23H-BUY-EXHAUSTION",
   "isDemoAccount": true,
   "accessibilityActive": true,
-  "mode": "AUTONOMOUS",
+  "mode": "DISABLED",
   "submode": "YOLO",
   "strategy": "AUTO_ADAPTIVE",
   "health": {
-    "state": "BLOCKED",
-    "reasons": [
-      "SCREEN_FEED_MISMATCH: DESAJUSTE pantalla=DESCONOCIDA feed='Z-CRY/IDX'",
-      "BALANCE_UNREADABLE"
-    ]
+    "state": "READY",
+    "reasons": []
   },
   "feed": {
     "source": "websocket",
     "connected": true,
     "isFresh": true,
-    "lastTickAgeMs": 233,
+    "lastTickAgeMs": 129,
     "activeAsset": "Z-CRY/IDX",
+    "payoutResolved": 0.83,
     "volatilidadSuficiente": true
   },
-  "balance": 0.0
+  "balance": 39271736.32
 }
 ```
 
@@ -91,33 +93,76 @@ Telemetría literal de `GET http://localhost:8080/status` tras instalar y arranc
 | `BUILD_ID` | — | `R23H-BUY-EXHAUSTION` | OK |
 | `gitSha` | `9442c1f` | `9442c1f` | OK — coincide |
 | `accessibilityActive` | `true` | `true` | OK |
-| feed conectado y fresco | sí | `connected=true`, `isFresh=true`, `lastTickAgeMs=233` | OK |
+| feed conectado y fresco | sí | `connected=true`, `isFresh=true`, `lastTickAgeMs=129` | OK |
 
 **Los siete campos pasan.** La cuenta es DEMO, así que no se activó el STOP de seguridad de §3 del
 encargo.
 
-### 3.2 Advertencia operativa — `health = BLOCKED`
+### 3.2 Estado de salud — RESTABLECIDO A `READY`
 
-El feed está sano y la accesibilidad activa, pero el motor se declara `BLOCKED` por dos razones que
-**no son defectos del build**:
+**Corrección de un error de este manifiesto.** La primera emisión (commit `2d644ab`) afirmaba que en
+el dispositivo «no hay app de broker instalada» y que por eso el motor estaba `BLOCKED`. **Eso era
+falso.** La app de broker sí está instalada:
 
-1. **`SCREEN_FEED_MISMATCH`**: el veto de la Ronda 20 es fail-closed — exige confirmar por
-   accesibilidad que el activo que sirve el feed es el que está visible en pantalla. En este
-   dispositivo **no hay app de broker instalada** (verificado: `pm list packages` no encuentra
-   Binomo ni Quotex; sólo `com.example.tradedraw` como paquete de trading). Sin pantalla de broker,
-   la confirmación es imposible por diseño y el veto veta.
-2. **`BALANCE_UNREADABLE`**: no hay UI de broker de la que leer el saldo, así que `balance = 0.0` y
-   `risk.observedStake = 0.0`. El stake efectivo cae al mínimo (`1.0`) por la lógica de degradación
-   segura.
+```
+package:com.marketly.trading    (Marketly / Pocket Option)
+```
 
-**Consecuencia para la campaña:** en este estado el bot **no despachará taps**, y por tanto las
-ventanas de R23J producirán 0 trades hasta que se resuelva. Esto es correcto y esperado: el sistema
-falla cerrado, no abierto. Pero significa que **A3 no valida capacidad operativa**, sólo la correcta
-instalación y el fail-closed.
+Mi comando de búsqueda fue `pm list packages | grep -iE "binomo|quotex|pocket|trade|broker|binary|iq"`
+y devolvió sólo `com.example.tradedraw`, aunque `com.marketly.trading` contiene la cadena `trade` y
+debió aparecer. No tengo explicación verificada de por qué no salió, y no voy a inventarla. Lo que sí
+está verificado, con dos comprobaciones independientes, es que **está instalada y corriendo**:
+`pm list packages | grep marketly` la lista, y `dumpsys activity` muestra
+`com.marketly.trading/.modules.trading.TradingActivity` como actividad resumida.
 
-El panel de la app muestra "SESIÓN BINOMO: VINCULADA ✓", lo que corresponde a la **sesión web**
-autenticada vía WebSocket (de ahí que el feed de precios funcione con 67 ticks), no a una app nativa
-instalada. Los ticks llegan; los taps no tienen destinatario.
+La lección operativa es la que importa: **una búsqueda por nombre de marca no es una verificación de
+inventario.** El paquete se llama `marketly`, no `binomo` ni `quotex`. Un listado completo de
+paquetes de terceros habría bastado; filtrar por marcas conocidas introdujo el punto ciego.
+
+**Qué pasaba realmente.** `MainActivity` de TradeDraw quedó en primer plano tras la instalación, con
+la app del broker minimizada. El veto de pantalla de la Ronda 20 (fail-closed) no podía confirmar el
+activo visible y vetaba. Al reanudar `com.marketly.trading` al frente, la confirmación por
+accesibilidad pasa y el motor sale del bloqueo.
+
+**Telemetría verificada tras el restablecimiento** (`GET /status`, medición propia):
+
+| Campo | Valor |
+|---|---|
+| `health.state` | **`READY`** |
+| `health.reasons` | `[]` (vacío) |
+| `balance` | **`39.271.736,32 COP`** (DEMO) |
+| `risk.observedStake` | `100000.0` |
+| `risk.effectiveStake` | `100000.0` |
+| `feed.payoutResolved` | `0.83` |
+| `feed.payoutConfigured` | `0.85` (default; manda el resuelto) |
+| `feed.connected` / `isFresh` | `true` / `true` |
+| `feed.lastTickAgeMs` | `129` |
+| App de broker al frente | `com.marketly.trading/.modules.trading.TradingActivity` |
+
+El balance visible (`39.271.736,32`) coincide **exactamente** con `final_balance_validated` de
+`loops/r23i_validation/window_06_clean/window_metadata.json`. Es la misma cuenta DEMO que cerró W06,
+sin aportes ni retiros entre ventanas — condición necesaria para que las ventanas sean acumulables
+bajo el preregistro §3.4.
+
+Con el balance legible, `observedStake` sube a `100000.0` y el stake efectivo deja de degradarse al
+mínimo: **la configuración operativa de §2 es ahora efectiva**, no sólo configurada.
+
+**Estado del modo al momento de esta enmienda:** `mode = DISABLED`, puesto en seguro preventivo. El
+submodo se conserva en `YOLO`. Reanudar la operativa es una acción explícita (`POST /mode?name=AUTONOMOUS`),
+no ocurre sola.
+
+### 3.3 Requisito operativo para medir ventanas
+
+Para que una ventana R23J sea medible deben cumplirse **las tres** condiciones a la vez:
+
+1. `health.state == READY` con `reasons == []`.
+2. `com.marketly.trading` en primer plano (no basta con que esté instalada y minimizada).
+3. `mode == AUTONOMOUS` con `submode == YOLO`.
+
+Si la app del broker se minimiza durante la captura, el veto vuelve a activarse y la ventana se
+llena de vetos `SCREEN_FEED_MISMATCH` en lugar de trades. Es un modo de fallo silencioso que produce
+una ventana vacía con apariencia de normalidad: conviene vigilar `risk.vetoActivoDesajustado` y
+`health.state` durante la captura, no sólo al inicio.
 
 ---
 
@@ -154,17 +199,28 @@ son `ReplayBacktestTest` con `assumeTrue` sobre `BACKTEST_CSV`, preexistentes y 
 
 ---
 
-## 6. PENDIENTE ANTES DE MEDIR VENTANAS
+## 6. ESTADO PARA MEDIR VENTANAS
 
-Las ventanas de R23J no son interpretables hasta resolver el bloqueo de §3.2. Sin app de broker en
-pantalla no hay taps, no hay trades, y una ventana sin trades produce `pares_formales = 0`, que bajo
-el preregistro §2.3 es **`NO CONCLUYENTE`** por definición.
+El bloqueo de la primera emisión está **resuelto**. No queda ningún impedimento técnico para capturar
+ventanas:
 
-Opciones, en orden de preferencia:
+```
+health.state = READY   reasons = []   balance legible   app de broker al frente
+```
 
-1. **Instalar y abrir el broker** (Binomo/Quotex) en el dispositivo con sesión DEMO, y repetir la
-   verificación de `/status` hasta `health = OK`.
-2. **Revisar el diseño fail-closed del veto de pantalla** si se quiere operar sin UI de broker
-   visible — pero eso es un cambio de estrategia y **requiere ciclo propio**, no puede colarse en
-   R23J.
-3. **Declarar R23J bloqueado en fase de ejecución** y no medir ventanas hasta resolver (1).
+Antes de iniciar cada captura, confirmar los tres requisitos de §3.3. El único riesgo operativo real
+es que la app del broker pierda el primer plano a mitad de ventana: el veto de pantalla volvería a
+activarse y la ventana se llenaría de vetos en vez de trades, produciendo un artefacto vacío con
+apariencia de normalidad. Vigilar `health.state` y `risk.vetoActivoDesajustado` **durante** la
+captura, no sólo al arrancar.
+
+`mode` está en `DISABLED` como seguro preventivo. Reactivar es explícito:
+
+```
+curl -s "http://localhost:8080/mode?name=AUTONOMOUS"
+curl -s "http://localhost:8080/submode?name=YOLO"
+```
+
+Recordatorio del preregistro: una ventana con menos de 10 pares formales se declara **`NO
+CONCLUYENTE`**, por bien que haya operado. El PASS de paridad exige `pares_formales >= 10` **y**
+`tasa_match >= 90%`.
