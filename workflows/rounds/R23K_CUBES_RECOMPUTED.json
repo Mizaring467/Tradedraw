@@ -571,6 +571,17 @@
       "internal_discrepancy": 0.0,
       "continuity_gap": 0.0,
       "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W15",
+      "prev_window": "W14",
+      "initial_balance": 38751736.32,
+      "final_balance": 38751736.32,
+      "sum_deltas": 0,
+      "delta_window": 0.0,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
     }
   ],
   "incidents": [

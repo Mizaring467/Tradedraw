@@ -44,6 +44,7 @@ CANONICAL_WINDOWS = [
     ("W12", "loops/r23k_validation/window_12", 0.83),
     ("W13", "loops/r23k_validation/window_13", 0.83),
     ("W14", "loops/r23k_validation/window_14", 0.83),
+    ("W15", "loops/r23k_validation/window_15", 0.83),
 ]
 
 BORDER_TRADE_W10 = {
@@ -501,13 +502,13 @@ def compute_metrics(trades: List[Dict[str, Any]], nominal_payout: float = 0.83) 
 def compute_all_cubes_and_sensitivities(
     all_trades: List[Dict[str, Any]], windows_dict: Dict[str, Dict[str, Any]]
 ) -> Dict[str, Any]:
-    # Cubo 1: Paridad post-congelado (W07 a W14)
-    cubo1_trades = [t for t in all_trades if t["window"] in ("W07", "W08", "W09", "W10", "W11", "W12", "W13", "W14")]
-    # Cubo 2: Desempeño homogéneo con veto (W04 a W14 + Border Trade W10)
+    # Cubo 1: Paridad post-congelado (W07 a W15)
+    cubo1_trades = [t for t in all_trades if t["window"] in ("W07", "W08", "W09", "W10", "W11", "W12", "W13", "W14", "W15")]
+    # Cubo 2: Desempeño homogéneo con veto (W04 a W15 + Border Trade W10)
     cubo2_trades = [
         t
         for t in all_trades
-        if t["window"] in ("W04", "W05", "W06", "W07", "W08", "W09", "W10", "W11", "W12", "W13", "W14")
+        if t["window"] in ("W04", "W05", "W06", "W07", "W08", "W09", "W10", "W11", "W12", "W13", "W14", "W15")
     ]
     # Cubo 3: Histórico heterogéneo pre-veto (W01 a W03)
     cubo3_trades = [t for t in all_trades if t["window"] in ("W01", "W02", "W03")]
@@ -521,8 +522,8 @@ def compute_all_cubes_and_sensitivities(
     sens_segunda_mitad = all_trades[half_idx:]
 
     # Paridad Replay para Cubo 1
-    # Métricas auditadas en auditorías forenses W07..W14
-    # W07: 1 match / 0 div; W08: 3 match / 1 div; W09: 1 match / 0 div; W10: 0; W11: 0 match / 1 div; W12: 0 pares; W13: 5 match / 0 div; W14: 1 match / 0 div
+    # Métricas auditadas en auditorías forenses W07..W15
+    # W07: 1 match / 0 div; W08: 3 match / 1 div; W09: 1 match / 0 div; W10: 0; W11: 0 match / 1 div; W12: 0 pares; W13: 5 match / 0 div; W14: 1 match / 0 div; W15: 0 pares
     c1_pares_formales = 13
     c1_matches = 11
     c1_divergencias = 2
@@ -609,7 +610,7 @@ def generate_markdown_report(
 
     # Cubo 1
     c1 = cubes_data["cubo_1"]
-    lines.append("| CUBO 1: PARIDAD POST-CONGELADO (W07 a W14)                                                         |")
+    lines.append("| CUBO 1: PARIDAD POST-CONGELADO (W07 a W15)                                                         |")
     lines.append(f"|   - Pares Formales Evaluados: N = {c1['replay_parity']['formal_pairs']} ({c1['replay_parity']['matches']} Matches, {c1['replay_parity']['divergences']} Divergencias)                                           |")
     lines.append(f"|   - Tasa de Paridad (Match Rate): {c1['replay_parity']['match_rate']*100:.2f}%                                                                         |")
     lines.append(f"|   - Intervalo Wilson al 95%: [{c1['replay_parity']['wilson_ci_95'][0]*100:.2f}%, {c1['replay_parity']['wilson_ci_95'][1]*100:.2f}%]                                                     |")
@@ -618,7 +619,7 @@ def generate_markdown_report(
 
     # Cubo 2
     c2 = cubes_data["cubo_2"]
-    lines.append("| CUBO 2: DESEMPEÑO HOMOGÉNEO CON VETO (W04 a W14 + Trade Frontera W10)                              |")
+    lines.append("| CUBO 2: DESEMPEÑO HOMOGÉNEO CON VETO (W04 a W15 + Trade Frontera W10)                              |")
     lines.append(f"|   - Operaciones Reales: N = {c2['n']} ({c2['wins']} Wins / {c2['losses']} Losses)                                                     |")
     lines.append(f"|   - Win Rate: {c2['win_rate']*100:.2f}% (Breakeven payout 83% = {c2['breakeven']*100:.2f}%)                                              |")
     lines.append(f"|   - Intervalo Wilson al 95%: [{c2['wilson_ci_95'][0]*100:.2f}%, {c2['wilson_ci_95'][1]*100:.2f}%]                                                      |")
@@ -636,7 +637,7 @@ def generate_markdown_report(
 
     # Consolidado Total
     tot = cubes_data["total_consolidado"]
-    lines.append("| TOTAL CONSOLIDADO INFORMATIVO (W01 A W14):                                                         |")
+    lines.append("| TOTAL CONSOLIDADO INFORMATIVO (W01 A W15):                                                         |")
     lines.append(f"|   - Total Operaciones: N = {tot['n']} trades reales ({tot['wins']} Wins / {tot['losses']} Losses, WR = {tot['win_rate']*100:.2f}%)                       |")
     lines.append(f"|   - Variación Neta de Capital: {tot['total_delta_cop']:+,.2f} COP DEMO                                               |")
     lines.append(f"|   - Intervalo Wilson al 95%: [{tot['wilson_ci_95'][0]*100:.2f}%, {tot['wilson_ci_95'][1]*100:.2f}%]                                                      |")
@@ -646,7 +647,7 @@ def generate_markdown_report(
     lines.append("")
     lines.append("---")
     lines.append("")
-    lines.append("## 2. TABLA CONSOLIDADA VENTANA POR VENTANA (W01 A W14)")
+    lines.append("## 2. TABLA CONSOLIDADA VENTANA POR VENTANA (W01 A W15)")
     lines.append("")
     lines.append("| Ventana | $N$ | Wins | Losses | Win Rate | IC Wilson 95% | Payout | Breakeven | Delta Real (COP) | Max DD |")
     lines.append("| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
