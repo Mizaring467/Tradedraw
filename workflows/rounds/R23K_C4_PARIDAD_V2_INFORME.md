@@ -102,14 +102,17 @@ Consecuencia: 23 `ADAPTIVE_BLOCK` del Live aparecen como `COOLDOWN` en el replay
 
 ---
 
-## 5. QUÉ HARÍA FALTA PARA QUE EL ARNÉS v2 SEA VÁLIDO
+## 5. QUÉ HARÍA FALTA PARA QUE EL ARNÉS v2 SEA VÁLIDO (ESTADO: B1..B4 ATENDIDO)
 
-1. **Conectar la memoria real de anti-patrones** al replay v2 (mismo `ADAPTIVE_STATE_JSON` del v1). Sin eso, `ADAPTIVE_BLOCK` nunca dispara.
-2. **Modelar el reloj de cooldown como el Live**: `lastTradeResolutionTime` se actualiza al liquidar, no al entrar. Hay que inyectar los instantes de resolución desde `trades.csv`.
-3. **Implementar la compuerta V1** (exclusividad S/R ↔ anti-chop), hoy ausente: explica los 12 casos de W11.
-4. **Re-congelar el SHA** del replay v2 tras esos cambios y re-etiquetar como obsoleta cualquier medición previa.
+1. **Conectar la memoria real de anti-patrones** [ATENDIDO - B1]: Implementado por Hermes (`w1:pA`) con carga real de `adaptive_learning_state.json`, deduplicación/purga de `loadState` (50% && TTL 24h) y filtrado temporal estricto anti look-ahead (la memoria crece con `ts` de liquidación).
+2. **Modelar el reloj de cooldown como el Live** [ATENDIDO - B2]: Implementado por Hermes (`w1:pA`) mediante inyección de settlements desde ledger real (`--settlements`). Se eliminó el `entrada + 60s` artificial.
+3. **Implementar la compuerta V1 y orden de guards** [ATENDIDO - B3 y B4]: Implementado por Hermes (`w1:pA`) con port literal de `HudCoherence.actionConflict` y reordenamiento de guards (`ventana -> COOLDOWN -> agotamiento -> ADAPTIVE_BLOCK -> RISK_LIMIT -> V1 -> entrada`). Respaldado por 54 tests en `test_replay_v2_guards.py` y 61 vectores dorados en `replay_v2_tick --self-test`.
+4. **Re-congelar el SHA del replay v2** [EN PROCESO / CONDICIONAL]: Nuevo SHA `44f77d890142fffc1a9026b59beb2c2e4562a20d4548f25faa52b32734c60845` registrado en `workflows/R24_MANIFEST.md`. Las mediciones anteriores quedan obsoletas.
 
-Ninguno está en el alcance de R23K. Son el contenido mínimo de un ciclo posterior.
+**Bloqueo restante identificado (Insuficiencia de insumos offline, no de código):**
+- Los ratios S/R no son reconstruibles desde ticks ($ds/dr$ divergen $0.995/1.000$ vs $0.14/0.65$ medidos en HUD). El arnés requiere que el APK exporte `distanceToSupportRatio` y `distanceToResistanceRatio` en telemetría para evaluar V1 y superar el umbral 0.99 de `ADAPTIVE_BLOCK`.
+- El TTL de 24h vacía la memoria contra ventanas históricas. Se requiere volcar `adaptive_learning_state.json` al cierre de cada ventana.
+- **Dictamen:** El arnés es formalmente correcto pero ciego sin estos insumos. No congelar como "arnés listo" ni abrir R24 hasta contar con dicha exportación. El Cubo 2 en `8cdb61f` continúa como único frente empírico activo.
 
 ---
 

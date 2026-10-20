@@ -1549,6 +1549,9 @@ def main():
     effective_sha = actual_git_sha or args.expected_sha or status.get("gitSha", "") if status else (actual_git_sha or args.expected_sha)
     taps_window = taps_observed - (initial_taps if initial_taps is not None else taps_observed)
 
+    ledger_n = len(observed_trades)
+    discrepa_contadores = (total_trades != ledger_n)
+
     report_content = f"""# REPORTE DE VALIDACIÓN LIVE — R23 AUTÓNOMO ITERACIÓN {args.iter} (CUENTA DEMO)
 
 **Fecha:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}  
@@ -1578,8 +1581,9 @@ def main():
 - Evaluaciones motor: {status.get('engine', {}).get('evaluatedCount', 0) if status else 0}
 - Señales generadas: {status.get('engine', {}).get('signalsGenerated', 0) if status else 0}
 - Decisiones registradas: {len(observed_decisions)}
-- Operaciones DEMO ejecutadas: {len(observed_trades)}
-- Resoluciones: W={new_wins}, L={new_losses} (WR = {wr:.1f}%)
+- Operaciones DEMO ejecutadas (ledger `trades.csv`, FUENTE CONTABLE): {len(observed_trades)}
+- Delta de contadores de la APK (`totalWins`/`totalLosses`, TELEMETRIA de runtime): W={new_wins}, L={new_losses} (WR = {wr:.1f}%)
+- Conciliacion contadores vs ledger: {'AVISO: DISCREPANCIA de %+d resolucion(es) -> los cubos usan el ledger; los contadores pueden inflarse por doble resolucion concurrente en la APK (deuda R24).' % (total_trades - ledger_n) if discrepa_contadores else 'OK (coinciden)'}
 
 ---
 

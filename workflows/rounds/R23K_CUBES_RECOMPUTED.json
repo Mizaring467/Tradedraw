@@ -7,134 +7,207 @@
     "seed": 20261019,
     "bootstrap_replications": 10000,
     "canonical_equation": "N == W + L + VOID",
-    "total_trades_confirmed": 49
+    "total_trades_confirmed": 65
   },
   "cubes": {
     "cubo_1": {
-      "n": 21,
-      "resolved": 20,
-      "wins": 8,
-      "losses": 12,
+      "n": 37,
+      "resolved": 36,
+      "wins": 16,
+      "losses": 20,
       "voids": 1,
-      "win_rate": 0.4,
+      "win_rate": 0.4444,
       "wilson_ci_95": [
-        0.2188,
-        0.6134
+        0.2954,
+        0.6042
       ],
       "breakeven": 0.5464,
       "edge_detected": false,
-      "total_delta_cop": -537000.96,
+      "total_delta_cop": -678000.64,
       "ev_r": {
-        "mean": -0.2552,
+        "mean": -0.183,
         "bootstrap_ci_95": [
-          -0.6038,
-          0.1329
+          -0.4786,
+          0.113
         ]
       },
       "ev_cop": {
-        "mean": -25571.47,
+        "mean": -18324.34,
         "bootstrap_ci_95": [
-          -60429.04,
-          13190.58
+          -47865.08,
+          11270.3
         ]
       },
       "max_drawdown": {
-        "abs_cop": 786001.92,
-        "pct": 1.993
+        "abs_cop": 844001.28,
+        "pct": 2.1401
       },
       "direction_breakdown": {
         "BUY": {
-          "n": 12,
-          "wins": 3,
-          "losses": 9,
-          "win_rate": 0.25,
+          "n": 20,
+          "wins": 7,
+          "losses": 13,
+          "win_rate": 0.35,
           "wilson_ci_95": [
-            0.0889,
-            0.5323
+            0.1812,
+            0.5671
           ],
-          "delta_cop": -651998.72
+          "delta_cop": -723000.32
         },
         "SELL": {
-          "n": 9,
-          "wins": 5,
-          "losses": 3,
-          "win_rate": 0.625,
+          "n": 17,
+          "wins": 9,
+          "losses": 7,
+          "win_rate": 0.5625,
           "wilson_ci_95": [
-            0.3057,
-            0.8632
+            0.3318,
+            0.769
           ],
-          "delta_cop": 114997.76
+          "delta_cop": 44999.68
         }
       },
       "replay_parity": {
-        "formal_pairs": 14,
-        "matches": 12,
+        "formal_pairs": 20,
+        "matches": 18,
         "divergences": 2,
-        "match_rate": 0.8571,
+        "por_ventana": {
+          "W07": {
+            "matches": 1,
+            "divergencias": 0,
+            "pares": 1
+          },
+          "W08": {
+            "matches": 3,
+            "divergencias": 1,
+            "pares": 4
+          },
+          "W09": {
+            "matches": 1,
+            "divergencias": 0,
+            "pares": 1
+          },
+          "W10": {
+            "matches": 0,
+            "divergencias": 0,
+            "pares": 0
+          },
+          "W11": {
+            "matches": 0,
+            "divergencias": 1,
+            "pares": 1
+          },
+          "W12": {
+            "matches": 0,
+            "divergencias": 0,
+            "pares": 0
+          },
+          "W13": {
+            "matches": 5,
+            "divergencias": 0,
+            "pares": 5
+          },
+          "W14": {
+            "matches": 1,
+            "divergencias": 0,
+            "pares": 1
+          },
+          "W15": {
+            "matches": 0,
+            "divergencias": 0,
+            "pares": 0
+          },
+          "W16": {
+            "matches": 1,
+            "divergencias": 0,
+            "pares": 1
+          },
+          "W17": {
+            "matches": 0,
+            "divergencias": 0,
+            "pares": 0
+          },
+          "W18": {
+            "matches": 2,
+            "divergencias": 0,
+            "pares": 2
+          },
+          "W19": {
+            "matches": 3,
+            "divergencias": 0,
+            "pares": 3
+          },
+          "W20": {
+            "matches": 1,
+            "divergencias": 0,
+            "pares": 1
+          }
+        },
+        "ventanas_sin_paridad": [],
+        "match_rate": 0.9,
         "wilson_ci_95": [
-          0.6006,
-          0.9599
+          0.699,
+          0.9721
         ],
-        "verdict": "FAIL (N=14 >= 10, tasa 85.71% < 90%)"
+        "verdict": "PASS"
       }
     },
     "cubo_2": {
-      "n": 38,
-      "resolved": 37,
-      "wins": 21,
-      "losses": 16,
+      "n": 54,
+      "resolved": 53,
+      "wins": 29,
+      "losses": 24,
       "voids": 1,
-      "win_rate": 0.5676,
+      "win_rate": 0.5472,
       "wilson_ci_95": [
-        0.4091,
-        0.7133
+        0.4145,
+        0.6734
       ],
       "breakeven": 0.5464,
       "edge_detected": false,
-      "total_delta_cop": 130997.76,
+      "total_delta_cop": -10001.92,
       "ev_r": {
-        "mean": 0.0347,
+        "mean": -0.0017,
         "bootstrap_ci_95": [
-          -0.2534,
-          0.3026
+          -0.2385,
+          0.2352
         ]
       },
       "ev_cop": {
-        "mean": 3447.31,
+        "mean": -185.22,
         "bootstrap_ci_95": [
-          -25342.45,
-          30236.97
+          -23852.14,
+          23500.09
         ]
       },
       "max_drawdown": {
-        "abs_cop": 786001.92,
-        "pct": 1.9777
+        "abs_cop": 844001.28,
+        "pct": 2.1237
       },
       "direction_breakdown": {
         "BUY": {
-          "n": 22,
-          "wins": 11,
-          "losses": 11,
+          "n": 30,
+          "wins": 15,
+          "losses": 15,
           "win_rate": 0.5,
           "wilson_ci_95": [
-            0.3072,
-            0.6928
+            0.3315,
+            0.6685
           ],
-          "delta_cop": -195000.32
+          "delta_cop": -266001.92
         },
         "SELL": {
-          "n": 16,
-          "wins": 10,
-          "losses": 5,
-          "win_rate": 0.6667,
+          "n": 24,
+          "wins": 14,
+          "losses": 9,
+          "win_rate": 0.6087,
           "wilson_ci_95": [
-            0.4171,
-            0.8482
+            0.4079,
+            0.7784
           ],
-          "delta_cop": 325998.08
+          "delta_cop": 256000.0
         }
       },
-      "verdict": "NO CONCLUYENTE (N=38 < 40 y límite inf Wilson 40.91% <= BE 54.64%)"
+      "verdict": "NO CONCLUYENTE (N=54 < 40 y límite inf Wilson 41.45% <= BE 54.64%)"
     },
     "cubo_3": {
       "n": 11,
@@ -194,231 +267,231 @@
       }
     },
     "total_consolidado": {
-      "n": 49,
-      "resolved": 48,
-      "wins": 28,
-      "losses": 20,
+      "n": 65,
+      "resolved": 64,
+      "wins": 36,
+      "losses": 28,
       "voids": 1,
-      "win_rate": 0.5833,
+      "win_rate": 0.5625,
       "wilson_ci_95": [
-        0.4428,
-        0.7115
+        0.4409,
+        0.6771
       ],
       "breakeven": 0.5473,
       "edge_detected": false,
-      "total_delta_cop": 308999.68,
+      "total_delta_cop": 168000.0,
       "ev_r": {
-        "mean": 0.0624,
+        "mean": 0.0254,
         "bootstrap_ci_95": [
-          -0.182,
-          0.3035
+          -0.1986,
+          0.2492
         ]
       },
       "ev_cop": {
-        "mean": 6306.12,
+        "mean": 2584.62,
         "bootstrap_ci_95": [
-          -18163.36,
-          30428.94
+          -19830.63,
+          24969.41
         ]
       },
       "max_drawdown": {
-        "abs_cop": 786001.92,
-        "pct": 1.9629
+        "abs_cop": 844001.28,
+        "pct": 2.1078
       },
       "direction_breakdown": {
         "BUY": {
-          "n": 27,
-          "wins": 14,
-          "losses": 13,
-          "win_rate": 0.5185,
+          "n": 35,
+          "wins": 18,
+          "losses": 17,
+          "win_rate": 0.5143,
           "wilson_ci_95": [
-            0.3399,
-            0.6926
+            0.3557,
+            0.6701
           ],
-          "delta_cop": -146995.2
+          "delta_cop": -217996.8
         },
         "SELL": {
-          "n": 22,
-          "wins": 14,
-          "losses": 7,
-          "win_rate": 0.6667,
+          "n": 30,
+          "wins": 18,
+          "losses": 11,
+          "win_rate": 0.6207,
           "wilson_ci_95": [
-            0.4537,
-            0.8281
+            0.44,
+            0.7731
           ],
-          "delta_cop": 455994.88
+          "delta_cop": 385996.8
         }
       }
     },
     "sensibilidades": {
       "cubo_2_sin_w04": {
-        "n": 30,
-        "resolved": 29,
-        "wins": 14,
-        "losses": 15,
+        "n": 46,
+        "resolved": 45,
+        "wins": 22,
+        "losses": 23,
         "voids": 1,
-        "win_rate": 0.4828,
+        "win_rate": 0.4889,
         "wilson_ci_95": [
-          0.3139,
-          0.6557
+          0.3496,
+          0.63
         ],
         "breakeven": 0.5464,
         "edge_detected": false,
-        "total_delta_cop": -343001.6,
+        "total_delta_cop": -484001.28,
         "ev_r": {
-          "mean": -0.114,
+          "mean": -0.105,
           "bootstrap_ci_95": [
-            -0.419,
-            0.2183
+            -0.3648,
+            0.1517
           ]
         },
         "ev_cop": {
-          "mean": -11433.39,
+          "mean": -10521.77,
           "bootstrap_ci_95": [
-            -41900.29,
-            21799.94
+            -36500.03,
+            15130.66
           ]
         },
         "max_drawdown": {
-          "abs_cop": 786001.92,
-          "pct": 1.9737
+          "abs_cop": 844001.28,
+          "pct": 2.1193
         },
         "direction_breakdown": {
           "BUY": {
-            "n": 18,
-            "wins": 7,
-            "losses": 11,
-            "win_rate": 0.3889,
+            "n": 26,
+            "wins": 11,
+            "losses": 15,
+            "win_rate": 0.4231,
             "wilson_ci_95": [
-              0.2031,
-              0.6138
+              0.2554,
+              0.6105
             ],
-            "delta_cop": -522997.76
+            "delta_cop": -593999.36
           },
           "SELL": {
-            "n": 12,
-            "wins": 7,
-            "losses": 4,
-            "win_rate": 0.6364,
+            "n": 20,
+            "wins": 11,
+            "losses": 8,
+            "win_rate": 0.5789,
             "wilson_ci_95": [
-              0.3538,
-              0.8483
+              0.3628,
+              0.7686
             ],
-            "delta_cop": 179996.16
+            "delta_cop": 109998.08
           }
         }
       },
       "solo_w07_plus": {
-        "n": 21,
-        "resolved": 20,
-        "wins": 8,
-        "losses": 12,
+        "n": 37,
+        "resolved": 36,
+        "wins": 16,
+        "losses": 20,
         "voids": 1,
-        "win_rate": 0.4,
+        "win_rate": 0.4444,
         "wilson_ci_95": [
-          0.2188,
-          0.6134
+          0.2954,
+          0.6042
         ],
         "breakeven": 0.5464,
         "edge_detected": false,
-        "total_delta_cop": -537000.96,
+        "total_delta_cop": -678000.64,
         "ev_r": {
-          "mean": -0.2552,
+          "mean": -0.183,
           "bootstrap_ci_95": [
-            -0.6038,
-            0.1329
+            -0.4786,
+            0.113
           ]
         },
         "ev_cop": {
-          "mean": -25571.47,
+          "mean": -18324.34,
           "bootstrap_ci_95": [
-            -60429.04,
-            13190.58
+            -47865.08,
+            11270.3
           ]
         },
         "max_drawdown": {
-          "abs_cop": 786001.92,
-          "pct": 1.993
+          "abs_cop": 844001.28,
+          "pct": 2.1401
         },
         "direction_breakdown": {
           "BUY": {
-            "n": 12,
-            "wins": 3,
-            "losses": 9,
-            "win_rate": 0.25,
+            "n": 20,
+            "wins": 7,
+            "losses": 13,
+            "win_rate": 0.35,
             "wilson_ci_95": [
-              0.0889,
-              0.5323
+              0.1812,
+              0.5671
             ],
-            "delta_cop": -651998.72
+            "delta_cop": -723000.32
           },
           "SELL": {
-            "n": 9,
-            "wins": 5,
-            "losses": 3,
-            "win_rate": 0.625,
+            "n": 17,
+            "wins": 9,
+            "losses": 7,
+            "win_rate": 0.5625,
             "wilson_ci_95": [
-              0.3057,
-              0.8632
+              0.3318,
+              0.769
             ],
-            "delta_cop": 114997.76
+            "delta_cop": 44999.68
           }
         }
       },
       "segunda_mitad_cronologica": {
-        "n": 25,
-        "resolved": 24,
-        "wins": 11,
-        "losses": 13,
+        "n": 33,
+        "resolved": 32,
+        "wins": 14,
+        "losses": 18,
         "voids": 1,
-        "win_rate": 0.4583,
+        "win_rate": 0.4375,
         "wilson_ci_95": [
-          0.2789,
-          0.6493
+          0.2817,
+          0.6067
         ],
         "breakeven": 0.5464,
         "edge_detected": false,
-        "total_delta_cop": -388999.68,
+        "total_delta_cop": -644001.28,
         "ev_r": {
-          "mean": -0.1552,
+          "mean": -0.1948,
           "bootstrap_ci_95": [
-            -0.5072,
-            0.1776
+            -0.5009,
+            0.1115
           ]
         },
         "ev_cop": {
-          "mean": -15559.99,
+          "mean": -19515.19,
           "bootstrap_ci_95": [
-            -50720.15,
-            17720.12
+            -50121.23,
+            11091.24
           ]
         },
         "max_drawdown": {
-          "abs_cop": 786001.92,
-          "pct": 1.9737
+          "abs_cop": 644001.28,
+          "pct": 1.6413
         },
         "direction_breakdown": {
           "BUY": {
-            "n": 14,
-            "wins": 5,
-            "losses": 9,
-            "win_rate": 0.3571,
+            "n": 18,
+            "wins": 6,
+            "losses": 12,
+            "win_rate": 0.3333,
             "wilson_ci_95": [
-              0.1634,
-              0.6124
+              0.1628,
+              0.5625
             ],
-            "delta_cop": -486996.48
+            "delta_cop": -706001.92
           },
           "SELL": {
-            "n": 11,
-            "wins": 6,
-            "losses": 4,
-            "win_rate": 0.6,
+            "n": 15,
+            "wins": 8,
+            "losses": 6,
+            "win_rate": 0.5714,
             "wilson_ci_95": [
-              0.3127,
-              0.8318
+              0.3259,
+              0.7862
             ],
-            "delta_cop": 97996.8
+            "delta_cop": 62000.64
           }
         }
       }
@@ -597,6 +670,50 @@
       "final_balance": 38734735.36,
       "sum_deltas": -17000.96,
       "delta_window": -17000.96,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W17",
+      "prev_window": "W16",
+      "initial_balance": 38734735.36,
+      "final_balance": 38817735.68,
+      "sum_deltas": 83000.32,
+      "delta_window": 83000.32,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W18",
+      "prev_window": "W17",
+      "initial_balance": 38817735.68,
+      "final_balance": 38863736.32,
+      "sum_deltas": 46000.64,
+      "delta_window": 46000.64,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W19",
+      "prev_window": "W18",
+      "initial_balance": 38863736.32,
+      "final_balance": 38827735.04,
+      "sum_deltas": -36001.28,
+      "delta_window": -36001.28,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W20",
+      "prev_window": "W19",
+      "initial_balance": 38827735.04,
+      "final_balance": 38593735.68,
+      "sum_deltas": -233999.36,
+      "delta_window": -233999.36,
       "internal_discrepancy": 0.0,
       "continuity_gap": 0.0,
       "continuity_status": "CONTINUO"
@@ -1410,6 +1527,262 @@
       "balance_pre": 38651735.04,
       "balance_post": 38734735.36,
       "return_r": 0.83
+    },
+    {
+      "trade_id": "ade70abb-a302-4d2f-bfa8-716d3056bb08",
+      "decision_id": "d4074145-9eaf-3dbc-8b14-ea66e4ab40bb",
+      "timestamp_ms": 1792402565639,
+      "action": "BUY",
+      "balance_at_trade": 38634736.64,
+      "window": "W17",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_17/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 38734735.36,
+      "balance_post": 38817735.68,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "0e9125ef-0cde-4385-a241-57df9b98c32e",
+      "decision_id": "0826b6ee-1cba-306b-8ec5-5adebed94e71",
+      "timestamp_ms": 1792436284684,
+      "action": "SELL",
+      "balance_at_trade": 38717736.96,
+      "window": "W18",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_18/trades.csv",
+      "result": "WIN",
+      "delta": 82001.92,
+      "balance_pre": 38817735.68,
+      "balance_post": 38899737.6,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "e84e4b9e-b00c-43b6-9363-fa66e7ec29bb",
+      "decision_id": "34cda7f7-9eaa-3531-9cec-f0fab747dfd8",
+      "timestamp_ms": 1792436525845,
+      "action": "SELL",
+      "balance_at_trade": 38799736.32,
+      "window": "W18",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_18/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38899737.6,
+      "balance_post": 38799736.32,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "8abee853-db98-43f7-8d46-a6c2b300ac8e",
+      "decision_id": "734048c8-9129-36be-8aa2-6d869d9e0709",
+      "timestamp_ms": 1792436646261,
+      "action": "BUY",
+      "balance_at_trade": 38799736.32,
+      "window": "W18",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_18/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 38799736.32,
+      "balance_post": 38881735.68,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "9e20b700-0eb4-4f1b-9b1c-447610418872",
+      "decision_id": "0b42807f-1e1a-3941-abac-2ab002834d13",
+      "timestamp_ms": 1792436825861,
+      "action": "SELL",
+      "balance_at_trade": 38881735.68,
+      "window": "W18",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_18/trades.csv",
+      "result": "WIN",
+      "delta": 82001.92,
+      "balance_pre": 38881735.68,
+      "balance_post": 38963737.6,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "a87c1296-1157-4dcd-a112-7c9e6dec7ab5",
+      "decision_id": "524b554e-bd7b-3472-8e9f-dd7d0d3e5abc",
+      "timestamp_ms": 1792437005772,
+      "action": "BUY",
+      "balance_at_trade": 38863736.32,
+      "window": "W18",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_18/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38963737.6,
+      "balance_post": 38863736.32,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "fb68806e-a1f8-4d78-a77c-bfdd00fcae52",
+      "decision_id": "8fdb2cfd-d543-3c7d-b989-a378b9ddbf77",
+      "timestamp_ms": 1792439523856,
+      "action": "BUY",
+      "balance_at_trade": 38763735.04,
+      "window": "W19",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_19/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38863736.32,
+      "balance_post": 38763735.04,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "21f73846-b968-4a16-9cd9-8eb681c68c08",
+      "decision_id": "9ab29488-0f4f-3dc8-97cd-0aeac0b8c9d5",
+      "timestamp_ms": 1792439644013,
+      "action": "BUY",
+      "balance_at_trade": 38663736.32,
+      "window": "W19",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_19/trades.csv",
+      "result": "WIN",
+      "delta": 82001.92,
+      "balance_pre": 38763735.04,
+      "balance_post": 38845736.96,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "87936905-29ec-4222-80b5-5f98fbd7eac1",
+      "decision_id": "19489e09-17a5-39ac-9194-5ce72112644f",
+      "timestamp_ms": 1792439824559,
+      "action": "BUY",
+      "balance_at_trade": 38745735.68,
+      "window": "W19",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_19/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 38845736.96,
+      "balance_post": 38927736.32,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "f39264b6-3e73-4846-9c37-7ff0a926c28d",
+      "decision_id": "ac622f04-41b3-3e3c-9c2b-ac70f1e433c4",
+      "timestamp_ms": 1792439944773,
+      "action": "SELL",
+      "balance_at_trade": 38827735.04,
+      "window": "W19",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_19/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38927736.32,
+      "balance_post": 38827735.04,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "6d8f8372-29d5-407b-a8ce-5f08b4d10c1b",
+      "decision_id": "ab6b092a-a7ad-3b0f-ae5a-5ea0023bc905",
+      "timestamp_ms": 1792449787463,
+      "action": "SELL",
+      "balance_at_trade": 38727736.32,
+      "window": "W20",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_20/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 38827735.04,
+      "balance_post": 38910735.36,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "c95dcd8c-ca23-4465-a345-0e950f66b252",
+      "decision_id": "47c9a035-1f23-3942-b1c0-3f4ad88eb587",
+      "timestamp_ms": 1792449907592,
+      "action": "BUY",
+      "balance_at_trade": 38810736.64,
+      "window": "W20",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_20/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 38910735.36,
+      "balance_post": 38810736.64,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "4e692edd-17d0-48d6-a6dc-a1d49d783a61",
+      "decision_id": "8be19512-bece-3475-9802-fdc0348a8eba",
+      "timestamp_ms": 1792450091242,
+      "action": "BUY",
+      "balance_at_trade": 38710735.36,
+      "window": "W20",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_20/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38810736.64,
+      "balance_post": 38710735.36,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "7aa816fd-9b89-4f68-8699-5b1cdb0eca32",
+      "decision_id": "572f5188-e083-3aca-ba83-278bf1fa4caa",
+      "timestamp_ms": 1792450408237,
+      "action": "SELL",
+      "balance_at_trade": 38610736.64,
+      "window": "W20",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_20/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 38710735.36,
+      "balance_post": 38610736.64,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "1760976a-353b-4665-a2c5-44ede0b5c1bd",
+      "decision_id": "e4688e10-c5b9-3de1-af7b-f94c4d397efd",
+      "timestamp_ms": 1792450564438,
+      "action": "SELL",
+      "balance_at_trade": 38510735.36,
+      "window": "W20",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_20/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 38610736.64,
+      "balance_post": 38693736.96,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "5c781864-da38-4ecb-a565-ca5feb8ca933",
+      "decision_id": "5d349969-0362-3be1-a83f-b072d69935a9",
+      "timestamp_ms": 1792450985363,
+      "action": "SELL",
+      "balance_at_trade": 38593735.68,
+      "window": "W20",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_20/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38693736.96,
+      "balance_post": 38593735.68,
+      "return_r": -1.0
     }
   ]
 }

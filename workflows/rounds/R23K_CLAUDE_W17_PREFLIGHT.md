@@ -54,3 +54,19 @@ Se emite dictamen **PASS (READY)** para la Ventana 17:
 1. Las condiciones de hardware, sistema operativo, app Android `8cdb61f` y broker cumplen al 100% los criterios pre-registrados de R23K.
 2. Cuenta DEMO confirmada sin exposición de capital real.
 3. Se autoriza la apertura y ejecución de la Ventana 17 limpia con el monitor autónomo v2 (`live_monitor_r23_autonomous.py`).
+
+---
+
+## 4. REVALIDACIÓN POSTERIOR DE PREFLIGHT — DICTAMEN: BLOCKED
+
+**Fecha:** 2026-10-19 10:20:00 UTC (05:20:00 -05:00)  
+**Auditor:** CLAUDE CODE (`w1:pC`, Auditor Independiente)  
+**Dictamen de Revalidación:** **W17 = BLOCKED**
+
+### 4.1 Evidencia y Causas de Bloqueo
+1. **Saldo Alterado:** Saldo esperado de preflight (38,734,735.36 COP) ya no está vigente. La Ventana 17 fue ejecutada a las 09:58 UTC (1 trade BUY ganador, saldo resultante: 38,817,735.68 COP DEMO).
+2. **Broker Foreground Ausente:** `mCurrentFocus = Window{ad938ec u0 com.gogo.launcher/com.android.launcher3.GoGoLauncher}`. `com.marketly.trading` no está en primer plano ni activo.
+3. **Bridge HTTP y Feed Inactivos:** Puerto 8080 no responde tras el cierre de ciclo del monitor v2.
+4. **Estado de Órdenes:** Último registro de runtime reportó `orderState == NO_PROCESADA` con liquidación cerrada.
+5. **Veredicto:** Toda re-apertura o re-ejecución de W17 queda estrictamente **BLOCKED**. Próxima acción requerida: Auditoría formal de W17 (`R23K_CLAUDE_W17_AUDIT.md`) y eventual preflight para W18.
+

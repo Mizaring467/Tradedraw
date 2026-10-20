@@ -26,8 +26,9 @@ Este manifiesto **abre un cubo nuevo** en cuanto se instale un build distinto de
 
 | Componente | Ruta | SHA-256 |
 |---|---|---|
-| Replay tick-a-tick | `scripts/validation/replay_v2_tick.py` | `a3f1c1d12a82cf4cfcfb6dde2f430ee19b2df5b81c5cf8c987680cd91fdc2fd2` |
+| Replay tick-a-tick (B1..B4) | `scripts/validation/replay_v2_tick.py` | `44f77d890142fffc1a9026b59beb2c2e4562a20d4548f25faa52b32734c60845` |
 | Comparador v2 | `scripts/validation/compare_live_replay_v2.py` | `535db9894dba3a01737f91c3ed7268c48dd9c96c6ab9e0af56777f3d65f1a9f9` |
+| Suite de guards v2 (B1..B4) | `scripts/validation/test_replay_v2_guards.py` | `7a755d575b6b401657a16491ea051fbcf5ec529bbe270d61a125664372b0c39a` |
 | Telemetría de acción | `scripts/validation/test_action_telemetry.py` | (tests de no-regresión, no se congela) |
 
 **El comparador v1 queda intacto.** Su SHA `4cb5082e4f8c52bcd775f0c5f3d53d992a3730007d1738d463a171f2c0794b5f` sigue siendo el congelado para el Cubo 2 y no se modifica retroactivamente.
@@ -77,18 +78,30 @@ git diff --stat <sha_r24> HEAD -- app/     -> vacío
 /status.health.state                       -> READY, reasons []
 com.marketly.trading                       -> primer plano
 /status.mode, /status.submode              -> AUTONOMOUS, YOLO
-sha256sum compare_live_replay_v2.py         -> 535db989…a9f9
-sha256sum replay_v2_tick.py                 -> a3f1c1d1…fd2
+sha256sum compare_live_replay_v2.py         -> 535db9894dba3a01737f91c3ed7268c48dd9c96c6ab9e0af56777f3d65f1a9f9
+sha256sum replay_v2_tick.py                 -> 44f77d890142fffc1a9026b59beb2c2e4562a20d4548f25faa52b32734c60845
+sha256sum test_replay_v2_guards.py          -> 7a755d575b6b401657a16491ea051fbcf5ec529bbe270d61a125664372b0c39a
 ```
 
 Si cualquiera falla, la ventana no arranca.
 
 ---
 
-## 6. ADVERTENCIA SOBRE EL ESTADO MEDIDO DEL ARNÉS v2
+## 6. ADVERTENCIA SOBRE EL ESTADO MEDIDO DEL ARNÉS v2 TRAS B1..B4
 
-El barrido retrospectivo W05–W11 (`R23K_C4_PARIDAD_V2_SWEEP.md`) dio coberturas del 44–96% pero **concordancias de tipo del 15–85%**, muy por debajo del 90% exigido. El desglose muestra que el replay v2 (a) no modela `ADAPTIVE_BLOCK` con la memoria real del teléfono y (b) clasifica como `COOLDOWN`/`RISK_LIMIT` decisiones que el Live resolvió como `ADAPTIVE_BLOCK`.
+En R24 Track B, Hermes (`w1:pA`) completó la implementación B1..B4 (`workflows/rounds/r24_track_b_hermes.md`):
+- Memoria `ADAPTIVE_BLOCK` real sin look-ahead (B1).
+- Settlement y cooldown modelados desde ledger real (B2).
+- Compuerta V1 portada de `HudCoherence` / `getEngineReasoning` (B3).
+- Orden de guards corregido (`ventana -> COOLDOWN -> agotamiento -> ADAPTIVE_BLOCK -> RISK_LIMIT -> V1 -> entrada`) (B4).
+- Suite determinista con 54 tests OK y 61 vectores dorados en `replay_v2_tick --self-test`.
+- Las mediciones previas de W05–W11 del manifiesto original quedan **obsoletas**.
 
-**Conclusión que debe quedar escrita:** el arnés v2 **no está listo** para declarar paridad. Está listo como instrumento de diagnóstico. Abrir el Cubo R24 con este arnés produciría un veredicto de paridad `NO EVALUABLE` en los tres criterios, con razón.
+**Hallazgo empírico crítico:**
+El arnés es correcto por construcción, pero **está ciego sin dos insumos del dispositivo**:
+1. **Ratios S/R reales en telemetría:** Reconstruir $ds/dr$ offline desde ticks da $0.995/1.000$ donde el HUD del teléfono registra $0.14/0.65$. Con placeholder $0.50$, la similitud máxima contra firmas reales no supera $0.66$ (imposible alcanzar el umbral $0.99$). Se requiere que el APK exporte `distanceToSupportRatio` y `distanceToResistanceRatio` por muestra.
+2. **Exportación de memoria al cierre:** El TTL de 24h de `loadState` purga las firmas históricas. Se requiere volcar `adaptive_learning_state.json` al cierre de cada ventana.
 
-Corregir las dos causas exige tocar el replay v2, lo que **re-congela** su SHA y obliga a re-etiquetar cualquier medición previa. Ese trabajo pertenece a un ciclo posterior, no a R23K.
+**Conclusión regulatoria vinculante:**
+El arnés v2 **NO se congela como "arnés listo"**. Abrir el Cubo R24 con este estado produciría `NO EVALUABLE` en los tres criterios de B5 con razón.
+R24 permanece **PREPARADO, NO VIGENTE**. El único cubo activo y acumulando es el **Cubo 2** bajo `8cdb61f`.

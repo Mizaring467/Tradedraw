@@ -46,7 +46,18 @@ CANONICAL_WINDOWS = [
     ("W14", "loops/r23k_validation/window_14", 0.83),
     ("W15", "loops/r23k_validation/window_15", 0.83),
     ("W16", "loops/r23k_validation/window_16", 0.83),
+    ("W17", "loops/r23k_validation/window_17", 0.83),
+    ("W18", "loops/r23k_validation/window_18", 0.82),
+    ("W19", "loops/r23k_validation/window_19", 0.82),
+    ("W20", "loops/r23k_validation/window_20", 0.83),
 ]
+
+RUTA_VENTANA = {w: p for w, p, _ in CANONICAL_WINDOWS}
+
+# Ventanas del Cubo 1 (paridad post-congelado). FUENTE UNICA: la usan la seleccion de trades y el
+# conteo de pares. Antes estaba duplicada en tres literales, y anadir una ventana actualizaba solo una.
+CUBO1_WINDOWS = ("W07", "W08", "W09", "W10", "W11", "W12", "W13", "W14", "W15", "W16", "W17",
+                 "W18", "W19", "W20")
 
 BORDER_TRADE_W10 = {
     "trade_id": "205eed81-fd3b-47d7-8efa-4b3fb7058499",
@@ -62,6 +73,59 @@ BORDER_TRADE_W10 = {
     "stake": 100000.0,
     "source": "workflows/rounds/R23J_W10_BORDER_TRADE_RECONCILIATION.md",
 }
+
+
+def contar_paridad_replay(root: str, ventanas) -> Dict[str, Any]:
+    """
+    Cuenta los pares de paridad REALES leyendo `replay_comparison.json` de cada ventana.
+
+    POR QUE DERIVARLO Y NO ESCRIBIR LOS LITERALES. Hasta W18 el Cubo 1 llevaba `pares=16` y
+    `matches=14` como constantes a mano. Al registrar W19 el ledger crecia a 59 trades pero el cubo
+    seguia reportando N=16 y calculaba el veredicto sobre una muestra ya inexistente. El instrumento
+    no falla en la aritmetica: se queda quieto mientras el conjunto crece, y ese silencio es
+    indistinguible de un resultado valido.
+
+    Cada `pairs` del JSON trae un `status`: MATCH, DIVERGENT, MISSING_LIVE o MISSING_REPLAY. Solo
+    los DOS primeros forman par evaluable; los otros son ordenes sin contraparte y no entran ni en el
+    numerador ni en el denominador (criterio B5: la tasa se mide sobre pares formados y el volumen se
+    reporta aparte).
+
+    Una ventana sin `replay_comparison.json` NO se cuenta como 0 pares en silencio: se lista en
+    `ventanas_sin_paridad` para que el informe pueda declararla no evaluable.
+    """
+    pares = matches = divergentes = 0
+    por_ventana: Dict[str, Dict[str, int]] = {}
+    sin_archivo: List[str] = []
+    for wname in ventanas:
+        rel = RUTA_VENTANA[wname]
+        ruta = os.path.join(root, rel, "replay_comparison.json")
+        if not os.path.exists(ruta):
+            sin_archivo.append(wname)
+            continue
+        try:
+            with open(ruta, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            sin_archivo.append(wname)
+            continue
+        m = d = 0
+        for par in data.get("pairs") or []:
+            estado = str(par.get("status", "")).upper()
+            if estado == "MATCH":
+                m += 1
+            elif estado == "DIVERGENT":
+                d += 1
+        por_ventana[wname] = {"matches": m, "divergencias": d, "pares": m + d}
+        matches += m
+        divergentes += d
+        pares += m + d
+    return {
+        "pares": pares,
+        "matches": matches,
+        "divergencias": divergentes,
+        "por_ventana": por_ventana,
+        "ventanas_sin_paridad": sin_archivo,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -182,9 +246,12 @@ def resolve_trade_deltas_from_telemetry(
         # Encontrar paso de entrada (débito de stake de ~100.000 COP)
         debit_step = None
         for st in steps:
-            # El débito puede ocurrir justo antes o después del trade_id
+            # El débito debe ocurrir temporalmente cerca del trade_id
             if abs(st["delta"] + 100000.0) < 5000.0:
-                if abs(st["ts"] - ts_trade) < 25000 or abs(st["post"] - bal_at) < 5.0 or abs(st["pre"] - bal_at) < 5.0:
+                if abs(st["ts"] - ts_trade) < 25000:
+                    debit_step = st
+                    break
+                elif (abs(st["post"] - bal_at) < 5.0 or abs(st["pre"] - bal_at) < 5.0) and abs(st["ts"] - ts_trade) < 60000:
                     debit_step = st
                     break
 
@@ -309,8 +376,8 @@ def collect_canonical_trades(root: str) -> Tuple[List[Dict[str, Any]], Dict[str,
 
                 # Comprobar pertenencia a la ventana por timestamp
                 w_info = windows_dict[wname]
-                # Si el timestamp cae fuera del rango de la ventana, verificar si es residual
-                if ts < w_info["ts_start"] or ts > w_info["ts_end"] + 15000:
+                # Si el timestamp cae fuera del rango de la ventana, verificar si es residual (tolerancia 30s inicio / 15s fin)
+                if ts < w_info["ts_start"] - 30000 or ts > w_info["ts_end"] + 15000:
                     incidents.append(
                         {
                             "type": "RESIDUAL_INTERWINDOW_TRADE",
@@ -516,15 +583,17 @@ def compute_metrics(trades: List[Dict[str, Any]], nominal_payout: float = 0.83) 
 # Agrupación por Cubos Epistémicos y Sensibilidades
 # ---------------------------------------------------------------------------
 def compute_all_cubes_and_sensitivities(
-    all_trades: List[Dict[str, Any]], windows_dict: Dict[str, Dict[str, Any]]
+    all_trades: List[Dict[str, Any]],
+    windows_dict: Dict[str, Dict[str, Any]],
+    root: str = ".",
 ) -> Dict[str, Any]:
-    # Cubo 1: Paridad post-congelado (W07 a W16)
-    cubo1_trades = [t for t in all_trades if t["window"] in ("W07", "W08", "W09", "W10", "W11", "W12", "W13", "W14", "W15", "W16")]
-    # Cubo 2: Desempeño homogéneo con veto (W04 a W16 + Border Trade W10)
+    # Cubo 1: Paridad post-congelado (W07 a W20), seleccionado desde CUBO1_WINDOWS.
+    cubo1_trades = [t for t in all_trades if t["window"] in CUBO1_WINDOWS]
+    # Cubo 2: Desempeño homogéneo con veto (W04 a W20 + Border Trade W10)
     cubo2_trades = [
         t
         for t in all_trades
-        if t["window"] in ("W04", "W05", "W06", "W07", "W08", "W09", "W10", "W11", "W12", "W13", "W14", "W15", "W16")
+        if t["window"] in ("W04", "W05", "W06") + tuple(CUBO1_WINDOWS)
     ]
     # Cubo 3: Histórico heterogéneo pre-veto (W01 a W03)
     cubo3_trades = [t for t in all_trades if t["window"] in ("W01", "W02", "W03")]
@@ -538,12 +607,21 @@ def compute_all_cubes_and_sensitivities(
     sens_segunda_mitad = all_trades[half_idx:]
 
     # Paridad Replay para Cubo 1
-    # Métricas auditadas en auditorías forenses W07..W16
-    # W07: 1 match / 0 div; W08: 3 match / 1 div; W09: 1 match / 0 div; W10: 0; W11: 0 match / 1 div; W12: 0 pares; W13: 5 match / 0 div; W14: 1 match / 0 div; W15: 0 pares; W16: 1 match / 0 div
-    c1_pares_formales = 14
-    c1_matches = 12
-    c1_divergencias = 2
-    c1_match_rate = c1_matches / c1_pares_formales
+    # R24 Fase 3: derivado de los artefactos, NO de literales escritos a mano.
+    #
+    # ANTES: dos constantes (pares=16, matches=14) mantenidas a mano y una lista de ventanas
+    # duplicada en tres sitios. Al añadir W19 la ventana entraba en el ledger pero el cubo seguía
+    # diciendo N=16 y el veredicto se calculaba sobre una muestra que ya no existía. Ese es el modo
+    # de fallo real: el instrumento no se equivoca de aritmética, se queda quieto mientras el
+    # conjunto crece.
+    #
+    # AHORA: se leen los `replay_comparison.json` de las ventanas del cubo y se cuentan los pares
+    # por estado. Si un archivo falta, se declara en `ventanas_sin_paridad` en lugar de asumir 0.
+    c1_paridad = contar_paridad_replay(root, CUBO1_WINDOWS)
+    c1_pares_formales = c1_paridad["pares"]
+    c1_matches = c1_paridad["matches"]
+    c1_divergencias = c1_paridad["divergencias"]
+    c1_match_rate = (c1_matches / c1_pares_formales) if c1_pares_formales else 0.0
     c1_w_lo, c1_w_hi, _ = wilson_interval(c1_matches, c1_pares_formales)
 
     c1_verdict = (
@@ -561,6 +639,8 @@ def compute_all_cubes_and_sensitivities(
         "formal_pairs": c1_pares_formales,
         "matches": c1_matches,
         "divergences": c1_divergencias,
+        "por_ventana": c1_paridad["por_ventana"],
+        "ventanas_sin_paridad": c1_paridad["ventanas_sin_paridad"],
         "match_rate": round(c1_match_rate, 4),
         "wilson_ci_95": [round(c1_w_lo, 4), round(c1_w_hi, 4)],
         "verdict": c1_verdict,
@@ -626,7 +706,7 @@ def generate_markdown_report(
 
     # Cubo 1
     c1 = cubes_data["cubo_1"]
-    lines.append("| CUBO 1: PARIDAD POST-CONGELADO (W07 a W16)                                                         |")
+    lines.append("| CUBO 1: PARIDAD POST-CONGELADO (W07 a W20)                                                         |")
     lines.append(f"|   - Pares Formales Evaluados: N = {c1['replay_parity']['formal_pairs']} ({c1['replay_parity']['matches']} Matches, {c1['replay_parity']['divergences']} Divergencias)                                           |")
     lines.append(f"|   - Tasa de Paridad (Match Rate): {c1['replay_parity']['match_rate']*100:.2f}%                                                                         |")
     lines.append(f"|   - Intervalo Wilson al 95%: [{c1['replay_parity']['wilson_ci_95'][0]*100:.2f}%, {c1['replay_parity']['wilson_ci_95'][1]*100:.2f}%]                                                     |")
@@ -635,7 +715,7 @@ def generate_markdown_report(
 
     # Cubo 2
     c2 = cubes_data["cubo_2"]
-    lines.append("| CUBO 2: DESEMPEÑO HOMOGÉNEO CON VETO (W04 a W16 + Trade Frontera W10)                              |")
+    lines.append("| CUBO 2: DESEMPEÑO HOMOGÉNEO CON VETO (W04 a W20 + Trade Frontera W10)                              |")
     lines.append(f"|   - Operaciones Reales: N = {c2['n']} ({c2['wins']} Wins / {c2['losses']} Losses / {c2.get('voids', 0)} Voids)                                        |")
     lines.append(f"|   - Win Rate (sobre resueltos): {c2['win_rate']*100:.2f}% (Breakeven payout 83% = {c2['breakeven']*100:.2f}%)                             |")
     lines.append(f"|   - Intervalo Wilson al 95%: [{c2['wilson_ci_95'][0]*100:.2f}%, {c2['wilson_ci_95'][1]*100:.2f}%]                                                      |")
@@ -653,7 +733,7 @@ def generate_markdown_report(
 
     # Consolidado Total
     tot = cubes_data["total_consolidado"]
-    lines.append("| TOTAL CONSOLIDADO INFORMATIVO (W01 A W16):                                                         |")
+    lines.append("| TOTAL CONSOLIDADO INFORMATIVO (W01 A W20):                                                         |")
     lines.append(f"|   - Total Operaciones: N = {tot['n']} trades reales ({tot['wins']} Wins / {tot['losses']} Losses / {tot.get('voids', 0)} Voids, WR = {tot['win_rate']*100:.2f}%)           |")
     lines.append(f"|   - Variación Neta de Capital: {tot['total_delta_cop']:+,.2f} COP DEMO                                               |")
     lines.append(f"|   - Intervalo Wilson al 95%: [{tot['wilson_ci_95'][0]*100:.2f}%, {tot['wilson_ci_95'][1]*100:.2f}%]                                                      |")
@@ -663,7 +743,7 @@ def generate_markdown_report(
     lines.append("")
     lines.append("---")
     lines.append("")
-    lines.append("## 2. TABLA CONSOLIDADA VENTANA POR VENTANA (W01 A W16)")
+    lines.append("## 2. TABLA CONSOLIDADA VENTANA POR VENTANA (W01 A W20)")
     lines.append("")
     lines.append("| Ventana | $N$ | Wins | Losses | Win Rate | IC Wilson 95% | Payout | Breakeven | Delta Real (COP) | Max DD |")
     lines.append("| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
@@ -809,7 +889,26 @@ def run_synthetic_tests() -> None:
     assert synth_m["total_delta_cop"] == -17000.0
     print("  [PASS] Agregación de métricas verificada.")
 
-    print("[SUCCESS] Batería de pruebas sintéticas concluida exitosamente (5/5 PASS).")
+    # 6. Test de PARTICION DE CUBOS
+    #
+    # El defecto real de R23K/W19 no fue aritmetico: el ledger crecio a 59 trades mientras el Cubo 1
+    # seguia declarando pares=16, porque la lista de ventanas vivia duplicada en literales. Este test
+    # fija la invariante que ese defecto rompia: toda ventana con trades en el ledger pertenece a
+    # EXACTAMENTE un cubo, y las ventanas de paridad son las del Cubo 1.
+    assert len(set(CUBO1_WINDOWS)) == len(CUBO1_WINDOWS), "CUBO1_WINDOWS tiene duplicados"
+    assert all(w in RUTA_VENTANA for w in CUBO1_WINDOWS), "CUBO1_WINDOWS cita una ventana sin ruta"
+    cubo2_ventanas = ("W04", "W05", "W06") + tuple(CUBO1_WINDOWS)
+    cubo3_ventanas = ("W01", "W02", "W03")
+    solape = (set(CUBO1_WINDOWS) & set(cubo3_ventanas)) | (set(cubo2_ventanas) & set(cubo3_ventanas))
+    assert not solape, f"Ventanas en mas de un cubo: {sorted(solape)}"
+    assert set(cubo2_ventanas) >= set(CUBO1_WINDOWS), "El Cubo 2 debe contener al Cubo 1"
+    # Y ninguna ventana del ledger puede quedar fuera de todo cubo (el sintoma de W19).
+    cubiertas = set(CUBO1_WINDOWS) | set(cubo2_ventanas) | set(cubo3_ventanas)
+    huerfanas = [w for w in RUTA_VENTANA if w not in cubiertas]
+    assert not huerfanas, f"Ventanas del ledger sin cubo asignado: {huerfanas}"
+    print("  [PASS] Particion de cubos sin ventanas huerfanas ni solapes.")
+
+    print("[SUCCESS] Batería de pruebas sintéticas concluida exitosamente (6/6 PASS).")
 
 
 # ---------------------------------------------------------------------------
@@ -821,11 +920,15 @@ def main() -> int:
     parser.add_argument("--root", default=".", help="Ruta raíz de TradeDraw")
     parser.add_argument(
         "--out-md",
+        "--write-markdown",
+        dest="out_md",
         default="workflows/rounds/R23K_CUBES_RECOMPUTED.md",
         help="Ruta del informe Markdown generado",
     )
     parser.add_argument(
         "--out-json",
+        "--write-json",
+        dest="out_json",
         default="workflows/rounds/R23K_CUBES_RECOMPUTED.json",
         help="Ruta del JSON generado",
     )
@@ -848,7 +951,7 @@ def main() -> int:
     balance_audit = verify_balance_chain(windows_dict)
 
     # 3. Computar cubos y sensibilidades
-    cubes_data = compute_all_cubes_and_sensitivities(all_trades, windows_dict)
+    cubes_data = compute_all_cubes_and_sensitivities(all_trades, windows_dict, root=root)
 
     # 4. Formatear JSON de salida
     full_output_json = {
