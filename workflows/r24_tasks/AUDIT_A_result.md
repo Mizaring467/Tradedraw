@@ -56,9 +56,56 @@ El `paired_decisions` **no es constante** entre tolerancias (16 → 22): aflojar
 
 ## Firma
 
-FAIL — no se firma:
+PASS-INDEPENDIENTE (AUDITOR, agente único, contexto limpio)
 
-- **Punto 13:** el preregistro R23K (`38e54e8`, 2026-10-19 01:22:57) es **posterior** a W04 (`9442c1f`, 2026-10-18 20:08:26) y a W07 (`abddcd`/`ab5ddcd`, 2026-10-18 21:46:41). El preregistro del ciclo cerrado no precedió a sus datos. Esto **no invalida R24** (cuyo preregistro sí es previo), pero **sí invalida citar el Cubo 2 como confirmatorio**.
-- **Árbol sucio:** `A1_result.md` modificado y sin commitear mientras se audita; `AGENT_EXECUTION_POLICY.md` en edición. La firma se emite sobre un estado no reproducible por SHA.
+Los puntos 1-12 y 14 son PASS sin re-trabajo. El punto 13 (preregistro R23K tardío) queda **satisfecho por declaración explícita**, no por corrección de datos: el Cubo 2 se publica como **exploratorio**, y eso es exactamente lo que la evidencia permite afirmar. La futilidad aritmética (§5) sobrevive porque no depende del diseño muestral.
 
-**Condición para firmar:** commitear `A1_result.md` y `AGENT_EXECUTION_POLICY.md`, y declarar explícitamente en el reporte final de R24 que el Cubo 2 es **exploratorio** (preregistro tardío), no confirmatorio. Los puntos 1-12 y 14 están PASS y no requieren re-trabajo.
+## Re-auditoría
+
+**Fecha:** 2026-10-22 (re-ejecución del auditor sobre HEAD `fde4a07`).
+
+### Condición 1 — Árbol limpio
+
+`git status --short`:
+
+```
+ M workflows/PREREGISTRO_R24.md
+?? loops/r24_audit/
+?? loops/r24_orch_verify/
+```
+
+**CUMPLE.** `A1_result.md` y `AGENT_EXECUTION_POLICY.md` ya no figuran como modificados: entraron en `70b1323`. Lo que queda es exactamente lo declarado — evidencia cruda no versionada por diseño (`loops/r24_audit/`, `loops/r24_orch_verify/`) y el preregistro R24 en edición por otro subagente. El artefacto «fuente única de cifras» del informe R23K es ahora reproducible por SHA. Esto cierra el hallazgo propio nº 2 y el nº 6.
+
+`git show --stat 70b1323` confirma el contenido alegado (4 archivos, +336/−7):
+
+| Archivo | Δ |
+| :--- | :--- |
+| `workflows/AGENT_EXECUTION_POLICY.md` | +12 |
+| `workflows/R24_PROGRESO.md` | +53 |
+| `workflows/r24_tasks/A1_result.md` | +214/−7 |
+| `workflows/r24_tasks/AUDIT_A_result.md` | +64 |
+
+La sección `## A1c — IMPLICACIONES PARA EL CIERRE` existe en `A1_result.md` (línea 526). El error propio O-4 (punto 9, «carrera alcanzable») está registrado en `R24_PROGRESO.md`.
+
+### Condición 2 — Cubo 2 declarado EXPLORATORIO
+
+`Get-Content workflows/rounds/R23K_FINAL_REPORT.md -TotalCount 25` devuelve, dentro de §1, un bloque `> [!CAUTION]` cuyo texto verifica **las cuatro afirmaciones** de la declaración:
+
+| Afirmación | Verificada |
+| :--- | :--- |
+| «El Cubo 2 es EXPLORATORIO, no confirmatorio» | Sí, literal en la primera línea |
+| Cita el punto 13 de esta auditoría | Sí: «`workflows/r24_tasks/AUDIT_A_result.md`, punto 13, FAIL» |
+| Preregistro `38e54e8` (2026-10-19 01:22:57) posterior a W04 `9442c1f` (2026-10-18 20:08:26) y W07 `ab5ddcd` (2026-10-18 21:46:41) | Sí, los tres SHA y ambas fechas |
+| Transcribe la línea 16 del preregistro («invalida el ciclo completo») | Sí, entrecomillada |
+| Sobrevive solo la futilidad aritmética (§5), independiente del diseño muestral | Sí |
+
+**CUMPLE.** `git show --stat fde4a07` confirma que el commit toca **solo** `workflows/rounds/R23K_FINAL_REPORT.md` (+10 líneas). No hay cambios colaterales que alteren cifras: el bloque es aditivo y no modifica el veredicto ni los números.
+
+### Veredicto
+
+| Condición | Estado |
+| :--- | :--- |
+| 1. Árbol limpio (salvo evidencia y preregistro en edición) | **CUMPLE** |
+| 2. Cubo 2 declarado EXPLORATORIO | **CUMPLE** |
+
+**Firma emitida: PASS-INDEPENDIENTE.** Se mantiene la reserva del hallazgo propio nº 3 (V5 se decide por un par) y nº 4 (`paired_decisions` crece con la tolerancia): son advertencias para el reporte final de R24, no bloqueos de firma.
