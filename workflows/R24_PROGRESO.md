@@ -22,8 +22,9 @@
 | 16:11 | A5 | ORQUESTADOR | — | 190f596 | — | PASS-AUTOR | **Corrección propia**: `app/` byte-idéntico 8cdb61f↔190f596 (0 archivos). Riesgo #1 refutado |
 | 16:23 | A2/A3 | IMPLEMENTADOR | `DeepCoder` | 190f596 | — | PASS-AUTOR | Enmiendas futilidad + Cubo 1. `152 insertions(+), 0 deletions` |
 | 16:24 | A1b | VALIDADOR | `DeepInvestigator` | 190f596 | — | PASS-AUTOR | 14 commits, 2 builds: `aac1df3` (W04–W06) y `8cdb61f` (W07–W22) |
-| 16:24 | AUDIT-A | AUDITOR | `DeepInvestigator` (contexto limpio) | 190f596 | — | RUNNING | 10 puntos, incl. homogeneidad de build del Cubo 2 |
-
+| 16:24 | AUDIT-A | AUDITOR | `DeepInvestigator` (contexto limpio) | 190f596 | — | **DESCARTADO** | v1 y v2 violaron regla 0.5 (crearon subagentes y se colgaron esperándolos) |
+| 17:47 | AUDIT-A | AUDITOR v3 | `DeepCoder` | dd56136 | — | PASS-INDEPENDIENTE | 14 puntos: 13 PASS, 1 FAIL (preregistro tardío). Condiciones cumplidas en `70b1323` y `fde4a07`. Firma en `82f7289` |
+| 17:57 | B1 | IMPLEMENTADOR | `DeepCoder` | 82f7289 | — | RUNNING | Idempotencia de liquidación + contador monótono + tests |
 ## Hallazgos acumulados
 
 ### H-1 · Trade FUERA DE VENTANA (Fase 0)
