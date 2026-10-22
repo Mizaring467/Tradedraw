@@ -2,6 +2,8 @@ package com.example.tradedraw
 
 import android.content.Context
 import android.content.SharedPreferences
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 enum class MoneyManagementMode {
     MARTINGALE,
@@ -61,6 +63,13 @@ class RiskManager(context: Context? = null) {
         const val SNIPER_MAX_LOSSES = 2
         const val SNIPER_TAKE_PROFIT_WINS = 2
         const val SNIPER_MAX_SESSION_TRADES = 3
+
+        /**
+         * R24/B1.a: cota del registro de tradeIds liquidados. A 1 trade/minuto son ~8 horas de
+         * sesion continua; al alcanzarla se vacia entero, que es aceptable porque el riesgo real
+         * (doble conteo) ocurre en la ventana de segundos de una misma liquidacion.
+         */
+        const val MAX_LIQUIDATED_TRADE_IDS = 512
     }
 
     @Volatile
@@ -271,6 +280,111 @@ class RiskManager(context: Context? = null) {
 
     @Volatile
     var pendingTradeTradeId: String = ""
+
+    /**
+     * R24/B1.a: tradeIds YA liquidados. La liquidacion del motor corre en `handler.post`, asi que
+     * dos frames pueden llegar al fallback `if (!resolved)` y contar el MISMO trade dos veces.
+     *
+     * `ConcurrentHashMap.newKeySet()` porque el acceso es desde el hilo principal y el de vision:
+     * `add` es atomico, asi que exactamente una llamada gana la liquidacion.
+     */
+    private val liquidatedTradeIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * R24/B1.b: LOSS resueltos SIN evidencia de saldo (fallback de accion de precio).
+     *
+     * MONOTONO POR DISENO: no se reinicia en resetStats/setStats/correctStats/resetSession/
+     * resetSniperSession. Un contador que se reinicia con el marcador no sirve para medir cuanto
+     * del marcador se apoya en evidencia: el denominador cambiaria a mitad de la medicion.
+     * `AtomicInteger` y no `Int` porque el incremento ocurre fuera de `@Synchronized`.
+     */
+    private val lossSinEvidenciaCounter = AtomicInteger(0)
+
+    /** Lectura del contador monotono de LOSS sin evidencia. Ver [lossSinEvidenciaCounter]. */
+    val tradesLossSinEvidencia: Int
+        get() = lossSinEvidenciaCounter.get()
+
+    /** R24/B1.b: incrementa el contador monotono de LOSS sin evidencia de saldo. */
+    fun recordLossSinEvidencia() {
+        lossSinEvidenciaCounter.incrementAndGet()
+    }
+
+    /**
+     * R24/B1.c: incrementos manuales del marcador, separados por resultado.
+     *
+     * V1 los necesita desglosados: restar un total unico no permite contrastar `totalWins` contra
+     * las filas WIN del journal y `totalLosses` contra las LOSS por separado.
+     */
+    private val manualWinsCounter = AtomicInteger(0)
+    private val manualLossesCounter = AtomicInteger(0)
+
+    /**
+     * R24/B1.c: etiqueta el ORIGEN de un incremento MANUAL del marcador.
+     *
+     * El journal CSV no tiene columna `method` y estas rutas no escriben fila en el, asi que la
+     * etiqueta va al `detail` del buffer de eventos (`/events`), que es lo que V1 puede leer.
+     *
+     * Regla de exclusion de V1: todo incremento etiquetado aqui se RESTA del lado `/status`
+     * (`totalWins - manualWins`, `totalLosses - manualLosses`); un incremento manual sin etiqueta
+     * es NO EVALUABLE. Sin esta regla, cualquier `/win` manual incrementa el contador sin dejar
+     * fila en el journal y el contraste contra el ledger daria discrepancia por diseno.
+     */
+    fun markManualIncrement(origin: String, result: String) {
+        if (result == "WIN") manualWinsCounter.incrementAndGet() else manualLossesCounter.incrementAndGet()
+        TradeEventLog.add(
+            TradeEventLog.Kind.MANUAL_INCREMENT,
+            "[$origin] $result",
+            decisionId = pendingTradeDecisionId.ifBlank { null },
+            tradeId = pendingTradeTradeId.ifBlank { null }
+        )
+    }
+
+    /** R24/B1.c: incrementos manuales de victorias. V1 los resta de `totalWins`. */
+    val manualWins: Int
+        get() = manualWinsCounter.get()
+
+    /** R24/B1.c: incrementos manuales de derrotas. V1 los resta de `totalLosses`. */
+    val manualLosses: Int
+        get() = manualLossesCounter.get()
+
+    /**
+     * R24/B1.a: clave de idempotencia de una liquidacion.
+     *
+     * El `tradeId` es la clave natural. Si viene vacio (rutas antiguas o trades sin id) se usa el
+     * timestamp de apertura, que tambien es unico por operacion: sin ese respaldo, todos los trades
+     * sin id colapsarian en una sola clave y solo el primero se contaria.
+     */
+    internal fun liquidationKey(tradeId: String, tradeStartMs: Long): String =
+        if (tradeId.isNotBlank()) tradeId else "ts:$tradeStartMs"
+
+    /**
+     * Marca un trade como liquidado. Devuelve true SOLO la primera vez (la llamada que gana).
+     *
+     * Sin identificador fiable (`ts:0`) no se deduplica: bloquear por una clave compartida
+     * perderia trades legitimos, que es peor que un doble conteo ocasional.
+     */
+    private fun markLiquidated(tradeId: String, tradeStartMs: Long): Boolean {
+        val key = liquidationKey(tradeId, tradeStartMs)
+        if (key == "ts:0") return true
+        // ponytail: el set no se poda por tiempo; a 1 trade/minuto tarda ~8h en llegar al tope y
+        // entonces se vacia entero. Si alguna vez importa la ventana exacta, sustituir por un
+        // cache LRU acotado por tiempo en vez de por tamano.
+        if (liquidatedTradeIds.size >= MAX_LIQUIDATED_TRADE_IDS) liquidatedTradeIds.clear()
+        return liquidatedTradeIds.add(key)
+    }
+
+    /**
+     * R24/B1.a: liquida un trade UNA sola vez por `tradeId`, sin pasar por el pendiente.
+     *
+     * Es el sustituto exacto del fallback `recordTradeWin/Loss(force = true)`: mismo incremento,
+     * pero idempotente. Devuelve true si ESTA llamada fue la que registro el resultado.
+     */
+    @Synchronized
+    fun settleTradeOnce(tradeId: String, tradeStartMs: Long, win: Boolean): Boolean {
+        if (!markLiquidated(tradeId, tradeStartMs)) return false
+        if (win) recordTradeWins(1, force = true) else recordTradeLosses(1, force = true)
+        return true
+    }
 
     /** Cambia el estado y lo registra en el buffer observable (R13/A5, R21/Frente A). */
     internal fun setOrderState(nuevo: OrderState, motivo: String) {
@@ -901,6 +1015,22 @@ class RiskManager(context: Context? = null) {
         currentLossStreak = 0
         consecutiveVoids = 0
         totalVoids = 0
+        // R24/B1.b: `tradesLossSinEvidencia` NO se reinicia aqui A PROPOSITO. Es un contador
+        // monotono de calidad de evidencia, no parte del marcador: si se pusiera a cero junto con
+        // totalWins/totalLosses, la medicion de "cuanto del marcador se apoya en saldo real" se
+        // reiniciaria justo cuando el operador corrige el marcador, y el ratio quedaria inflado o
+        // dividido por cero. Solo se reinicia al reiniciar el proceso.
+        //
+        // R24/B1.c: los contadores MANUALES si se reinician, y deben hacerlo: son una desagregacion
+        // de totalWins/totalLosses. Si sobrevivieran al reset, la resta de V1
+        // (`totalWins - manualWins`) quedaria NEGATIVA y el contraste seria invalido.
+        resetManualCounters()
+    }
+
+    /** R24/B1.c: pone a cero los contadores de incrementos manuales. Ver [resetStats]. */
+    private fun resetManualCounters() {
+        manualWinsCounter.set(0)
+        manualLossesCounter.set(0)
     }
 
     @Synchronized
@@ -911,10 +1041,18 @@ class RiskManager(context: Context? = null) {
         currentLossStreak = lossStreak ?: if (wins == 0) losses.coerceAtLeast(0) else 0
         consecutiveVoids = 0
         totalVoids = 0
+        // R24/B1.b: `tradesLossSinEvidencia` NO se toca. Sincronizar el marcador con el broker no
+        // invalida la evidencia ya perdida: el contador mide un defecto historico del proceso.
+        // R24/B1.c: los manuales SI se reinician: setStats fija el marcador en absoluto, asi que
+        // los incrementos manuales anteriores ya no forman parte de totalWins/totalLosses.
+        resetManualCounters()
     }
 
     @Synchronized
     fun correctStats(wins: Int, losses: Int, lossStreak: Int? = null) {
+        // R24/B1.b: `tradesLossSinEvidencia` NO se reinicia aqui (delega en setStats, que tampoco
+        // lo toca). Corregir el marcador a mano no puede borrar la cuenta de liquidaciones sin
+        // evidencia: es justo la correccion manual la que hace sospechoso el marcador.
         setStats(wins, losses, lossStreak)
         OverlayService.instance?.updateHUDView()
         android.util.Log.i("RiskManager", "Marcador corregido a: $wins W | $losses L (Racha=$currentLossStreak)")
@@ -996,6 +1134,10 @@ class RiskManager(context: Context? = null) {
             sessionPeakBalance = 0.0
         }
         trailingProfitLockTriggered = false
+        // R24/B1.b: `tradesLossSinEvidencia` NO se reinicia al abrir sesion nueva. Es un contador
+        // de proceso: reiniciar la sesion no devuelve la evidencia de saldo que ya se perdio.
+        // R24/B1.c: los manuales SI, porque totalWins/totalLosses vuelven a 0.
+        resetManualCounters()
         clearPendingTrade()
     }
 
@@ -1013,6 +1155,10 @@ class RiskManager(context: Context? = null) {
         sessionStartBalance = if (bal > 0.0) bal else 0.0
         sessionPeakBalance = sessionStartBalance
         trailingProfitLockTriggered = false
+        // R24/B1.b: `tradesLossSinEvidencia` NO se reinicia en la sesion Francotirador. El
+        // submodo cambia la politica de stake, no la calidad de la evidencia ya registrada.
+        // R24/B1.c: los manuales SI, porque totalWins/totalLosses vuelven a 0.
+        resetManualCounters()
         clearPendingTrade()
     }
 }

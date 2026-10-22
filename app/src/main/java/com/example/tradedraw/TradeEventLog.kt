@@ -73,7 +73,19 @@ object TradeEventLog {
         /**
          * Ronda 21 (Frente E): decisión autorizada en modo SHADOW (cero taps, cero impacto en balance).
          */
-        SHADOW_DECISION
+        SHADOW_DECISION,
+        /**
+         * R24/B1.c: incremento MANUAL del marcador desde una herramienta de operador.
+         *
+         * Existe para que el validador pueda RESTAR del lado `/status` los incrementos que no
+         * provienen de una liquidacion del motor. Sin esta etiqueta, un `/win` manual incrementa
+         * el contador sin dejar fila en el journal y cualquier contraste contra el ledger da
+         * discrepancia por diseno. El detalle lleva el origen: `[MANUAL_BRIDGE]` o `[MANUAL_HUD]`.
+         *
+         * Tipo propio y no `ORDER_STATE` a proposito: reutilizar el existente contaminaria su
+         * contador y romperia la lectura de transiciones de orden.
+         */
+        MANUAL_INCREMENT
     }
 
     data class Event(

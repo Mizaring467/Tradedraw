@@ -617,6 +617,15 @@ class TradingEngine(
                     }
                     android.util.Log.d("TradingEngine", "Liquidación atómica de trade único: Win=$isWin, Tie=$isTie [$method]")
                     val finalWin = isWin ?: false
+                    // R24/B1.a: la clave de idempotencia se captura ANTES del `post`. Dentro del
+                    // hilo principal otra ruta (HUD, bridge) puede haber limpiado el pendiente y
+                    // `pendingTradeTradeId` ya estaria vacio: la clave se perderia justo cuando
+                    // hace falta.
+                    val settleTradeId = riskManager.pendingTradeTradeId
+                    val settleStartMs = riskManager.pendingTradeStartTime
+                    // R24/B1.b: sin saldo legible no hay evidencia de saldo; la LOSS se resolvio
+                    // por accion de precio. Es exactamente el caso que el contador monotono mide.
+                    val lossSinEvidencia = !finalWin && !isTie && !(baseBalance > 0.0 && currentBal > 0.0)
                     handler.post {
                         pendingTradeHasObservedWin = false
                         val curTrend = analysis.trend.name
@@ -636,7 +645,7 @@ class TradingEngine(
                         } else if (finalWin) {
                             val resolved = riskManager.resolvePendingTradeWin()
                             if (!resolved) {
-                                riskManager.recordTradeWin(force = true)
+                                riskManager.settleTradeOnce(settleTradeId, settleStartMs, win = true)
                             }
                             TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getEffectiveStake(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
                             adaptiveLearningEngine.recordTradeOutcome(true, context)
@@ -646,9 +655,11 @@ class TradingEngine(
                             onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
                         } else {
                             val resolved = riskManager.resolvePendingTradeLoss()
-                            if (!resolved) {
-                                riskManager.recordTradeLoss(force = true)
-                            }
+                            val counted = if (resolved) true
+                                else riskManager.settleTradeOnce(settleTradeId, settleStartMs, win = false)
+                            // Solo cuenta si ESTA llamada registro el LOSS: si otra ruta ya lo hizo,
+                            // sumar aqui dejaria el contador por encima de totalLosses.
+                            if (counted && lossSinEvidencia) riskManager.recordLossSinEvidencia()
                             TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getEffectiveStake(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
                             adaptiveLearningEngine.recordTradeOutcome(false, context)
                             autoDrawEngine.clearTradeEntry()
@@ -2662,6 +2673,12 @@ class TradingEngine(
                 candleSecond = sec
             )
             val journalResult = tieJournalResult(isTie, saldoFresco) ?: if (finalWin) "WIN" else "LOSS"
+            // R24/B1.a: clave capturada ANTES del `post`, igual que en la ruta de vision. El
+            // pendiente puede limpiarse dentro del hilo principal y perder el tradeId.
+            val settleTradeId = snapshot.tradeId
+            val settleStartMs = snapshot.startTime
+            // R24/B1.b: LOSS resuelto sin saldo legible = sin evidencia de saldo.
+            val lossSinEvidencia = !finalWin && !isTie && !(baseBalance > 0.0 && currentBal > 0.0)
 
             handler.post {
                 autoDrawEngine.clearTradeEntry()
@@ -2723,7 +2740,7 @@ class TradingEngine(
                         Toast.makeText(context, "[HEADLESS] 🎉 GANADA (+1 W) [$method]", Toast.LENGTH_SHORT).show()
                         onTradeExecutedListener?.invoke(pendingAction, true)
                     } else {
-                        riskManager.recordTradeWin(force = true)
+                        riskManager.settleTradeOnce(settleTradeId, settleStartMs, win = true)
                         adaptiveLearningEngine.recordTradeOutcome(true, context)
                         emitHapticAndAudioFeedback()
                         Toast.makeText(context, "[HEADLESS] 🎉 GANADA (+1 W) [$method]", Toast.LENGTH_SHORT).show()
@@ -2731,12 +2748,14 @@ class TradingEngine(
                     }
                 } else {
                     if (riskManager.resolvePendingTradeLoss()) {
+                        if (lossSinEvidencia) riskManager.recordLossSinEvidencia()
                         adaptiveLearningEngine.recordTradeOutcome(false, context)
                         emitHapticAndAudioFeedback()
                         Toast.makeText(context, "[HEADLESS] ⚠️ PERDIDA (+1 L) [$method]", Toast.LENGTH_SHORT).show()
                         onTradeExecutedListener?.invoke(pendingAction, false)
                     } else {
-                        riskManager.recordTradeLoss(force = true)
+                        val counted = riskManager.settleTradeOnce(settleTradeId, settleStartMs, win = false)
+                        if (counted && lossSinEvidencia) riskManager.recordLossSinEvidencia()
                         adaptiveLearningEngine.recordTradeOutcome(false, context)
                         emitHapticAndAudioFeedback()
                         Toast.makeText(context, "[HEADLESS] ⚠️ PERDIDA (+1 L) [$method]", Toast.LENGTH_SHORT).show()

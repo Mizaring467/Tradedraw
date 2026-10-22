@@ -371,6 +371,9 @@ class TradeDrawHttpBridge(
                         }
                     }
                     "/win" -> {
+                        // R24/B1.c: origen MANUAL_BRIDGE. V1 resta estos incrementos del lado
+                        // `/status`; sin etiqueta el incremento seria NO EVALUABLE.
+                        overlayService.riskManager.markManualIncrement("MANUAL_BRIDGE", "WIN")
                         overlayService.riskManager.recordTradeWin(force = true)
                         val wins = overlayService.riskManager.totalWins
                         val losses = overlayService.riskManager.totalLosses
@@ -378,6 +381,7 @@ class TradeDrawHttpBridge(
                         sendJsonResponse(output, 200, """{"success":true,"action":"win","wins":$wins,"losses":$losses,"winRate":$wr}""")
                     }
                     "/loss" -> {
+                        overlayService.riskManager.markManualIncrement("MANUAL_BRIDGE", "LOSS")
                         overlayService.riskManager.recordTradeLoss(force = true)
                         val wins = overlayService.riskManager.totalWins
                         val losses = overlayService.riskManager.totalLosses
@@ -639,7 +643,12 @@ class TradeDrawHttpBridge(
                 "ultimoInoperable": "${escapeJson(TradeEventLog.lastOf(TradeEventLog.Kind.INOPERABLE)?.detail ?: "")}",
                 "vetoActivoDesajustado": ${te.vetoActivoDesajustado},
                 "recuperacionesPorSinTicks": ${te.recuperacionesPorSinTicks()},
-                "shadowOrders": ${te.shadowOrdersGenerated}
+                "shadowOrders": ${te.shadowOrdersGenerated},
+                "tradesLossSinEvidencia": ${rm.tradesLossSinEvidencia},
+                "manualWins": ${rm.manualWins},
+                "manualLosses": ${rm.manualLosses},
+                "manualIncrements": ${TradeEventLog.countOf(TradeEventLog.Kind.MANUAL_INCREMENT)},
+                "manualIncrementsDetalle": "${escapeJson(TradeEventLog.lastOf(TradeEventLog.Kind.MANUAL_INCREMENT)?.detail ?: "")}"
             },
             "activeSignal": $signalJson,
             "feed": {

@@ -1268,10 +1268,14 @@ class OverlayService : Service() {
         }
 
         hudView?.findViewById<Button>(R.id.hud_btn_win)?.setOnClickListener {
+            // R24/B1.c: se etiqueta el ORIGEN antes de incrementar. V1 resta del lado `/status`
+            // todo incremento manual; sin etiqueta, el incremento seria NO EVALUABLE.
+            riskManager.markManualIncrement("MANUAL_HUD", "WIN")
             riskManager.recordTradeWin(force = true)
             updateHUDView()
         }
         hudView?.findViewById<Button>(R.id.hud_btn_loss)?.setOnClickListener {
+            riskManager.markManualIncrement("MANUAL_HUD", "LOSS")
             riskManager.recordTradeLoss(force = true)
             updateHUDView()
         }
