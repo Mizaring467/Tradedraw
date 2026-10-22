@@ -248,6 +248,15 @@ discrepancias sería indistinguible de la ausencia de la medición que las detec
 Se declara que este campo es **TELEMETRÍA** (append-only, solo lectura): no altera ninguna
 decisión, no toca señales, vetos, umbrales, stakes ni `RiskManager` (§5, Estrategia CONGELADA).
 
+**El contador es monótono no decreciente y NO se reinicia.** V1 lo lee por **delta** (inicio vs
+cierre de ventana), así que no puede compartir el ciclo de vida de `totalWins`/`totalLosses`:
+`RiskManager.resetStats()`, `setStats()` y `correctStats()` los ponen a cero o los sobrescriben
+(`RiskManager.kt:897-921`), y se invocan en caliente desde `OverlayService`, `AgentChatOverlay` y
+el bridge HTTP (`/status` y `/trade`). B1 debe garantizar que `risk.tradesLossSinEvidencia`
+**sobrevive** a esas tres llamadas y solo crece. Un reinicio del proceso sí lo pone a cero: por eso
+V1 compara deltas **dentro de una ventana** y una ventana con reinicio del APK se reporta
+`NO EVALUABLE`, no como discrepancia negativa.
+
 ### Estrategia CONGELADA
 
 Prohibido tocar: señales, ponderaciones, vetos, umbrales (`callPower`, `ADAPTIVE_BLOCK`, ventana
@@ -290,10 +299,17 @@ Se declaran, no se ocultan.
    cae **íntegro en `LOSS` por defecto**, sin evidencia, aunque haya ganado. R24 opera a **60 s**
    (estrategia congelada), así que el supuesto se cumple en este cubo, pero queda **declarado**:
    fuera de 60 s el clasificador no es válido y ninguna cifra derivada de él es interpretable.
+   El binario **no verifica** ese supuesto: no existe una constante única de expiración de trade en
+   el código; `TradingEngine.ActiveSignal.expirySeconds` (por defecto **30**) solo alimenta la
+   cuenta atrás del HUD (`OverlayService.kt:2020`) y no se propaga al ledger. La expiración real es
+   la que tenga configurada el broker. El supuesto de 60 s es **operativo y declarado**, no
+   comprobado por instrumentación.
 9. **`recompute_cubes.py` no expone el subconteo `LOSS`-sin-evidencia.** El script clasifica pero
-   **no publica** cuántos trades cayeron en la rama sin evidencia (§3 V1, §6.7). V1 **depende de
-   instrumentarlo**: sin ese conteo no hay forma de separar «`LOSS` medido» de «`LOSS` inventado»,
-   y por tanto V1 no es evaluable. El subconteo debe salir del APK R24 vía
+   **no publica** cuántos trades cayeron en la rama sin evidencia (§3 V1, §6.7). Su agregación solo
+   cuenta `losses` (`result == "LOSS"`) y `voids` (líneas 497-498 y 758-759), sin desglosar por
+   evidencia: un `LOSS` con `debit_step` y un `LOSS` inventado son indistinguibles en su salida.
+   V1 **depende de instrumentarlo**: sin ese conteo no hay forma de separar «`LOSS` medido» de
+   «`LOSS` inventado», y por tanto V1 no es evaluable. El subconteo debe salir del APK R24 vía
    `risk.tradesLossSinEvidencia` (§5.b) y contrastarse contra el ledger; **no** se estima a mano ni
    se infiere del script congelado.
 
