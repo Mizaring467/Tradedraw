@@ -80,6 +80,7 @@ tmp/
 # scripts/preflight_*_output.txt son volcados de consola de cada preflight.
 loops/**/_v2_tmp/
 scripts/preflight_*_output.txt
+scripts/preflight_*.bat
 
 # R24: estado local de la herramienta `trail` (indice de busqueda de 2 MB en
 # .trail/cache/.cache/ask-index.json + extracciones). Regenerable, sin valor
