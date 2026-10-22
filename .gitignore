@@ -74,3 +74,15 @@ loops/**/*.jsonl
 loops/screenshots/
 loops/**/*.log
 tmp/
+
+# R24: higiene de artefactos de validacion.
+# _v2_tmp/ son temporales del motor de replay v2 (se regeneran en cada corrida).
+# scripts/preflight_*_output.txt son volcados de consola de cada preflight.
+loops/**/_v2_tmp/
+scripts/preflight_*_output.txt
+
+# R24: estado local de la herramienta `trail` (indice de busqueda de 2 MB en
+# .trail/cache/.cache/ask-index.json + extracciones). Regenerable, sin valor
+# reproducible y sin credenciales (verificado: solo frecuencias de terminos).
+# No se versiona nada de .trail/: es estado de maquina, no evidencia de ronda.
+.trail/
