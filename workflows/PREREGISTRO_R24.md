@@ -2,9 +2,14 @@
 
 **Fecha de fijación:** 2026-10-22
 **Rama:** `r10-night`
-**Commit del repositorio al fijarse:** `96427d0`
+**Commit del repositorio al fijarse:** `96427d0` (el commit que introduce este documento es
+posterior y solo toca `workflows/`; `app/` sigue byte-idéntico a `8cdb61f`)
 **Build bajo medición:** `8cdb61f` (versionCode 19, versionName `1.9-r23h-exhaustion`)
 **Redactado por:** WORKER (B0)
+**Comparador congelado:** `scripts/validation/compare_live_replay.py`, SHA-256
+`4cb5082e4f8c52bcd775f0c5f3d53d992a3730007d1738d463a171f2c0794b5f` — el mismo del
+`PREREGISTRO_R23K.md` §1.1. Si el SHA en disco difiere al abrir la primera ventana, el cubo **no
+arranca**.
 **Estado:** VIGENTE — escrito ANTES de ejecutar cualquier ventana del Cubo R24
 
 ---
@@ -52,13 +57,21 @@ Build `8cdb61f`, versionCode 19.
 **Veredicto: SIN EVIDENCIA DE EDGE.** Cerrado por inalcanzabilidad matemática del criterio
 preregistrado (enmienda de futilidad en `PREREGISTRO_R23K.md`), no por el resultado observado.
 
+**Veredicto literal del VALIDADOR** (campo `cubes.cubo_2.verdict`, transcrito sin retocar):
+
+> `NO CONCLUYENTE (N=60 < 40 y límite inf Wilson 38.44% <= BE 54.64%)`
+
+Ambas frases conviven: el VALIDADOR dice «no concluyente» porque su regla mecánica compara `N`
+contra 40; el cierre del cubo se decide por la enmienda de futilidad. Ninguna de las dos es
+«hay edge». R24 **no** reinterpreta este veredicto ni lo recalifica.
+
 ### 2.2 Cubo 1 — CERRADO
 
-| Métrica | Valor |
-| :--- | :--- |
-| Pares formales evaluables | 22 |
-| Tasa de match | 90,91 % (20/22) |
-| Cobertura | 27,50 % (22/80) |
+| Métrica | Valor | Fuente |
+| :--- | :--- | :--- |
+| Pares formales evaluables | 22 | `A1_cubes.json` → `cubes.cubo_1.replay_parity.formal_pairs` |
+| Tasa de match | 90,91 % (20/22) | `A1_cubes.json` → `replay_parity.match_rate` |
+| Cobertura | 27,50 % (22/80) | `PREREGISTRO_R23K.md` §A3.3 (el JSON **no** expone cobertura) |
 
 PASS en el borde, sin regla de parada preregistrada, cobertura baja. **No se usa como evidencia de
 validación de la estrategia** (enmienda de alcance en `PREREGISTRO_R23K.md`).
@@ -83,8 +96,14 @@ en **todas** las ventanas.
 
 ### V1 — CONTADORES
 
-**Definición.** `Δ(totalWins + totalLosses)` leído de `/status` entre el inicio y el cierre de la
-ventana == número de trades **resueltos** del ledger de esa misma ventana.
+**Definición.** `Δ(risk.totalWins + risk.totalLosses)` leído de `/status` entre el inicio y el cierre
+de la ventana == número de trades **resueltos** (`WIN` + `LOSS`, sin `VOID`) del ledger de esa misma
+ventana.
+
+**Rutas exactas (verificadas en `8cdb61f`).**
+- `/status` → `risk.totalWins`, `risk.totalLosses` (`TradeDrawHttpBridge.kt` §payload de riesgo).
+  `risk.totalVoids` **no** se lee: no está en el payload.
+- Ledger: `loops/r23k_validation/window_NN/trades.csv`, columna `result`. Resuelto = `WIN` o `LOSS`.
 
 **Criterio.** Cero discrepancias en **TODAS** las ventanas. Cualquier discrepancia, de cualquier
 magnitud y en cualquier ventana, hace el criterio `NO`. No hay tolerancia de ±1.
@@ -95,25 +114,54 @@ efecto medido.
 
 ### V2 — S/R EXPORTADOS
 
-**Definición.** Proporción de filas de `decisions.csv` que traen `distanceToSupportRatio` y
-`distanceToResistanceRatio` con valor numérico, parseable y no vacío.
+**Definición.** Proporción de filas de `decisions.csv` que traen las dos columnas S/R con valor
+numérico, parseable y no vacío.
+
+**Nombres de columna.** Hoy `decisions.csv` **no tiene** columnas S/R (cabecera real en `8cdb61f`:
+`decision_id,trade_id,timestamp,asset,price_at_signal,candle_second,market_regime,trend,action,score,action_plan,kind,detail,veto_reason`).
+Las añade B1 (§5.a). Los nombres exactos se fijan **en el commit de B1** y se declaran en
+`workflows/`; **no pueden cambiar** después de la primera ventana. Se adoptan
+`distanceToSupportRatio` y `distanceToResistanceRatio` (los del `data class TradeContextSignature`
+en `AdaptiveLearningEngine.kt`), en snake_case o camelCase según lo que B1 commitee, sin renombrar
+en caliente.
 
 **Criterio.** `>= 99 %` de las filas. Se cuenta sobre el total de filas de la ventana, no sobre un
-subconjunto filtrado.
+subconjunto filtrado. Las filas anteriores a la primera ventana R24 no cuentan.
 
 ### V3 — MEMORIA ADAPTATIVA
 
 **Definición.** Volcado parseable de la memoria adaptativa al cierre de **CADA** ventana, con
-conteo de firmas coherente: nº de firmas del volcado == nº declarado por `/status` o por el motor.
+conteo de firmas coherente: nº de firmas del volcado == nº declarado por la fuente de referencia.
+
+**Estado actual (verificado en `8cdb61f`).** `/status` **no** publica conteo de firmas: el payload
+de `TradeDrawHttpBridge` no expone ningún campo `adaptive*`/`signature*`. La memoria vive en
+`AdaptiveLearningEngine.lossSignatures` (tope 50, `ArrayList`, serializada por `saveState`).
+Por tanto B1 (§5.a) debe publicar **ambos**: el volcado y el contador en `/status`. Si B1 no
+publica el contador, V3 se reporta `NO EVALUABLE` — **no** se sustituye por una estimación.
 
 **Criterio.** Volcado presente, parseable y coherente en **todas** las ventanas. Un volcado ausente
 o un conteo que no cuadra hace el criterio `NO`.
 
 ### V4 — NO_PROCESADA
 
-**Definición.** Cada ocurrencia de decisión `NO_PROCESADA` registrada con causa clasificada, o
-marcada explícitamente como `NO ATRIBUIDA`. Se registra además la **duración máxima** de la
-condición.
+**Definición.** Cada ocurrencia de `RiskManager.OrderState.NO_PROCESADA` registrada con causa
+clasificada, o marcada explícitamente como `NO ATRIBUIDA`. Se registra además la **duración
+máxima** de la condición.
+
+**Estado actual (verificado en `8cdb61f`).** La única causa emitida es el literal fijo
+`"ventana agotada sin movimiento de saldo"` (`RiskManager.markOrderUnprocessed`). No hay
+taxonomía ni duración. B1 (§5.a) añade el diagnóstico.
+
+**Taxonomía de causas, cerrada a priori** (B1 debe emitir exactamente estas etiquetas; añadir una
+nueva después de la primera ventana invalida el criterio):
+
+| Etiqueta | Significado |
+| :--- | :--- |
+| `SIN_MOVIMIENTO_SALDO` | ventana agotada, el saldo no se movió (causa actual) |
+| `TAP_NO_DESPACHADO` | no se despachó el gesto de accesibilidad |
+| `TAP_RECHAZADO_BROKER` | el gesto se despachó y el broker no registró orden |
+| `FEED_MUDO` | sin ticks frescos durante la ventana de envío |
+| `NO ATRIBUIDA` | ocurrencia registrada sin causa determinable |
 
 **Criterio.** 100 % de las ocurrencias con causa asignada o marcadas `NO ATRIBUIDA`. Las `NO
 ATRIBUIDA` no invalidan por sí solas, pero se reportan con su conteo y duración máxima. Ocurrencia
@@ -122,6 +170,12 @@ sin registro = `NO`.
 ### V5 — PARIDAD v2 (criterios B5 de R23K)
 
 Se evalúa **UNA SOLA VEZ**, al final del Cubo R24. No se evalúa por ventana ni se re-ejecuta.
+
+**Arnés congelado.** `scripts/validation/compare_live_replay.py`, SHA-256
+`4cb5082e4f8c52bcd775f0c5f3d53d992a3730007d1738d463a171f2c0794b5f` (verificado en disco al
+redactar este documento). **Una sola tolerancia: `±6000 ms`**, la del comparador congelado. Se
+prohíbe reevaluar con `3000 ms` o cualquier otro valor, y se prohíbe reportar la sensibilidad
+como resultado de V5 — es exactamente el error del Cubo 2 (§6.2).
 
 | # | Criterio | Umbral |
 | :--- | :--- | :--- |
@@ -153,13 +207,14 @@ veredicto `NO EVALUABLE`. **PROHIBIDO extender ventanas por resultado.**
 Solo estos dos. Nada más entra en el binario R24.
 
 **(a) Telemetría append-only.**
-- Columnas S/R (`distanceToSupportRatio`, `distanceToResistanceRatio`) **al final** de
-  `decisions.csv`.
-- Volcado de memoria adaptativa al cierre de ventana.
-- Diagnóstico de `NO_PROCESADA` (causa + duración).
+- Columnas S/R **al final** de `decisions.csv` (nombres fijados en el commit de B1, §3 V2).
+- Volcado de memoria adaptativa al cierre de ventana **y** contador de firmas expuesto en
+  `/status` (requisito de V3, §3).
+- Diagnóstico de `NO_PROCESADA`: causa según la taxonomía cerrada de §3 V4 + duración de la
+  condición.
 
 Append-only: no se reordenan ni se renombran columnas existentes; no se altera semántica de
-columnas previas.
+columnas previas. Añadir campos nuevos al JSON de `/status` es aditivo y no rompe consumidores.
 
 **(b) Corrección de idempotencia de liquidación (B1).**
 Declarada como cambio con **POSIBLE IMPACTO** en contadores (V1). Se mide y se reporta su efecto.
@@ -185,6 +240,13 @@ Se declaran, no se ocultan.
    3000 ms** vs **90,91 % a 6000 ms**.
 4. **Dos binarios en un cubo.** El Cubo 2 mezcla dos binarios (`aac1df3` W04–W06, `8cdb61f`
    W07–W22), aunque con constantes de decisión idénticas (refactor puro verificado).
+5. **El veredicto de cierre del Cubo 2 no es el literal del VALIDADOR.** El JSON dice
+   `NO CONCLUYENTE (N=60 < 40 ...)`; el cierre por «SIN EVIDENCIA DE EDGE» viene de la enmienda de
+   futilidad, no del script. Se declara para que nadie cite el JSON como si dijera lo segundo.
+6. **Los mínimos de V5 pueden ser inalcanzables en 4 ventanas.** El Cubo 2 necesitó 19 ventanas
+   para 60 trades; 4 ventanas difícilmente dan 20 trades Live y 200 decisiones comunes. El
+   resultado más probable de V5 es `NO EVALUABLE` y **eso es un resultado válido**, no un fallo a
+   corregir extendiendo el cubo. Se fija aquí para que no se "arregle" después.
 
 ### Cómo R24 evita repetirlos
 
@@ -206,10 +268,11 @@ Se declaran, no se ocultan.
 5. Extender ventanas para alcanzar los mínimos de muestra de V5.
 6. Presentar cifras de resultado como hallazgo de edge dentro de R24.
 7. Modificar la estrategia (§5, lista cerrada).
+8. Reevaluar V5 con una tolerancia distinta de `±6000 ms`, o publicar una tabla de sensibilidad
+   de tolerancias como si fuera resultado de V5.
+9. Cambiar el SHA-256 del comparador o del build `8cdb61f` dentro del Cubo R24.
 
 ---
-
-## 8. FIRMA
 
 ## FIRMA
 
