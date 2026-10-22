@@ -469,6 +469,25 @@ def counterfactual_id(decision_id: str, decision_ts: int) -> str:
     return f"CF-{decision_id}-{decision_ts}"
 
 
+def ratio_celda(valor: Any) -> str:
+    """R24/B2: valor de `/status` -> celda de `decisions.csv`.
+
+    `-1` es el centinela de "no medido" que emite el bridge cuando el motor no tiene velas
+    cerradas; `None`/ausente/no numerico tambien son ausencia de medicion. En todos esos casos se
+    devuelve cadena VACIA. Nunca `0.0`: un cero es una medicion legitima (nivel pegado) y
+    confundirlos haria que V2 contara filas sin dato como si lo tuvieran.
+    """
+    if valor is None:
+        return ""
+    try:
+        num = float(valor)
+    except (TypeError, ValueError):
+        return ""
+    if num < 0.0:
+        return ""
+    return f"{num:.4f}"
+
+
 def bucket_label(value: Optional[float], buckets, suffix: str = "") -> str:
     """Etiqueta el bucket preregistrado al que cae `value`. 'N/A' si no hay medicion."""
     if value is None:
@@ -1048,6 +1067,14 @@ def main():
                             # REQ 4: score REAL de confluencia extraido del detail (antes 85.0 hardcodeado).
                             real_score = extract_confluence_score(detail)
 
+                            # R24/B2: ratios S/R REALES del instante de la decision. Vienen del
+                            # bloque `analysis` de /status, que las publica desde el motor
+                            # sintetico: son las mismas que AdaptiveLearningEngine usa como
+                            # distSup/distRes. -1 es el centinela de "no medido" y se escribe como
+                            # celda VACIA: 0.0 seria indistinguible de un soporte pegado.
+                            dist_sup_ratio = ratio_celda(analysis_block.get("distanceToSupportRatio"))
+                            dist_res_ratio = ratio_celda(analysis_block.get("distanceToResistanceRatio"))
+
                             observed_decisions[did] = {
                                 "decision_id": did,
                                 "trade_id": tid or "",
@@ -1063,6 +1090,8 @@ def main():
                                 "kind": kind,
                                 "detail": detail,
                                 "veto_reason": veto_kind,
+                                "distanceToSupportRatio": dist_sup_ratio,
+                                "distanceToResistanceRatio": dist_res_ratio,
                             }
 
                         # Solo registrar como trade si es confirmación real de saldo movido (excluye NINGUNA y ENVIADA)
@@ -1405,10 +1434,14 @@ def main():
         return out
 
     # 1. Guardar decisions.csv
+    # R24/B2: esquema SOLO-APPEND. Las 14 columnas historicas conservan nombre y posicion; las dos
+    # ratios S/R se anaden AL FINAL. Un lector viejo con `csv.DictReader` las ignora y sigue
+    # funcionando, y un lector nuevo sobre un CSV viejo obtiene la clave ausente, no un error.
     fieldnames = [
         "decision_id", "trade_id", "timestamp", "asset", "price_at_signal",
         "candle_second", "market_regime", "trend", "action", "score",
-        "action_plan", "kind", "detail", "veto_reason"
+        "action_plan", "kind", "detail", "veto_reason",
+        "distanceToSupportRatio", "distanceToResistanceRatio"
     ]
     with open(out_decisions_csv, "w", newline="", encoding="utf-8") as csv_f:
         writer = csv.DictWriter(csv_f, fieldnames=fieldnames)

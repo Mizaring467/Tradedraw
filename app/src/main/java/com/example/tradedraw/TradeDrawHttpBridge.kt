@@ -556,6 +556,18 @@ class TradeDrawHttpBridge(
         val putPct = analysis?.signalPowerPut ?: 50
         val isSideways = synthetic.isChoppinessDetected()
         val candleCount = synthetic.closedCandles.size
+        // R24/B2: ratios S/R REALES del instante. Son los mismos que `AdaptiveLearningEngine` usa
+        // como `distSup`/`distRes` al construir la firma de contexto, asi que el monitor los
+        // escribe en `decisions.csv` sin recalcular: la columna refleja lo que el motor vio.
+        //
+        // Sin velas cerradas el motor deja el campo en su valor por defecto (0.5), que NO es una
+        // medicion. Se emite -1 como centinela de "no medido" y el monitor lo escribe como celda
+        // vacia: inventar 0.5 seria indistinguible de un soporte realmente equidistante.
+        val distSupRatio = synthetic.distanceToSupportRatio
+        val distResRatio = synthetic.distanceToResistanceRatio
+        val hayVelasParaRatios = candleCount > 0
+        val distSupRatioJson = if (hayVelasParaRatios) distSupRatio.toString() else "-1"
+        val distResRatioJson = if (hayVelasParaRatios) distResRatio.toString() else "-1"
         val streak = analysis?.streakBadge ?: ""
         val trend = synthetic.detectedTrend.name
         val strat = te.strategy.name
@@ -615,6 +627,8 @@ class TradeDrawHttpBridge(
                 "isMarketSideways": $isSideways,
                 "trend": "$trend",
                 "candleCount": $candleCount,
+                "distanceToSupportRatio": $distSupRatioJson,
+                "distanceToResistanceRatio": $distResRatioJson,
                 "streak": "${escapeJson(streak)}"
             },
             "risk": {
