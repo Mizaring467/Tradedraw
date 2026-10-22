@@ -268,6 +268,29 @@ Se declara aquí, antes de la primera ventana, con evidencia de código:
   (`SNIPER_MAX_LOSSES = 2`, `SNIPER_TAKE_PROFIT_WINS = 2`, `RiskManager.kt:61-62`). El inflado es
   **condicional a las rutas forzadas**, no uniforme: **no se declara un factor fijo ×2**.
 
+**ALCANCE ACOTADO DE B1 — qué toca y qué no.**
+
+- B1 modifica **ÚNICAMENTE** el fallback de liquidación automática
+  (`TradingEngine.kt:639`, `:650`, `:2726`, `:2739`), que pasa a ser **idempotente por `tradeId`**.
+- **NO** toca las rutas manuales (`/win`, `/loss`, botones HUD) — son herramientas de operador;
+  eliminarlas cambia capacidades, no corrige un defecto.
+- B1 **SÍ debe ETIQUETARLAS**: cada incremento por ruta manual se registra en el journal con
+  `method="MANUAL_BRIDGE"` o `"MANUAL_HUD"`, para que V1 pueda excluirlos del contraste y el Cubo
+  R24 sea auditable.
+
+> B1 modifica ÚNICAMENTE el fallback de liquidación automática. Las rutas manuales se conservan pero
+> se etiquetan en el journal con `method`, de modo que V1 pueda separar automático de manual. Sin esa
+> etiqueta, V1 no es medible.
+
+**Las 10 rutas `force = true`** (inventario cerrado, verificado): `OverlayService.kt:1271`, `:1275`;
+`RiskManager.kt:885`, `:892`; `TradeDrawHttpBridge.kt:374`, `:381`; `TradingEngine.kt:639`, `:650`,
+`:2726`, `:2739`. Las cuatro de `TradingEngine` son el fallback automático que B1 hace idempotente;
+las seis restantes son las rutas manuales que B1 conserva y etiqueta.
+
+**Evidencia de que el inflado NO es global.** El journal vivo registra **WIN 136 / LOSS 128 / TIE 6
+= 270** registros. Un inflado ×2 uniforme habría producido un desfase sistemático contra el ledger;
+no aparece. Por tanto el inflado es **condicional y de magnitud desconocida**, no un factor global.
+
 **Consecuencia esperada de B1, declarada a priori: tras B1 el bot operará MÁS trades por
 ventana**, porque el Stop Loss dejará de dispararse antes de tiempo en las rutas donde el contador
 iba inflado. Por consiguiente, el **Cubo R24 NO es comparable en número de trades con el Cubo 2**, y
@@ -376,14 +399,18 @@ Se declaran, no se ocultan.
     `:1275`, `TradeDrawHttpBridge.kt:374`, `:381`, más el fallback `if (!resolved)` de
     `TradingEngine.kt:637-639` y `:2720-2726`. Esas cifras alimentan las paradas de
     `RiskManager.kt:598-603` con `SNIPER_MAX_LOSSES = 2` / `SNIPER_TAKE_PROFIT_WINS = 2`
-    (`RiskManager.kt:61-62`), así que el Stop Loss pudo dispararse antes de lo previsto. Las
-    ventanas con 0–1 trades del Cubo 2 (W10, W12, W14, W15, W17, W22 = **6 de 19**)
-    **probablemente reflejan parada por Stop Loss prematuro, no ausencia de señal**.
-    **Esto es una hipótesis, no un hecho: no se ha instrumentado.** No se declara un factor de
-    inflado fijo (ni ×2 ni otro): la magnitud depende de cuántas liquidaciones pasaron por una ruta
-    forzada, y no se midió. No se usa como evidencia en R24, solo como explicación candidata de un
-    artefacto del cubo cerrado. Consecuencia declarada: el Cubo R24 **no es comparable en `N`** con
-    el Cubo 2 (§5.b).
+    (`RiskManager.kt:61-62`), así que el Stop Loss pudo dispararse antes de lo previsto. No se
+    declara un factor de inflado fijo (ni ×2 ni otro): la magnitud depende de cuántas liquidaciones
+    pasaron por una ruta forzada, y no se midió.
+
+    **HIPÓTESIS RETIRADA — ventanas con 0–1 trades.** La afirmación previa de que las ventanas con
+    0–1 trades del Cubo 2 (W10, W12, W14, W15, W17, W22 = **6 de 19**) reflejaban parada por Stop
+    Loss prematuro queda **RETIRADA**. La causa de que 6 de 19 ventanas registren 0–1 trades **NO
+    ESTÁ ATRIBUIDA**. Candidatos no excluyentes: (a) ausencia real de señal por los filtros de
+    confluencia; (b) parada por Stop/Take Profit con contador posiblemente inflado; (c) intervención
+    manual por bridge o HUD. Sin instrumentación de las rutas forzadas no se puede discriminar.
+
+    Consecuencia declarada: el Cubo R24 **no es comparable en `N`** con el Cubo 2 (§5.b).
 
 > **Cifras de §6 verificadas por el ORQUESTADOR** con ejecución propia; artefactos en
 > `loops/r24_orch_verify/`. (3000 ms → 16 pares 68,75 %; 6000 ms → 22 pares 90,91 %; W06 fresh
