@@ -235,7 +235,7 @@ columnas previas. Añadir campos nuevos al JSON de `/status` es aditivo y no rom
 
 **(b) Corrección de idempotencia de liquidación (B1).**
 
-### CAMBIO DE COMPORTAMIENTO CONFIRMADO
+**CAMBIO DE COMPORTAMIENTO CONFIRMADO.**
 
 No es un cambio de telemetría. **B1 cambia el número de trades que el bot ejecuta por ventana.**
 Se declara aquí, antes de la primera ventana, con evidencia de código:
@@ -246,21 +246,34 @@ Se declara aquí, antes de la primera ventana, con evidencia de código:
   `if (currentLossStreak >= SNIPER_MAX_LOSSES || totalLosses >= SNIPER_MAX_LOSSES) → STOP LOSS`;
   `if (totalWins >= SNIPER_TAKE_PROFIT_WINS || currentWins >= SNIPER_TAKE_PROFIT_WINS) → TAKE PROFIT`.
   Por tanto `totalWins` y `totalLosses` **alimentan decisiones de parada**; no son solo telemetría.
-- **Doble registro real.** En ganancias: `RiskManager.kt:883` `resolvePendingTradeWin()` llama a
-  `recordTradeWins(1, force = true)` (ya incrementa) y `TradingEngine.kt:637` invoca
-  `resolvePendingTradeWin()` mientras `TradingEngine.kt:639` invoca además
-  `recordTradeWin(force = true)` → segundo incremento. Idéntico en pérdidas:
-  `TradingEngine.kt:2720` (`resolvePendingTradeWin`) + `TradingEngine.kt:2726`
-  (`recordTradeWin(force = true)`); y en la rama de pérdida `TradingEngine.kt:648-650` y
-  `TradingEngine.kt:2733-2739`. Cada trade real suma **2** al contador.
-- **Consecuencia observable.** Con `SNIPER_MAX_LOSSES = 2` y doble registro, el **Stop Loss salta
-  tras 1 pérdida real**. Esto explica las ventanas del Cubo 2 con 0–1 trades
-  (W10 = 0, W12 = 1, W14 = 1, W15 = 0, W17 = 1, W22 = 1).
+- **Registro forzado que salta la guarda de idempotencia.** `recordTradeWins`/`recordTradeLosses`
+  son los únicos que incrementan `totalWins`/`totalLosses` (`RiskManager.kt:831`, `:866`) y su única
+  protección es `if (!force && !hasPendingTrade) return` (`RiskManager.kt:811-814`, `:847-850`).
+  Con `force = true` la guarda **se salta** y el incremento ocurre aunque no haya trade pendiente.
+  Rutas con `force = true`: `RiskManager.kt:885` (`resolvePendingTradeWin` →
+  `recordTradeWins(1, force = true)`), `RiskManager.kt:892` (`resolvePendingTradeLoss`),
+  `OverlayService.kt:1271` y `:1275` (botones W/L del HUD), `TradeDrawHttpBridge.kt:374` y `:381`
+  (`/win`, `/loss`).
+- **Corrección de una lectura errónea previa.** `TradingEngine.kt:637-639` y `:2720-2726` **no** son
+  un segundo incremento incondicional: son un *fallback* dentro de `if (!resolved)`.
+  `resolvePendingTradeWin()` devuelve `true` cuando hay pendiente y ya incrementa
+  (`RiskManager.kt:883-887`), de modo que la rama `recordTradeWin(force = true)` **no** se ejecuta en
+  el camino normal. Por tanto **no** es cierto que «cada trade real sume 2». La ruta real de inflado
+  es el registro forzado de la viñeta anterior, más una carrera alcanzable: el bloque de
+  `TradingEngine.kt:620` corre dentro de `handler.post` (asíncrono) y, si otra ruta liquidó el
+  pendiente antes, `resolve*` devuelve `false` y el fallback `force = true` incrementa un trade ya
+  contado.
+- **Consecuencia sobre las paradas.** Con `totalWins`/`totalLosses` inflados,
+  `RiskManager.kt:598-603` dispara Stop Loss / Take Profit antes de lo previsto
+  (`SNIPER_MAX_LOSSES = 2`, `SNIPER_TAKE_PROFIT_WINS = 2`, `RiskManager.kt:61-62`). El inflado es
+  **condicional a las rutas forzadas**, no uniforme: **no se declara un factor fijo ×2**.
 
 **Consecuencia esperada de B1, declarada a priori: tras B1 el bot operará MÁS trades por
-ventana**, porque el Stop Loss dejará de dispararse a la mitad del recorrido previsto. Por
-consiguiente, el **Cubo R24 NO es comparable en número de trades con el Cubo 2**, y ninguna
-comparación de `N` entre ambos cubos es válida ni informativa.
+ventana**, porque el Stop Loss dejará de dispararse antes de tiempo en las rutas donde el contador
+iba inflado. Por consiguiente, el **Cubo R24 NO es comparable en número de trades con el Cubo 2**, y
+ninguna comparación de `N` entre ambos cubos es válida ni informativa. La magnitud del aumento **no
+se declara**: depende de cuántas liquidaciones pasaron por una ruta forzada, y eso no está
+instrumentado.
 
 **La estrategia sigue congelada.** Señales, ponderaciones, umbrales, vetos y stakes no cambian.
 Lo que cambia es **el contador que alimenta las reglas de parada existentes**. No se introduce una
@@ -288,14 +301,15 @@ homónimo. Campos existentes: `totalWins`, `totalLosses`, `winRate`, `currentLos
 `recuperacionesPorSinTicks`, `shadowOrders`. El nombre está libre.
 
 **El contador es monótono no decreciente y NO se reinicia.** V1 lo lee por **delta** (inicio vs
-cierre de ventana), así que no puede compartir el ciclo de vida de `totalWins`/`totalLosses`:
-`RiskManager.resetStats()`, `setStats()` y `correctStats()` los ponen a cero o los sobrescriben
-(`RiskManager.kt:897-921`), y se invocan en caliente desde `OverlayService`, `AgentChatOverlay` y
-el bridge HTTP (`/status` y `/trade`). B1 debe implementar el contador **FUERA** de
-`resetStats`/`setStats`/`correctStats`, de modo que **sobreviva** a esas tres llamadas y solo
-crezca. Un reinicio del proceso sí lo pone a cero: por eso V1 compara deltas **dentro de una
-ventana** y una ventana con reinicio del APK se reporta `NO EVALUABLE`, no como discrepancia
-negativa. **Regla ratificada.**
+cierre de ventana), así que no puede compartir el ciclo de vida de `totalWins`/`totalLosses`.
+**Cinco** funciones ponen a cero o sobrescriben los totales, no tres:
+`RiskManager.resetStats()` (`:897-904`), `setStats()` (`:907-914`), `correctStats()` (`:917-921`),
+`resetSession()` (`:983-1000`) y `resetSniperSession()` (`:1003-1017`). Se invocan en caliente desde
+`OverlayService` (`:189`, `:196`, `:1051`, `:1300`, `:1307`, `:1696`, `:1710`), `AgentChatOverlay`
+(`:202`, `:221`, `:332`, `:379`) y el bridge HTTP (`:336`, `:352`, `:361`). B1 debe implementar el
+contador **FUERA** de las cinco, de modo que **sobreviva** a todas y solo crezca. Un reinicio del
+proceso sí lo pone a cero: por eso V1 compara deltas **dentro de una ventana** y una ventana con
+reinicio del APK se reporta `NO EVALUABLE`, no como discrepancia negativa. **Regla ratificada.**
 
 **Contraste disponible.** `trades.csv` **sí** permite el contraste: tiene la columna
 `balance_at_trade` (verificado).
@@ -355,16 +369,21 @@ Se declaran, no se ocultan.
    «`LOSS` inventado», y por tanto V1 no es evaluable. El subconteo debe salir del APK R24 vía
    `risk.tradesLossSinEvidencia` (§5.b) y contrastarse contra el ledger; **no** se estima a mano ni
    se infiere del script congelado.
-10. **El Cubo 2 se midió con el contador inflado ×2.** El doble registro de liquidación (§5.b,
-    `RiskManager.kt:883` + `TradingEngine.kt:637-639` y `:2720-2726`) hacía que cada trade sumara
-    **2** a `totalWins`/`totalLosses`, y esas cifras alimentan las paradas de
+10. **El Cubo 2 se midió con un contador potencialmente inflado.** `totalWins`/`totalLosses` se
+    incrementan en `recordTradeWins`/`recordTradeLosses` (`RiskManager.kt:831`, `:866`) y su guarda
+    `if (!force && !hasPendingTrade) return` (`RiskManager.kt:811-814`, `:847-850`) **se salta con
+    `force = true`**. Hay rutas forzadas: `RiskManager.kt:885`, `:892`, `OverlayService.kt:1271`,
+    `:1275`, `TradeDrawHttpBridge.kt:374`, `:381`, más el fallback `if (!resolved)` de
+    `TradingEngine.kt:637-639` y `:2720-2726`. Esas cifras alimentan las paradas de
     `RiskManager.kt:598-603` con `SNIPER_MAX_LOSSES = 2` / `SNIPER_TAKE_PROFIT_WINS = 2`
-    (`RiskManager.kt:61-62`). Por tanto el Stop Loss del Cubo 2 se disparaba tras **1** pérdida
-    real. Las ventanas con 0–1 trades del Cubo 2 (W10, W12, W14, W15, W17, W22 = **6 de 19**)
+    (`RiskManager.kt:61-62`), así que el Stop Loss pudo dispararse antes de lo previsto. Las
+    ventanas con 0–1 trades del Cubo 2 (W10, W12, W14, W15, W17, W22 = **6 de 19**)
     **probablemente reflejan parada por Stop Loss prematuro, no ausencia de señal**.
-    **Esto es una hipótesis, no un hecho: no se ha instrumentado.** No se usa como evidencia en
-    R24, solo como explicación candidata de un artefacto del cubo cerrado. Consecuencia declarada:
-    el Cubo R24 **no es comparable en `N`** con el Cubo 2 (§5.b).
+    **Esto es una hipótesis, no un hecho: no se ha instrumentado.** No se declara un factor de
+    inflado fijo (ni ×2 ni otro): la magnitud depende de cuántas liquidaciones pasaron por una ruta
+    forzada, y no se midió. No se usa como evidencia en R24, solo como explicación candidata de un
+    artefacto del cubo cerrado. Consecuencia declarada: el Cubo R24 **no es comparable en `N`** con
+    el Cubo 2 (§5.b).
 
 > **Cifras de §6 verificadas por el ORQUESTADOR** con ejecución propia; artefactos en
 > `loops/r24_orch_verify/`. (3000 ms → 16 pares 68,75 %; 6000 ms → 22 pares 90,91 %; W06 fresh
