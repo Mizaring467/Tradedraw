@@ -12,6 +12,16 @@
 
 ## 1. VEREDICTO DE CIERRE — CUBO 2
 
+> [!CAUTION] **El Cubo 2 es EXPLORATORIO, no confirmatorio.**
+> Su preregistro (`38e54e8`, 2026-10-19 01:22:57) es **posterior** a W04 (`9442c1f`, 2026-10-18 20:08:26)
+> y a W07 (`ab5ddcd`, 2026-10-18 21:46:41). El propio preregistro declara en su línea 16:
+> «Cualquier modificación posterior a la primera ventana medida **invalida el ciclo completo**».
+> Con su propia regla, 8 de 19 ventanas quedan fuera de cobertura preregistrada.
+> Añadido por la auditoría independiente (`workflows/r24_tasks/AUDIT_A_result.md`, punto 13, FAIL).
+> **Consecuencia:** el Cubo 2 no puede citarse como evidencia confirmatoria de nada — ni de edge
+> ni de ausencia de edge. Lo que sí sobrevive es el argumento de **futilidad aritmética** (§5),
+> que no depende del diseño muestral.
+
 > SIN EVIDENCIA DE EDGE (WR cercano al breakeven; punto estimado negativo; N insuficiente para concluir)
 
 El `verdict` textual emitido por `recompute_cubes.py` para el Cubo 2 es
