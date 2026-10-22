@@ -12,3 +12,15 @@
 8. Equipo autorizado: AGY, Hermes, Claude Code y OpenCode. No incorporar agentes retirados.
 
 **Si la ejecuci√≥n visible no es posible: STOP + BLOCKED. Nunca fallback a headless.**
+
+---
+
+## ENMIENDA TEMPORAL ADITIVA ∑ R24 ∑ 2026-10-22
+
+**Fecha:** 2026-10-22T15:42-05:00 (America/Bogota)
+**Autorizacion:** escrita del usuario, 22-oct-2026.
+**Motivo:** cuota de herdr agotada; sus agentes (AGY, Hermes, OpenCode, Claude Code) no se usan en esta mision.
+**Alcance:** SOLO la mision R24. No modifica ni sustituye ningun punto anterior de esta politica.
+**Ejecutor autorizado:** Antigravity 2.0 con subagentes (ORQUESTADOR + IMPLEMENTADOR + AUDITOR + VALIDADOR), maximo 3 subagentes simultaneos, sin recursion, sesiones visibles y terminales visibles.
+**Vigencia:** desde 2026-10-22T15:42-05:00 hasta el cierre de R24. Al cerrar R24, esta enmienda queda historica y no autoriza misiones posteriores.
+

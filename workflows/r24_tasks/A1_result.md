@@ -226,7 +226,7 @@ Reconciliación P&L:
 
 2. **Cobertura del Cubo 1 depende de la definición; la cifra "oficial" no es la del encargo.** El script solo reporta `formal_pairs = 22` y `match_rate = 90,91 %`; **no calcula cobertura**. La cobertura pedida (pares / Live ∪ Replay) es **27,5 %**, muy por debajo del 90,91 % de match rate. Riesgo de que el 90,91 % se lea como cobertura cuando mide otra cosa (acuerdo sobre los pares que sí se formaron).
 
-3. **Los objetos `replay` de los 59 pares tienen `trade_id` vacío (59/59).** Solo traen `decision_id`, y en **10 de los 22 pares evaluables el `decision_id` de live ≠ el de replay**. Tampoco coinciden `timestamp` ni `candle_second` (delta 1.288–5.916 ms, mediana 2.924 ms). Es decir: **el emparejamiento live↔replay no es verificable por ID ni por timestamp exacto**; se apoya en proximidad temporal. Esto no invalida el conteo de pares pero sí impide auditar la correspondencia.
+3. **Los objetos `replay` de los 59 pares tienen `trade_id` vacío (59/59).** Solo traen `decision_id`, y en **10 de los 22 pares evaluables el `decision_id` de live ≠ el de replay**. Tampoco coinciden `timestamp` ni `candle_second` (delta 1.288–5.916 ms, mediana 2.902,5 ms). Es decir: **el emparejamiento live↔replay no es verificable por ID ni por timestamp exacto**; se apoya en proximidad temporal. Esto no invalida el conteo de pares pero sí impide auditar la correspondencia.
 
 4. **`8cdb61f` (build declarada) NO contiene los datos del Cubo 2 completo.** En ese commit solo existen W01–W11 (`r23h`/`r23i`/`r23j`); `loops/r23k_validation/` **no existe** (`git cat-file -e 8cdb61f:loops/r23k_validation/window_22/trades.csv` → *exists on disk, but not in '8cdb61f'*). W12–W22 entraron en `b84b1a1`/`d39f723`/`190f596`. Los `trades.csv` de W04/W05/W06 sí son idénticos en `8cdb61f` (8/7/3 filas). **Consecuencia: el recálculo del Cubo 2 completo no puede atribuirse a la build `8cdb61f`**; mezcla datos de la build con ventanas posteriores.
 
@@ -317,17 +317,26 @@ Fuente: los 16 `replay_comparison.json` de W07–W22, campo `pairs[]` (solo los 
 | Solo por proximidad temporal (≤ 6000 ms) | **10** | 45,5 % |
 | **Total** | **22** | 100 % |
 
-De los 10 temporales, **1 es `DIVERGENT`** (W11, `f832ecec` vs `11515505`) y 9 son `MATCH`. De los 12 por ID, **1 es `DIVERGENT`** (W06, `548730e7` — mismo ID, acción distinta).
+Desglose exacto `status × mecanismo` del Cubo 1 (leído del campo `matched_by` que escribe el propio comparador en `compare_live_replay.py:459`, no inferido):
+
+| status | `matched_by` | Pares |
+| :--- | :--- | :-: |
+| `MATCH` | `decision_id` | **12** |
+| `MATCH` | `temporal` | **8** |
+| `DIVERGENT` | `temporal` | **2** (W08 `fc7bbff7` vs `932c27eb`; W11 `f832ecec` vs `11515505`; ambas BUY/SELL, causa `action`) |
+| `DIVERGENT` | `decision_id` | **0** |
+
+**Los 12 pares por `decision_id` son todos `MATCH`.** El par `DIVERGENT` por ID (`548730e7`, W06) **pertenece al Cubo 2**, no al Cubo 1 (`CUBO1_WINDOWS` = W07–W22, `recompute_cubes.py:61-62`), y su causa es `candle_second` (ambos lados BUY), no `action`.
 
 **Desambiguación:** para los 22 pares, el número de filas de replay candidatas dentro de ±6000 ms con el mismo `asset` es **1 en todos los casos** (`cands_in_tol=1`). No hay pares ambiguos: el fallback temporal no "elige" entre varios candidatos.
 
-**Tabla de deltas temporales** `Δ = ts_replay − ts_live` (ms). Negativo = el replay marca la decisión **antes** que el live.
+**Tabla de deltas temporales** `Δ = ts_replay − ts_live` (ms). Negativo = el replay marca la decisión **antes** que el live. Las filas W04–W06 se incluyen solo como contexto (son **Cubo 2**, no Cubo 1):
 
 | Ventana | n | min | mediana | max | Mecanismo |
 | :--- | :-: | :-: | :-: | :-: | :--- |
-| W04 | 1 | −1152 | −1152 | −1152 | temporal |
-| W05 | 1 | −5698 | −5698 | −5698 | temporal |
-| W06 | 2 | −4283 | −4069,0 | −3855 | 1 ID + 1 temporal |
+| W04 (Cubo 2) | 1 | −1152 | −1152 | −1152 | temporal |
+| W05 (Cubo 2) | 1 | −5698 | −5698 | −5698 | temporal |
+| W06 (Cubo 2) | 2 | −4283 | −4069,0 | −3855 | 1 ID + 1 temporal |
 | W07 | 1 | −2881 | −2881 | −2881 | temporal |
 | W08 | 4 | −3648 | −2351,0 | −2040 | 2 ID + 2 temporal |
 | W09 | 1 | −1787 | −1787 | −1787 | ID |
@@ -356,7 +365,198 @@ git log --diff-filter=A --format="%h|%ad|%s" --date=short -- loops/r23k_validati
 git cat-file -e 8cdb61f:loops/r23j_validation/window_11_clean/trades.csv   # exit 128
 git cat-file -e 8cdb61f:loops/r23i_validation/window_06_clean/trades.csv   # exit 0
 # A1b.2
-python -c "import json,io;d=json.load(io.open('loops/r23k_validation/window_13/replay_comparison.json',encoding='utf-8'));print(d['summary']);[print(p['status'],p['live']['decision_id'],p['replay']['decision_id'],p['replay']['timestamp']-p['live']['timestamp']) for p in d['pairs'] if p.get('live') and p.get('replay')]"
+python -c "import json,io;d=json.load(io.open('loops/r23k_validation/window_13/replay_comparison.json',encoding='utf-8'));print(d['summary']);[print(p['status'],p['matched_by'],p['live']['decision_id'],p['replay']['decision_id'],p['replay']['timestamp']-p['live']['timestamp']) for p in d['pairs'] if p.get('live') and p.get('replay')]"
 ```
 
 Sin cambios en ningún otro archivo del repositorio.
+
+### A1b.4 · Correcciones a A1b.1–A1b.2 y evidencia nueva
+
+**C1 · El desglose `MATCH`/`DIVERGENT` por mecanismo estaba mal.** A1b.2 afirmaba «de los 10 temporales, 1 es DIVERGENT (W11)» y «de los 12 por ID, 1 es DIVERGENT (W06)». Ambas frases son falsas:
+
+- Hay **2** `DIVERGENT` temporales en el Cubo 1: W08 (`fc7bbff7` BUY vs `932c27eb` SELL) y W11 (`f832ecec` BUY vs `11515505` SELL). La propia tabla de A1b.2 ya decía «W08 … 2 ID + 2 temporal» con 1 divergencia, contradiciendo el texto.
+- El `DIVERGENT` por ID es W06, que **no está en el Cubo 1** (`CUBO1_WINDOWS` = W07–W22). Su causa es `candle_second`, no `action`:
+
+```
+$ python -c "... divergence_breakdown ..."
+W06_clean: {"candle_second": 1}   live BUY / replay BUY   first_divergence=candle_second
+W08_clean: {"action": 1}          live BUY / replay SELL
+W11_clean: {"action": 1}          live BUY / replay SELL
+```
+
+**Consecuencia:** los 12 pares anclados por `decision_id` son **12/12 `MATCH`** (100 %). El «12/22 por ID» es por tanto un subconjunto limpio, no una muestra con 1 fallo. La cifra de cobertura anclada (12/80 = 15,0 %) se mantiene; la de «acuerdo sobre pares formados» sube de 20/22 a 20/22 igual, pero la lectura «el ID también diverge» desaparece del Cubo 1.
+
+**C2 · Verificación por re-ejecución, no por inferencia.** Se re-ejecutó el comparador congelado (`scripts/validation/compare_live_replay.py`, HEAD) sobre las 19 ventanas, `--mode trades`, con los `trades.csv`/`replay_journal.csv` versionados:
+
+| Ventana | Artefacto commitado (paired/match/div) | Re-ejecución (paired/match/div) | ¿Igual? |
+| :--- | :-: | :-: | :-: |
+| W04–W05, W07, W09–W10, W12, W14–W15, W16–W22 | idénticos | idénticos | **SÍ** |
+| **W06** | 2 / **1** / **1** | 2 / **2** / **0** | **NO** |
+
+**W06 es el único artefacto no reproducible con el comparador congelado.** Causa localizada: `577a9fa` (2026-10-18 20:04:18 −0500 = **2026-10-19 01:04:18 UTC**) subió `temporal_tolerance_ms` de 3000 a 6000 **y** añadió la exención `_latencia_explica_segundo_de_vela` (`compare_live_replay.py:317-370, 446-448`). Ejecutando la versión **anterior** (`a48e944`) con `--temporal-tolerance-ms 6000` sobre W06 se obtiene exactamente `2/1/1` → **el artefacto de W06 lo generó el comparador previo a la congelación**, no el congelado.
+
+**Pero la procedencia real de W04–W06 es más amplia que «solo W06», y se demuestra por firma, no por el triple resumen.** Comparando la lista completa de pares `(status, matched_by, delta_ms)` del artefacto commiteado contra la salida de `a48e944 --temporal-tolerance-ms 6000`:
+
+| Ventana | Pares commiteados | `a48e944 @ 6000` | Firma idéntica |
+| :--- | :-: | :-: | :-: |
+| W04_clean | 15 (1 MATCH temporal −1152) | 15 | **SÍ** |
+| W05_clean | 8 (1 MATCH temporal −5698) | 8 | **SÍ** |
+| W06_clean | 5 (1 MATCH temporal −3855, 1 DIVERGENT decision_id −4283) | 5 | **SÍ** |
+
+Los tres son equivalentes a la salida del comparador **pre-congelación** con 6000 ms explícito. La distinción con el congelado solo importa en W06 (donde el congelado da `2/2/0`); en W04 y W05 ambos comparadores coinciden a 6000 ms.
+
+**Y el 6000 ms no pudo salir del pipeline automático.** El monitor nunca pasa el flag: `live_monitor_r23.py` construye el `cmd` con solo `--live-journal`, `--output-json`, `--output-md` y opcionalmente `--replay-journal` (`live_monitor_r23.py:283-290` en HEAD; mismo patrón en `957ce13`, `08073c3`, `0f3672d`, `dcce480`, `577a9fa`). No aparece `--temporal-tolerance-ms` en ninguna revisión. Por tanto los artefactos de W04–W06 se **regeneraron a mano** con un flag no-default; los `WINDOW_REPORT.md` de W04 y W05 lo declaran explícitamente («`temporal_tolerance_ms = 6000`»).
+
+Consecuencia sobre el Cubo 2: de sus 3 divergencias, **1 (W06) es un artefacto de una versión anterior del comparador** y las otras 2 (W08, W11) son `action` reales. Re-ejecutando todo W04–W22 con el comparador congelado: **26 pares, 24 MATCH, 2 DIVERGENT, 92,31 %**; los artefactos commiteados dan **26 / 23 / 3 / 88,46 %**.
+
+**C3 · Sensibilidad a la tolerancia — medida, no estimada.** A1b.2 dejó abierto «cuántos pares caerían con 3000 ms». Re-ejecutado con el comparador congelado:
+
+| Tolerancia | Pares Cubo 1 | MATCH | DIVERGENT | Paridad | `pass >= 90 %` |
+| :--- | :-: | :-: | :-: | :--- | :-: |
+| 3000 ms | **16** | 11 | 5 | **68,75 %** | FAIL |
+| 3500 ms | 17 | 13 | 4 | 76,47 % | FAIL |
+| 4000 ms | 20 | 16 | 4 | 80,00 % | FAIL |
+| 4500 ms | 21 | 19 | 2 | 90,48 % | PASS |
+| 5000 ms | 21 | 19 | 2 | 90,48 % | PASS |
+| 5500 ms | 21 | 19 | 2 | 90,48 % | PASS |
+| 6000 ms | **22** | 20 | 2 | **90,91 %** | PASS |
+
+Los **6 pares que aparecen** al pasar de 3000 a 6000 ms, con su desenlace real: W08 (+1 `MATCH` temporal −3648), W11 (+1 **`DIVERGENT`** temporal −3856), W13 (+2 `MATCH` temporal −3690 y −5916), W21 (+2 `MATCH` temporal −3441 y −4079). Es decir **5 `MATCH` y 1 `DIVERGENT`**, no 6 rescates: el de W11 empeora la tasa. Además W08 ya tenía un `DIVERGENT` temporal a −2637 que **persiste** a 6000 ms (el par nuevo se añade, no sustituye). **Con 3000 ms el Cubo 1 daría 16 pares / 68,75 %** y el criterio `pass = tasa >= 90 %` (`compare_live_replay.py:491`) habría dado FAIL.
+
+**Matiz importante: el PASS no es exclusivo de 6000 ms.** El punto de cruce está entre 4000 y 4500 ms: a partir de 4500 ms la paridad ya es 90,48 % y el criterio se cumple. Es decir, el resultado es robusto en la banda 4500–6000 ms y frágil por debajo de 4000. La lectura correcta no es «el PASS depende de un umbral arbitrario de 6000», sino «el PASS depende de un umbral ≥ 4500 ms, y el preregistro no fija ese valor». La diferencia entre 4500 y 6000 es de 1 par (W13 a −5916).
+
+**Hueco del preregistro: prohíbe ajustar la tolerancia pero nunca fija su valor.** `PREREGISTRO_R23K.md` solo menciona la tolerancia en `:318-319` («Ajustar tolerancias … a mitad de cubo») y en el hash del comparador (`:40`, `:339`). No hay ninguna línea que declare `temporal_tolerance_ms = 6000` como el valor del ciclo. Buscando `toleran|3000|6000` en las 341 líneas del cuerpo preregistrado solo salen esas tres. Por tanto el criterio de emparejamiento del Cubo 1 **nunca quedó preregistrado**: se heredó del default del comparador congelado. Eso hace que la sensibilidad 68,75 % ↔ 90,91 % sea una decisión no documentada, aunque `577a9fa` sea anterior a W07.
+
+**Precisión sobre el orden temporal (corregida).** El umbral de 6000 ms **no es post hoc para el Cubo 1**. Cronología verificada, toda en UTC para evitar el desfase −0500 de los commits:
+
+| Evento | UTC |
+| :--- | :--- |
+| W04 (primera ventana del Cubo 2) | 2026-10-18 20:06:35 |
+| W05 | 2026-10-18 22:08:31 |
+| W06 | 2026-10-19 00:05:38 |
+| **`577a9fa`** (3000 → 6000 ms + exención de latencia) | 2026-10-19 **01:04:18** |
+| W07 (primera ventana del Cubo 1) | 2026-10-19 02:27:46 |
+| W08 / W09 / W10 / W11 | 03:28:34 / 04:04:09 / 04:44:36 / 05:28:09 |
+| **Preregistro `38e54e8`** | 2026-10-19 **06:22:57** |
+| W12 … W22 | 07:08:18 (19-oct) … 01:09:07 (21-oct) |
+
+`577a9fa` (01:04:18 UTC) precede a **todas** las ventanas del Cubo 1 (W07 arranca 1 h 23 min después). Dentro del Cubo 1 el umbral es por tanto **a priori**, y el 68,75 % a 3000 ms es **sensibilidad legítima**, no evidencia de manipulación. La prohibición de `PREREGISTRO_R23K.md:318-319` («ajustar tolerancias a mitad de cubo») **no se viola en el Cubo 1**.
+
+**El defecto real es el orden del preregistro, no la tolerancia.** `38e54e8` (06:22:57 UTC del 19-oct) es **posterior a W04–W11** (20:06 UTC 18-oct → 05:28 UTC 19-oct): 8 de las 19 ventanas del Cubo 2 se capturaron **antes** de que existiera el preregistro que las declara a priori. Solo W12–W22 están cubiertas. Y en el Cubo 2 el cambio de tolerancia **sí** cae a mitad de cubo: W04–W06 se midieron con el comparador de 3000 ms y W07–W22 con el de 6000 ms, así que la serie del Cubo 2 mezcla dos criterios de emparejamiento (esto es lo que explica el artefacto de W06 documentado en C2).
+
+**C4 · La build congelada sí explica W07–W22 (identidad de código, no solo autorreporte).** A1b.1 solo citaba el `gitSha` declarado en `LIVE_REPORT.md`. Verificado por diff:
+
+```
+$ git diff --name-only 8cdb61f 190f596 -- app/src/main      # (vacío)
+$ git diff --stat 8cdb61f 190f596 -- app/                   # (vacío)
+```
+
+**Entre `8cdb61f` y HEAD no cambió ni una línea de `app/`.** Por tanto W07–W22 (cuyo `LIVE_REPORT` declara `gitSha=8cdb61f`) se ejecutaron sobre el mismo código que hay hoy en HEAD, y el desfase es solo de versionado de artefactos. `aac1df3` → `8cdb61f` sí toca ambos archivos de decisión, pero **es refactor puro** (verificado, ver abajo):
+
+```
+AdaptiveLearningEngine.kt | 230 +++++-----   (extracción de `mejorCoincidenciaEnMemoria`)
+TradingEngine.kt          |  90 ++++--      (extracción de `calcularPoderesDeMercado`)
++ 4 archivos de test nuevos (1206 insertions, 97 deletions)
+```
+
+`TradingEngine.kt` pasa de calcular `callPower`/`putPower` inline a llamar `calcularPoderesDeMercado(...)` con los mismos literales (`50`, `68`/`32`, `+10`, `+8`, `+6`, `0.25f`, `0.20f`, `62`/`38`, `coerceIn(15, 95)`). `AdaptiveLearningEngine.kt` mueve el recorrido de `lossSignatures.takeLast(20)` a `mejorCoincidenciaEnMemoria(...)`, que reproduce el mismo bucle `if (sim > similitudMaxima)` con el mismo `takeLast(20)`.
+
+**Corrección de una afirmación previa de esta adenda (falsa).** A1b.4 dijo antes que `AdaptiveLearningEngine` «además introduce el umbral 0.99f». **Es falso.** El umbral ya existía en `aac1df3`:
+
+```
+$ git show aac1df3:app/src/main/java/com/example/tradedraw/AdaptiveLearningEngine.kt | Select-String "0.99f|ADAPTIVE_BLOCK_SIMILARITY_THRESHOLD"
+        const val ADAPTIVE_BLOCK_SIMILARITY_THRESHOLD = 0.99f
+        // R23F: umbral de similitud elevado a 0.99f tras auditoría contrafactual R23E.
+```
+
+Idéntico en `8cdb61f` (línea 61); lo único que cambia es que el comentario se traslada a KDoc. Extracción de todos los literales numéricos de ambos archivos en ambas builds:
+
+| Archivo | `aac1df3` | `8cdb61f` |
+| :--- | :--- | :--- |
+| `AdaptiveLearningEngine.kt` | `0.02f 0.10f 0.15f 0.20f 0.22f 0.25f 0.30f 0.35f 0.40f 0.50f 0.99f 1.0f 2.0f 2.2f 4.0f` | **idéntico** |
+| `TradingEngine.kt` | `0.0f 0.0001f 0.05f 0.08f 0.1f 0.12f 0.15f 0.20f 0.25f 0.30f 0.40f 0.55f 0.735f 0.75f 0.80f 0.838f 0.844f 0.85f 0.865f 0.881f 0.90f 0.903f 0.95f 0.99f 1.0f 1.15f` | **idéntico** |
+
+**Conclusión:** `aac1df3`→`8cdb61f` es **refactor puro en ambos archivos**, sin cambio de comportamiento de decisión. No se ha demostrado ninguna diferencia de comportamiento entre las dos builds; por tanto W04–W06 y W07–W22 son el mismo motor en lo que a lógica de trading respecta. Son binarios distintos (y eso basta para que `LIVE_REPORT` muestre `gitSha` diferentes), pero funcionalmente equivalentes en las constantes y ramas que deciden. La afirmación «dos builds» de A1b.1 sigue siendo correcta en sentido literal —dos artefactos APK distintos— pero **no implica dos comportamientos**.
+
+**Único cambio real entre las dos builds: acentos en los strings emitidos.** `aac1df3` emite `"Anti-patrón perdedor recurrente…"`; `8cdb61f` emite `"Anti-patron perdedor recurrente…"` (también `inversión`→`inversion`, `pérdida`→`perdida`). No afecta a la decisión porque los consumidores son acento-insensibles: `extractAdaptiveSimPct` casa con la regex `(\d{1,3})\s*%\s*similitud` (`TradingEngine.kt:2775`) y el monitor filtra por la subcadena `"ADAPTIVE_BLOCK"` en mayúsculas. Así que «refactor puro» vale para **comportamiento de decisión**, no para identidad byte a byte de la telemetría. Queda declarado.
+
+**Verificación del comparador congelado (hash).** El SHA-256 del blob es el mismo en `8cdb61f`, `577a9fa`, HEAD y el árbol de trabajo, y coincide con el preregistrado:
+
+```
+$ sha256(git show <sha>:scripts/validation/compare_live_replay.py)
+8cdb61f  4cb5082e4f8c52bcd775f0c5f3d53d992a3730007d1738d463a171f2c0794b5f
+577a9fa  4cb5082e4f8c52bcd775f0c5f3d53d992a3730007d1738d463a171f2c0794b5f
+190f596  4cb5082e4f8c52bcd775f0c5f3d53d992a3730007d1738d463a171f2c0794b5f
+a48e944  558153ed7386ba9b685fd0a886a3b3d5e1c86e69aed621104443a7a9dbdea942   (pre-congelación)
+```
+
+`PREREGISTRO_R23K.md:40` y `:339` declaran `4cb5082e…` como hash del comparador congelado. **La afirmación de integridad del comparador es verificable y correcta.** El comparador que produjo los artefactos de W04–W06 (`a48e944`) es un binario distinto, no el congelado.
+
+**C5 · `r23j_validation` sí existe en `8cdb61f`, pero solo con el manifiesto.** A1b.1 dijo «`r23j_validation/window_07_clean` … `window_11_clean` → 128 (no existe)». Correcto para los `trades.csv`, pero conviene precisar el estado real del árbol en ese commit:
+
+```
+loops/r23h_validation → 53 archivos (incluye window_01..05_clean/trades.csv)
+loops/r23i_validation → 12 archivos (incluye window_06_clean/trades.csv)
+loops/r23j_validation →  1 archivo  (solo EXCLUDED_ARTIFACTS_MANIFEST.json)
+loops/r23k_validation →  0 archivos
+```
+
+`trades.csv` presentes en `8cdb61f`: W01, W02, W03, W04, W05, W06 — **exactamente los seis de las builds `aac1df3`**. Los hashes coinciden con el árbol de trabajo (`git rev-parse 8cdb61f:<ruta>` == `git hash-object <ruta>` para W04/W05/W06), así que esos datos no se reescribieron después.
+
+**C6 · Precisión sobre la relación de commits.** `9442c1f` (que añade W04–W06) es **ancestro** de `8cdb61f` (`git merge-base --is-ancestor 9442c1f 8cdb61f` → exit 0, 4 commits de distancia). Los otros 13 commits que añaden datos son **descendientes** de `8cdb61f` (exit 1 en la comprobación inversa). Es decir: la build congelada precede a la evidencia de W07–W22, no al contrario.
+
+**Conclusión corregida (una línea):** el Cubo 2 se reparte en **14 commits** y **2 builds** (`aac1df3` W04–W06, `8cdb61f` W07–W22); el código de `8cdb61f` es idéntico al de HEAD, así que W07–W22 son atribuibles a la build congelada aunque sus `trades.csv` se versionaran después; `aac1df3`→`8cdb61f` es **refactor puro** (mismas constantes, mismas ramas: no hay diferencia de comportamiento demostrada entre las dos builds); y **los tres artefactos de paridad de W04–W06 los generó el comparador pre-congelación `a48e944` con 6000 ms explícito**, no el congelado.
+
+**C7 · El preregistro admite por escrito que W04–W11 ya estaban capturadas.** No hace falta inferirlo de los timestamps: `PREREGISTRO_R23K.md` lo declara en su propia tabla de punto de partida (§1.5):
+
+```
+:87: | Trades confirmados en Cubo 2 (W04–W11) | **29** |
+:88: | Ventanas ya capturadas | 8 (W04, W05, W06, W07, W08, W09, W10, W11) |
+:259: | Cubo 2 (Homogéneo) | W04…W11 + nuevas de esta sesión | Abierto | único que cuenta para N=80 |
+```
+
+Y `:274-278` reconoce la diferencia de arnés: «Las ventanas W04–W11 se capturaron **antes** del Monitor v2… el Monitor v1 no tenía `grace_wait_ms` ni transición a `DISABLED`». La regla de invalidación está en `:16`: «Cualquier modificación posterior a la primera ventana medida **invalida el ciclo completo**». Aplicando la regla del propio documento, el análisis confirmatorio del Cubo 2 queda invalidado por construcción: 8 de sus 19 ventanas preceden al preregistro que las declara a priori.
+
+La enmienda `8e2d149` (2026-10-22) añade 169 líneas de «ENMIENDA DE FUTILIDAD · CIERRE DEL CUBO 2» y se etiqueta a sí misma como «post hoc» y «no modifica el cuerpo preregistrado (líneas 1-341)». **No legitima retroactivamente W04–W11.** El defecto de orden se mantiene.
+
+Nota: `loops/r24_verify/A1_cubes.md:25` conserva el título generado automáticamente "DESEMPEÑO HOMOGÉNEO"; el Cubo 2 NO es homogéneo (dos builds: aac1df3 W04–W06, 8cdb61f W07–W22). El título del artefacto generado no se edita a mano; prevalece el informe.
+
+---
+
+## A1c · IMPLICACIONES PARA EL CIERRE
+
+### A1c.1 Defectos que invalidan o degradan el Cubo 2
+
+| # | Defecto | Evidencia | Efecto |
+| :-: | :--- | :--- | :--- |
+| **(a)** | **Preregistro posterior a 8 de las 19 ventanas.** El documento que declara las ventanas «a priori» se fijó después de medirlas. | `PREREGISTRO_R23K.md:88` («Ventanas ya capturadas \| 8 (W04…W11)»), `:87` (29 trades ya confirmados), `:259` (Cubo 2 = W04…W11 + nuevas). Cronología UTC: W04 2026-10-18 20:06:35 → W11 2026-10-19 05:28:09; preregistro `38e54e8` 2026-10-19 **06:22:57**. Regla propia en `:16`: «Cualquier modificación posterior a la primera ventana medida **invalida el ciclo completo**». | **Invalida por construcción.** No es un defecto de datos: es el documento el que se autodescalifica. |
+| **(b)** | **La tolerancia temporal nunca se preregistró**, y 3 artefactos de paridad se generaron con un flag manual no auditado. | `PREREGISTRO_R23K.md` solo menciona tolerancia en `:318-319` (prohibición de ajustarla) y en el hash del comparador (`:40`, `:339`). Ningún valor. Ningún monitor pasa `--temporal-tolerance-ms`: `scripts/validation/live_monitor_r23.py:283-290` y `live_monitor_r23_autonomous.py:1514-1519` construyen el `cmd` sin el flag. Los `WINDOW_REPORT.md` de W04 (`:39`) y W05 (`:36`) declaran `temporal_tolerance_ms = 6000` explícito → regeneración manual. | **Degrada el Cubo 1 y contamina el Cubo 2.** Barrido medido: 3000 ms → 16 pares / 68,75 % **FAIL**; 4500 ms → 21/19/2 90,48 % PASS; 6000 ms → 22/20/2 90,91 % PASS. El PASS depende de un umbral **≥ 4500 ms que el preregistro no fija**. |
+| **(c)** | **Dos binarios en el mismo cubo.** | W04–W06 con `gitSha=aac1df3`; W07–W22 con `gitSha=8cdb61f`. `git diff --stat 8cdb61f 190f596 -- app/` → vacío (HEAD idéntico a la build congelada). `aac1df3→8cdb61f` es refactor puro: mismas constantes en ambos archivos (`0.99f`, `0.02f`…`4.0f` en `AdaptiveLearningEngine.kt`; `0.735f`, `0.838f`, `0.844f`… en `TradingEngine.kt`), mismas ramas. | **Degrada, no invalida.** Dos APK distintos rompen la homogeneidad declarada (`:259` «Cubo 2 (Homogéneo)»), pero no se demostró diferencia de comportamiento de decisión. Único cambio real: acentos en strings de telemetría (`Anti-patrón`→`Anti-patron`), inocuo para los consumidores. |
+| **(d)** | **W06 es irreproducible con el comparador congelado.** | Con `a48e944` + 6000 ms → `2/2/0`. Con el congelado `4cb5082e…` → `2/1/1` (`DIVERGENT decision_id −4283`). `loops/r23i_validation/window_06_clean/replay_comparison_report.md:8` dice `FAIL` y `REPLAY_PARITY_REPORT.md:8` dice `PASS` — dos veredictos contradictorios en el mismo directorio. | **Degrada.** De las 3 divergencias del Cubo 2, 1 (W06) es artefacto de herramienta; quedan 2 reales (W08, W11). Re-ejecutado todo con el congelado: **26 pares / 24 MATCH / 2 DIVERGENT = 92,31 %**, frente a 26/23/3 = 88,46 % de los artefactos commiteados. |
+
+**Defecto transversal que agrava los cuatro:** la serie del Cubo 2 mezcla **dos criterios de emparejamiento** (W04–W06 a 3000 ms con `a48e944`; W07–W22 a 6000 ms con `4cb5082e`) y **dos arneses** (Monitor v1 sin `grace_wait_ms` ni `DISABLED` para W04–W11; Monitor v2 desde `dcce480`), reconocido por el propio documento en `:274-278`. La prohibición `:318-319` («ajustar tolerancias a mitad de cubo») **se viola materialmente en el Cubo 2**, aunque no en el Cubo 1 (donde `577a9fa` precede a W07).
+
+### A1c.2 Clasificación: ¿el Cubo 2 sostiene el veredicto «SIN EVIDENCIA DE EDGE»?
+
+**No. Un cubo invalidado por su propio preregistro no puede sostener nada — ni una afirmación ni una negación.** La invalidez de (a) no es un problema de potencia estadística ni de calidad de datos: es un fallo de orden inferencial. El documento que define el criterio de éxito existe después de 8 de las 19 ventanas que dice gobernar. Cualquier lectura del Cubo 2 como «análisis confirmatorio» —incluida la lectura negativa— hereda ese defecto. Simétricamente: tampoco se puede concluir «hay edge», que es precisamente lo que la regla de oro (`:14-17`) pretendía impedir.
+
+**Pero el veredicto de futilidad es aritmético y sobrevive.** La demostración de `PREREGISTRO_R23K.md:377-404` no usa la paridad, ni la tolerancia, ni el orden del preregistro, ni la build. Usa tres números del ledger congelado y una identidad algebraica:
+
+- `W = 30`, resueltos = 59, `N = 60`; tope `N = 80` → 20 huecos.
+- Mejor caso absoluto `50/79 = 63,29 %` → `Wilson_inf = 52,28 %` < `BE = 54,64 %`.
+- Contabilidad más generosa (VOID como win + 21 huecos como aciertos): `51/80 = 63,75 %` → `Wilson_inf = 52,81 %`, igualmente por debajo.
+- Para cruzar el BE con `N = 80` harían falta 53 wins: 23 sobre los 30 actuales, con solo 20 huecos. **Imposible por aritmética de huecos.**
+
+Ninguno de los cuatro defectos (a)–(d) toca esos números. (a) no cambia `W`, (b) no cambia `W`, (c) no cambia `W`, (d) afecta paridad y no balance. Y las sensibilidades de `A2.4` (sin W04 → 45,10 %; solo W07+ → 40,48 %; 2.ª mitad → 40,00 % / 41,38 %) **empeoran** el punto estimado, así que el agregado no está sostenido por un subconjunto favorable.
+
+**Formulación correcta, que es la que debe ir al informe R24:** no «el Cubo 2 demuestra ausencia de edge», sino «**el ledger observado, con `W = 30` sobre 59 resueltos, tiene un techo aritmético de `Wilson_inf = 52,28 %` a `N = 80`, por debajo del breakeven 54,64 %; el diseño que produjo ese ledger está invalidado por su propio preregistro y por tanto no puede presentarse como análisis confirmatorio de nada.**» La futilidad es una **cota sobre los datos**; la invalidez es un **defecto del diseño**. Son dos afirmaciones independientes y ambas ciertas; mezclarlas en un solo veredicto es lo que hay que evitar.
+
+**Riesgo residual que debe declararse:** la cota depende de la exactitud de `W/L/VOID = 30/29/1`. Esa contabilidad viene del mismo arnés mixto (v1/v2) cuyo `grace_wait_ms` ausente en W04–W11 hace «menos confiable» la liquidación al borde de ventana, según `:276-277`. Si alguna liquidación de W04–W11 está mal atribuida, el techo se mueve. No se ha auditado trade a trade; **la cota es tan sólida como el ledger, y el ledger no está auditado.**
+
+### A1c.3 Qué debe hacer R24 distinto
+
+1. **Preregistro commiteado y hasheado ANTES de la primera ventana del cubo nuevo**, con `temporal_tolerance_ms`, `--tolerance-price`, `--tolerance-dist`, `N`, payout y umbrales **fijados por valor numérico**, no por referencia al default de una herramienta.
+2. **Un solo binario por cubo**: `sha256` del APK + `gitSha` registrados en el `window_metadata.json` de cada ventana, y rechazo automático de la ventana si no coincide con el declarado.
+3. **Un solo arnés desde la primera ventana**: Monitor v2+ únicamente; ninguna ventana heredada de un ciclo anterior entra en el cubo nuevo, ni siquiera «porque comparte build».
+4. **Comparador congelado por hash y ejecutado solo por el pipeline**: cero invocaciones manuales con flags; un comando regenera todos los artefactos de paridad y el `sha256` del script queda en el reporte.
+5. **Criterio de cierre decidido a priori**: `N` fijo o regla de futilidad aritmética declarada antes de medir; prohibida cualquier enmienda post hoc que documente por qué el criterio no se alcanzó.

@@ -48,6 +48,59 @@ Pendiente de confirmación por el AUDITOR.
 `trade_id` vacío en 59/59 (literal fijo en `compare_live_replay.py:298`; el CSV de replay no tiene esa columna).
 12/22 pares por `decision_id`, 10/22 solo por proximidad temporal (≤6000 ms). Sin ambigüedad (`cands_in_tol=1`).
 
+### H-5 · El preregistro R23K es POSTERIOR a 8 de 19 ventanas
+`38e54e8` (2026-10-19 01:22:57) es posterior a W04–W11 (2026-10-18 20:08 → 2026-10-19 00:40).
+Solo W12–W22 están cubiertas por un preregistro previo. Defecto de diseño heredado; R24 lo corrige
+commiteando su preregistro antes de la primera ventana.
+
+### H-6 · La paridad del Cubo 1 depende del umbral temporal
+Ejecución propia del ORQUESTADOR sobre las 16 ventanas con `replay_journal.csv`:
+
+| Tolerancia | Pares | Match | Div | Paridad | Veredicto |
+| :-: | :-: | :-: | :-: | :-: | :--- |
+| 3000 ms | 16 | 11 | 5 | **68,75 %** | FAIL (< 90 %) |
+| 6000 ms | 22 | 20 | 2 | **90,91 %** | PASS |
+
+Artefactos: `loops/r24_orch_verify/t3000_*.json`, `t6000_*.json`.
+**El 6000 ms es a priori para el Cubo 1** (`577a9fa` = 18-oct 20:04:18, antes de W07–W22).
+El defecto real es que en el Cubo 2 el criterio cambia a mitad de cubo (W04–W06 con 3000, W07–W22 con 6000).
+
+### H-7 · El artefacto de W06 es irreproducible
+Comparador congelado sobre W06: `pairs=2 match=2 div=0`. Artefacto commiteado: `pairs=2 match=1 div=1`.
+W06 pertenece al Cubo 2, no al Cubo 1.
+
+### H-8 · V1 del preregistro R24 estaba mal especificado (corregido)
+`trades.csv` **no tiene columna `result`** (cabecera real: `trade_id,decision_id,timestamp_ms,asset,action,detail,balance_at_trade`).
+El resultado se deriva de la cadena de saldos (`recompute_cubes.py:244-292`). Además hay dos defectos
+en el clasificador: (a) el `else` externo (línea 285) asigna LOSS a todo lo que no sea WIN/VOID, y solo
+la rama interna (289-292, sin `debit_step`) carece de evidencia; (b) el VOID es un movimiento
+**+100.000 COP** (línea 270), no un débito. Corregido en `f548c90`; B1 deberá publicar el subconteo
+LOSS-sin-evidencia en `/status` para que V1 sea medible.
+
+## Errores propios del ORQUESTADOR (registro de honestidad)
+
+| # | Error | Detectado por | Corrección |
+| :-: | :--- | :--- | :--- |
+| O-1 | Instruí que el VOID era un «débito ~100.000 COP»; es un movimiento **positivo** | IMPLEMENTADOR (leyó `recompute_cubes.py:270`) | Verificado por mí en el código; corregido en `f548c90` |
+| O-2 | Instruí «si hay LOSS por defecto → NO EVALUABLE» citando el `else` externo, que aplica a TODO LOSS | IMPLEMENTADOR (distinguió los dos niveles de `else`) | Verificado por mí en `262-293`; corregido a la rama interna |
+| O-3 | Acepté el encuadre inicial del VALIDADOR de que el 6000 ms era «post hoc» sin comprobar la cronología | Yo mismo, al revisar `git log --date=iso` | Refutado: `577a9fa` precede a W07–W22 |
+| O-4 | Declaré «doble registro confirmado» en `TradingEngine.kt:637-639` y «Stop Loss salta tras 1 pérdida real» como HECHO DE CÓDIGO | IMPLEMENTADOR (leyó el `if (!resolved)`) | **REFUTADO**: `:637-640` es `val resolved = resolvePendingTradeWin(); if (!resolved) { recordTradeWin(force=true) }` — fallback guardado, no segundo incremento. Verificado por mí en el código |
+| O-5 | Dije que hay 3 funciones de reinicio de contadores | IMPLEMENTADOR | **REFUTADO**: son 5 (`resetStats:897`, `setStats:907`, `correctStats:917`, `resetSession:983`, `resetSniperSession:1003`) |
+| O-6 | Afirmé «el PASS de paridad depende de 6000 ms» | VALIDADOR (barrido completo) + mi propia ejecución | **IMPRECISO**: el cruce está en **4500 ms** (90,48 %). Verificado por mí: 3500→76,47 %, 4000→80,00 %, 4500→90,48 % |
+
+**Lección registrada:** leer números de línea sin leer el flujo de control produce hallazgos falsos.
+O-4 es el caso: dos llamadas consecutivas a `recordTradeWin` parecían duplicación, pero la segunda
+está dentro de un `if (!resolved)`. Todo hallazgo de código debe citar el bloque completo, no las líneas.
+
+**Dato de contraste aportado por el orquestador:** el journal vivo tiene WIN 136 / LOSS 128 / TIE 6 = 270
+registros. No hay inflado ×2 global. Cualquier inflado es condicional y de magnitud desconocida.
+
+## Subagentes descartados
+
+| Subagente | Motivo | Evidencia |
+| :--- | :--- | :--- |
+| AUDITOR v1 (`2199e4dc`) | Violó regla 0.5: creó un subagente (`512b8ba2`) y quedó 70 min colgado esperándolo sin escribir resultado | Transcript `step_index 24-26`: «Solicitado informe final al L0. Esperando.» |
+
 ## Limitación declarada: independencia de modelos
 
 **MISMO MODELO.** El selector de subagentes de Antigravity 2.0 en esta sesión solo expone variantes de
