@@ -236,6 +236,18 @@ columnas previas. Añadir campos nuevos al JSON de `/status` es aditivo y no rom
 **(b) Corrección de idempotencia de liquidación (B1).**
 Declarada como cambio con **POSIBLE IMPACTO** en contadores (V1). Se mide y se reporta su efecto.
 
+**Requisito explícito de B1 — subconteo `LOSS` sin evidencia.** B1 debe publicar en `/status` un
+campo nuevo, `risk.tradesLossSinEvidencia` (o nombre equivalente, fijado en el commit de B1 y
+declarado en `workflows/`; no puede renombrarse después de la primera ventana), contador
+**acumulado** de trades clasificados `LOSS` sin `credit_step`, sin `void_step` y sin `debit_step`
+— exactamente la rama `else` interna de `recompute_cubes.py:289-292` (§3 V1).
+
+Sin este campo, V1 **no puede distinguir «0 discrepancias» de «no medido»**: la ausencia de
+discrepancias sería indistinguible de la ausencia de la medición que las detecta.
+
+Se declara que este campo es **TELEMETRÍA** (append-only, solo lectura): no altera ninguna
+decisión, no toca señales, vetos, umbrales, stakes ni `RiskManager` (§5, Estrategia CONGELADA).
+
 ### Estrategia CONGELADA
 
 Prohibido tocar: señales, ponderaciones, vetos, umbrales (`callPower`, `ADAPTIVE_BLOCK`, ventana
@@ -273,6 +285,17 @@ Se declaran, no se ocultan.
    «`LOSS` por defecto **sin evidencia alguna**» (`credit_step is None and void_step is None and
    debit_step is None`, líneas 289-292); si es `> 0`, V1 se reporta **`NO EVALUABLE`**, no `PASS`
    (§3 V1, regla de no-evaluabilidad).
+8. **La ventana `+35 s .. +120 s` asume expiración de 60 s.** El clasificador busca la
+   liquidación en esa ventana fija; un trade con **cualquier otra expiración** (30 s, 120 s, 300 s)
+   cae **íntegro en `LOSS` por defecto**, sin evidencia, aunque haya ganado. R24 opera a **60 s**
+   (estrategia congelada), así que el supuesto se cumple en este cubo, pero queda **declarado**:
+   fuera de 60 s el clasificador no es válido y ninguna cifra derivada de él es interpretable.
+9. **`recompute_cubes.py` no expone el subconteo `LOSS`-sin-evidencia.** El script clasifica pero
+   **no publica** cuántos trades cayeron en la rama sin evidencia (§3 V1, §6.7). V1 **depende de
+   instrumentarlo**: sin ese conteo no hay forma de separar «`LOSS` medido» de «`LOSS` inventado»,
+   y por tanto V1 no es evaluable. El subconteo debe salir del APK R24 vía
+   `risk.tradesLossSinEvidencia` (§5.b) y contrastarse contra el ledger; **no** se estima a mano ni
+   se infiere del script congelado.
 
 > **Cifras de §6 verificadas por el ORQUESTADOR** con ejecución propia; artefactos en
 > `loops/r24_orch_verify/`. (3000 ms → 16 pares 68,75 %; 6000 ms → 22 pares 90,91 %; W06 fresh
