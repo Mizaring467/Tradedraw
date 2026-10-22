@@ -233,7 +233,7 @@ Notas de la tabla:
    el ternario de `recompute_cubes.py:652-661`. La conclusión de fondo sí es correcta.
 3. **Emparejamiento Live ↔ Replay por identificador.** NO VERIFICADO: los objetos `replay` tienen
    `trade_id` vacío en **59/59** casos, y el `decision_id` difiere en **10 de los 22** pares. Tampoco
-   coinciden `timestamp` ni `candle_second` (delta 1.288–5.916 ms, mediana 2.924 ms). El
+   coinciden `timestamp` ni `candle_second` (delta 1.288–5.916 ms, mediana 2.902,5 ms). El
    emparejamiento se apoya en **proximidad temporal**, no en ID. El conteo de pares es reproducible;
    la correspondencia individual no es auditable.
 4. **Inmutabilidad de `app/` entre `8cdb61f` y `190f596`.** VERIFICADO en este cierre:
