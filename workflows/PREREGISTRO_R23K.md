@@ -339,3 +339,172 @@ Sin esos números juntos, un veredicto no es válido.
 `4cb5082e4f8c52bcd775f0c5f3d53d992a3730007d1738d463a171f2c0794b5f`
 
 **Build congelado:** `8cdb61f` (versionCode 19)
+
+---
+
+## ENMIENDA DE FUTILIDAD · 2026-10-22 · CIERRE DEL CUBO 2
+
+> Enmienda **post hoc**. No modifica el cuerpo preregistrado (líneas 1-341). No altera ningún
+> criterio, umbral, ventana, stake ni regla de decisión. Solo documenta por qué el criterio
+> preregistrado del Cubo 2 es **matemáticamente inalcanzable** con los datos existentes, y por
+> qué el cierre se decide por esa inalcanzabilidad y no por el resultado observado.
+
+### A2.1 Cifras del script
+
+Fuente: `loops/r24_verify/A1_cubes.json` (recálculo independiente del VALIDADOR, script
+`loops/r24_verify/a1_independent.py`; no usa `recompute_cubes.py`). Build `8cdb61f`
+(versionCode 19). `git diff --stat 8cdb61f 190f596 -- app/` devuelve **0 archivos cambiados**:
+`app/` es byte-idéntico, por lo que el cubo **sí es atribuible** a la build `8cdb61f`. Lo que
+faltaba en ese commit eran los artefactos de evidencia de W12-W22, no el ejecutable.
+
+| Métrica | Valor |
+| :--- | :--- |
+| `N` | 60 |
+| Resueltos (`W+L`) | 59 |
+| `W / L / VOID` | 30 / 29 / 1 |
+| Win rate | 50,85 % (30/59) |
+| IC Wilson 95 % | [38,44 ; 63,16] |
+| Breakeven (payout 83 %) | 54,64 % |
+| `EV` | −0,0710 R, IC bootstrap 95 % [−0,3002 ; +0,1567] |
+| P&L balances | −427.000,32 COP |
+| Max drawdown | 1.260.999,68 COP (3,1729 %) |
+
+> Nota sobre el breakeven: el `BE` preregistrado (54,6448 % = `1/(1+0,83)`) es el del payout
+> dominante. El cubo mezcla payouts: 37 trades a 0,83 y 23 a 0,82 (BE 54,9451 %). Usar el `BE`
+> único del preregistro es la lectura **favorable**; con la mezcla real el umbral efectivo es algo
+> más alto, de modo que la inalcanzabilidad demostrada abajo se mantiene y se refuerza.
+
+### A2.2 Demostración de inalcanzabilidad
+
+Cálculo aritmético explícito sobre el estado congelado `W = 30`, `resueltos = 59`:
+
+1. **Tope de `N = 80`.** El estado congelado es `N = 60` (59 resueltos + 1 `VOID`). Faltan
+   `80 − 60 = 20` trades para llegar a `N = 80`. Aunque los 20 fueran aciertos, el máximo
+   alcanzable es `30 + 20 = 50` wins sobre 79 resueltos.
+2. **Wilson inferior en ese máximo.** `50/79 = 63,29 %` → límite inferior de Wilson 95 %
+   = **52,28 %**, que es **menor** que el breakeven 54,64 %. El criterio preregistrado
+   (`Wilson_inf > BE`) **no se cumple ni en el mejor caso posible**. Incluso en la contabilidad
+   más generosa —contar el `VOID` como resuelto ganador y los 21 huecos como aciertos— el techo
+   es `51/80 = 63,75 %` con `Wilson_inf = 52,81 %`, igualmente por debajo del breakeven.
+3. **Wins necesarios con `N = 80`.** Para superar el breakeven por el límite inferior harían
+   falta **53 wins** (`66,25 %`, `Wilson_inf = 55,36 %`). Son 23 wins sobre los 30 actuales, pero
+   solo hay 20 huecos (21 en la contabilidad más generosa):
+   **imposible por aritmética de huecos**, no por calidad de la estrategia.
+4. **Sin tope de `N`.** Relajando el tope, harían falta **25 aciertos consecutivos**
+   (`55/84`, `Wilson_inf = 54,83 %`) para cruzar el breakeven. La probabilidad de esa racha bajo
+   la hipótesis nula `p = BE` es `0,5464^25 ≈ 2,7 × 10⁻⁷`.
+
+Tabla `k → Wilson inferior` con `N = 80`:
+
+| `k` (wins) | WR | Wilson inf 95 % | ¿`> BE` 54,64 %? |
+| :--- | :--- | :--- | :--- |
+| 50 | 62,50 % | 51,55 % | NO — techo real alcanzable (`50/79` → 52,28 %) |
+| 51 | 63,75 % | 52,81 % | NO |
+| 52 | 65,00 % | 54,08 % | NO |
+| 53 | 66,25 % | 55,36 % | SÍ (inalcanzable: exige 23 wins sobre 30; solo hay 20 huecos) |
+
+### A2.3 Veredicto de cierre
+
+> **SIN EVIDENCIA DE EDGE (WR cercano al breakeven; punto estimado negativo; N insuficiente para concluir).**
+
+### A2.4 Sensibilidades
+
+| Escenario | `N` | `W / L` | WR | Wilson 95 % | Δ balances (COP) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Sin W04 | 52 | 23 / 28 | 45,10 % | [32,27 ; 58,62] | −900.999,68 |
+| Solo W07+ | 43 | 17 / 25 | 40,48 % | [27,04 ; 55,51] | −1.094.999,04 |
+| 2.ª mitad cronológica (ledger completo, `N = 71`) | 36 | 14 / 21 | 40,00 % | [25,55 ; 56,43] | −944.000,00 |
+| 2.ª mitad cronológica (Cubo 2 estricto) | 30 | 12 / 17 | 41,38 % | [25,51 ; 59,26] | −708.999,68 |
+
+Ninguna sensibilidad cruza el breakeven. Las cuatro empeoran el punto estimado respecto al
+agregado (50,85 %), lo que descarta que el agregado esté sostenido por un subconjunto favorable.
+
+> Nota de universo: la fila de `N = 36` se calcula sobre el ledger completo de 71 trades, que
+> incluye W01-W03 (11 trades fuera del Cubo 2). Se conserva la cifra por trazabilidad con el
+> encargo, pero la sensibilidad comparable al cubo es la de `N = 30`. Ambas quedan por debajo del
+> breakeven, así que la conclusión no cambia con el universo elegido.
+
+### A2.5 Desglose por dirección
+
+| Dirección | `N` | `W / L` | WR | Wilson 95 % | Δ balances (COP) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| BUY | 33 | 16 / 17 | 48,48 % | [32,50 ; 64,78] | −383.001,60 |
+| SELL | 27 | 14 / 12 | 53,85 % | [35,46 ; 71,24] | −43.998,72 |
+
+Ambos lados por debajo del breakeven en punto estimado. Ningún lado alcanza significancia.
+
+### A2.6 Declaración de no-retroactividad
+
+> **NO se cambió ningún criterio retroactivamente. El cierre se decide por INALCANZABILIDAD
+> MATEMÁTICA del criterio a N=80, no por el resultado observado.**
+
+El criterio preregistrado (`Wilson_inf > BE`) permanece intacto y sin cumplir. Esta enmienda no
+lo relaja ni lo sustituye: constata que ningún resultado futuro dentro del marco `N ≤ 80` podría
+satisfacerlo, y por tanto el cubo se cierra como fútil en lugar de prolongarse hasta agotar
+muestra. La estrategia permanece **CONGELADA**.
+
+Esta enmienda introduce una vía de cierre no contemplada en el preregistro original (futilidad matemática). Se declara como debilidad del diseño preregistrado y NO como criterio nuevo aplicado retroactivamente.
+
+---
+
+## ENMIENDA CUBO 1 · 2026-10-22 · ALCANCE Y COBERTURA
+
+> Enmienda **post hoc** de alcance. No modifica el cuerpo preregistrado (líneas 1-341). No
+> reinterpreta el resultado de paridad: lo acota y le retira la condición de evidencia.
+
+### A3.1 Veredicto
+
+> **PASS en el borde, sin regla de parada preregistrada, cobertura baja.**
+
+### A3.2 Cifras de paridad
+
+| Métrica | Valor |
+| :--- | :--- |
+| Pares formales evaluables | 22 |
+| `MATCH` | 20 |
+| `DIVERGENT` | 2 |
+| Tasa de match | 90,91 % |
+| IC Wilson 95 % | [72,19 ; 97,47] |
+
+### A3.3 Cobertura
+
+**Cobertura: 22 / 80 = 27,50 %.**
+
+Universo = Live 43 ∪ Replay 59, con intersección 22 (`43 + 59 − 22 = 80`). Los 80 pares del
+universo se reparten en `MATCH` 20, `DIVERGENT` 2, `MISSING_REPLAY` 21 y `MISSING_LIVE` 37.
+
+El 90,91 % mide **acuerdo sobre los pares que llegaron a formarse**, NO cobertura. Son dos
+métricas distintas y no intercambiables: un 90,91 % de acuerdo sobre el 27,50 % del universo
+deja el 72,50 % restante sin verificar. Presentar el 90,91 % como tasa de acierto del comparador
+sobre el total es una lectura incorrecta del dato.
+
+### A3.4 Declaración de alcance
+
+> **Este cubo NO se usa como evidencia de validación de la estrategia.**
+
+El PASS se limita a afirmar que el comparador, en los pares donde pudo emparejar, coincidió en
+20 de 22 casos. No afirma nada sobre la calidad de las señales, ni sobre el edge, ni sobre el
+resto del universo. La validación de la estrategia descansa exclusivamente en los cubos de
+resultado (Cubo 2, Cubo 3), no en la paridad live/replay.
+
+### A3.5 Nota de auditabilidad del emparejamiento
+
+El emparejamiento **no se apoya en identificadores**, sino en proximidad temporal:
+
+1. Los registros `replay` traen `trade_id` vacío en **59 / 59** filas del `replay_journal.csv`
+   (el campo no existe como columna; 24 columnas, ninguna `trade_id`). En los 22 pares formales,
+   `replay.trade_id` está vacío en **22 / 22**.
+2. El `decision_id` es **distinto en 10 / 22 pares** (45,45 %), de modo que tampoco sirve como
+   clave de unión.
+3. En consecuencia el pareo se sostiene en cercanía de timestamp: delta absoluto entre 1.288 y
+   5.916 ms, **mediana 2.902,5 ms** (media 2.974,1 ms, `n = 22`).
+
+> Corrección de cifra: el valor 2.924 ms citado en el encargo es el **12.º valor ordenado** de la
+> serie, no la mediana. La mediana de 22 observaciones es el promedio de los valores 11.º y 12.º
+> (`(2.881 + 2.924) / 2 = 2.902,5 ms`). Se registra aquí el valor correcto.
+
+Riesgo declarado: un emparejamiento por proximidad temporal sobre deltas de hasta ~5,9 s puede
+unir decisiones distintas si el motor emite dos señales en la misma ventana. No se detectó ningún
+caso así en la muestra (20 `MATCH` / 2 `DIVERGENT`), pero la cota superior del delta no permite
+descartarlo por construcción. Esta es la razón adicional por la que el cubo no se eleva a
+evidencia de validación.
