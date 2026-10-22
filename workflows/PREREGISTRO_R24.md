@@ -97,16 +97,33 @@ en **todas** las ventanas.
 ### V1 — CONTADORES
 
 **Definición.** `Δ(risk.totalWins + risk.totalLosses)` leído de `/status` entre el inicio y el cierre
-de la ventana == número de trades **resueltos** (`WIN` + `LOSS`, sin `VOID`) del ledger de esa misma
-ventana.
+de la ventana == número de trades con **resultado derivado de la cadena de saldos** (`WIN` + `LOSS`,
+excluyendo `VOID`) del ledger de esa misma ventana.
 
 **Rutas exactas (verificadas en `8cdb61f`).**
 - `/status` → `risk.totalWins`, `risk.totalLosses` (`TradeDrawHttpBridge.kt` §payload de riesgo).
   `risk.totalVoids` **no** se lee: no está en el payload.
-- Ledger: `loops/r23k_validation/window_NN/trades.csv`, columna `result`. Resuelto = `WIN` o `LOSS`.
+- Ledger: `loops/<cubo_R24>/window_NN/trades.csv` (mismo esquema que el ya verificado en
+  `loops/r23k_validation/window_NN/trades.csv`). **`trades.csv` NO tiene columna `result`.**
+  Cabecera real: `trade_id,decision_id,timestamp_ms,asset,action,detail,balance_at_trade`.
+- El resultado se **DERIVA** de la cadena de saldos en
+  `scripts/validation/recompute_cubes.py:244-292`:
+  - crédito `> 150.000 COP` dentro de `+35 s .. +120 s` post-despacho → `WIN` (líneas 266-269, 274-278);
+  - movimiento de **`+100.000 COP`** (±5.000, devolución del stake) en esa misma ventana → `VOID`
+    (líneas 270-272, 279-283; el `delta` es **positivo**, no un débito);
+  - si no hay ninguno de los dos → **`LOSS` por defecto** (línea 285).
+  Resuelto = `WIN` o `LOSS`.
 
 **Criterio.** Cero discrepancias en **TODAS** las ventanas. Cualquier discrepancia, de cualquier
 magnitud y en cualquier ventana, hace el criterio `NO`. No hay tolerancia de ±1.
+
+**Regla de no-evaluabilidad (obligatoria).** V1 debe registrar explícitamente cuántos trades de la
+ventana caen en la rama **`LOSS` por defecto sin evidencia de débito, crédito ni void**
+(`recompute_cubes.py:284-292`; el caso sin evidencia es el `else` interno de las líneas 289-292:
+`credit_step is None and void_step is None and debit_step is None`). **Un `LOSS` con `debit_step`
+registrado NO cuenta**: ese es un resultado con evidencia. Si el conteo de trades sin evidencia es
+`> 0` en cualquier ventana, V1 se reporta **`NO EVALUABLE`**, nunca `PASS`: el resultado del trade
+es desconocido y la comparación contra los contadores de `/status` no mide lo que dice medir.
 
 **Nota de alcance.** La corrección de idempotencia de liquidación (B1, §5.b) puede alterar
 contadores. Se declara como cambio con **POSIBLE IMPACTO** en V1 y se reporta por separado el
@@ -247,6 +264,19 @@ Se declaran, no se ocultan.
    para 60 trades; 4 ventanas difícilmente dan 20 trades Live y 200 decisiones comunes. El
    resultado más probable de V5 es `NO EVALUABLE` y **eso es un resultado válido**, no un fallo a
    corregir extendiendo el cubo. Se fija aquí para que no se "arregle" después.
+7. **`LOSS` por defecto en el clasificador de resultados.** `scripts/validation/recompute_cubes.py:284-292`
+   asigna `LOSS` cuando no encuentra crédito `> 150.000 COP` ni devolución de stake `+100.000 COP`
+   en la ventana `+35 s .. +120 s` post-despacho. Un fallo de captura del saldo (frame perdido,
+   `MediaProjection` caído, ventana de liquidación fuera de rango) se convierte en **pérdida**. Esto
+   sesga el ledger hacia `LOSS` y hace que V1 compare contadores contra un resultado inventado.
+   **Contramedida obligatoria:** R24 registra explícitamente cuántos trades caen en la rama
+   «`LOSS` por defecto **sin evidencia alguna**» (`credit_step is None and void_step is None and
+   debit_step is None`, líneas 289-292); si es `> 0`, V1 se reporta **`NO EVALUABLE`**, no `PASS`
+   (§3 V1, regla de no-evaluabilidad).
+
+> **Cifras de §6 verificadas por el ORQUESTADOR** con ejecución propia; artefactos en
+> `loops/r24_orch_verify/`. (3000 ms → 16 pares 68,75 %; 6000 ms → 22 pares 90,91 %; W06 fresh
+> 2/2/0 vs commiteado 2/1/1; `aac1df3` W04–W06 leído de `LIVE_REPORT.md`.)
 
 ### Cómo R24 evita repetirlos
 
