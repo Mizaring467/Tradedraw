@@ -129,6 +129,14 @@ es desconocido y la comparación contra los contadores de `/status` no mide lo q
 contadores de forma confirmada**, no posible (§5.b, «CAMBIO DE COMPORTAMIENTO CONFIRMADO»). V1
 mide el efecto; no lo absorbe ni lo normaliza.
 
+**Exclusión de incrementos manuales (obligatoria).** Las rutas de operador (`/win`, `/loss`, botones
+W/L del HUD) incrementan `totalWins`/`totalLosses` **sin escribir fila en el ledger**: no hay trade,
+no hay saldo derivado. Contarlas en el lado de `/status` produciría una discrepancia estructural que
+V1 leería como fallo del defecto cuando no lo es. Por eso B1 las etiqueta en el journal (§5.b) y V1
+**resta del lado de `/status`** todo incremento con etiqueta `MANUAL_BRIDGE` / `MANUAL_HUD` antes de
+comparar. Si en una ventana aparece un incremento manual **sin** etiqueta, V1 se reporta
+`NO EVALUABLE`: no se puede separar automático de manual y la comparación no mide lo que declara.
+
 ### V2 — S/R EXPORTADOS
 
 **Definición.** Proporción de filas de `decisions.csv` que traen las dos columnas S/R con valor
@@ -282,14 +290,33 @@ Se declara aquí, antes de la primera ventana, con evidencia de código:
 > se etiquetan en el journal con `method`, de modo que V1 pueda separar automático de manual. Sin esa
 > etiqueta, V1 no es medible.
 
-**Las 10 rutas `force = true`** (inventario cerrado, verificado): `OverlayService.kt:1271`, `:1275`;
-`RiskManager.kt:885`, `:892`; `TradeDrawHttpBridge.kt:374`, `:381`; `TradingEngine.kt:639`, `:650`,
-`:2726`, `:2739`. Las cuatro de `TradingEngine` son el fallback automático que B1 hace idempotente;
-las seis restantes son las rutas manuales que B1 conserva y etiqueta.
+**Las 10 rutas `force = true`** (inventario cerrado, verificado en código): `OverlayService.kt:1271`,
+`:1275`; `RiskManager.kt:885`, `:892`; `TradeDrawHttpBridge.kt:374`, `:381`; `TradingEngine.kt:639`,
+`:650`, `:2726`, `:2739`.
+
+**Clasificación por origen** (leída del código, no supuesta):
+
+| Ruta | Quién la invoca | Clase |
+| :--- | :--- | :--- |
+| `TradingEngine.kt:639`, `:650`, `:2726`, `:2739` | fallback `if (!resolved)` / `else` de `resolve*` | **automática** — la que B1 hace idempotente por `tradeId` |
+| `RiskManager.kt:885`, `:892` | `resolvePendingTradeWin/Loss`, invocados **solo** desde `TradingEngine.kt:637`, `:648`, `:2720`, `:2733` | **automática** |
+| `OverlayService.kt:1271`, `:1275` | botones W/L del HUD | **manual (HUD)** |
+| `TradeDrawHttpBridge.kt:374`, `:381` | `/win`, `/loss` | **manual (bridge)** |
+
+Son **6 automáticas y 4 manuales**. `RiskManager.kt:885`/`:892` **no** son rutas de operador: son los
+envoltorios internos que usa la liquidación automática y su único llamador es `TradingEngine`.
+Etiquetarlas `MANUAL_*` sería un error de clasificación y haría que V1 excluyera del contraste
+incrementos automáticos: el criterio mediría lo contrario de lo que declara.
 
 **Evidencia de que el inflado NO es global.** El journal vivo registra **WIN 136 / LOSS 128 / TIE 6
 = 270** registros. Un inflado ×2 uniforme habría producido un desfase sistemático contra el ledger;
 no aparece. Por tanto el inflado es **condicional y de magnitud desconocida**, no un factor global.
+
+**Nota de esquema para la etiqueta.** El journal (`TradeJournalLogger.kt:22`) **no tiene** columna
+`method`; la columna existente es `reason`, que hoy recibe el texto de resolución. B1 debe o bien
+reutilizar `reason` con el prefijo `MANUAL_BRIDGE` / `MANUAL_HUD`, o bien añadir la columna **al
+final** del header (append-only, §5.a). Lo que no puede es inventar una columna intermedia: rompería
+la regla append-only y los consumidores de `trades.csv`.
 
 **Consecuencia esperada de B1, declarada a priori: tras B1 el bot operará MÁS trades por
 ventana**, porque el Stop Loss dejará de dispararse antes de tiempo en las rutas donde el contador
