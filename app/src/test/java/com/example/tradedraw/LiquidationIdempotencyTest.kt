@@ -156,4 +156,68 @@ class LiquidationIdempotencyTest {
 
         assertEquals("Dos trades distintos", 2, riskManager.totalLosses)
     }
+
+    /**
+     * Test 5 (fix B1.a): ruta MANUAL seguida de la ruta AUTOMATICA con el mismo `tradeId`.
+     *
+     * Es el defecto real que quedaba abierto: el operador pulsa WIN en el HUD, `settleManual`
+     * incrementa y limpia el pendiente; despues el `handler.post` del motor ve
+     * `resolvePendingTradeWin() == false` y llamaba al fallback `settleTradeOnce`, que hallaba la
+     * clave LIBRE e incrementaba OTRA VEZ. Con `SNIPER_MAX_LOSSES = 2` una sola perdida cerraba la
+     * sesion.
+     */
+    @Test
+    fun rutaManualYAutomaticaConMismoTradeIdCuentanUnaVez() {
+        val tradeId = "trade-manual-mas-auto"
+        val startMs = 1_700_000_000_400L
+        riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 100.0, baseBalance = 1000.0, tradeId = tradeId)
+
+        assertTrue("La ruta manual debe contar", riskManager.settleManual("MANUAL_HUD", win = true))
+        assertEquals("El manual incrementa 1", 1, riskManager.totalWins)
+        assertFalse("El manual cierra el pendiente", riskManager.hasPendingTrade)
+
+        // El motor llega tarde con la clave capturada antes del `post`.
+        assertFalse(
+            "El fallback del motor NO debe contar el mismo trade",
+            riskManager.settleTradeOnce(tradeId, startMs, win = true)
+        )
+        assertEquals("totalWins debe quedar en 1, no 2", 1, riskManager.totalWins)
+        assertEquals("Un solo incremento manual etiquetado", 1, riskManager.manualWins)
+    }
+
+    /**
+     * Mismo defecto que el test 5 pero con un trade SIN `tradeId`: la clave cae al timestamp de
+     * apertura, que es la que usa el motor (`settleTradeOnce("", start)`). Si `settleManual` solo
+     * marcara cuando hay id, este caso seguiria contando dos veces.
+     */
+    @Test
+    fun rutaManualYAutomaticaSinTradeIdCuentanUnaVez() {
+        riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 100.0, baseBalance = 1000.0)
+        val startMs = riskManager.pendingTradeStartTime
+        assertTrue("El pendiente debe tener timestamp de apertura", startMs > 0L)
+
+        assertTrue("La ruta manual debe contar", riskManager.settleManual("MANUAL_BRIDGE", win = false))
+        assertEquals("El manual incrementa 1", 1, riskManager.totalLosses)
+
+        assertFalse(
+            "El fallback del motor NO debe contar el mismo trade",
+            riskManager.settleTradeOnce("", startMs, win = false)
+        )
+        assertEquals("totalLosses debe quedar en 1, no 2", 1, riskManager.totalLosses)
+    }
+
+    /**
+     * La correccion manual SIN trade abierto debe seguir incrementando: es el uso legitimo del HUD
+     * cuando el operador arregla el marcador a mano. Bloquearla romperia la herramienta.
+     */
+    @Test
+    fun manualSinPendienteSigueIncrementando() {
+        assertFalse("Sin trade abierto no hay pendiente", riskManager.hasPendingTrade)
+
+        assertTrue("Correccion manual sin trade debe contar", riskManager.settleManual("MANUAL_HUD", win = true))
+        assertTrue("Segunda correccion manual tambien", riskManager.settleManual("MANUAL_HUD", win = true))
+
+        assertEquals("Dos correcciones manuales", 2, riskManager.totalWins)
+        assertEquals("Ambas etiquetadas", 2, riskManager.manualWins)
+    }
 }

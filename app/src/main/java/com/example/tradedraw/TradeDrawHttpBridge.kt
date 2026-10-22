@@ -373,16 +373,16 @@ class TradeDrawHttpBridge(
                     "/win" -> {
                         // R24/B1.c: origen MANUAL_BRIDGE. V1 resta estos incrementos del lado
                         // `/status`; sin etiqueta el incremento seria NO EVALUABLE.
-                        overlayService.riskManager.markManualIncrement("MANUAL_BRIDGE", "WIN")
-                        overlayService.riskManager.recordTradeWin(force = true)
+                        // R24/B1.a (fix): `settleManual` marca la clave de liquidacion del motor,
+                        // asi que un WIN manual seguido del fallback del motor cuenta UNA vez.
+                        overlayService.riskManager.settleManual("MANUAL_BRIDGE", win = true)
                         val wins = overlayService.riskManager.totalWins
                         val losses = overlayService.riskManager.totalLosses
                         val wr = overlayService.riskManager.getWinRate()
                         sendJsonResponse(output, 200, """{"success":true,"action":"win","wins":$wins,"losses":$losses,"winRate":$wr}""")
                     }
                     "/loss" -> {
-                        overlayService.riskManager.markManualIncrement("MANUAL_BRIDGE", "LOSS")
-                        overlayService.riskManager.recordTradeLoss(force = true)
+                        overlayService.riskManager.settleManual("MANUAL_BRIDGE", win = false)
                         val wins = overlayService.riskManager.totalWins
                         val losses = overlayService.riskManager.totalLosses
                         val wr = overlayService.riskManager.getWinRate()

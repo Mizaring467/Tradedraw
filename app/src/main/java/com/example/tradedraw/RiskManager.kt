@@ -386,6 +386,44 @@ class RiskManager(context: Context? = null) {
         return true
     }
 
+    /**
+     * R24/B1.a (fix): liquidacion MANUAL del operador (HUD o bridge), idempotente contra el motor.
+     *
+     * DEFECTO QUE CIERRA. La ruta manual llamaba a `recordTradeWin/Loss(force = true)` y NO marcaba
+     * la clave de liquidacion. Secuencia real: el motor captura `settleTradeId` antes del
+     * `handler.post`; el operador pulsa WIN; `recordTradeWins` incrementa Y limpia el pendiente;
+     * dentro del `post` `resolvePendingTradeWin()` devuelve false y el fallback `settleTradeOnce`
+     * halla la clave LIBRE e incrementa otra vez. Con `SNIPER_MAX_LOSSES = 2` una sola perdida real
+     * cerraba la sesion.
+     *
+     * SIN PENDIENTE (`pendingTradeTradeId` vacio) se incrementa igual: es la correccion manual del
+     * operador sin trade abierto, y bloquearla romperia el uso legitimo del HUD.
+     *
+     * El contador manual se anota DESPUES de ganar la clave, no antes: si esta llamada no incrementa
+     * el marcador, tampoco puede incrementar `manualWins`/`manualLosses`, o la resta de V1
+     * (`totalWins - manualWins`) quedaria negativa.
+     */
+    @Synchronized
+    fun settleManual(origin: String, win: Boolean): Boolean {
+        val id = pendingTradeTradeId
+        val start = pendingTradeStartTime
+        // Se usa `markLiquidated` SIEMPRE, no solo cuando hay `tradeId`: con un trade abierto sin id
+        // la clave cae al timestamp de apertura, que es exactamente la que usaria el motor
+        // (`settleTradeOnce("", start)`). Sin eso quedaria abierto el mismo doble conteo para los
+        // trades sin id. Sin pendiente, `start` es 0 y `markLiquidated` devuelve true sin marcar
+        // nada: la correccion manual del operador sigue incrementando.
+        if (!markLiquidated(id, start)) {
+            // Ya liquidado por la ruta automatica: no sumar. Se cierra el pendiente igual para que
+            // el HUD no quede mostrando "Trade Activo".
+            clearPendingTrade()
+            OverlayService.instance?.updateHUDView()
+            return false
+        }
+        markManualIncrement(origin, if (win) "WIN" else "LOSS")
+        if (win) recordTradeWins(1, force = true) else recordTradeLosses(1, force = true)
+        return true
+    }
+
     /** Cambia el estado y lo registra en el buffer observable (R13/A5, R21/Frente A). */
     internal fun setOrderState(nuevo: OrderState, motivo: String) {
         if (orderState == nuevo) return

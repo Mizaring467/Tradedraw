@@ -99,9 +99,67 @@ dejar fila en el journal y el contraste daría discrepancia **por diseño**, no 
 | 4 | `tradesLossSinEvidenciaNoSeReiniciaConResetStats` | 2 incrementos sobreviven a `resetStats`, `setStats`, `correctStats`, `resetSession`, `resetSniperSession` |
 | 5 | `incrementoManualSeEtiquetaYSeContabilizaAparte` | `manualWins`/`manualLosses` y detalle `[MANUAL_HUD]` en el evento |
 | 6 | `sinTradeIdSeUsaElTimestampDeApertura` | dedup por `ts:`, 2 trades distintos → 2 |
+| 7 | `rutaManualYAutomaticaConMismoTradeIdCuentanUnaVez` | **fix B1.a**: `settleManual` marca la clave → el `settleTradeOnce` posterior devuelve `false` y `totalWins` queda en 1 |
+| 8 | `rutaManualYAutomaticaSinTradeIdCuentanUnaVez` | mismo caso sin `tradeId`: la clave cae al timestamp de apertura y también deduplica |
+| 9 | `manualSinPendienteSigueIncrementando` | sin trade abierto, la corrección manual del operador sigue incrementando (2 llamadas → 2) |
 
 JVM puro: `RiskManager(null)` no toca `SharedPreferences` y `OverlayService.instance` es `null`,
 así que `updateHUDView()` es no-op.
+
+---
+
+## 5.b BUG detectado y corregido (commit `fix(r24)`)
+
+**Defecto:** la ruta MANUAL no marcaba la clave de liquidación → doble conteo.
+
+Secuencia verificada:
+1. `TradingEngine.kt:624-625` captura `settleTradeId` ANTES del `handler.post`.
+2. Operador pulsa HUD WIN (o llega `/win`) → `recordTradeWin(force=true)` incrementa `totalWins`
+   Y limpia el pendiente (`clearPendingTrade()` al final de `recordTradeWins`).
+3. Dentro del `post`, `resolvePendingTradeWin()` devuelve `false` (ya no hay pendiente).
+4. `settleTradeOnce(settleTradeId, ...)` → `markLiquidated` halla la clave LIBRE (nadie la marcó)
+   → incrementa **por segunda vez**.
+
+Efecto medido: `SNIPER_MAX_LOSSES = 2` se alcanzaba con UNA pérdida real.
+
+**Fix (opción A):** nuevo `RiskManager.settleManual(origin, win)` `@Synchronized`:
+
+```kotlin
+@Synchronized
+fun settleManual(origin: String, win: Boolean): Boolean {
+    val id = pendingTradeTradeId
+    val start = pendingTradeStartTime
+    if (!markLiquidated(id, start)) {
+        clearPendingTrade(); OverlayService.instance?.updateHUDView(); return false
+    }
+    markManualIncrement(origin, if (win) "WIN" else "LOSS")
+    if (win) recordTradeWins(1, force = true) else recordTradeLosses(1, force = true)
+    return true
+}
+```
+
+Dos decisiones que el enunciado del fix no fijaba:
+
+- **`markLiquidated` se llama SIEMPRE**, no solo con `tradeId`. Con trade abierto sin id la clave
+  cae al timestamp de apertura, que es la misma que usaría el motor
+  (`settleTradeOnce("", start)`); condicionarlo a `id.isNotEmpty()` dejaba abierto el mismo doble
+  conteo para trades sin id.
+- **`markManualIncrement` va DESPUÉS de ganar la clave**, no antes. Si esta llamada no incrementa
+  el marcador, tampoco debe incrementar `manualWins`/`manualLosses`, o `totalWins - manualWins`
+  quedaría negativa.
+
+**Rutas manuales sustituidas (4):**
+
+| Archivo | Línea | Antes | Ahora |
+| :--- | :--- | :--- | :--- |
+| `OverlayService.kt` | 1273-1275 | `markManualIncrement` + `recordTradeWin(force=true)` | `settleManual("MANUAL_HUD", win = true)` |
+| `OverlayService.kt` | 1278-1279 | `markManualIncrement` + `recordTradeLoss(force=true)` | `settleManual("MANUAL_HUD", win = false)` |
+| `TradeDrawHttpBridge.kt` | 376-377 | `markManualIncrement` + `recordTradeWin(force=true)` | `settleManual("MANUAL_BRIDGE", win = true)` |
+| `TradeDrawHttpBridge.kt` | 384-385 | `markManualIncrement` + `recordTradeLoss(force=true)` | `settleManual("MANUAL_BRIDGE", win = false)` |
+
+**Sin pendiente sigue incrementando:** con `pendingTradeStartTime == 0` la clave es `ts:0` y
+`markLiquidated` devuelve `true` sin marcar nada (comportamiento preexistente). Cubierto por el
+test 9.
 
 ---
 
@@ -117,8 +175,8 @@ así que `updateHUDView()` es no-op.
 ## LÍMITES
 
 1. **Tests no ejecutados.** La tarea prohíbe Gradle en esta fase ("lo hará el VALIDADOR entre
-   ventanas"). Los 7 tests están escritos con lógica verificada a mano, pero **no hay evidencia de
-   ejecución**. Riesgo concreto: un error de compilación en el test o en `RiskManager` no se
+   ventanas"). Los **9** tests están escritos con lógica verificada a mano, pero **no hay evidencia
+   de ejecución**. Riesgo concreto: un error de compilación en el test o en `RiskManager` no se
    detectaría hasta que el validador compile.
 2. **Archivos fuera de la lista del coordinador.** La corrección indicaba
    `TradingEngine/RiskManager/TradeDrawHttpBridge/TradeJournalLogger + test`. Se tocaron además
@@ -141,3 +199,12 @@ así que `updateHUDView()` es no-op.
    cero, pero conviene que V1 lo sepa.
 6. **No se verificó en dispositivo.** Prohibido ADB en esta fase. El comportamiento real de la
    carrera (dos frames simultáneos) no está observado en runtime.
+7. **Cambio de semántica en el HUD (consecuencia del fix).** Si el motor ya liquidó el trade, una
+   pulsación posterior de WIN/LOSS en el HUD **no incrementa** el marcador (`settleManual` devuelve
+   `false` y solo cierra el pendiente). Es exactamente lo que se pide —un trade cuenta una vez—,
+   pero el operador ya no puede "reforzar" un resultado ya liquidado desde el HUD. Para corregir el
+   marcador sigue estando `/stats` (`correctStats`) y la corrección manual **sin trade abierto**,
+   que continúa incrementando (test 9).
+8. **`markManualIncrement` sigue siendo público** y ahora solo lo llama `settleManual` (y los
+   tests). No se hizo `private` para no romper la API que el validador puede estar usando; si se
+   quiere cerrar, es un cambio de una palabra.
