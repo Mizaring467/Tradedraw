@@ -7,7 +7,7 @@ Rama `r10-night`. Estrategia intacta: no se tocaron señales, umbrales, vetos ni
 | B2 — Columnas S/R en `decisions.csv` | `feat(r24): B2 columnas S/R en decisions.csv` | `7ec019ac62aa5ead2c84da3cc363f3c5e25cbb5d` |
 | B3 — Endpoint `adaptive_state` | `feat(r24): B3 endpoint adaptive_state` | `0a728e5759d8b485412642d690f4602761420938` |
 | B4 — Diagnóstico `NO_PROCESADA` | `feat(r24): B4 diagnostico NO_PROCESADA` | `69046d2c41242a464168624d73e1c219ad1834e8` |
-| Correcciones de revisión | `fix(r24): B2/B3/B4 corrige NaN, writer legacy y duracion maxima` | ver `git log -1` |
+| Correcciones de revisión | `fix(r24): B2/B3/B4 corrige NaN, writer legacy y duracion maxima` | `543996ae5d3c9149de958966b2b258900edf3cfe` |
 
 > **Revisión posterior.** Se encontraron y corrigieron cuatro defectos reales (ver §CORRECCIONES).
 > Los tres SHA `feat(r24)` de arriba son los originales y no se reescribieron.
