@@ -677,7 +677,11 @@ class TradeDrawHttpBridge(
                 "manualWins": ${rm.manualWins},
                 "manualLosses": ${rm.manualLosses},
                 "manualIncrements": ${TradeEventLog.countOf(TradeEventLog.Kind.MANUAL_INCREMENT)},
-                "manualIncrementsDetalle": "${escapeJson(TradeEventLog.lastOf(TradeEventLog.Kind.MANUAL_INCREMENT)?.detail ?: "")}"
+                "manualIncrementsDetalle": "${escapeJson(TradeEventLog.lastOf(TradeEventLog.Kind.MANUAL_INCREMENT)?.detail ?: "")}",
+                "noProcesadaDuracionMaxMs": ${rm.noProcesadaDuracionMaxMs},
+                "noProcesadaCausa": "${escapeJson(rm.noProcesadaCausa)}",
+                "noProcesadaOcurrencias": ${rm.noProcesadaOcurrencias},
+                "noProcesadaDuracionActualMs": ${rm.noProcesadaDuracionActualMs}
             },
             "activeSignal": $signalJson,
             "feed": {

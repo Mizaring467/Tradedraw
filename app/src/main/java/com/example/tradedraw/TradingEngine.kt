@@ -2558,7 +2558,21 @@ class TradingEngine(
             // La orden nunca llego al broker. Se cierra el estado pendiente para que el HUD deje
             // de mostrar "Trade Activo" y el motor pueda volver a operar; se registra el fallo
             // en el journal como fallo de ENVIO, no como empate de precio.
-            riskManager.markOrderUnprocessed()
+            //
+            // R24/B4: la causa se clasifica con la evidencia DISPONIBLE, no se supone:
+            //  - `tapDespachado`: el tap dejo sus instantes (captureTapLatency solo corre cuando
+            //    el gesto termino con exito).
+            //  - `feedFresco`: el cliente WS considera el feed fresco ahora mismo.
+            //  - `saldoObservable`: se acaba de leer el saldo y es > 0.
+            // Es solo la ETIQUETA del diagnostico: no altera la decision de marcar NO_PROCESADA.
+            val tapDespachado = riskManager.pendingTradeTapEndTs > 0L
+            val feedFresco = isFeedFresh()
+            val saldoObservable = currentBal > 0.0
+            riskManager.markOrderUnprocessed(
+                tapDespachado = tapDespachado,
+                feedFresco = feedFresco,
+                saldoObservable = saldoObservable
+            )
             Log.w(
                 "TradingEngine",
                 "⛔ ORDEN NO PROCESADA: el saldo no se movio en ${elapsedSec}s " +

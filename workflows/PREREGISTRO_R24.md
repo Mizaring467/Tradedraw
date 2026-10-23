@@ -443,6 +443,59 @@ Se declaran, no se ocultan.
 > `loops/r24_orch_verify/`. (3000 ms → 16 pares 68,75 %; 6000 ms → 22 pares 90,91 %; W06 fresh
 > 2/2/0 vs commiteado 2/1/1; `aac1df3` W04–W06 leído de `LIVE_REPORT.md`.)
 
+### 6.1 Diagnóstico de `NO_PROCESADA` — hipótesis y falsación (R24/B4)
+
+**Datos de W17 (`loops/r23k_validation/window_17/`, build `8cdb61f`).** Lo que hay y lo que no:
+
+- `decisions.csv`: 72 filas, **69 `VETO`**, **2 `TAP`**, **1 `ORDER_STATE`**. Las dos filas `TAP` son
+  `END root ... exit=0 durMs=186 startTs=1792403105288 endTs=1792403105474 csTapEnd=5` (BUY,
+  `(249.84, 1340.8)`) y `... durMs=168 startTs=1792403521318 endTs=1792403521486 csTapEnd=1`
+  (SELL, `(540.0, 1340.8)`). **Los dos taps terminaron con `exit=0`.**
+- `status_samples.jsonl` / `live_samples.jsonl` (118 muestras, 1 cada ~10 s): secuencia de
+  `risk.orderState` = `NINGUNA` → `CONFIRMADA` (idx 6) → `NINGUNA` (idx 12) → **`ENVIADA` (idx 59)**
+  → **`NO_PROCESADA` (idx 60)** → `ENVIADA` (idx 100) → `NO_PROCESADA` (idx 101).
+- **Duración medida desde las muestras**: la primera ocurrencia dura **≥ 590 s** (idx 60 a idx 99,
+  `1792403122412` → `1792403519322`) y la segunda **≥ 540 s** (idx 101 al final de la ventana). Son
+  **cotas inferiores**: el muestreo es de 10 s y la ventana acaba antes de que el estado cambie.
+- `trades.csv`: **1 sola fila**, `CONFIRMADA BUY saldo movido` a `1792402565639`. Ninguna de las dos
+  `NO_PROCESADA` dejó fila de trade, lo cual es coherente (no hubo orden).
+- `events.jsonl`: **200 eventos, los 200 `ASSET`**. Cero `TAP`, cero `ORDER_STATE`. El ring de 200
+  estaba saturado por eventos de activo, así que **la transición no es observable por esa vía**.
+- `window_metadata.json`: `grace_ultimo_order_state = "NO_PROCESADA"`, `trades_confirmed = 1`.
+- **No existe `WINDOW_REPORT.md`** en `window_17/`; el reporte de la ventana es `LIVE_REPORT.md`.
+
+**Dato que descarta la explicación trivial.** El saldo validado solo cambia en tres muestras
+(`38734735.36` → `38634736.64` → `38817735.68`) y **no se mueve en ninguna de las dos
+`NO_PROCESADA`**. Con stake de opciones binarias el débito ocurre al abrir, así que el saldo
+inmóvil es prueba de que **no se creó orden**, no de que el precio empatara.
+
+**Hipótesis, con su criterio de falsación.**
+
+**H1 — El tap se despacha pero el broker no registra la orden (`TAP_RECHAZADO_BROKER`).**
+El gesto de accesibilidad sale con `exit=0` y el saldo no se mueve en 12 s.
+*Falsación:* si en una ventana R24 una `NO_PROCESADA` con `tapDespachado=true` va seguida de un
+movimiento de saldo dentro de la ventana de confirmación, o si `noProcesadaCausa` sale
+`TAP_NO_DESPACHADO` para esa ocurrencia, H1 queda refutada para ese caso.
+
+**H2 — El tap no llega a despacharse (`TAP_NO_DESPACHADO`).**
+`performClick` puede fallar antes de `dispatchGesture` (HUD comiéndose el toque, servicio de
+accesibilidad caído, `puedeDespacharTap` bloqueando). En W17 **no hay evidencia de esto**: las dos
+filas `TAP` que existen terminaron con `exit=0`. Pero las filas `TAP` son solo 2 y el ring de
+eventos está saturado, así que la ausencia no prueba nada.
+*Falsación:* si toda ocurrencia R24 con `tapDespachado=true` y feed fresco resulta
+`SIN_MOVIMIENTO_SALDO`, H2 no explica ninguna ocurrencia y queda refutada como causa.
+
+**H3 — El feed estaba mudo y el motor decidió sobre datos rancios (`FEED_MUDO`).**
+*Falsación:* en W17 las 118 muestras tienen `feed.isFresh = true` y `lastTickAgeMs` entre 13 y 337
+ms, incluidas las dos muestras `NO_PROCESADA`. **H3 queda REFUTADA para W17** por evidencia
+directa. Se conserva en la taxonomía porque el criterio es cerrado a priori y no puede cambiarse
+después de la primera ventana R24.
+
+**Consecuencia declarada.** La causa de las dos `NO_PROCESADA` de W17 **no está atribuida**. La
+instrumentación de B4 la etiquetará en R24; hasta entonces, cualquier afirmación sobre el motivo
+es una suposición. La duración observada (≥ 590 s y ≥ 540 s) es una **cota inferior** medida con
+muestreo de 10 s, no la duración real.
+
 ### Cómo R24 evita repetirlos
 
 | Error heredado | Contramedida R24 |

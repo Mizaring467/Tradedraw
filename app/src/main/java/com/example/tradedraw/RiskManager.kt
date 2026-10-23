@@ -339,6 +339,116 @@ class RiskManager(context: Context? = null) {
         )
     }
 
+    /**
+     * R24/B4: taxonomia CERRADA de causas de `NO_PROCESADA` (preregistro R24 §3 V4).
+     *
+     * Anadir una etiqueta despues de la primera ventana invalida el criterio V4, asi que la lista
+     * vive aqui y el clasificador solo puede devolver una de estas.
+     */
+    object NoProcesadaCausa {
+        /** Ventana agotada y el saldo no se movio: la causa que ya existia. */
+        const val SIN_MOVIMIENTO_SALDO = "SIN_MOVIMIENTO_SALDO"
+        /** El gesto de accesibilidad no llego a despacharse. */
+        const val TAP_NO_DESPACHADO = "TAP_NO_DESPACHADO"
+        /** El gesto se despacho pero el broker no registro orden. */
+        const val TAP_RECHAZADO_BROKER = "TAP_RECHAZADO_BROKER"
+        /** Sin ticks frescos durante la ventana de envio. */
+        const val FEED_MUDO = "FEED_MUDO"
+        /** Ocurrencia registrada sin causa determinable. */
+        const val NO_ATRIBUIDA = "NO ATRIBUIDA"
+
+        /** Las cinco etiquetas validas, en el orden del preregistro. */
+        val TODAS = listOf(
+            SIN_MOVIMIENTO_SALDO, TAP_NO_DESPACHADO, TAP_RECHAZADO_BROKER, FEED_MUDO, NO_ATRIBUIDA
+        )
+    }
+
+    /**
+     * R24/B4: clasifica la causa de una `NO_PROCESADA` a partir de la evidencia disponible.
+     *
+     * Funcion PURA para poder probarla en JVM sin dispositivo. El orden importa: si el tap no se
+     * despacho, el saldo no podia moverse y atribuirlo a `SIN_MOVIMIENTO_SALDO` describiria el
+     * sintoma, no la causa. El feed mudo tampoco explica por si solo un fallo de envio, asi que va
+     * despues de las causas de tap.
+     *
+     * @param tapDespachado el gesto de accesibilidad termino con exito
+     * @param feedFresco habia tick fresco al cerrar la ventana
+     * @param saldoObservable se pudo leer el saldo (sin lectura no hay veredicto posible)
+     */
+    fun clasificarCausaNoProcesada(
+        tapDespachado: Boolean,
+        feedFresco: Boolean,
+        saldoObservable: Boolean
+    ): String = when {
+        !tapDespachado -> NoProcesadaCausa.TAP_NO_DESPACHADO
+        !feedFresco -> NoProcesadaCausa.FEED_MUDO
+        !saldoObservable -> NoProcesadaCausa.NO_ATRIBUIDA
+        else -> NoProcesadaCausa.SIN_MOVIMIENTO_SALDO
+    }
+
+    /**
+     * R24/B4: instante en que se entro en `NO_PROCESADA`; 0 si no esta activo.
+     *
+     * La duracion se mide desde aqui hasta la salida del estado, que es lo que pide V4 ("duracion
+     * maxima de la condicion"). Medir solo el instante no dice cuanto tiempo estuvo el motor
+     * bloqueado.
+     */
+    @Volatile
+    var noProcesadaInicioMs: Long = 0L
+        private set
+
+    /** R24/B4: duracion MAXIMA observada del estado `NO_PROCESADA`, en ms. Monotona. */
+    @Volatile
+    var noProcesadaDuracionMaxMs: Long = 0L
+        private set
+
+    /** R24/B4: causa de la ULTIMA ocurrencia, de la taxonomia de [NoProcesadaCausa]. */
+    @Volatile
+    var noProcesadaCausa: String = ""
+        private set
+
+    /** R24/B4: ocurrencias de `NO_PROCESADA` desde el arranque del proceso. */
+    private val noProcesadaCounter = AtomicInteger(0)
+
+    /** R24/B4: ocurrencias totales de `NO_PROCESADA`. */
+    val noProcesadaOcurrencias: Int
+        get() = noProcesadaCounter.get()
+
+    /**
+     * R24/B4: registra la ENTRADA en `NO_PROCESADA` con su causa.
+     *
+     * Monotono por diseno: ni `resetStats` ni `resetSession` lo tocan, porque V4 mide ocurrencias
+     * dentro de una ventana y un contador que se reinicia con el marcador cambiaria el denominador
+     * a mitad de la medicion.
+     */
+    internal fun registrarNoProcesada(causa: String) {
+        val etiqueta = if (causa in NoProcesadaCausa.TODAS) causa else NoProcesadaCausa.NO_ATRIBUIDA
+        noProcesadaCausa = etiqueta
+        noProcesadaInicioMs = System.currentTimeMillis()
+        noProcesadaCounter.incrementAndGet()
+    }
+
+    /**
+     * R24/B4: cierra la medicion de duracion al SALIR de `NO_PROCESADA`.
+     *
+     * Actualiza el maximo solo si habia una entrada abierta: una salida sin entrada previa (p.ej.
+     * tras reiniciar el proceso) no puede inventar una duracion.
+     */
+    internal fun cerrarNoProcesada() {
+        val inicio = noProcesadaInicioMs
+        if (inicio <= 0L) return
+        val duracion = (System.currentTimeMillis() - inicio).coerceAtLeast(0L)
+        if (duracion > noProcesadaDuracionMaxMs) noProcesadaDuracionMaxMs = duracion
+        noProcesadaInicioMs = 0L
+    }
+
+    /** R24/B4: duracion de la ocurrencia EN CURSO; 0 si no hay ninguna activa. */
+    val noProcesadaDuracionActualMs: Long
+        get() {
+            val inicio = noProcesadaInicioMs
+            return if (inicio <= 0L) 0L else (System.currentTimeMillis() - inicio).coerceAtLeast(0L)
+        }
+
     /** R24/B1.c: incrementos manuales de victorias. V1 los resta de `totalWins`. */
     val manualWins: Int
         get() = manualWinsCounter.get()
@@ -427,6 +537,12 @@ class RiskManager(context: Context? = null) {
     /** Cambia el estado y lo registra en el buffer observable (R13/A5, R21/Frente A). */
     internal fun setOrderState(nuevo: OrderState, motivo: String) {
         if (orderState == nuevo) return
+        // R24/B4: al SALIR de NO_PROCESADA se cierra la medicion de duracion. Va aqui y no en cada
+        // llamador porque este es el unico punto por el que pasa toda transicion: cualquier ruta
+        // futura que saque al motor del estado queda medida sin tocar esa ruta.
+        if (orderState == OrderState.NO_PROCESADA) {
+            cerrarNoProcesada()
+        }
         orderState = nuevo
         // R23B Iter 2: la direccion de la orden se inyecta en el detalle para que los parsers del
         // validador la extraigan de forma deterministica. Antes el evento era "CONFIRMADA saldo
@@ -898,7 +1014,11 @@ class RiskManager(context: Context? = null) {
      * cuenta el fallo como VOID de envio, que es lo que realmente ocurrio.
      */
     @Synchronized
-    fun markOrderUnprocessed() {
+    fun markOrderUnprocessed(
+        tapDespachado: Boolean = true,
+        feedFresco: Boolean = true,
+        saldoObservable: Boolean = true
+    ) {
         if (!hasPendingTrade) return
         // R13/A4: se limpia primero (lo que deja el estado en NINGUNA) y se marca NO_PROCESADA
         // despues, para que quede registrado el RESULTADO del intento. Al reves, `clearPendingTrade`
@@ -909,11 +1029,16 @@ class RiskManager(context: Context? = null) {
         // la deja en null, asi que sin esto el evento NO_PROCESADA (el unico que registra el FALLO de
         // envio) saldria sin direccion — justo el caso que mas interesa auditar.
         val accionPendiente = pendingTradeAction
+        // R24/B4: la causa se clasifica ANTES de limpiar, porque depende del estado del pendiente.
+        val causa = clasificarCausaNoProcesada(tapDespachado, feedFresco, saldoObservable)
         clearPendingTrade()
         pendingTradeDecisionId = decId
         pendingTradeTradeId = trId
         pendingTradeAction = accionPendiente
-        setOrderState(OrderState.NO_PROCESADA, "ventana agotada sin movimiento de saldo")
+        // R24/B4: se registra la ENTRADA (instante + causa) antes de la transicion, para que la
+        // duracion se mida desde el instante real de entrada y no desde que el evento se escribe.
+        registrarNoProcesada(causa)
+        setOrderState(OrderState.NO_PROCESADA, "ventana agotada sin movimiento de saldo causa=$causa")
         pendingTradeDecisionId = ""
         pendingTradeTradeId = ""
         lastTradeTime = System.currentTimeMillis()
