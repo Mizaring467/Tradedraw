@@ -116,3 +116,14 @@ de la herramienta, conforme a la regla 0.3.
 - `mode=DISABLED`, `orderState=NINGUNA`, `hasPendingTrade=false`, `isDemoAccount=true`, `gitSha=8cdb61f`.
 - Balance de partida para Fase C: **38.076.736,00 COP**.
 - `.lock_window` ausente.
+
+## INCIDENTE 2 · 2026-10-22T20:46:23-05:00 (detectado en Fase E)
+
+- /status devolvio `mode=AUTONOMOUS` y balance 37.565.736,96 COP (partida 38.076.736,00). Diferencia -511.000 COP.
+- `/mode_log` evento 4: `DISABLED -> AUTONOMOUS` a las **17:31:17**, `source=ui:showAutonomousSubModeDialog(conservador)`.
+- Contencion: `POST /mode?name=DISABLED` a las 20:46:47. Confirmado `mode=DISABLED`, `orderState=NINGUNA`, `hasPendingTrade=false`, `isDemoAccount=true`.
+- Exposicion: **3 h 15 min 30 s**. Trades: **38** (18W/20L/0T, WR 47,37 %). P&L **-511.000 COP**.
+- Fuente: `loops/r24_incidente2/trade_journal.csv` (308 registros totales del dispositivo).
+- Documentado en `workflows/R24_INCIDENTE_2_FUERA_DE_VENTANA.md`. Los 38 trades quedan **fuera de ventana**, excluidos de todo cubo.
+- Fallo de proceso propio: no se sondeo `/status` entre 17:31 y 20:46 durante la Fase B. Registrado.
+- Balance de partida vigente: **37.565.736,96 COP**.
