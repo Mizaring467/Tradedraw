@@ -397,10 +397,24 @@ class RiskManager(context: Context? = null) {
     var noProcesadaInicioMs: Long = 0L
         private set
 
-    /** R24/B4: duracion MAXIMA observada del estado `NO_PROCESADA`, en ms. Monotona. */
+    /**
+     * R24/B4: duracion MAXIMA ya CERRADA de `NO_PROCESADA`, en ms. Monotona.
+     *
+     * Es el respaldo de [noProcesadaDuracionMaxMs]; no se lee desde fuera.
+     */
     @Volatile
-    var noProcesadaDuracionMaxMs: Long = 0L
-        private set
+    private var noProcesadaDuracionMaxCerradaMs: Long = 0L
+
+    /**
+     * R24/B4: duracion MAXIMA observada del estado `NO_PROCESADA`, en ms. Monotona.
+     *
+     * Incluye la ocurrencia EN CURSO. No basta con registrar el maximo al cerrar: una ventana
+     * puede terminar con el motor todavia en `NO_PROCESADA` (es exactamente el caso de W17, con
+     * >= 590 s medidos), y entonces el maximo valdria 0 aunque la condicion hubiera durado
+     * minutos. V4 pide la duracion maxima de la condicion, no la de las ocurrencias cerradas.
+     */
+    val noProcesadaDuracionMaxMs: Long
+        get() = maxOf(noProcesadaDuracionMaxCerradaMs, noProcesadaDuracionActualMs)
 
     /** R24/B4: causa de la ULTIMA ocurrencia, de la taxonomia de [NoProcesadaCausa]. */
     @Volatile
@@ -438,7 +452,7 @@ class RiskManager(context: Context? = null) {
         val inicio = noProcesadaInicioMs
         if (inicio <= 0L) return
         val duracion = (System.currentTimeMillis() - inicio).coerceAtLeast(0L)
-        if (duracion > noProcesadaDuracionMaxMs) noProcesadaDuracionMaxMs = duracion
+        if (duracion > noProcesadaDuracionMaxCerradaMs) noProcesadaDuracionMaxCerradaMs = duracion
         noProcesadaInicioMs = 0L
     }
 

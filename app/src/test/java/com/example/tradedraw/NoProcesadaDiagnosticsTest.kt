@@ -146,4 +146,34 @@ class NoProcesadaDiagnosticsTest {
         r.resetStats()
         assertEquals("resetStats no puede borrar la evidencia de V4", 1, r.noProcesadaOcurrencias)
     }
+
+    @Test
+    fun laDuracionMaximaIncluyeLaOcurrenciaTodaviaAbierta() {
+        // Caso W17: la ventana termina con el motor AUN en NO_PROCESADA (>= 590 s medidos). Si el
+        // maximo solo se fijara al cerrar, /status reportaria 0 ms con la condicion activa.
+        val r = rm()
+        r.registrarNoProcesada("SIN_MOVIMIENTO_SALDO")
+        Thread.sleep(20)
+
+        assertTrue(
+            "con la ocurrencia abierta el maximo no puede ser 0",
+            r.noProcesadaDuracionMaxMs >= 15L
+        )
+        assertTrue(
+            "el maximo debe cubrir al menos la duracion actual",
+            r.noProcesadaDuracionMaxMs >= r.noProcesadaDuracionActualMs
+        )
+    }
+
+    @Test
+    fun elMaximoAbiertoNoSePierdeAlCerrar() {
+        val r = rm()
+        r.registrarNoProcesada("SIN_MOVIMIENTO_SALDO")
+        Thread.sleep(20)
+        val conAbierta = r.noProcesadaDuracionMaxMs
+        r.cerrarNoProcesada()
+
+        assertTrue("cerrar no puede reducir el maximo", r.noProcesadaDuracionMaxMs >= conAbierta)
+        assertEquals("ya cerrada, la duracion actual es 0", 0L, r.noProcesadaDuracionActualMs)
+    }
 }

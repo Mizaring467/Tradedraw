@@ -13,6 +13,7 @@ Supervisa continuamente que:
 import argparse
 import csv
 import json
+import math
 import os
 import re
 import subprocess
@@ -476,6 +477,9 @@ def ratio_celda(valor: Any) -> str:
     cerradas; `None`/ausente/no numerico tambien son ausencia de medicion. En todos esos casos se
     devuelve cadena VACIA. Nunca `0.0`: un cero es una medicion legitima (nivel pegado) y
     confundirlos haria que V2 contara filas sin dato como si lo tuvieran.
+
+    `NaN`/`Inf` (y sus formas textuales `"nan"`, `"inf"`, `"-inf"`) tambien son celda vacia: un
+    `nan` en la celda envenena en silencio cualquier media o ratio aguas abajo.
     """
     if valor is None:
         return ""
@@ -483,7 +487,7 @@ def ratio_celda(valor: Any) -> str:
         num = float(valor)
     except (TypeError, ValueError):
         return ""
-    if num < 0.0:
+    if not math.isfinite(num) or num < 0.0:
         return ""
     return f"{num:.4f}"
 

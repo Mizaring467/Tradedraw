@@ -130,6 +130,34 @@ def test_valor_normal_se_formatea_con_4_decimales():
     assert ratio_celda(1) == "1.0000"
 
 
+def test_nan_e_infinito_son_celda_vacia():
+    """`float('nan') < 0.0` es False: sin guard de finitud se escribia 'nan' en el CSV."""
+    for valor in (float("nan"), float("inf"), float("-inf"), "nan", "inf", "-inf", "NaN"):
+        assert ratio_celda(valor) == "", f"{valor!r} deberia ser celda vacia"
+
+
+# ---------------------------------------------------------------------------
+# El writer LEGACY (`live_monitor_r23.py`) declara el mismo contrato
+# ---------------------------------------------------------------------------
+
+
+def test_writer_legacy_declara_las_16_columnas():
+    """Si el legacy se queda en 14, sus filas de 16 claves rompen `DictWriter`."""
+    from live_monitor_r23 import DECISION_FIELDNAMES
+
+    assert DECISION_FIELDNAMES == CABECERA_NUEVA
+
+
+def test_el_writer_legacy_acepta_una_fila_completa():
+    """`DictWriter` con el header legacy debe escribir una fila de 16 claves sin excepcion."""
+    from live_monitor_r23 import DECISION_FIELDNAMES
+
+    fila = _fila_base(distanceToSupportRatio="", distanceToResistanceRatio="0.5000")
+    salida = list(csv.DictReader(_csv(DECISION_FIELDNAMES, [fila])))
+    assert salida[0]["distanceToResistanceRatio"] == "0.5000"
+    assert salida[0]["distanceToSupportRatio"] == ""
+
+
 if __name__ == "__main__":
     fallos = 0
     for nombre, fn in sorted(globals().items()):

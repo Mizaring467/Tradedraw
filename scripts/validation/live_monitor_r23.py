@@ -20,6 +20,19 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from live_monitor_r23_autonomous import ratio_celda  # noqa: E402
+
+# R24/B2: contrato solo-append de `decisions.csv`. Las 14 historicas primero, en su orden
+# original; las dos de S/R al final. Mismo orden que `live_monitor_r23_autonomous.py`.
+DECISION_FIELDNAMES = [
+    "decision_id", "trade_id", "timestamp", "asset", "price_at_signal",
+    "candle_second", "market_regime", "trend", "action", "score",
+    "action_plan", "kind", "detail", "veto_reason",
+    "distanceToSupportRatio", "distanceToResistanceRatio",
+]
+
 
 def fetch_json(url: str, timeout: float = 3.0) -> Optional[Dict[str, Any]]:
     try:
@@ -198,6 +211,12 @@ def main():
                                 "kind": kind,
                                 "detail": detail,
                                 "veto_reason": veto_kind,
+                                "distanceToSupportRatio": ratio_celda(
+                                    status.get("analysis", {}).get("distanceToSupportRatio")
+                                ),
+                                "distanceToResistanceRatio": ratio_celda(
+                                    status.get("analysis", {}).get("distanceToResistanceRatio")
+                                ),
                             }
                             print(f"[{elapsed_sec:4d}s] Decisión detectada: ID={did[:8]}... Kind={kind} Action={action} Veto={veto_kind} Detalle={detail[:40]}")
 
@@ -243,13 +262,8 @@ def main():
         print(f"Nota: /ticks no disponible o sin datos ({e})")
 
     # Volcar decisiones CSV
-    fieldnames = [
-        "decision_id", "trade_id", "timestamp", "asset", "price_at_signal",
-        "candle_second", "market_regime", "trend", "action", "score",
-        "action_plan", "kind", "detail", "veto_reason"
-    ]
     with open(out_decisions_csv, "w", newline="", encoding="utf-8") as csv_f:
-        writer = csv.DictWriter(csv_f, fieldnames=fieldnames)
+        writer = csv.DictWriter(csv_f, fieldnames=DECISION_FIELDNAMES)
         writer.writeheader()
         for d in observed_decisions.values():
             writer.writerow(d)

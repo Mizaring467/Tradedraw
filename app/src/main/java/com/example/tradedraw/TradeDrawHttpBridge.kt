@@ -581,8 +581,12 @@ class TradeDrawHttpBridge(
         val distSupRatio = synthetic.distanceToSupportRatio
         val distResRatio = synthetic.distanceToResistanceRatio
         val hayVelasParaRatios = candleCount > 0
-        val distSupRatioJson = if (hayVelasParaRatios) distSupRatio.toString() else "-1"
-        val distResRatioJson = if (hayVelasParaRatios) distResRatio.toString() else "-1"
+        // Finitud obligatoria: `Float.NaN.toString()` emite `NaN`, que NO es JSON valido (RFC 8259)
+        // y dejaria el /status entero sin parsear. Mismo centinela -1 que "no medido".
+        val distSupRatioJson =
+            if (hayVelasParaRatios && distSupRatio.isFinite()) distSupRatio.toString() else "-1"
+        val distResRatioJson =
+            if (hayVelasParaRatios && distResRatio.isFinite()) distResRatio.toString() else "-1"
         val streak = analysis?.streakBadge ?: ""
         val trend = synthetic.detectedTrend.name
         val strat = te.strategy.name
