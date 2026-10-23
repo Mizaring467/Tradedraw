@@ -139,3 +139,20 @@ de la herramienta, conforme a la regla 0.3.
 - Fases C y D: **NO EJECUTADAS**. Declaradas PENDIENTES por tope de sesion y decision del usuario.
 - Balance vigente: **37.565.736,96 COP**. `mode=DISABLED`, `orderState=NINGUNA`, `isDemoAccount=true`.
 - FIN DE MISION (parcial por tope de sesion).
+
+## ENMIENDA 2026-10-22T22:57-05:00 · Firma de Fase A REVOCADA (error propio O-8)
+
+- El progreso registraba `AUDIT-A ... PASS-INDEPENDIENTE ... Firma en 82f7289`. **Es incorrecto en el estado vigente.**
+- `workflows/r24_tasks/AUDIT_A_result.md` fue **reescrito** en `4f609f3` (SHA auditado `6fc51f4`) y termina en **FAIL - no se firma** por puntos 9 y 13.
+- Punto 9 (doble conteo por ruta manual): corregido en `7be78e8`, test PASS.
+- Punto 13 (preregistro R23K posterior a W04/W07): **irreparable**, historico.
+- Estado real de Fase A: **PASS-AUTOR**. Sin firma independiente vigente.
+- Corregido en `R24_FINAL_REPORT.md` (nueva §2.1 + tabla de fases + firma final), `R24_PARA_REVISION_EXTERNA.md` (§1 fila 8, §4 decision 1) y este archivo.
+- Causa del error: cite el commit `82f7289` sin releer el archivo en HEAD.
+
+## HALLAZGO DE HERRAMIENTA · DeepInvestigator en bucle infinito
+
+- VALIDADOR `81457cf9` quedo en `waiting_for_dependents` desde 18:04:26 local (~4 h 51 min).
+- Spawneo 8 hijos; el 8o (`bb4ffa47`) murio con `503 No configured model is currently available`.
+- El coordinador respondio `Improving worker failed (503, no model). Retrying.` y reintenta sin tope. No es fallo de red: es bucle sobre error permanente.
+- `DeepInvestigator` es un pipeline coordinator que no puede trabajar solo y no limita reintentos. **Usar `DeepCoder`.**

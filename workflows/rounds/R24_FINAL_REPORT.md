@@ -13,7 +13,7 @@
 | Fase | Alcance | Estado | Evidencia |
 | :--- | :--- | :--- | :--- |
 | **0** Arranque seguro | Serial ADB, forward, `/status`, modo seguro, T0 | **PASS-AUTOR** | `workflows/R24_PROGRESO.md` (cabecera) |
-| **A** Cubo 2 + higiene + informe R23K | A1–A6 | **PASS-INDEPENDIENTE** | `82f7289`, `workflows/r24_tasks/A1_result.md`, `AUDIT_A_result.md`, `workflows/rounds/R23K_FINAL_REPORT.md` |
+| **A** Cubo 2 + higiene + informe R23K | A1–A6 | **PASS-AUTOR** (firma independiente **REVOCADA**, ver §2.1) | `workflows/r24_tasks/A1_result.md`, `AUDIT_A_result.md`, `workflows/rounds/R23K_FINAL_REPORT.md` |
 | **B** APK R24 | B0–B6 | **PASS-AUTOR** | `6fc51f4`, `7be78e8`, `7ec019a`, `543996a`, `0a728e5`, `69046d2`, `64f78f1`, `df1673a` |
 | **C** Ventanas exploratorias | hasta 6 × 20 min | **NO EJECUTADA** | tope de sesión + preregistro exploratorio inexistente |
 | **D** Instalar R24 + 4 ventanas | V1–V5 | **NO EJECUTADA** | requiere toque de `MediaProjection` (usuario) y ≥ 4 × 20 min |
@@ -34,7 +34,31 @@
 
 **Limitación declarada (regla 0.3):** **MISMO MODELO** para IMPLEMENTADOR y AUDITOR. El selector de subagentes solo expone variantes de tamaño (`inherit`, `flash_lite`, `flash`, `pro`), no proveedores distintos. La independencia se garantiza por **contexto limpio** y **recálculo propio**, no por modelo.
 
-**Hallazgo de herramienta:** `DeepInvestigator` delega siempre a un «L0 worker» y se cuelga esperándolo. Para subagentes que deban escribir archivos: usar `DeepCoder`.
+### 2.1 ENMIENDA · La firma independiente de la Fase A está REVOCADA
+
+**Fecha de la enmienda:** 2026-10-22T22:56-05:00 (posterior al cierre declarado; se anexa, no se reescribe el cuerpo).
+
+La versión inicial de este informe afirmaba «A: PASS-INDEPENDIENTE» citando el commit `82f7289`. **Esa afirmación es falsa en el estado actual del repositorio.**
+
+Secuencia real de `workflows/r24_tasks/AUDIT_A_result.md`:
+
+| Commit | SHA auditado | Firma emitida |
+| :--- | :--- | :--- |
+| `82f7289` | `dd56136` | PASS-INDEPENDIENTE |
+| `4f609f3` | `6fc51f4` | **FAIL — no se firma** |
+
+La re-auditoría de `4f609f3` **sustituyó** el PASS por un FAIL sobre el código ya corregido. El archivo en disco hoy termina en `FAIL — no se firma`. El orquestador citó el commit antiguo sin verificar el estado vigente del archivo: **error propio O-8**.
+
+**Puntos del FAIL:**
+
+| # | Punto | Estado actual |
+| :--- | :--- | :--- |
+| 9 | Doble conteo W/L alcanzable por ruta manual | **CORREGIDO** en `7be78e8`; test `rutaManualYAutomaticaConMismoTradeIdCuentanUnaVez` PASS (9/9 en `B1_verify_result.md`) |
+| 13 | Preregistro R23K posterior a W04 y W07 | **IRREPARABLE** — hecho histórico. Ya declarado en `fde4a07` (Cubo 2 = EXPLORATORIO) |
+
+**Consecuencia:** la Fase A **no tiene firma independiente vigente**. Su estado real es **PASS-AUTOR**. El contenido (cifras, cierre del Cubo 2, higiene, informe R23K) no cambia: lo que falta es la firma, no el trabajo. Un revisor externo debe emitirla o rechazarla.
+
+**Hallazgo de herramienta:** el subagente VALIDADOR `81457cf9` (`DeepInvestigator`) quedó en bucle infinito de reintento tras un error permanente `503 No configured model is currently available` en su 8º hijo. `DeepInvestigator` es un «pipeline coordinator» que delega siempre y no tiene tope de reintentos. Para trabajo que deba escribir archivos: usar `DeepCoder`.
 
 ---
 
@@ -155,6 +179,7 @@ Dos activaciones de `AUTONOMOUS` desde la **UI del overlay**, sin monitor ni ven
 | O-5 | 3 funciones de reset | Son 5 (`resetStats:897`, `setStats:907`, `correctStats:917`, `resetSession:983`, `resetSniperSession:1003`) |
 | O-6 | «PASS depende de 6000 ms» | Cruce real en 4500 ms |
 | O-7 | **No sondeé `/status` durante 3 h 15 min en Fase B** | INCIDENTE 2, −511.000 COP. Corregido con contención inmediata y regla de sondeo ≤ 10 min |
+| O-8 | **Declaré «Fase A: PASS-INDEPENDIENTE» citando `82f7289` sin comprobar el archivo vigente** | La re-auditoría `4f609f3` lo revocó con FAIL. Corregido en §2.1 |
 
 **Lección:** leer números de línea sin leer el flujo de control produce hallazgos falsos. Y vigilar el modo del motor es parte del trabajo, no un extra.
 
@@ -218,4 +243,4 @@ Dos activaciones de `AUTONOMOUS` desde la **UI del overlay**, sin monitor ni ven
 
 ---
 
-**Firma:** PASS-AUTOR (ORQUESTADOR, agente principal). **No hay PASS-INDEPENDIENTE de este informe**: el AUDITOR firmó la Fase A, no la Fase E, y ningún subagente revisó este documento.
+**Firma:** PASS-AUTOR (ORQUESTADOR, agente principal). **No hay PASS-INDEPENDIENTE de este informe ni de la Fase A**: la firma que el AUDITOR emitió en `82f7289` fue **revocada** por su propia re-auditoría en `4f609f3` (FAIL, puntos 9 y 13). Ver §2.1. Ningún subagente revisó este documento.

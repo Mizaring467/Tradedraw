@@ -16,7 +16,7 @@
 | 5 | [`workflows/R24_MANIFEST.md`](R24_MANIFEST.md) | Manifiesto del cubo + §7 artefacto APK | Condición de arranque del cubo R24 |
 | 6 | [`workflows/rounds/R23K_FINAL_REPORT.md`](rounds/R23K_FINAL_REPORT.md) | Cierre del Cubo 2 | Cubo anterior, ya cerrado |
 | 7 | [`workflows/r24_tasks/A1_result.md`](r24_tasks/A1_result.md) | Recálculo independiente de cubos | Cifras canónicas |
-| 8 | [`workflows/r24_tasks/AUDIT_A_result.md`](r24_tasks/AUDIT_A_result.md) | Auditoría de Fase A (14 puntos) | Firma PASS-INDEPENDIENTE |
+| 8 | [`workflows/r24_tasks/AUDIT_A_result.md`](r24_tasks/AUDIT_A_result.md) | Auditoría de Fase A (17 puntos) | **Termina en FAIL** (puntos 9 y 13). La firma PASS de `82f7289` fue revocada por la re-auditoría de `4f609f3`. Ver `R24_FINAL_REPORT.md` §2.1 |
 | 9 | [`workflows/R24_PROGRESO.md`](R24_PROGRESO.md) | Bitácora con T0, sub-pasos e incidentes | Trazabilidad temporal |
 
 ---
@@ -51,11 +51,12 @@ Léanse como pendientes, no como resultados:
 
 ## 4. Decisiones que requieren criterio humano
 
-1. **¿Se acepta el Cubo 2 como exploratorio?** Su preregistro es tardío (8 de 19 ventanas previas). El informe lo declara exploratorio; un revisor podría exigir descartarlo entero.
-2. **¿Se acepta la independencia «mismo modelo, contexto limpio»?** La regla 0.3 pedía modelos distintos. La herramienta no lo permite. Se declaró como limitación.
-3. **¿Se acepta que la Fase C no se ejecutara?** El tope de 6 h y la ausencia de preregistro exploratorio lo impedían. La alternativa era violar la regla 7 (preregistro antes de datos).
-4. **¿Se acepta el gasto de −611.001,28 COP en Demo?** Es cuenta Demo, no dinero real. Pero revela que el motor puede quedar armado sin supervisión.
-5. **¿Debe añadirse una salvaguarda automática** (p. ej. `AUTONOMOUS` caduca a los N minutos sin monitor)? **No se implementó**: sería un cambio de comportamiento fuera de la lista cerrada del preregistro R24.
+1. **¿Se emite firma independiente para la Fase A?** La que existía fue revocada (FAIL en puntos 9 y 13). El punto 9 está corregido en `7be78e8`; el 13 es histórico e irreparable. **Nadie ha firmado la Fase A en su estado actual.**
+2. **¿Se acepta el Cubo 2 como exploratorio?** Su preregistro es tardío (8 de 19 ventanas previas). El informe lo declara exploratorio; un revisor podría exigir descartarlo entero.
+3. **¿Se acepta la independencia «mismo modelo, contexto limpio»?** La regla 0.3 pedía modelos distintos. La herramienta no lo permite. Se declaró como limitación.
+4. **¿Se acepta que la Fase C no se ejecutara?** El tope de 6 h y la ausencia de preregistro exploratorio lo impedían. La alternativa era violar la regla 7 (preregistro antes de datos).
+5. **¿Se acepta el gasto de −611.001,28 COP en Demo?** Es cuenta Demo, no dinero real. Pero revela que el motor puede quedar armado sin supervisión.
+6. **¿Debe añadirse una salvaguarda automática** (p. ej. `AUTONOMOUS` caduca a los N minutos sin monitor)? **No se implementó**: sería un cambio de comportamiento fuera de la lista cerrada del preregistro R24.
 
 ---
 
