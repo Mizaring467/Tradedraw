@@ -105,3 +105,30 @@ El arnés es correcto por construcción, pero **está ciego sin dos insumos del 
 **Conclusión regulatoria vinculante:**
 El arnés v2 **NO se congela como "arnés listo"**. Abrir el Cubo R24 con este estado produciría `NO EVALUABLE` en los tres criterios de B5 con razón.
 R24 permanece **PREPARADO, NO VIGENTE**. El único cubo activo y acumulando es el **Cubo 2** bajo `8cdb61f`.
+
+---
+
+## 7. ARTEFACTO APK R24 (B5 · 2026-10-22)
+
+**Estado:** COMPILADO, **NO INSTALADO**. Este build todavía **no abre** el Cubo R24: la apertura exige la Fase D (instalación + primer toque de `MediaProjection` + verificación de la condición de arranque del §5).
+
+| Campo | Valor |
+|---|---|
+| Ruta | `app/build/outputs/apk/debug/app-debug.apk` |
+| Tamaño | 13.820.761 bytes |
+| SHA-256 | `6E1B068483515F282A535B1755762C0535DD0750A7E18E67C027FDAC431B0A35` |
+| versionCode / versionName | 19 / `1.9-r23h-exhaustion` |
+| Commit de la build | `64f78f1` (código de producción desde `6fc51f4`, `7be78e8`, `7ec019a`, `543996a`, `0a728e5`, `69046d2`) |
+| Fecha de compilación | 2026-10-22T20:06:56-05:00 |
+| Comando | `./gradlew assembleDebug --no-daemon --no-configuration-cache` |
+| Resultado | BUILD SUCCESSFUL |
+
+**Verificación:** suite completa **507 tests, 0 fallos, 0 errores**; `test_decisions_sr_columns.py` 11/11 PASS; `live_monitor_r23_autonomous.py --test` PASS 4/4.
+
+**Cambios incluidos respecto a `8cdb61f`** (lista cerrada, ver `workflows/PREREGISTRO_R24.md`):
+1. **B1** idempotencia de liquidación (`settleTradeOnce`, `settleManual`, `markLiquidated`, `tradesLossSinEvidencia`; `/status` expone `tradesLossSinEvidencia`, `manualWins`, `manualLosses`, `manualIncrements`) — cambio con posible impacto en comportamiento, documentado.
+2. **B2** columnas S/R en telemetría (`DECISION_FIELDNAMES` 16 cols, `live_monitor_r23.py:29-33`, `ratio_celda` con `math.isfinite`).
+3. **B3** endpoint `/adaptive_state` (solo lectura).
+4. **B4** diagnóstico NO_PROCESADA (`noProcesadaDuracionMaxMs` = `maxOf(maxCerrada, actualMs)`).
+
+**Nota sobre el §4:** el serial `UGU8KFUKM7E6CE8D` ya no es el transporte vigente; el dispositivo se direcciona por ADB inalámbrico con serial variable `[fe80::…%4]:5555`, medido con `adb devices` antes de cada ventana.
