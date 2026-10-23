@@ -212,6 +212,21 @@ class TradeDrawHttpBridge(
                         val (lineas, totalEnArchivo) = readShadowJournalTail(max)
                         sendJsonResponse(output, 200, buildShadowJournalJson(lineas, totalEnArchivo))
                     }
+                    "/adaptive_state" -> {
+                        // R24/B3: volcado de la memoria adaptativa para V3. SOLO LECTURA: se abre
+                        // el archivo y se devuelve su contenido. NO se llama a `saveState` (eso
+                        // reescribiria el archivo vivo y reiniciaria su TTL), NO se modifica el
+                        // archivo y NO se toca el motor. Si el archivo no existe se responde 200
+                        // con `exists:false`: "no hay memoria guardada" es un dato, no un error.
+                        val archivo = java.io.File(overlayService.filesDir, "adaptive_learning_state.json")
+                        val crudo = try {
+                            if (archivo.isFile) archivo.readText(Charsets.UTF_8) else null
+                        } catch (e: Exception) {
+                            Log.e("TradeDrawHttp", "Error leyendo adaptive_learning_state.json", e)
+                            null
+                        }
+                        sendJsonResponse(output, 200, buildAdaptiveStateJson(crudo, archivo.absolutePath))
+                    }
                     "/ticks" -> {
                         // R23 Iter 4: los ticks EXACTOS que entraron al motor durante la ventana viva.
                         // Cierra el hallazgo de la Iter 3 (paridad Live<->Replay "NO EVALUABLE" por
@@ -814,6 +829,35 @@ class TradeDrawHttpBridge(
             emptyList<String>() to 0
         }
     }
+}
+
+/**
+ * R24/B3: serializa el volcado de la memoria adaptativa para `GET /adaptive_state`.
+ *
+ * SOLO LECTURA. Recibe el contenido CRUDO del archivo tal como esta en disco y no lo toca: no
+ * reescribe, no normaliza, no dispara `saveState` (que reiniciaria el TTL del archivo vivo).
+ *
+ * `state` se incrusta como objeto JSON cuando el contenido parsea, para que el validador lo lea
+ * directamente. Si el archivo esta corrupto se devuelve `parseable:false` y el texto escapado en
+ * `stateRaw`: una respuesta HTTP nunca debe dejar de ser JSON valido por culpa del dato que
+ * transporta. `firmas` es el conteo de `lossSignatures`, que es lo que V3 contrasta.
+ *
+ * @param crudo contenido del archivo, o `null` si no existe / no se pudo leer.
+ */
+internal fun buildAdaptiveStateJson(crudo: String?, ruta: String = ""): String {
+    if (crudo == null) {
+        return """{"success":true,"exists":false,"parseable":false,"firmas":0,"path":"${escapeJsonForJournal(ruta)}","state":null}"""
+    }
+    val objeto = try {
+        org.json.JSONObject(crudo)
+    } catch (e: Exception) {
+        null
+    }
+    if (objeto == null) {
+        return """{"success":true,"exists":true,"parseable":false,"firmas":0,"path":"${escapeJsonForJournal(ruta)}","state":null,"stateRaw":"${escapeJsonForJournal(crudo)}"}"""
+    }
+    val firmas = objeto.optJSONArray("lossSignatures")?.length() ?: 0
+    return """{"success":true,"exists":true,"parseable":true,"firmas":$firmas,"path":"${escapeJsonForJournal(ruta)}","state":$crudo}"""
 }
 
 /**
