@@ -127,3 +127,15 @@ de la herramienta, conforme a la regla 0.3.
 - Documentado en `workflows/R24_INCIDENTE_2_FUERA_DE_VENTANA.md`. Los 38 trades quedan **fuera de ventana**, excluidos de todo cubo.
 - Fallo de proceso propio: no se sondeo `/status` entre 17:31 y 20:46 durante la Fase B. Registrado.
 - Balance de partida vigente: **37.565.736,96 COP**.
+
+## FASE E · CIERRE (2026-10-22T20:52-05:00)
+
+- B5: manifiesto APK anexado a `workflows/R24_MANIFEST.md` §7 (commit `df1673a`).
+- INCIDENTE 2 detectado y contenido en Fase E: 38 trades, -511.000 COP. Ver `workflows/R24_INCIDENTE_2_FUERA_DE_VENTANA.md` (commit `5c6d1d2`).
+- `workflows/rounds/R24_FINAL_REPORT.md` escrito (12 secciones, PASS-AUTOR).
+- `workflows/R24_PARA_REVISION_EXTERNA.md` escrito.
+- `recompute_cubes.py` re-ejecutado: Cubo 2 n=60, 30W/29L/1V, WR 0,5085, BE 0,5464. Coincide con A1.
+- V1-V5: los cinco `NO EVALUABLE` (sin ventanas R24, APK no instalado).
+- Fases C y D: **NO EJECUTADAS**. Declaradas PENDIENTES por tope de sesion y decision del usuario.
+- Balance vigente: **37.565.736,96 COP**. `mode=DISABLED`, `orderState=NINGUNA`, `isDemoAccount=true`.
+- FIN DE MISION (parcial por tope de sesion).
