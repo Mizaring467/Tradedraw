@@ -1,6 +1,6 @@
 # R21 — REPORTE DE COMPARACIÓN LIVE ↔ REPLAY (FRENTE B)
 
-**Fecha:** 2026-10-27 05:45:17 UTC  
+**Fecha:** 2026-10-27 06:12:46 UTC  
 **Herramienta:** `scripts/validation/compare_live_replay.py`  
 **Fuente Live:** `loops/r25_validation/window_02/decisions.csv`  
 **Fuente Replay:** `SYNTHETIC_FIXTURE_REPLAY`  
@@ -12,12 +12,12 @@
 
 | Métrica | Valor | Definición / Criterio |
 |---|---|---|
-| **Decisiones Totales Auditadas** | `75` | Universo total de IDs únicos procesados |
+| **Decisiones Totales Auditadas** | `56` | Universo total de IDs únicos procesados |
 | **Pares Evaluables (Live & Replay)** | `0` | IDs con presencia concurrente en ambas series |
 | **Exact Matches (MATCH)** | **`0`** | Paridad 100% en todos los campos según jerarquía |
 | **Divergencias (DIVERGENCE)** | **`0`** | Al menos un campo difirió dentro de la jerarquía |
 | **Missing en Live** | `0` | Señal generada en Replay pero ausente en Live |
-| **Missing en Replay** | `75` | Decisión registrada en Live no reproducida en Replay |
+| **Missing en Replay** | `56` | Decisión registrada en Live no reproducida en Replay |
 | **No Verificables** | `0` | Registros con precio <= 0 o NaN |
 | **Tasa de Paridad (Match Rate)** | **`0.0%`** | Objetivo de Gobernanza >= 80.0% |
 
@@ -35,81 +35,62 @@ Cuando una decisión diverge, el comparador reporta **la primera condición caus
 
 | Decision ID | Estado | Primera Divergencia | Valor Live | Valor Replay | Acción Live / Replay |
 |---|---|---|---|---|---|
-| `8d7f2fe8-a493-347e-893f-91c5c2ea6e28` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `766d1aa4-71db-3edd-bf37-7e566689179c` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `767af06f-e5d5-3d91-8807-9d410b558bf4` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `21596741-b810-398e-8acf-5930ffa56848` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `23fcf37a-8ce1-3442-aad5-639970eade52` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `f8fcf725-be04-3b73-897d-640b04189144` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `cf685140-68ef-3831-8dde-0c22d54e080f` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `c6280277-fa5e-385c-ad42-ab37868d3e20` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `7b4318fc-ff6f-371c-8582-623ab239239f` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `2d6beac0-c6b7-3925-9344-a93195f52b0f` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `e9be973a-e92a-3d40-aff5-65fa9214bd42` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `6a791317-c5d8-3fda-a8a7-1f4503e19a1f` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `6f4112b6-ca8d-36bf-aefc-bba75a46d8e1` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `e9ee2ee7-a968-3ec3-ba7c-160337a93237` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `850500c2-01b5-30f8-9b15-25b656965976` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `1e68289b-ba6a-3168-a2e8-5067b7e67938` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `25e5be7f-10dc-3105-8f35-f509049f0c22` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `d09cd670-01bc-3afc-8df3-1b93ede3e423` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `df73dd61-2817-3cc7-886f-679d44ff730c` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `8ace6143-085e-3ef8-9d8c-a83300bcc971` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `5a761be8-58bf-3941-8d1c-304fd03d0404` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `a134c6d1-29b1-3e9e-b779-4a93deb39b55` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `d2e9e628-75e7-391e-8d19-9ef6ca755034` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `b012f9da-50f8-3714-942f-1f0f29096922` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `59a54dd2-0ea7-34f4-adcd-8c43b2204d3d` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `86b0d030-0f95-3d81-9eb5-08bf59da6270` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `5f7494a5-a9c5-3a04-a201-9cb19c7bdc0a` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `e99ed7fe-1797-3c5a-8c8b-45da6bcf6b01` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `454cc0f3-3e22-3830-a541-5053c1cbbc19` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `0a318389-e8fb-35c5-9742-d8d12675e320` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `554e8460-6b4a-3ea2-a63a-2795937680f5` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `1f2db727-aae5-315f-9d74-2e131b99f964` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `f277f9ec-d72d-3a65-b306-9d7388011a41` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `eca626a2-fd3d-35db-8af2-8817820e429b` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `b6477f38-2929-3393-8eb0-2c03234286f2` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `7958d1be-e9a1-3511-965e-42404f27c6f1` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `c7e3445f-4e79-3da1-bac6-ab5620c30fcf` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `bd125692-fdaa-36c3-9dbd-3640f5e252af` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `ca1e81f1-7d4c-360b-869d-a426802f471a` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `f89ca6c7-dce4-3051-9f8a-6a3780c48324` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `a9d58573-b8e8-348d-a092-f94eb1ebc432` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `5a10c153-cfa6-34ee-8885-0a6a5f8eac58` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `d606a7f7-fcd6-39e1-b58c-a6a9f75df650` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `a5eb6e1d-f59c-3fef-ab96-0a38cf391452` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `9888d2d2-6b5c-3a7a-b7d3-fe8d8ec05d8c` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `ad3caa97-3625-36ad-a3ba-6daa922b77c2` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `5c2201ab-a3d6-356d-b12c-90fef4562dde` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `b4e7ac04-7fff-38f7-a096-6e5149fc701d` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `c7e59607-f396-308d-81e4-45a7ae94d392` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `121be100-7591-306c-b358-238f44277daa` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `a9113bb3-f408-35e1-9a66-a27d25ae96c7` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `ba153897-e056-3218-b643-5440dd8df38b` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `5926a5ac-4074-3d25-add0-f7d1970cf1a4` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `1dfad62a-bc79-38b4-890d-21403a920726` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `8e06b387-c8ac-3036-bfd9-83d69bece3de` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `3e87d676-ab60-32f5-b1c0-c369d853a276` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `d258e462-7fb3-3f29-8b22-9f6c3c7b8ff7` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `16eccb32-3a7e-3327-be6b-e0ff5c249335` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `2775d4a5-6f86-3c5d-a6eb-e2bc5d90608a` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `455d4032-c907-3453-859a-60696864c061` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `83a6c6e1-d338-3ddc-9eb3-8187888146ab` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `c0dbe788-75ae-3db7-bc64-68216f366f02` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `97909824-27e0-3626-adf7-b7bdd5dc42f8` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `617f3a70-72d4-3010-8fe1-dd6ecc09882e` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
-| `32a0ee1a-7bbe-3db4-a0b5-7384d07443f9` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `c208c44b-9469-3150-b637-59af1e329408` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `7caa2d1c-9803-3d39-ab0f-70d74a479123` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `b8dd9478-0658-3366-962c-bd1200d89827` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `d1cb81e9-8f1d-3a42-b075-6ad610e09c47` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `323912ca-b3f2-3c1d-80e9-e67ec274e75b` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `53a7c3d1-8e95-31ac-ba9a-a1443f2398a5` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `428cfd13-4548-3fc4-8af5-9bd053ee8efa` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `239308c3-4656-3406-8365-cea70249042e` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `cc4abd2b-9cef-30b9-a1e0-4864321786cb` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
-| `13a2f69b-a660-3e7e-afd5-9d9c2e4202d4` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `08c05e92-ff0d-3961-9e1c-13dc5f19b02e` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `daefc40e-552c-308c-bd6b-b967bd1d6888` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `bfe00b10-4578-3fb0-9603-3e3972b67999` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `4533709e-309f-30a1-8d7e-1059dc9da5d7` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `5bf634ec-e217-3264-aace-b791340ca08f` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `770b145f-de55-3f63-b847-ece1213a818d` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `70a91695-3a9f-379a-9dfe-bf9c658ff097` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `bde1f918-e38a-37dd-9da7-849ad4353971` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `a9e7e98e-10ca-3608-9670-c6ea1a7547de` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `3ee1ab5b-493e-3019-aad9-e4c5750d8ac3` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `b439bbe3-6b2a-39eb-acc6-14316624a6e0` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `402000a7-2f65-3aae-8b0c-2d7ff306e38f` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `9f1af063-45bb-3439-bfd1-93d465d80749` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `cadd4a3a-4846-33f1-86fe-1e5e16ae30ba` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `0ac24559-836a-31e9-bed3-4a6e64108302` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `026bc581-fbd9-34d2-8a6c-9bb425809687` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `376f5c76-f6e5-37f0-a6fc-f2ec688fbfea` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `4500ede6-911d-3861-a7ab-f1ebaa9cd2ab` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `45433871-40af-3ba5-bea3-3420240dce73` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `81b48da2-a2dd-390a-ad83-c4c1419a8c12` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `418017ed-6acf-30f1-a344-82e4e0955241` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `122c1c8e-93e5-332c-9cb7-cd9ac52e3d38` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `52a9789d-c10e-327e-8ac5-66b2b934c596` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `8c1fc8c3-0ad1-354f-a6bd-676c884a9a49` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `25ea7966-75d9-3cc5-a612-892fad960c28` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `d209fa96-0635-31d0-bc77-32492ba4a5bd` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `2d806347-6f19-31c3-8466-60d8b9559a63` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `dab1f343-e198-3291-aa64-3ec40d3259ef` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `d32d775a-8cab-3924-8d25-390f46c54442` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `10d940dc-3907-3043-bebc-5adb58b1d4ab` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `5afbe88e-2747-33a1-8488-43335270f407` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `30644cac-3785-3c1e-aced-b0aefda1c55d` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `d94ec9aa-e947-3d04-8eff-f20a65b48694` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `e9f16960-a935-3166-9487-7e534d16174f` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `89247d5e-65e6-3c46-af38-5f71e1524606` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `f1cb02bc-4d5c-384a-b234-67f5987d5b2c` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `6bc42de0-c1a6-36d7-85eb-795e9c7497d0` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `e2b7568b-09da-3db2-a5b3-7447e0b3e734` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `36d5046a-de22-3317-89c0-4c1d9ee962f0` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `da134736-88c8-3e5f-8329-ad6c4f2c5a22` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `3ef37b66-583d-3a81-907b-850d6d1999e8` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `0c8feb33-0b23-367e-9f9d-fc28fcf1289b` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `0f1ac466-09fb-3dc2-8c44-e7e06c41c663` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `5b138dab-ba95-37c1-a5eb-fb572b7d3cc4` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `d91fbc58-906d-3733-8003-3e68b96b0500` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `44432645-6813-3455-bc21-0b308bdeffc4` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `7c17415b-d618-3a07-9215-14803cb8a324` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `SELL` / `-` |
+| `31a6f208-d8dd-3ae4-af3c-d9caf94c5b14` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `09fd63a0-3005-3f2b-a383-b0c160edf697` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `f417c938-ccd7-3a8f-9528-ee7bdeb4f916` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `48dac61b-4868-3047-a0da-54a35a2292a2` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `59fb5f45-2c1d-3a1e-beff-201bbc6a841f` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `d6e08d3a-8503-31f9-ba3a-fb164b09908a` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `76f58aef-f438-38db-a4e4-fc631c0d7894` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `48cd95b6-d5a4-3134-9dc9-20e029309007` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
+| `14f299fa-01ed-36ce-8ae1-9491d70ff685` | `MISSING_REPLAY` | `presence` | `PRESENT` | `-` | `BUY` / `-` |
 
 ---
 
