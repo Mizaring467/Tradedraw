@@ -1,0 +1,1 @@
+decision_id,trade_id,timestamp,asset,price_at_signal,candle_second,market_regime,trend,action,score,action_plan,kind,detail,veto_reason,distanceToSupportRatio,distanceToResistanceRatio

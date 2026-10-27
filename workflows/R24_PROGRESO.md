@@ -156,3 +156,14 @@ de la herramienta, conforme a la regla 0.3.
 - Spawneo 8 hijos; el 8o (`bb4ffa47`) murio con `503 No configured model is currently available`.
 - El coordinador respondio `Improving worker failed (503, no model). Retrying.` y reintenta sin tope. No es fallo de red: es bucle sobre error permanente.
 - `DeepInvestigator` es un pipeline coordinator que no puede trabajar solo y no limita reintentos. **Usar `DeepCoder`.**
+
+## ENMIENDA 2026-10-26 23:58 — CIERRE DE FASE C/D: NO EVALUABLE POR TRANSPORTE
+
+- Intento W02 ejecutado 23:26–23:48 con build `692d6f3` (v19), modo `AUTONOMOUS` CONSERVATIVE, cuenta DEMO.
+- Resultado: **0 taps, 0 trades, 0 decisiones**; 19 muestras válidas de 20 min; **100 ciclos del monitor sin respuesta**.
+- Causa raíz medida: **cae el reenvío `adb forward tcp:8080`**, no la app ni el bridge. El PID 26449 sobrevivió toda la ventana, `OverlayService` siguió en primer plano y `/status` respondió en cuanto se repuso el reenvío.
+- Evidencia y discriminación completas en [`R24_W02_FALLO_TRANSPORTE.md`](R24_W02_FALLO_TRANSPORTE.md).
+- Corrección de arnés: `scripts/validation/adb_forward_watchdog.sh` (probado: reenvío removido → repuesto en 4 s).
+- **Fases C y D de R24 quedan CERRADAS como `NO EVALUABLE`** por fallo de transporte: W01 y W02 consumieron 2 de las 4 ventanas sin datos utilizables y V1/V3/V4 ya no pueden ser `SÍ`.
+- Modo dejado en `DISABLED`, `orderState=NINGUNA`, `isDemoAccount=true`, sin órdenes ni COP expuestos.
+- Cubo siguiente: **R25** con [`PREREGISTRO_R25.md`](PREREGISTRO_R25.md) vigente y el watchdog como condición de arranque.
