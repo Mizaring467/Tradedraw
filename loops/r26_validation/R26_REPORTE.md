@@ -131,7 +131,7 @@ HUD que nunca caduca, desarme, heartbeat sin armado).
 - `/mode_log`:
   `de=AUTONOMOUS a=DISABLED source=engine:autonomous-expiry`
   `origen=TradingEngine.modeChangeOrigin:141<TradingEngine$autonomousWatchdogTick$1.run:223<...`
-- Estado final: `mode=DISABLED`, `orderState=null`, `hasPendingTrade=null`, `isDemoAccount=true`.
+- Estado final (claves correctas, anidadas bajo `risk`): `mode=DISABLED`, `risk.orderState="NINGUNA"`, `risk.hasPendingTrade=false`, `risk.tapsDespachados=0`, `isDemoAccount=true`.
 - **P1 = PASS.** Falsación no alcanzada: no siguió armado y no caducó antes de 10 min.
 
 ### 5.2 P2 · Control negativo — no caduca con contacto
@@ -148,11 +148,17 @@ HUD que nunca caduca, desarme, heartbeat sin armado).
 
 ### 5.3 Integridad del arnés
 
-- El PID de la app fue **16195 al arrancar y 16195 al cerrar**: el servicio **no se reinició** durante
-  P1 ni P2. La caducidad de P1 no puede atribuirse a una recreación del servicio.
-- Batería: 56 % al abrir, **52 % al cerrar**. Sin aborto por batería.
-- Cierre: `GET /mode?name=DISABLED` → `mode=DISABLED`, `orderState=null`, `hasPendingTrade=null`,
-  `isDemoAccount=true`, `gitSha=f491ca4`, `buildId=R26-AUTONOMOUS-EXPIRY`.
+- El PID de la app fue **16195 al arrancar y 16195 al cerrar** (observado en consola, no persistido):
+  el servicio **no se reinició** durante P1 ni P2. La persistencia se corrobora además con
+  `buildTimestamp=1793156419020` idéntico en P0 y P3. La caducidad de P1 no puede atribuirse a una
+  recreación del servicio.
+- Batería: 56 % al abrir (persistido en `device_metadata_raw.txt`); 52 % **observado en consola** a las
+  22:25:58, sin volcado crudo persistido (corregido tras auditoría). Sin aborto por batería.
+- Cierre: `GET /mode?name=DISABLED` → `mode=DISABLED`, `risk.orderState="NINGUNA"`,
+  `risk.hasPendingTrade=false`, `risk.tapsDespachados=0`, `isDemoAccount=true`, `gitSha=f491ca4`,
+  `buildId=R26-AUTONOMOUS-EXPIRY`.
+- Actividad del motor durante AUTONOMOUS: `signalsGenerated` 0 → 25 (P1) → 45 (P2) y `tapsDespachados=0`
+  en las cuatro capturas: el motor evaluó señales y **no despachó ni una orden** (accesibilidad caída).
 
 ### 5.4 P3 · Armado por HUD
 
@@ -168,11 +174,12 @@ límite de la evidencia, no como PASS.
    accesibilidad) y de hecho reduce el riesgo de taps. Pero implica que **R26 no mide nada de trading** y
    que el balance sigue ilegible (`0.0`), por lo que la cifra de R25 (36.865.735,68 COP) no se pudo
    reconfirmar en `/status`.
-2. **`numpy` no está instalado** en este Termux: `tests/test_quant_model_biases.py` y
-   `tests/test_simulation_validation_engine.py` **no importan** ni bajo `discover` ni con
-   `PYTHONPATH=.:validation_engine`. El "100% PASS de la suite Python" del reporte de Hermes **no se
-   sostiene** con `unittest discover` (37 tests, 2 errores de import). Son preexistentes y ajenos a este
-   cambio; se reportan, no se maquillan.
+2. **`numpy` depende del intérprete.** El `python3` del PATH (venv `free-claude-code`) **no** tiene
+   numpy: bajo él, `discover` da 37 tests y 2 errores de import (`test_quant_model_biases`,
+   `test_simulation_validation_engine`). El Python **del sistema** (`/data/data/com.termux/files/usr/bin/python3`)
+   sí lo tiene (numpy 2.4.4) y con `PYTHONPATH=.:validation_engine` la suite completa pasa:
+   **43 tests, OK**. Es decir: la afirmación "100 % PASS" es cierta solo con el intérprete del sistema;
+   con el del PATH es falsa. Queda documentado el comando correcto para que no vuelva a confundirse.
 3. **Sin `logcat` fiable**: la evidencia se apoya en `/status` y `/mode_log` (buffers propios), como en
    R13–R25.
 4. **V5 sigue NO EVALUABLE**: R26 no acumula muestra (2 trades por ventana ⇒ ≥10 ventanas). No se mezcla
@@ -189,3 +196,23 @@ límite de la evidencia, no como PASS.
   ventanas de 20 min con el arnés de R25 (watchdog de `adb forward` + keepalive) y la accesibilidad
   restaurada. Ese es el único pendiente estructural que queda de R25 tras cerrar (a).
 - Pendiente menor: restaurar accesibilidad y recalibrar antes de cualquier medición de trading.
+
+---
+
+## 8. Fe de erratas tras auditoría de pares (2026-10-27 22:45–22:55)
+
+Auditorías independientes ejecutadas por los paneles **AGY** (idempotencia), **OpenCode** (evidencia
+R26) y **Hermes** (consistencia documental), más la del orquestador. Correcciones aplicadas:
+
+| # | Error detectado | Corrección | Evidencia |
+| :--- | :--- | :--- | :--- |
+| E-1 | `orderState=null, hasPendingTrade=null` | Son `risk.orderState="NINGUNA"` y `risk.hasPendingTrade=false`; están anidados bajo `risk` | `P1_status_final.json`, `P3_cierre.json` |
+| E-2 | "Batería 52 % al cerrar" sin artefacto | Observación de consola; se marca como no persistida | `device_metadata_raw.txt` solo tiene apertura (56 %) |
+| E-3 | "PID 16195 al cerrar" sin artefacto | Observación de consola; corroborada por `buildTimestamp` idéntico | `P0` vs `P3` |
+| E-4 | Preregistro fechado 22:20 | Fijado realmente a las 22:00:43 (mtime), 55 s antes de P1; commit posterior a las mediciones | `stat`, `P1_t0.txt`, adenda del preregistro |
+| E-5 | "513/513" sin XML en disco | La corrida dirigida de AGY borró los XML de la suite completa. Regenerada y **persistida en el repo** | `kotlin_test_summary.txt` (513 tests, 0 fallos, 2 skipped) |
+| E-6 | "numpy no instalado" | Solo falta en el venv del PATH; el Python del sistema lo tiene y la suite pasa 43/43 | §6.2 |
+
+**No verificado por esta ronda (y por tanto no afirmado):** estado del dispositivo tras las 22:50 —
+el ADB Wi-Fi perdió la ruta (`No route to host`). La última lectura verificada es `P3_cierre.json`
+(22:25:58, `DISABLED`).

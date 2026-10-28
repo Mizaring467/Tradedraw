@@ -244,3 +244,20 @@ Dos activaciones de `AUTONOMOUS` desde la **UI del overlay**, sin monitor ni ven
 ---
 
 **Firma:** PASS-AUTOR (ORQUESTADOR, agente principal). **No hay PASS-INDEPENDIENTE de este informe ni de la Fase A**: la firma que el AUDITOR emitió en `82f7289` fue **revocada** por su propia re-auditoría en `4f609f3` (FAIL, puntos 9 y 13). Ver §2.1. Ningún subagente revisó este documento.
+
+---
+
+## ADENDA 2026-10-27 22:55 — estado de las Fases C/D (no reescribe §1)
+
+La tabla de §1 marca C y D como **"NO EJECUTADA"**, que era el estado al redactar este informe
+(2026-10-22). Con posterioridad, el **2026-10-26** (commit `015a17b`) ambas fases se **cerraron como
+`NO EVALUABLE` por caída del reenvío `adb forward`**; W01 y W02 consumieron el cupo sin datos
+utilizables y la medición se trasladó a R25 (`workflows/PREREGISTRO_R25.md`,
+`workflows/R24_W02_FALLO_TRANSPORTE.md`). La Fase E también quedó cerrada en ese mismo acto.
+
+El cuerpo de este informe **no se modifica**: la secuencia queda trazada entre §1 (estado al 22-oct) y
+esta adenda (estado al 26-oct), y prevalece el documento cronológicamente posterior
+(`workflows/R24_PROGRESO.md`, enmienda del 2026-10-26 23:58).
+
+Detectado en la reconstrucción de estado del 2026-10-27 (`TRADEDRAW_CURRENT_STATE.md`, hallazgo F-7).
+

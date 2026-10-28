@@ -1,6 +1,6 @@
 # PREREGISTRO R26 — CERTIFICACIÓN EN VIVO DE LA CADUCIDAD DE `AUTONOMOUS`
 
-**Fecha de fijación:** 2026-10-27 22:20 (America/Bogota) — escrito **antes** de abrir cualquier ventana de R26
+**Fecha de fijación:** 2026-10-27 22:00:43 (America/Bogota), según mtime del archivo — escrito **antes** de abrir cualquier ventana de R26 (P1 se armó a las 22:01:38). *El encabezado decía 22:20 por error de transcripción; ver ADENDA al final.*
 **Rama:** `r10-night` · **Commit de código bajo medición:** `f491ca4`
 **Build:** `f491ca4` — versionCode **20**, versionName `1.10-r26-autonomous-expiry`, buildId `R26-AUTONOMOUS-EXPIRY`
 **APK:** `app/build/outputs/apk/debug/app-debug.apk` · SHA-256 en el reporte de cierre (se calcula al instalar)
@@ -154,3 +154,19 @@ Un `FAIL` **no** se corrige en R26: se documenta, se deja el modo en `DISABLED` 
 `mode=DISABLED`, `orderState=NINGUNA`, `isDemoAccount=true`, balance congelado de R25
 **36.865.735,68 COP**, build instalada anterior `692d6f3` (v19). La build `f491ca4` (v20) se instala
 para esta prueba.
+
+---
+
+## ADENDA POST-MEDICIÓN — 2026-10-27 22:52 (fe de erratas, no cambia el contenido)
+
+La auditoría de pares detectó dos defectos de proceso en este documento. Se corrigen aquí sin borrar
+el texto original, para que el error quede auditable:
+
+1. **Hora de fijación.** El encabezado decía `22:20`; el archivo se creó a las **22:00:43** (mtime) y
+   P1 se armó a las **22:01:38**. La hora del encabezado era posterior al inicio de la medición y
+   habría hecho parecer el preregistro como post hoc. El mtime demuestra que no lo fue.
+2. **Orden de commit.** El archivo se **commiteó después** de P1/P2, en `75f005e` (22:26). La
+   inmutabilidad previa se apoya en el mtime del sistema de archivos, no en git. **R27 debe commitear
+   su preregistro antes de la primera ventana**, sin excepción.
+
+Ningún umbral, predicción ni criterio de cierre se modificó en esta adenda.
