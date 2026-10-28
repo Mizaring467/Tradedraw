@@ -1,0 +1,137 @@
+{
+  "mode": "trades",
+  "summary": {
+    "total_live_trades": 0,
+    "total_replay_trades": 8,
+    "paired_decisions": 0,
+    "exact_matches": 0,
+    "divergences": 0,
+    "missing_live": 8,
+    "missing_replay": 0,
+    "match_rate_pct": 0.0,
+    "pass": false
+  },
+  "divergence_breakdown": {},
+  "pairs": [
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "1d171bb2-61d7-3484-afd9-ebfa52fc3a73",
+        "trade_id": "",
+        "timestamp": 1792193941108,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_FALSE_BREAKOUT: Trampa en Soporte (Mecha: 40% | ⏱ 1s) -> CALL [Confluencia: 75pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "6f944453-51eb-3af5-8d0d-6bb8302cd78f",
+        "trade_id": "",
+        "timestamp": 1792194301132,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 35% | Dist S: 20% | ⏱ 1s) -> CALL [Confluencia: 95pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "bf9f651e-85c0-392d-b4d9-d50ba9d95f78",
+        "trade_id": "",
+        "timestamp": 1792194663105,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_REJECTION: Rechazo en Resistencia (Mecha: 87% | Dist R: 10% | ⏱ 3s) -> PUT [Confluencia: 80pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 3
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "8b935cc0-30e3-3288-822a-f992bfd5fcd0",
+        "trade_id": "",
+        "timestamp": 1792195081105,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_REJECTION: Rechazo en Resistencia (Mecha: 71% | Dist R: 4% | ⏱ 1s) -> PUT [Confluencia: 95pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "4b9b824c-9815-38b1-94da-c4bfc2026aa9",
+        "trade_id": "",
+        "timestamp": 1792195325900,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 52% | Dist S: 27% | ⏱ 5s) -> CALL [Confluencia: 83pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 5
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "87cfd446-277c-3569-ab3f-ae0631dddeb2",
+        "trade_id": "",
+        "timestamp": 1792195441101,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 38% | Dist S: 0% | ⏱ 1s) -> CALL [Confluencia: 90pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "6a35def3-a343-35b0-9916-e5e16cb9770e",
+        "trade_id": "",
+        "timestamp": 1792195562302,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_MOMENTUM: Impulso Alcista Temprano (Dist R: 75% | ⏱ 2s) -> CALL [Confluencia: 95pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 2
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "88b0c464-3a68-3e8f-9913-e94d4e2bbe06",
+        "trade_id": "",
+        "timestamp": 1792195741103,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REVERSAL: Sobreventa Extrema en Soporte (RSI: 20 | Dist S: 13% | ⏱ 1s) -> CALL [Confluencia: 77pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    }
+  ]
+}

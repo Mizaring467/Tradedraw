@@ -1,0 +1,5 @@
+220733SL
+12
+  status: 3
+  level: 56
+  temperature: 317

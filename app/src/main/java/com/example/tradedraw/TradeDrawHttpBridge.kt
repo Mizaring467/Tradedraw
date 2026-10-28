@@ -81,6 +81,10 @@ class TradeDrawHttpBridge(
                 val path = fullPath.substringBefore("?")
                 val queryString = fullPath.substringAfter("?", "")
 
+                // R26: cualquier peticion es senal de vida del host. Alimenta la caducidad de
+                // `AUTONOMOUS`: si el host deja de sondear, el motor se desarma solo.
+                overlayService.tradingEngine.noteBridgeHeartbeat()
+
                 // Parse query parameters
                 val params = mutableMapOf<String, String>()
                 if (queryString.isNotEmpty()) {
@@ -203,6 +207,45 @@ class TradeDrawHttpBridge(
                             output, 200,
                             """{"success":true,"total":${lineas.size},"events":[$cuerpo]}"""
                         )
+                    }
+                    "/shadow_journal" -> {
+                        // R23 Iter 2: decisiones persistidas en disco por SHADOW MODE. Antes solo
+                        // eran legibles via `adb pull`; el validador necesita leerlas por HTTP sin
+                        // tocar ADB. Solo LECTURA: no escribe, no altera el journal ni el estado.
+                        val max = params["max"]?.toIntOrNull() ?: 50
+                        val (lineas, totalEnArchivo) = readShadowJournalTail(max)
+                        sendJsonResponse(output, 200, buildShadowJournalJson(lineas, totalEnArchivo))
+                    }
+                    "/adaptive_state" -> {
+                        // R24/B3: volcado de la memoria adaptativa para V3. SOLO LECTURA: se abre
+                        // el archivo y se devuelve su contenido. NO se llama a `saveState` (eso
+                        // reescribiria el archivo vivo y reiniciaria su TTL), NO se modifica el
+                        // archivo y NO se toca el motor. Si el archivo no existe se responde 200
+                        // con `exists:false`: "no hay memoria guardada" es un dato, no un error.
+                        val archivo = java.io.File(overlayService.filesDir, "adaptive_learning_state.json")
+                        val crudo = try {
+                            if (archivo.isFile) archivo.readText(Charsets.UTF_8) else null
+                        } catch (e: Exception) {
+                            Log.e("TradeDrawHttp", "Error leyendo adaptive_learning_state.json", e)
+                            null
+                        }
+                        sendJsonResponse(output, 200, buildAdaptiveStateJson(crudo, archivo.absolutePath))
+                    }
+                    "/ticks" -> {
+                        // R23 Iter 4: los ticks EXACTOS que entraron al motor durante la ventana viva.
+                        // Cierra el hallazgo de la Iter 3 (paridad Live<->Replay "NO EVALUABLE" por
+                        // falta de la fuente de ticks). Solo LECTURA: no altera estado ni guards.
+                        val max = params["max"]?.toIntOrNull() ?: 500
+                        val formato = params["format"]?.lowercase() ?: "json"
+                        val buffer = overlayService.tradingEngine.tickBuffer
+                        val ticks = buffer.tail(max)
+                        if (formato == "csv") {
+                            // `text/plain` y no `text/csv` a proposito: el consumidor lo baja con
+                            // curl y lo vuelca a un archivo que alimenta `loadTicks` del replay.
+                            sendCsvResponse(output, 200, buildTicksCsv(ticks))
+                        } else {
+                            sendJsonResponse(output, 200, buildTicksJson(ticks, buffer.size))
+                        }
                     }
                     "/diag_multiric" -> {
                         // Ronda 15 / Frente C: experimento B0 (suscripcion multi-RIC) medido en el
@@ -347,14 +390,18 @@ class TradeDrawHttpBridge(
                         }
                     }
                     "/win" -> {
-                        overlayService.riskManager.recordTradeWin(force = true)
+                        // R24/B1.c: origen MANUAL_BRIDGE. V1 resta estos incrementos del lado
+                        // `/status`; sin etiqueta el incremento seria NO EVALUABLE.
+                        // R24/B1.a (fix): `settleManual` marca la clave de liquidacion del motor,
+                        // asi que un WIN manual seguido del fallback del motor cuenta UNA vez.
+                        overlayService.riskManager.settleManual("MANUAL_BRIDGE", win = true)
                         val wins = overlayService.riskManager.totalWins
                         val losses = overlayService.riskManager.totalLosses
                         val wr = overlayService.riskManager.getWinRate()
                         sendJsonResponse(output, 200, """{"success":true,"action":"win","wins":$wins,"losses":$losses,"winRate":$wr}""")
                     }
                     "/loss" -> {
-                        overlayService.riskManager.recordTradeLoss(force = true)
+                        overlayService.riskManager.settleManual("MANUAL_BRIDGE", win = false)
                         val wins = overlayService.riskManager.totalWins
                         val losses = overlayService.riskManager.totalLosses
                         val wr = overlayService.riskManager.getWinRate()
@@ -395,6 +442,10 @@ class TradeDrawHttpBridge(
                         try {
                             val sm = AutonomousSubMode.valueOf(subStr)
                             overlayService.tradingEngine.autonomousSubMode = sm
+                            // R23D Fase 1 (REQ 3): el setter del motor ya espeja el submodo al
+                            // RiskManager, pero se reafirma aqui de forma explicita para que la ruta
+                            // HTTP no dependa de que ese efecto se mantenga en el futuro.
+                            overlayService.riskManager.currentSubMode = sm
                             overlayService.updateHUDView()
                             sendJsonResponse(output, 200, """{"success":true,"submode":"${sm.name}"}""")
                         } catch (e: Exception) {
@@ -490,6 +541,17 @@ class TradeDrawHttpBridge(
         }
     }
 
+    /**
+     * R23A Iter 3: este string NO admite comentarios `//` dentro del literal multilínea. Los `//` se
+     * emiten literalmente sobre el HTTP y rompen el JSON (RFC 8259 prohibe comentarios), lo que hacía
+     * fallar a `json.loads`/`jq`/`ConvertFrom-Json`. La explicación va aquí, fuera del literal.
+     *
+     * `observedStake` es lo que dice la pantalla de Binomo; `effectiveStake` es lo que el broker
+     * realmente debita y con lo que se registra el journal. Con stake 1.0 y pantalla 100.000 COP,
+     * `investmentAmount` coincidia con `effectiveStake` y ambos mentían: por eso se exponen los dos
+     * por separado. Deliberadamente NO se añade campo de comentario en el JSON: un campo `_comment`
+     * sería válido pero ensuciaría el contrato que consumen los validadores.
+     */
     private fun buildStatusJson(): String {
         val te = overlayService.tradingEngine
         val rm = overlayService.riskManager
@@ -513,6 +575,22 @@ class TradeDrawHttpBridge(
         val putPct = analysis?.signalPowerPut ?: 50
         val isSideways = synthetic.isChoppinessDetected()
         val candleCount = synthetic.closedCandles.size
+        // R24/B2: ratios S/R REALES del instante. Son los mismos que `AdaptiveLearningEngine` usa
+        // como `distSup`/`distRes` al construir la firma de contexto, asi que el monitor los
+        // escribe en `decisions.csv` sin recalcular: la columna refleja lo que el motor vio.
+        //
+        // Sin velas cerradas el motor deja el campo en su valor por defecto (0.5), que NO es una
+        // medicion. Se emite -1 como centinela de "no medido" y el monitor lo escribe como celda
+        // vacia: inventar 0.5 seria indistinguible de un soporte realmente equidistante.
+        val distSupRatio = synthetic.distanceToSupportRatio
+        val distResRatio = synthetic.distanceToResistanceRatio
+        val hayVelasParaRatios = candleCount > 0
+        // Finitud obligatoria: `Float.NaN.toString()` emite `NaN`, que NO es JSON valido (RFC 8259)
+        // y dejaria el /status entero sin parsear. Mismo centinela -1 que "no medido".
+        val distSupRatioJson =
+            if (hayVelasParaRatios && distSupRatio.isFinite()) distSupRatio.toString() else "-1"
+        val distResRatioJson =
+            if (hayVelasParaRatios && distResRatio.isFinite()) distResRatio.toString() else "-1"
         val streak = analysis?.streakBadge ?: ""
         val trend = synthetic.detectedTrend.name
         val strat = te.strategy.name
@@ -538,9 +616,24 @@ class TradeDrawHttpBridge(
         // Antigüedad infinita no es serializable en JSON: se emite como -1 (sin tick recibido nunca).
         val wsAgeJson = if (wsAge == Long.MAX_VALUE) -1L else wsAge
 
+        val healthReport = overlayService.healthSupervisor.evaluate(
+            tradingEngine = te,
+            riskManager = rm,
+            wsClient = ws,
+            accessibilityService = AutoTradeAccessibilityService.instance
+        )
+
         return """{
             "app": "TradeDraw",
+            "versionCode": ${BuildConfig.VERSION_CODE},
+            "versionName": "${BuildConfig.VERSION_NAME}",
+            "gitSha": "${BuildConfig.GIT_SHA}",
+            "buildId": "${BuildConfig.BUILD_ID}",
+            "buildTimestamp": ${BuildConfig.BUILD_TIMESTAMP},
+            "isDemoAccount": ${AutoTradeAccessibilityService.isDemoAccount},
+            "health": ${healthReport.toJson()},
             "mode": "$mode",
+            "submode": "${te.autonomousSubMode.name}",
             "lastModeChangeSource": "${escapeJson(te.lastModeChange)}",
             "lastModeChangeTs": ${te.lastModeChangeTs},
             "strategy": "$strat",
@@ -557,6 +650,8 @@ class TradeDrawHttpBridge(
                 "isMarketSideways": $isSideways,
                 "trend": "$trend",
                 "candleCount": $candleCount,
+                "distanceToSupportRatio": $distSupRatioJson,
+                "distanceToResistanceRatio": $distResRatioJson,
                 "streak": "${escapeJson(streak)}"
             },
             "risk": {
@@ -566,10 +661,12 @@ class TradeDrawHttpBridge(
                 "currentLossStreak": ${rm.currentLossStreak},
                 "martingaleStatus": "${escapeJson(rm.getMartingaleStatusBadge())}",
                 "investmentAmount": ${rm.getCurrentInvestmentAmount()},
+                "observedStake": ${AutoTradeAccessibilityService.observedOrderAmount},
+                "effectiveStake": ${rm.getEffectiveStake()},
                 "hasPendingTrade": ${rm.hasPendingTrade},
                 "orderState": "${rm.orderState.name}",
                 "hasConfirmedTrade": ${rm.hasConfirmedTrade},
-                "remainingCooldown": ${rm.getRemainingCooldown()},
+                "remainingCooldown": ${rm.getRemainingCooldown(te.autonomousSubMode)},
                 "vetoV1": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO, "V1")},
                 "vetoV2": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO, "V2")},
                 "vetoTotal": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO)},
@@ -581,10 +678,18 @@ class TradeDrawHttpBridge(
                 "inoperableRatio": ${te.inoperabilityDetector.lastRatio},
                 "inoperableReference": ${te.inoperabilityDetector.lastReference},
                 "ultimoInoperable": "${escapeJson(TradeEventLog.lastOf(TradeEventLog.Kind.INOPERABLE)?.detail ?: "")}",
-                // Ronda 20: contadores del guard de desajuste y de la recuperacion por falta de
-                // ticks. Viven en `TradingEngine`, por eso se anaden en el mismo commit que el.
                 "vetoActivoDesajustado": ${te.vetoActivoDesajustado},
-                "recuperacionesPorSinTicks": ${te.recuperacionesPorSinTicks()}
+                "recuperacionesPorSinTicks": ${te.recuperacionesPorSinTicks()},
+                "shadowOrders": ${te.shadowOrdersGenerated},
+                "tradesLossSinEvidencia": ${rm.tradesLossSinEvidencia},
+                "manualWins": ${rm.manualWins},
+                "manualLosses": ${rm.manualLosses},
+                "manualIncrements": ${TradeEventLog.countOf(TradeEventLog.Kind.MANUAL_INCREMENT)},
+                "manualIncrementsDetalle": "${escapeJson(TradeEventLog.lastOf(TradeEventLog.Kind.MANUAL_INCREMENT)?.detail ?: "")}",
+                "noProcesadaDuracionMaxMs": ${rm.noProcesadaDuracionMaxMs},
+                "noProcesadaCausa": "${escapeJson(rm.noProcesadaCausa)}",
+                "noProcesadaOcurrencias": ${rm.noProcesadaOcurrencias},
+                "noProcesadaDuracionActualMs": ${rm.noProcesadaDuracionActualMs}
             },
             "activeSignal": $signalJson,
             "feed": {
@@ -604,6 +709,9 @@ class TradeDrawHttpBridge(
                 "journalRotations": ${TradeJournalLogger.rotationCount},
                 "priceFrozen": ${ws?.isPriceFrozen() ?: false},
                 "recentPriceRangeRatio": ${ws?.recentPriceRangeRatio() ?: -1.0},
+                "rangoRelativoMinimo": ${TradingEngine.rangoRelativoMinimoParaActivo(ws?.activeAsset ?: "")},
+                "rangoRelativoActual": ${ws?.recentPriceRangeRatio() ?: -1.0},
+                "volatilidadSuficiente": ${if (ws != null) ws.recentPriceRangeRatio() >= TradingEngine.rangoRelativoMinimoParaActivo(ws.activeAsset) else false},
                 "payoutFromPercentLabel": ${AutoTradeAccessibilityService.observedPayout.fromPercentLabel ?: "null"},
                 "payoutFromButtonRatio": ${AutoTradeAccessibilityService.observedPayout.fromButtonRatio ?: "null"},
                 "payoutResolved": ${AutoTradeAccessibilityService.observedPayout.resolved ?: "null"},
@@ -674,6 +782,19 @@ class TradeDrawHttpBridge(
         output.flush()
     }
 
+    /** R23 Iter 4: respuesta `text/plain` para `/ticks?format=csv`. Mismo contrato que sendJsonResponse. */
+    private fun sendCsvResponse(output: OutputStream, statusCode: Int, csv: String) {
+        val bytes = csv.toByteArray(Charsets.UTF_8)
+        val headers = "HTTP/1.1 $statusCode OK\r\n" +
+                "Content-Type: text/plain; charset=UTF-8\r\n" +
+                "Content-Length: ${bytes.size}\r\n" +
+                "Connection: close\r\n" +
+                "Access-Control-Allow-Origin: *\r\n\r\n"
+        output.write(headers.toByteArray(Charsets.UTF_8))
+        output.write(bytes)
+        output.flush()
+    }
+
     // DIAGNÓSTICO TEMPORAL: últimas tramas crudas del WebSocket, para identificar
     // qué campo del frame cambia entre ticks (precio vivo vs apertura de vela).
     private fun rawFramesJson(ws: com.example.tradedraw.BinomoWebSocketClient?): String {
@@ -689,4 +810,173 @@ class TradeDrawHttpBridge(
             .replace("\r", "\\r")
             .replace("\t", "\\t")
     }
+
+    /**
+     * R23 Iter 2: lee las ultimas [max] lineas de `shadow_journal.csv` tal como estan en disco.
+     *
+     * Solo LECTURA. Replica el orden de resolucion de directorios de [TradeJournalLogger]
+     * (externo `TradeDraw_Audits` si es escribible, interno `filesDir/TradeDraw_Audits` como
+     * respaldo) porque el logger lo mantiene privado. Se revisan AMBAS rutas y se prefiere la que
+     * realmente contenga el archivo, para no devolver `total:0` cuando el journal vive en un
+     * directorio distinto del que el logger consideraria escribible ahora mismo.
+     *
+     * Se devuelven las lineas crudas (cabecera incluida) para que la auditoria vea exactamente
+     * lo persistido. [max] se acota a [1, 2000] para no materializar respuestas sin limite.
+     *
+     * Devuelve `(tail, totalEnArchivo)`. Ver [buildShadowJournalJson] para el porque del segundo.
+     */
+    private fun readShadowJournalTail(max: Int): Pair<List<String>, Int> {
+        val limite = max.coerceIn(1, 2000)
+        return try {
+            val interno = java.io.File(overlayService.filesDir, "TradeDraw_Audits")
+            val externo = overlayService.getExternalFilesDir(null)?.let { java.io.File(it, "TradeDraw_Audits") }
+            val candidatos = listOfNotNull(externo, interno)
+            val archivo = candidatos.firstOrNull { java.io.File(it, "shadow_journal.csv").isFile }
+                ?.let { java.io.File(it, "shadow_journal.csv") }
+                ?: return emptyList<String>() to 0
+            val todas = archivo.readLines(Charsets.UTF_8).filter { it.isNotBlank() }
+            todas.takeLast(limite) to todas.size
+        } catch (e: Exception) {
+            Log.e("TradeDrawHttp", "Error leyendo shadow_journal.csv", e)
+            emptyList<String>() to 0
+        }
+    }
+}
+
+/**
+ * R24/B3: serializa el volcado de la memoria adaptativa para `GET /adaptive_state`.
+ *
+ * SOLO LECTURA. Recibe el contenido CRUDO del archivo tal como esta en disco y no lo toca: no
+ * reescribe, no normaliza, no dispara `saveState` (que reiniciaria el TTL del archivo vivo).
+ *
+ * `state` se incrusta como objeto JSON cuando el contenido parsea, para que el validador lo lea
+ * directamente. Si el archivo esta corrupto se devuelve `parseable:false` y el texto escapado en
+ * `stateRaw`: una respuesta HTTP nunca debe dejar de ser JSON valido por culpa del dato que
+ * transporta. `firmas` es el conteo de `lossSignatures`, que es lo que V3 contrasta.
+ *
+ * @param crudo contenido del archivo, o `null` si no existe / no se pudo leer.
+ */
+internal fun buildAdaptiveStateJson(crudo: String?, ruta: String = ""): String {
+    if (crudo == null) {
+        return """{"success":true,"exists":false,"parseable":false,"firmas":0,"path":"${escapeJsonForJournal(ruta)}","state":null}"""
+    }
+    val objeto = try {
+        org.json.JSONObject(crudo)
+    } catch (e: Exception) {
+        null
+    }
+    if (objeto == null) {
+        return """{"success":true,"exists":true,"parseable":false,"firmas":0,"path":"${escapeJsonForJournal(ruta)}","state":null,"stateRaw":"${escapeJsonForJournal(crudo)}"}"""
+    }
+    val firmas = objeto.optJSONArray("lossSignatures")?.length() ?: 0
+    return """{"success":true,"exists":true,"parseable":true,"firmas":$firmas,"path":"${escapeJsonForJournal(ruta)}","state":$crudo}"""
+}
+
+/**
+ * R23 Iter 2: serializa el tail del journal SHADOW a JSON valido.
+ *
+ * `total` = numero de lineas devueltas (0 cuando no hay archivo). `totalEnArchivo` se anade para
+ * que el validador distinga "no hay decisiones" de "hay mas de `max`": `total` solo no lo dice.
+ * Se conserva `total` con el sentido del caso vacio documentado en la spec.
+ */
+internal fun buildShadowJournalJson(lines: List<String>, totalEnArchivo: Int = lines.size): String {
+    val cuerpo = lines.joinToString(",") { "\"${escapeJsonForJournal(it)}\"" }
+    return """{"success":true,"total":${lines.size},"totalEnArchivo":$totalEnArchivo,"lines":[$cuerpo]}"""
+}
+
+/** Escapado de comillas/controles para incrustar cada linea cruda del CSV en el JSON de respuesta. */
+internal fun escapeJsonForJournal(str: String): String {
+    return str.replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+}
+
+/**
+ * R23 Iter 4: buffer circular, thread-safe y de capacidad FIJA de los ticks ya validados.
+ *
+ * Existe para cerrar el hallazgo de la Iter 3: la paridad Live <-> Replay seguia en "NO EVALUABLE"
+ * (0 pares) porque no habia forma de extraer del dispositivo los ticks EXACTOS que entraron durante
+ * la ventana viva, y por tanto el motor offline no podia reproducir las mismas decisiones. Con esta
+ * fuente, el pipeline de validacion se baja los ticks por HTTP y reejecuta el replay determinista
+ * sobre los mismos datos.
+ *
+ * Capacidad FIJA de [capacity] entradas: al llenarse se descarta la mas antigua. Es un buffer de
+ * observabilidad, no un historico: 2000 ticks cubren ~20-30 min al ritmo real del feed (1-2 tick/s),
+ * que es la ventana de validacion de R23. Un buffer sin tope en un servicio permanente es una fuga
+ * de memoria, no una mejora.
+ *
+ * Se guardan los valores TAL CUAL los recibio el motor. NO se redondean: el activo del ring
+ * (`Z-CRY/IDX`) tiene un paso por tick de ~1,6e-06 sobre ~641,87, o sea que su rango relativo entero
+ * (2,5e-09) vive en los ultimos decimales del sexto digito. Cualquier redondeo a 6 decimales lo
+ * borraria y el replay dejaria de reproducir la anomalia que R23 esta investigando.
+ */
+internal class TickRingBuffer(val capacity: Int = 2000) {
+
+    data class Entry(val ts: Long, val ric: String, val price: Double)
+
+    private val buffer = ArrayDeque<Entry>(minOf(capacity, 64))
+
+    /** Numero de entradas retenidas ahora mismo (<= [capacity]). */
+    val size: Int get() = synchronized(buffer) { buffer.size }
+
+    /** Total de ticks aceptados desde el arranque, incluidos los ya descartados por el borde. */
+    @Volatile
+    var totalRecibidos: Long = 0L
+        private set
+
+    /**
+     * Registra un tick validado. Ignora precios no finitos: un NaN o Infinity incrustado en el JSON
+     * lo invalidaria, y el feed ya filtra estos casos antes de llegar aqui.
+     */
+    fun record(ts: Long, ric: String, price: Double) {
+        if (!price.isFinite()) return
+        synchronized(buffer) {
+            if (buffer.size >= capacity) buffer.removeFirst()
+            buffer.addLast(Entry(ts, ric, price))
+        }
+        totalRecibidos++
+    }
+
+    /**
+     * Ultimas [max] entradas, en orden cronologico ASCENDENTE (la ultima es la mas reciente), que es
+     * el orden que espera `loadTicks` del replay. [max] se acota a `[1, capacity]`.
+     */
+    fun tail(max: Int): List<Entry> {
+        val limite = max.coerceIn(1, capacity)
+        return synchronized(buffer) { buffer.toList().takeLast(limite) }
+    }
+
+    fun clear() {
+        synchronized(buffer) { buffer.clear() }
+    }
+}
+
+/**
+ * R23 Iter 4: serializa el tail de ticks a JSON.
+ *
+ * `total` = ticks devueltos. `totalEnBuffer` se anade por la misma razon que en `/shadow_journal`
+ * (precedente aceptado en la Iter 2): con `?max=500` sobre 2000 en buffer, `total` solo no distingue
+ * "no hay ticks" de "hay mas de los que pediste".
+ */
+internal fun buildTicksJson(ticks: List<TickRingBuffer.Entry>, totalEnBuffer: Int = ticks.size): String {
+    val cuerpo = ticks.joinToString(",") { t ->
+        """{"ts":${t.ts},"ric":"${escapeJsonForJournal(t.ric)}","price":${t.price}}"""
+    }
+    return """{"success":true,"total":${ticks.size},"totalEnBuffer":$totalEnBuffer,"ticks":[$cuerpo]}"""
+}
+
+/**
+ * R23 Iter 4: serializa el tail de ticks a CSV con cabecera `ts,ric,price`.
+ *
+ * El formato de precio es el round-trip EXACTO de Kotlin (`Double.toString`), no `%.6f`: ver la nota
+ * de precision en [TickRingBuffer]. Ademas coincide con lo que `loadTicks` del replay espera leer
+ * (`toDoubleOrNull`), asi que el archivo se puede volcar a disco y alimentar el replay sin tocar el
+ * parser existente.
+ */
+internal fun buildTicksCsv(ticks: List<TickRingBuffer.Entry>): String {
+    val sb = StringBuilder("ts,ric,price\n")
+    for (t in ticks) sb.append(t.ts).append(',').append(t.ric).append(',').append(t.price).append('\n')
+    return sb.toString()
 }

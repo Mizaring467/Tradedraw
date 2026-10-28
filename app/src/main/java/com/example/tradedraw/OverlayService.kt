@@ -108,6 +108,11 @@ class OverlayService : Service() {
     var modeJournal: ModeEventJournal? = null
         private set
 
+    /**
+     * Ronda 21 (Frente D): Health Supervisor Unificado que agrega estado READY, DEGRADED o BLOCKED.
+     */
+    val healthSupervisor: com.example.tradedraw.health.HealthSupervisor = com.example.tradedraw.health.HealthSupervisor()
+
     private var hudView: View? = null
     private var hudParams: WindowManager.LayoutParams? = null
     var isHudVisible = false
@@ -612,6 +617,7 @@ class OverlayService : Service() {
             }
             AutoTradeMode.SEMIAUTOMATIC -> Triple(R.drawable.ic_ai_chip, "SEMIAUTO", Color.YELLOW)
             AutoTradeMode.DISABLED -> Triple(R.drawable.ic_ai_chip, "MODO: OFF", Color.WHITE)
+            AutoTradeMode.SHADOW -> Triple(R.drawable.ic_ai_chip, "MODO: SHADOW 👻", Color.parseColor("#9333ea"))
         }
 
         addItemToSubmenu(modeIcon, modeText, modeColor) {
@@ -1262,11 +1268,15 @@ class OverlayService : Service() {
         }
 
         hudView?.findViewById<Button>(R.id.hud_btn_win)?.setOnClickListener {
-            riskManager.recordTradeWin(force = true)
+            // R24/B1.c: se etiqueta el ORIGEN antes de incrementar. V1 resta del lado `/status`
+            // todo incremento manual; sin etiqueta, el incremento seria NO EVALUABLE.
+            // R24/B1.a (fix): `settleManual` marca la MISMA clave de liquidacion que el motor, asi
+            // que si el `handler.post` del motor llega despues no vuelve a contar el trade.
+            riskManager.settleManual("MANUAL_HUD", win = true)
             updateHUDView()
         }
         hudView?.findViewById<Button>(R.id.hud_btn_loss)?.setOnClickListener {
-            riskManager.recordTradeLoss(force = true)
+            riskManager.settleManual("MANUAL_HUD", win = false)
             updateHUDView()
         }
         hudView?.findViewById<Button>(R.id.hud_btn_recalc_ai)?.setOnClickListener {
@@ -1670,6 +1680,10 @@ class OverlayService : Service() {
                         txtMode.text = "[OFF]"
                         txtMode.setTextColor(Color.GRAY)
                     }
+                }
+                AutoTradeMode.SHADOW -> {
+                    txtMode.text = "[SHADOW 👻]"
+                    txtMode.setTextColor(Color.parseColor("#9333ea"))
                 }
             }
 
@@ -2127,6 +2141,12 @@ class OverlayService : Service() {
                 title?.setTextColor(Color.parseColor("#facc15"))
                 desc?.text = "El bot te indicará cuándo y hacia dónde operar."
                 desc?.setTextColor(Color.parseColor("#94a3b8"))
+            }
+            AutoTradeMode.SHADOW -> {
+                title?.text = "👻 MODO SHADOW: Simulación en Vivo"
+                title?.setTextColor(Color.parseColor("#c084fc"))
+                desc?.text = "Evaluando ticks y vetos reales con decision_id. Cero taps ni riesgo de saldo."
+                desc?.setTextColor(Color.parseColor("#e9d5ff"))
             }
             AutoTradeMode.DISABLED -> {
                 title?.text = "⚪ MODO OFF: En Espera"

@@ -1,0 +1,2 @@
+timestamp,asset,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason,decision_id,source
+1792385041282,Z-CRY/IDX,2026-10-18T23:44:01,AUTO_ADAPTIVE,YOLO,BUY,0.85,641.87,1.00,1000.00,WIN,1000.82,60,SIDEWAYS,0.08,0.04,641.87,NEUTRAL,TRENDING,1,WIN,"🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 53% | Dist S: 7% | ⏱ 1s) -> CALL [Confluencia: 80pts]",1d3743d5-c7fe-368c-aea8-42a517b7eb75,ticks_live.csv

@@ -1,0 +1,1916 @@
+{
+  "metadata": {
+    "cycle": "R23K",
+    "task": "A1_INDEPENDENT_CUBES_RECOMPUTATION",
+    "agent": "OPENCODE (w1:pB)",
+    "orchestrator": "AGY (w1:p1)",
+    "seed": 20261019,
+    "bootstrap_replications": 10000,
+    "canonical_equation": "N == W + L + VOID",
+    "total_trades_confirmed": 71
+  },
+  "cubes": {
+    "cubo_1": {
+      "n": 43,
+      "resolved": 42,
+      "wins": 17,
+      "losses": 25,
+      "voids": 1,
+      "win_rate": 0.4048,
+      "wilson_ci_95": [
+        0.2704,
+        0.5551
+      ],
+      "breakeven": 0.5464,
+      "edge_detected": false,
+      "total_delta_cop": -1094999.04,
+      "ev_r": {
+        "mean": -0.2544,
+        "bootstrap_ci_95": [
+          -0.5095,
+          0.0195
+        ]
+      },
+      "ev_cop": {
+        "mean": -25465.09,
+        "bootstrap_ci_95": [
+          -50976.51,
+          1930.3
+        ]
+      },
+      "max_drawdown": {
+        "abs_cop": 1260999.68,
+        "pct": 3.1974
+      },
+      "direction_breakdown": {
+        "BUY": {
+          "n": 23,
+          "wins": 8,
+          "losses": 15,
+          "win_rate": 0.3478,
+          "wilson_ci_95": [
+            0.1881,
+            0.5511
+          ],
+          "delta_cop": -840000.0
+        },
+        "SELL": {
+          "n": 20,
+          "wins": 9,
+          "losses": 10,
+          "win_rate": 0.4737,
+          "wilson_ci_95": [
+            0.2733,
+            0.6829
+          ],
+          "delta_cop": -254999.04
+        }
+      },
+      "replay_parity": {
+        "formal_pairs": 22,
+        "matches": 20,
+        "divergences": 2,
+        "por_ventana": {
+          "W07": {
+            "matches": 1,
+            "divergencias": 0,
+            "pares": 1
+          },
+          "W08": {
+            "matches": 3,
+            "divergencias": 1,
+            "pares": 4
+          },
+          "W09": {
+            "matches": 1,
+            "divergencias": 0,
+            "pares": 1
+          },
+          "W10": {
+            "matches": 0,
+            "divergencias": 0,
+            "pares": 0
+          },
+          "W11": {
+            "matches": 0,
+            "divergencias": 1,
+            "pares": 1
+          },
+          "W12": {
+            "matches": 0,
+            "divergencias": 0,
+            "pares": 0
+          },
+          "W13": {
+            "matches": 5,
+            "divergencias": 0,
+            "pares": 5
+          },
+          "W14": {
+            "matches": 1,
+            "divergencias": 0,
+            "pares": 1
+          },
+          "W15": {
+            "matches": 0,
+            "divergencias": 0,
+            "pares": 0
+          },
+          "W16": {
+            "matches": 1,
+            "divergencias": 0,
+            "pares": 1
+          },
+          "W17": {
+            "matches": 0,
+            "divergencias": 0,
+            "pares": 0
+          },
+          "W18": {
+            "matches": 2,
+            "divergencias": 0,
+            "pares": 2
+          },
+          "W19": {
+            "matches": 3,
+            "divergencias": 0,
+            "pares": 3
+          },
+          "W20": {
+            "matches": 1,
+            "divergencias": 0,
+            "pares": 1
+          },
+          "W21": {
+            "matches": 2,
+            "divergencias": 0,
+            "pares": 2
+          },
+          "W22": {
+            "matches": 0,
+            "divergencias": 0,
+            "pares": 0
+          }
+        },
+        "ventanas_sin_paridad": [],
+        "match_rate": 0.9091,
+        "wilson_ci_95": [
+          0.7219,
+          0.9747
+        ],
+        "verdict": "PASS"
+      }
+    },
+    "cubo_2": {
+      "n": 60,
+      "resolved": 59,
+      "wins": 30,
+      "losses": 29,
+      "voids": 1,
+      "win_rate": 0.5085,
+      "wilson_ci_95": [
+        0.3844,
+        0.6316
+      ],
+      "breakeven": 0.5464,
+      "edge_detected": false,
+      "total_delta_cop": -427000.32,
+      "ev_r": {
+        "mean": -0.071,
+        "bootstrap_ci_95": [
+          -0.3002,
+          0.1567
+        ]
+      },
+      "ev_cop": {
+        "mean": -7116.67,
+        "bootstrap_ci_95": [
+          -30033.15,
+          15649.92
+        ]
+      },
+      "max_drawdown": {
+        "abs_cop": 1260999.68,
+        "pct": 3.1729
+      },
+      "direction_breakdown": {
+        "BUY": {
+          "n": 33,
+          "wins": 16,
+          "losses": 17,
+          "win_rate": 0.4848,
+          "wilson_ci_95": [
+            0.325,
+            0.6478
+          ],
+          "delta_cop": -383001.6
+        },
+        "SELL": {
+          "n": 27,
+          "wins": 14,
+          "losses": 12,
+          "win_rate": 0.5385,
+          "wilson_ci_95": [
+            0.3546,
+            0.7124
+          ],
+          "delta_cop": -43998.72
+        }
+      },
+      "verdict": "NO CONCLUYENTE (N=60 < 40 y límite inf Wilson 38.44% <= BE 54.64%)"
+    },
+    "cubo_3": {
+      "n": 11,
+      "resolved": 11,
+      "wins": 7,
+      "losses": 4,
+      "voids": 0,
+      "win_rate": 0.6364,
+      "wilson_ci_95": [
+        0.3538,
+        0.8483
+      ],
+      "breakeven": 0.5495,
+      "edge_detected": false,
+      "total_delta_cop": 178001.92,
+      "ev_r": {
+        "mean": 0.1582,
+        "bootstrap_ci_95": [
+          -0.3382,
+          0.6545
+        ]
+      },
+      "ev_cop": {
+        "mean": 16181.99,
+        "bootstrap_ci_95": [
+          -33726.84,
+          66000.29
+        ]
+      },
+      "max_drawdown": {
+        "abs_cop": 200000.0,
+        "pct": 0.5092
+      },
+      "direction_breakdown": {
+        "BUY": {
+          "n": 5,
+          "wins": 3,
+          "losses": 2,
+          "win_rate": 0.6,
+          "wilson_ci_95": [
+            0.2307,
+            0.8824
+          ],
+          "delta_cop": 48005.12
+        },
+        "SELL": {
+          "n": 6,
+          "wins": 4,
+          "losses": 2,
+          "win_rate": 0.6667,
+          "wilson_ci_95": [
+            0.3,
+            0.9032
+          ],
+          "delta_cop": 129996.8
+        }
+      }
+    },
+    "total_consolidado": {
+      "n": 71,
+      "resolved": 70,
+      "wins": 37,
+      "losses": 33,
+      "voids": 1,
+      "win_rate": 0.5286,
+      "wilson_ci_95": [
+        0.4132,
+        0.641
+      ],
+      "breakeven": 0.5473,
+      "edge_detected": false,
+      "total_delta_cop": -248998.4,
+      "ev_r": {
+        "mean": -0.0355,
+        "bootstrap_ci_95": [
+          -0.2414,
+          0.1813
+        ]
+      },
+      "ev_cop": {
+        "mean": -3507.02,
+        "bootstrap_ci_95": [
+          -24098.54,
+          18169.19
+        ]
+      },
+      "max_drawdown": {
+        "abs_cop": 1260999.68,
+        "pct": 3.1491
+      },
+      "direction_breakdown": {
+        "BUY": {
+          "n": 38,
+          "wins": 19,
+          "losses": 19,
+          "win_rate": 0.5,
+          "wilson_ci_95": [
+            0.3485,
+            0.6515
+          ],
+          "delta_cop": -334996.48
+        },
+        "SELL": {
+          "n": 33,
+          "wins": 18,
+          "losses": 14,
+          "win_rate": 0.5625,
+          "wilson_ci_95": [
+            0.3933,
+            0.7183
+          ],
+          "delta_cop": 85998.08
+        }
+      }
+    },
+    "sensibilidades": {
+      "cubo_2_sin_w04": {
+        "n": 52,
+        "resolved": 51,
+        "wins": 23,
+        "losses": 28,
+        "voids": 1,
+        "win_rate": 0.451,
+        "wilson_ci_95": [
+          0.3227,
+          0.5862
+        ],
+        "breakeven": 0.5464,
+        "edge_detected": false,
+        "total_delta_cop": -900999.68,
+        "ev_r": {
+          "mean": -0.1731,
+          "bootstrap_ci_95": [
+            -0.4035,
+            0.0727
+          ]
+        },
+        "ev_cop": {
+          "mean": -17326.92,
+          "bootstrap_ci_95": [
+            -40365.44,
+            7250.17
+          ]
+        },
+        "max_drawdown": {
+          "abs_cop": 1260999.68,
+          "pct": 3.1664
+        },
+        "direction_breakdown": {
+          "BUY": {
+            "n": 29,
+            "wins": 12,
+            "losses": 17,
+            "win_rate": 0.4138,
+            "wilson_ci_95": [
+              0.2551,
+              0.5926
+            ],
+            "delta_cop": -710999.04
+          },
+          "SELL": {
+            "n": 23,
+            "wins": 11,
+            "losses": 11,
+            "win_rate": 0.5,
+            "wilson_ci_95": [
+              0.3072,
+              0.6928
+            ],
+            "delta_cop": -190000.64
+          }
+        }
+      },
+      "solo_w07_plus": {
+        "n": 43,
+        "resolved": 42,
+        "wins": 17,
+        "losses": 25,
+        "voids": 1,
+        "win_rate": 0.4048,
+        "wilson_ci_95": [
+          0.2704,
+          0.5551
+        ],
+        "breakeven": 0.5464,
+        "edge_detected": false,
+        "total_delta_cop": -1094999.04,
+        "ev_r": {
+          "mean": -0.2544,
+          "bootstrap_ci_95": [
+            -0.5095,
+            0.0195
+          ]
+        },
+        "ev_cop": {
+          "mean": -25465.09,
+          "bootstrap_ci_95": [
+            -50976.51,
+            1930.3
+          ]
+        },
+        "max_drawdown": {
+          "abs_cop": 1260999.68,
+          "pct": 3.1974
+        },
+        "direction_breakdown": {
+          "BUY": {
+            "n": 23,
+            "wins": 8,
+            "losses": 15,
+            "win_rate": 0.3478,
+            "wilson_ci_95": [
+              0.1881,
+              0.5511
+            ],
+            "delta_cop": -840000.0
+          },
+          "SELL": {
+            "n": 20,
+            "wins": 9,
+            "losses": 10,
+            "win_rate": 0.4737,
+            "wilson_ci_95": [
+              0.2733,
+              0.6829
+            ],
+            "delta_cop": -254999.04
+          }
+        }
+      },
+      "segunda_mitad_cronologica": {
+        "n": 36,
+        "resolved": 35,
+        "wins": 14,
+        "losses": 21,
+        "voids": 1,
+        "win_rate": 0.4,
+        "wilson_ci_95": [
+          0.2555,
+          0.5643
+        ],
+        "breakeven": 0.5464,
+        "edge_detected": false,
+        "total_delta_cop": -944000.0,
+        "ev_r": {
+          "mean": -0.2619,
+          "bootstrap_ci_95": [
+            -0.5433,
+            0.0192
+          ]
+        },
+        "ev_cop": {
+          "mean": -26222.22,
+          "bootstrap_ci_95": [
+            -54361.1,
+            1889.07
+          ]
+        },
+        "max_drawdown": {
+          "abs_cop": 1027000.32,
+          "pct": 2.6196
+        },
+        "direction_breakdown": {
+          "BUY": {
+            "n": 19,
+            "wins": 7,
+            "losses": 12,
+            "win_rate": 0.3684,
+            "wilson_ci_95": [
+              0.1915,
+              0.5896
+            ],
+            "delta_cop": -623001.6
+          },
+          "SELL": {
+            "n": 17,
+            "wins": 7,
+            "losses": 9,
+            "win_rate": 0.4375,
+            "wilson_ci_95": [
+              0.231,
+              0.6682
+            ],
+            "delta_cop": -320998.4
+          }
+        }
+      }
+    }
+  },
+  "balance_chain_audit": [
+    {
+      "window": "W01",
+      "prev_window": null,
+      "initial_balance": 39030735.36,
+      "final_balance": 39179735.04,
+      "sum_deltas": 148999.68,
+      "delta_window": 148999.68,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W02",
+      "prev_window": "W01",
+      "initial_balance": 39179735.04,
+      "final_balance": 39243735.04,
+      "sum_deltas": 64000.0,
+      "delta_window": 64000.0,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W03",
+      "prev_window": "W02",
+      "initial_balance": 39243735.04,
+      "final_balance": 39208737.28,
+      "sum_deltas": -34997.76,
+      "delta_window": -34997.76,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W04",
+      "prev_window": "W03",
+      "initial_balance": 38908736.0,
+      "final_balance": 39382735.36,
+      "sum_deltas": 473999.36,
+      "delta_window": 473999.36,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": -300001.28,
+      "continuity_status": "HUECO_INTER_FASE_PRE_VETO"
+    },
+    {
+      "window": "W05",
+      "prev_window": "W04",
+      "initial_balance": 39464737.28,
+      "final_balance": 39592737.28,
+      "sum_deltas": 128000.0,
+      "delta_window": 128000.0,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 82001.92,
+      "continuity_status": "HUECO_RESIDUO_POST_W04"
+    },
+    {
+      "window": "W06",
+      "prev_window": "W05",
+      "initial_balance": 39205736.96,
+      "final_balance": 39271736.32,
+      "sum_deltas": 65999.36,
+      "delta_window": 65999.36,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": -387000.32,
+      "continuity_status": "HUECO_INTER_FASE_PAYOUT_83"
+    },
+    {
+      "window": "W07",
+      "prev_window": "W06",
+      "initial_balance": 39271736.32,
+      "final_balance": 39337735.68,
+      "sum_deltas": 65999.36,
+      "delta_window": 65999.36,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W08",
+      "prev_window": "W07",
+      "initial_balance": 39337735.68,
+      "final_balance": 39120737.28,
+      "sum_deltas": -216998.4,
+      "delta_window": -216998.4,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W09",
+      "prev_window": "W08",
+      "initial_balance": 39120737.28,
+      "final_balance": 39103736.32,
+      "sum_deltas": -17000.96,
+      "delta_window": -17000.96,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W10",
+      "prev_window": "W09",
+      "initial_balance": 39103736.32,
+      "final_balance": 39003735.04,
+      "sum_deltas": -100001.28,
+      "delta_window": -100001.28,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W11",
+      "prev_window": "W10",
+      "initial_balance": 39003735.04,
+      "final_balance": 39085736.96,
+      "sum_deltas": 82001.92,
+      "delta_window": 82001.92,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W12",
+      "prev_window": "W11",
+      "initial_balance": 39085736.96,
+      "final_balance": 38985735.68,
+      "sum_deltas": -100001.28,
+      "delta_window": -100001.28,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W13",
+      "prev_window": "W12",
+      "initial_balance": 38985735.68,
+      "final_balance": 38851737.6,
+      "sum_deltas": -133998.08,
+      "delta_window": -133998.08,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W14",
+      "prev_window": "W13",
+      "initial_balance": 38851737.6,
+      "final_balance": 38751736.32,
+      "sum_deltas": -100001.28,
+      "delta_window": -100001.28,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W15",
+      "prev_window": "W14",
+      "initial_balance": 38751736.32,
+      "final_balance": 38751736.32,
+      "sum_deltas": 0,
+      "delta_window": 0.0,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W16",
+      "prev_window": "W15",
+      "initial_balance": 38751736.32,
+      "final_balance": 38734735.36,
+      "sum_deltas": -17000.96,
+      "delta_window": -17000.96,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W17",
+      "prev_window": "W16",
+      "initial_balance": 38734735.36,
+      "final_balance": 38817735.68,
+      "sum_deltas": 83000.32,
+      "delta_window": 83000.32,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W18",
+      "prev_window": "W17",
+      "initial_balance": 38817735.68,
+      "final_balance": 38863736.32,
+      "sum_deltas": 46000.64,
+      "delta_window": 46000.64,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W19",
+      "prev_window": "W18",
+      "initial_balance": 38863736.32,
+      "final_balance": 38827735.04,
+      "sum_deltas": -36001.28,
+      "delta_window": -36001.28,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W20",
+      "prev_window": "W19",
+      "initial_balance": 38827735.04,
+      "final_balance": 38593735.68,
+      "sum_deltas": -233999.36,
+      "delta_window": -233999.36,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W21",
+      "prev_window": "W20",
+      "initial_balance": 38593735.68,
+      "final_balance": 38276736.0,
+      "sum_deltas": -316999.68,
+      "delta_window": -316999.68,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    },
+    {
+      "window": "W22",
+      "prev_window": "W21",
+      "initial_balance": 38276736.0,
+      "final_balance": 38176737.28,
+      "sum_deltas": -99998.72,
+      "delta_window": -99998.72,
+      "internal_discrepancy": 0.0,
+      "continuity_gap": 0.0,
+      "continuity_status": "CONTINUO"
+    }
+  ],
+  "incidents": [
+    {
+      "type": "DUPLICATE_DEDUPLICATED",
+      "trade_id": "daa48cfa-fd53-4709-8300-0e1f63185cea",
+      "encountered_in": "W02",
+      "detail": "Trade ya registrado previamente; descartado de esta ventana."
+    },
+    {
+      "type": "RESIDUAL_INTERWINDOW_TRADE",
+      "trade_id": "77015885-5d61-4fdf-9ada-20da3cc53431",
+      "timestamp_ms": 1792353967459,
+      "file": "loops/r23h_validation/window_05_clean/trades.csv",
+      "window_bounds": [
+        1792360082133,
+        1792361288057
+      ],
+      "detail": "Trade fuera del intervalo de captura de la ventana; clasificado como residuo inter-ventana."
+    },
+    {
+      "type": "DUPLICATE_DEDUPLICATED",
+      "trade_id": "205eed81-fd3b-47d7-8efa-4b3fb7058499",
+      "encountered_in": "W11",
+      "detail": "Trade ya registrado previamente; descartado de esta ventana."
+    }
+  ],
+  "canonical_trades_ledger": [
+    {
+      "trade_id": "65bd681f-bbab-4239-908a-9d92e9ddc120",
+      "decision_id": "fef22bb5-ac65-32a9-aa39-0dd00632f7cd",
+      "timestamp_ms": 1792279985281,
+      "action": "SELL",
+      "balance_at_trade": 38930736.64,
+      "window": "W01",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_01/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 39030735.36,
+      "balance_post": 39113735.68,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "84d7288c-bcb2-450f-9e43-98b2fe10d093",
+      "decision_id": "04ba348e-acc2-3055-95c7-7b95d20d0d86",
+      "timestamp_ms": 1792280164241,
+      "action": "BUY",
+      "balance_at_trade": 39013736.96,
+      "window": "W01",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_01/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 39113735.68,
+      "balance_post": 39196736.0,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "bd26173a-6608-4802-bca7-d99951833559",
+      "decision_id": "20957627-30c7-325d-a43f-55d1fcfdbcb7",
+      "timestamp_ms": 1792280347606,
+      "action": "BUY",
+      "balance_at_trade": 39096737.28,
+      "window": "W01",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_01/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 39196736.0,
+      "balance_post": 39279736.32,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "daa48cfa-fd53-4709-8300-0e1f63185cea",
+      "decision_id": "8a57a25e-d652-3a69-adea-5b09f86ee06e",
+      "timestamp_ms": 1792280644113,
+      "action": "SELL",
+      "balance_at_trade": 39179735.04,
+      "window": "W01",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_01/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 39279736.32,
+      "balance_post": 39179735.04,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "1f8ab63b-f399-439d-8027-a48c0c2f7db5",
+      "decision_id": "3cf1896f-5ed6-397c-b51e-63aa99a24904",
+      "timestamp_ms": 1792282204776,
+      "action": "BUY",
+      "balance_at_trade": 39079736.32,
+      "window": "W02",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_02/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 39179735.04,
+      "balance_post": 39079736.32,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "20d30e05-d87f-4217-94e2-67ad9da1f45c",
+      "decision_id": "1f9078dc-5e82-31d5-a3cb-1fdad2378284",
+      "timestamp_ms": 1792282324774,
+      "action": "SELL",
+      "balance_at_trade": 38979737.6,
+      "window": "W02",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_02/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 39079736.32,
+      "balance_post": 39161735.68,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "1a26df52-5446-432d-aaaf-bb5b1c5d06a4",
+      "decision_id": "0bccc051-00fc-36bb-8cb4-57e188fa0e09",
+      "timestamp_ms": 1792282624088,
+      "action": "SELL",
+      "balance_at_trade": 39061736.96,
+      "window": "W02",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_02/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 39161735.68,
+      "balance_post": 39243735.04,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "d43f183d-b035-4657-a6f5-88fa28db3cde",
+      "decision_id": "74a0e873-8966-37df-b6cf-9af82f985a0f",
+      "timestamp_ms": 1792285146232,
+      "action": "BUY",
+      "balance_at_trade": 39143736.32,
+      "window": "W03",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_03/trades.csv",
+      "result": "WIN",
+      "delta": 82001.92,
+      "balance_pre": 39243735.04,
+      "balance_post": 39325736.96,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "8522ab74-a55c-4bcf-a201-e001a42131ef",
+      "decision_id": "293f57bf-e117-3b07-b092-ec26e214d12f",
+      "timestamp_ms": 1792285565725,
+      "action": "SELL",
+      "balance_at_trade": 39225735.68,
+      "window": "W03",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_03/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 39325736.96,
+      "balance_post": 39225735.68,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "f8a27c1b-a345-4140-8d35-d35cc37f7778",
+      "decision_id": "ce64c4b3-f16d-36e8-9356-09513f412596",
+      "timestamp_ms": 1792285804188,
+      "action": "BUY",
+      "balance_at_trade": 39125736.96,
+      "window": "W03",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_03/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 39225735.68,
+      "balance_post": 39125736.96,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "30e1f103-ce53-41ae-842a-e402ac44d926",
+      "decision_id": "bd9fa290-306b-309d-90a0-db8d3b45fcba",
+      "timestamp_ms": 1792285984501,
+      "action": "SELL",
+      "balance_at_trade": 39025735.68,
+      "window": "W03",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_03/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 39125736.96,
+      "balance_post": 39208737.28,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "31ff1828-9881-4124-9806-8441c6be05dd",
+      "decision_id": "15200b2d-2d2d-3f0b-be4f-f5c4ff4c9a94",
+      "timestamp_ms": 1792352764036,
+      "action": "BUY",
+      "balance_at_trade": 38808737.28,
+      "window": "W04",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_04_clean/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 38908736.0,
+      "balance_post": 38990735.36,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "c3593040-77a8-440f-9434-268d8ef0c1b1",
+      "decision_id": "0e2b4d5c-8be7-350b-b5fe-97318daee6ad",
+      "timestamp_ms": 1792352884665,
+      "action": "SELL",
+      "balance_at_trade": 38890736.64,
+      "window": "W04",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_04_clean/trades.csv",
+      "result": "WIN",
+      "delta": 82001.92,
+      "balance_pre": 38990735.36,
+      "balance_post": 39072737.28,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "24461840-67a2-4dbe-8c23-6ffc67c7458d",
+      "decision_id": "bcf70d73-dd58-3e0f-859a-6a86cda3f2ab",
+      "timestamp_ms": 1792353008040,
+      "action": "SELL",
+      "balance_at_trade": 38972736.0,
+      "window": "W04",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_04_clean/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 39072737.28,
+      "balance_post": 38972736.0,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "b2e2e51e-edd8-47f6-8973-041a41b807af",
+      "decision_id": "ebf23122-15f1-3558-b22a-4d17cf29120e",
+      "timestamp_ms": 1792353244628,
+      "action": "BUY",
+      "balance_at_trade": 38872737.28,
+      "window": "W04",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_04_clean/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 38972736.0,
+      "balance_post": 39054735.36,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "41f1c715-3d3a-4bae-b907-0dbe1cc3ecf1",
+      "decision_id": "bdd01e62-b8cb-3d90-b0e1-cc9e8abd8f2a",
+      "timestamp_ms": 1792353423929,
+      "action": "SELL",
+      "balance_at_trade": 38954736.64,
+      "window": "W04",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_04_clean/trades.csv",
+      "result": "WIN",
+      "delta": 82001.92,
+      "balance_pre": 39054735.36,
+      "balance_post": 39136737.28,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "d01926a6-4f71-40ac-b447-26759e21bd5c",
+      "decision_id": "ef06680c-1973-3131-9f03-e1dbc1888db9",
+      "timestamp_ms": 1792353544236,
+      "action": "BUY",
+      "balance_at_trade": 39036736.0,
+      "window": "W04",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_04_clean/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 39136737.28,
+      "balance_post": 39218736.64,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "7567c436-cbca-4380-a2c5-eb79b7b8d83c",
+      "decision_id": "d5861df0-875d-308c-825f-1ce075f1f12c",
+      "timestamp_ms": 1792353666041,
+      "action": "SELL",
+      "balance_at_trade": 39118735.36,
+      "window": "W04",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_04_clean/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 39218736.64,
+      "balance_post": 39300736.0,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "b9cf7c75-c70a-47a6-a44a-8842e7f0af85",
+      "decision_id": "595a0f33-1b9d-3085-bc3a-62f5dfea4055",
+      "timestamp_ms": 1792353845558,
+      "action": "BUY",
+      "balance_at_trade": 39200737.28,
+      "window": "W04",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_04_clean/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 39300736.0,
+      "balance_post": 39382735.36,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "925baaeb-0b92-439a-bac7-47b2bb03e6fb",
+      "decision_id": "15469ec5-770e-3d7a-87dd-d79bb91e0e29",
+      "timestamp_ms": 1792360085720,
+      "action": "BUY",
+      "balance_at_trade": 39364736.0,
+      "window": "W05",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_05_clean/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 39464737.28,
+      "balance_post": 39364736.0,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "c1095ceb-2a49-4bf3-a231-87227b934a6f",
+      "decision_id": "25ede3b0-d4be-31be-84d0-41b61a37ae07",
+      "timestamp_ms": 1792360203773,
+      "action": "BUY",
+      "balance_at_trade": 39264737.28,
+      "window": "W05",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_05_clean/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 39364736.0,
+      "balance_post": 39264737.28,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "49140605-2080-4ae0-bb0a-06de60ec9182",
+      "decision_id": "f8e8f765-90c1-3f1f-b22b-c0f83c1c1394",
+      "timestamp_ms": 1792360326825,
+      "action": "SELL",
+      "balance_at_trade": 39164736.0,
+      "window": "W05",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_05_clean/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 39264737.28,
+      "balance_post": 39346736.64,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "db8be3b8-21f5-44c4-ba09-7b314e318d06",
+      "decision_id": "4b065644-1880-3419-b282-fff707110ea5",
+      "timestamp_ms": 1792360448118,
+      "action": "BUY",
+      "balance_at_trade": 39246735.36,
+      "window": "W05",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_05_clean/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 39346736.64,
+      "balance_post": 39428736.0,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "ac2dec23-8f9e-4ef7-924a-62044fde0584",
+      "decision_id": "be6b49d1-501a-343a-b793-f604d9bd9dc4",
+      "timestamp_ms": 1792360566981,
+      "action": "BUY",
+      "balance_at_trade": 39328737.28,
+      "window": "W05",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_05_clean/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 39428736.0,
+      "balance_post": 39510735.36,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "f22db7a2-ad1c-4bd4-80df-6eb3a5b12229",
+      "decision_id": "9fd15092-7a03-3ddc-a734-658fcb6e13bf",
+      "timestamp_ms": 1792360688580,
+      "action": "BUY",
+      "balance_at_trade": 39510735.36,
+      "window": "W05",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23h_validation/window_05_clean/trades.csv",
+      "result": "WIN",
+      "delta": 82001.92,
+      "balance_pre": 39510735.36,
+      "balance_post": 39592737.28,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "7752b777-5b44-4a16-9415-c85b8f1d0cf2",
+      "decision_id": "e442dc4a-fe6a-3539-aca0-e279c2fd088d",
+      "timestamp_ms": 1792367524933,
+      "action": "SELL",
+      "balance_at_trade": 39105735.68,
+      "window": "W06",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23i_validation/window_06_clean/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 39205736.96,
+      "balance_post": 39288737.28,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "e8353f7b-215e-4026-b693-782b3a3754ad",
+      "decision_id": "81aba7e4-71d6-3659-a58d-e0f7a01ff2ca",
+      "timestamp_ms": 1792367704964,
+      "action": "SELL",
+      "balance_at_trade": 39288737.28,
+      "window": "W06",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23i_validation/window_06_clean/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 39288737.28,
+      "balance_post": 39188736.0,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "e7efc2ba-bf4a-4c17-8326-96b3445ea78b",
+      "decision_id": "548730e7-15ac-393d-b8f9-aa52f2cf5ca8",
+      "timestamp_ms": 1792368186234,
+      "action": "BUY",
+      "balance_at_trade": 39088737.28,
+      "window": "W06",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23i_validation/window_06_clean/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 39188736.0,
+      "balance_post": 39271736.32,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "915bfc84-211d-4d61-a017-28c7e690a548",
+      "decision_id": "378178f8-4af7-3d63-a721-c15532dcfaa3",
+      "timestamp_ms": 1792376104312,
+      "action": "SELL",
+      "balance_at_trade": 39171737.6,
+      "window": "W07",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23j_validation/window_07_clean/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 39271736.32,
+      "balance_post": 39354736.64,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "81bed1af-356a-4036-924f-37a2ecb19961",
+      "decision_id": "4158a89b-3d33-314a-8a31-3326f4064f2f",
+      "timestamp_ms": 1792376224476,
+      "action": "BUY",
+      "balance_at_trade": 39254735.36,
+      "window": "W07",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23j_validation/window_07_clean/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 39354736.64,
+      "balance_post": 39437736.96,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "8e820a20-3a34-4312-8585-90761c18416b",
+      "decision_id": "9f68a71d-b20d-33cd-b989-b511528a3884",
+      "timestamp_ms": 1792376343985,
+      "action": "SELL",
+      "balance_at_trade": 39337735.68,
+      "window": "W07",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23j_validation/window_07_clean/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 39437736.96,
+      "balance_post": 39337735.68,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "e00abd2a-fa9e-4be3-8f3f-85db9aa57fda",
+      "decision_id": "bbc9a96a-01c8-3589-87e6-9348736f1b68",
+      "timestamp_ms": 1792379763204,
+      "action": "BUY",
+      "balance_at_trade": 39237736.96,
+      "window": "W08",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23j_validation/window_08_clean/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 39337735.68,
+      "balance_post": 39237736.96,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "8a87086c-c941-47ef-94b1-bafec9335c3a",
+      "decision_id": "0f644510-442f-309e-91a5-c29ed2eda587",
+      "timestamp_ms": 1792379884756,
+      "action": "BUY",
+      "balance_at_trade": 39137735.68,
+      "window": "W08",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23j_validation/window_08_clean/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 39237736.96,
+      "balance_post": 39137735.68,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "69efc7bc-4097-4384-b611-b562c2df5fa8",
+      "decision_id": "fc7bbff7-42cb-3257-84f9-f420bd23ddc9",
+      "timestamp_ms": 1792380003704,
+      "action": "BUY",
+      "balance_at_trade": 39037736.96,
+      "window": "W08",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23j_validation/window_08_clean/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 39137735.68,
+      "balance_post": 39037736.96,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "8c9cc568-f89d-41ad-842b-b37a0466b384",
+      "decision_id": "1e8d3be5-0119-3d4f-8a8c-7c465dfaf7a8",
+      "timestamp_ms": 1792380123171,
+      "action": "SELL",
+      "balance_at_trade": 38937735.68,
+      "window": "W08",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23j_validation/window_08_clean/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 39037736.96,
+      "balance_post": 39120737.28,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "a7a7cd3a-5a3e-4701-b3bc-a26d9e1a30cf",
+      "decision_id": "48250ce1-5f4a-3c1c-8a93-870899ab5ae6",
+      "timestamp_ms": 1792381443141,
+      "action": "SELL",
+      "balance_at_trade": 39020736.0,
+      "window": "W09",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23j_validation/window_09_clean/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 39120737.28,
+      "balance_post": 39203737.6,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "4c3c69dc-afa3-4444-a10b-1ec09fb59a4f",
+      "decision_id": "c8624349-ba64-3a50-81d9-52a4eec69c76",
+      "timestamp_ms": 1792381682890,
+      "action": "SELL",
+      "balance_at_trade": 39103736.32,
+      "window": "W09",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23j_validation/window_09_clean/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 39203737.6,
+      "balance_post": 39103736.32,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "205eed81-fd3b-47d7-8efa-4b3fb7058499",
+      "decision_id": "0d6d32fa-eead-3b4f-996c-731a1a2b40f8",
+      "timestamp_ms": 1792385045288,
+      "action": "BUY",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 39103736.32,
+      "balance_post": 39003735.04,
+      "window": "W10",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "workflows/rounds/R23J_W10_BORDER_TRADE_RECONCILIATION.md",
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "7476bd5b-fc43-460b-8cbf-a6f04e7b90d8",
+      "decision_id": "f832ecec-e75a-378d-9cc5-c038f658ab02",
+      "timestamp_ms": 1792386669360,
+      "action": "BUY",
+      "balance_at_trade": 38903736.32,
+      "window": "W11",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23j_validation/window_11_clean/trades.csv",
+      "result": "WIN",
+      "delta": 82001.92,
+      "balance_pre": 39003735.04,
+      "balance_post": 39085736.96,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "a4439f1b-3178-4a98-be78-f21dbba469ad",
+      "decision_id": "b014e197-0902-3225-a6e6-9f010dee4bac",
+      "timestamp_ms": 1792392723567,
+      "action": "BUY",
+      "balance_at_trade": 38985735.68,
+      "window": "W12",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_12/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 39085736.96,
+      "balance_post": 38985735.68,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "2584d3bc-937a-4372-8333-a7718008fab6",
+      "decision_id": "160879cc-40fc-3c55-bcd5-1c92ac86e1d2",
+      "timestamp_ms": 1792394405243,
+      "action": "BUY",
+      "balance_at_trade": 38885736.96,
+      "window": "W13",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_13/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 38985735.68,
+      "balance_post": 38885736.96,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "2050e6b8-2bcb-40f2-a5a2-538fb9f15a01",
+      "decision_id": "2f598ddd-2b1a-3900-8d99-89b823ab146f",
+      "timestamp_ms": 1792394524808,
+      "action": "SELL",
+      "balance_at_trade": 38785735.68,
+      "window": "W13",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_13/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 38885736.96,
+      "balance_post": 38968737.28,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "bf443c3b-1815-4ad6-981e-0040480a5912",
+      "decision_id": "d3f9f782-2dd8-3a2f-ac3b-eb326271fc31",
+      "timestamp_ms": 1792394643955,
+      "action": "BUY",
+      "balance_at_trade": 38868736.0,
+      "window": "W13",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_13/trades.csv",
+      "result": "WIN",
+      "delta": 82997.76,
+      "balance_pre": 38968737.28,
+      "balance_post": 39051735.04,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "401e3193-e597-4017-ad4d-6cb2f6cbd7f9",
+      "decision_id": "b1da6b01-4e69-3ed2-a03d-fd5b0eca9f5c",
+      "timestamp_ms": 1792394823600,
+      "action": "BUY",
+      "balance_at_trade": 38951736.32,
+      "window": "W13",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_13/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 39051735.04,
+      "balance_post": 38951736.32,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "8f6436b2-ec89-4012-a961-17ecab43d8d6",
+      "decision_id": "219b5ab3-01a8-32e7-8640-a10c13a6672b",
+      "timestamp_ms": 1792394947152,
+      "action": "BUY",
+      "balance_at_trade": 38851737.6,
+      "window": "W13",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_13/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 38951736.32,
+      "balance_post": 38851737.6,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "62bee090-8e57-4712-acbc-6986ec39b60c",
+      "decision_id": "de5033bc-831a-33d9-9315-afb4867e3b22",
+      "timestamp_ms": 1792396862812,
+      "action": "BUY",
+      "balance_at_trade": 38751736.32,
+      "window": "W14",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_14/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38851737.6,
+      "balance_post": 38751736.32,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "8d08b3c3-93a6-4010-9b07-144ced36df63",
+      "decision_id": "e48b2fd6-609a-3c2b-b02a-939a17c5fcea",
+      "timestamp_ms": 1792399984482,
+      "action": "SELL",
+      "balance_at_trade": 38651735.04,
+      "window": "W16",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_16/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38751736.32,
+      "balance_post": 38651735.04,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "e9a3fd70-52ff-42e9-b558-2292ddb02860",
+      "decision_id": "4e725f7a-fb16-3415-ba49-8d4c85c96551",
+      "timestamp_ms": 1792400103955,
+      "action": "SELL",
+      "balance_at_trade": 38551736.32,
+      "window": "W16",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_16/trades.csv",
+      "result": "VOID",
+      "delta": 0.0,
+      "balance_pre": 38651735.04,
+      "balance_post": 38651735.04,
+      "return_r": 0.0
+    },
+    {
+      "trade_id": "db9e644b-d8e5-4ad7-8033-6f0a8bd666cd",
+      "decision_id": "bd85ca1b-c4eb-3855-b835-944caa3f94bb",
+      "timestamp_ms": 1792400285958,
+      "action": "SELL",
+      "balance_at_trade": 38551736.32,
+      "window": "W16",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_16/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 38651735.04,
+      "balance_post": 38734735.36,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "ade70abb-a302-4d2f-bfa8-716d3056bb08",
+      "decision_id": "d4074145-9eaf-3dbc-8b14-ea66e4ab40bb",
+      "timestamp_ms": 1792402565639,
+      "action": "BUY",
+      "balance_at_trade": 38634736.64,
+      "window": "W17",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_17/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 38734735.36,
+      "balance_post": 38817735.68,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "0e9125ef-0cde-4385-a241-57df9b98c32e",
+      "decision_id": "0826b6ee-1cba-306b-8ec5-5adebed94e71",
+      "timestamp_ms": 1792436284684,
+      "action": "SELL",
+      "balance_at_trade": 38717736.96,
+      "window": "W18",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_18/trades.csv",
+      "result": "WIN",
+      "delta": 82001.92,
+      "balance_pre": 38817735.68,
+      "balance_post": 38899737.6,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "e84e4b9e-b00c-43b6-9363-fa66e7ec29bb",
+      "decision_id": "34cda7f7-9eaa-3531-9cec-f0fab747dfd8",
+      "timestamp_ms": 1792436525845,
+      "action": "SELL",
+      "balance_at_trade": 38799736.32,
+      "window": "W18",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_18/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38899737.6,
+      "balance_post": 38799736.32,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "8abee853-db98-43f7-8d46-a6c2b300ac8e",
+      "decision_id": "734048c8-9129-36be-8aa2-6d869d9e0709",
+      "timestamp_ms": 1792436646261,
+      "action": "BUY",
+      "balance_at_trade": 38799736.32,
+      "window": "W18",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_18/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 38799736.32,
+      "balance_post": 38881735.68,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "9e20b700-0eb4-4f1b-9b1c-447610418872",
+      "decision_id": "0b42807f-1e1a-3941-abac-2ab002834d13",
+      "timestamp_ms": 1792436825861,
+      "action": "SELL",
+      "balance_at_trade": 38881735.68,
+      "window": "W18",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_18/trades.csv",
+      "result": "WIN",
+      "delta": 82001.92,
+      "balance_pre": 38881735.68,
+      "balance_post": 38963737.6,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "a87c1296-1157-4dcd-a112-7c9e6dec7ab5",
+      "decision_id": "524b554e-bd7b-3472-8e9f-dd7d0d3e5abc",
+      "timestamp_ms": 1792437005772,
+      "action": "BUY",
+      "balance_at_trade": 38863736.32,
+      "window": "W18",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_18/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38963737.6,
+      "balance_post": 38863736.32,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "fb68806e-a1f8-4d78-a77c-bfdd00fcae52",
+      "decision_id": "8fdb2cfd-d543-3c7d-b989-a378b9ddbf77",
+      "timestamp_ms": 1792439523856,
+      "action": "BUY",
+      "balance_at_trade": 38763735.04,
+      "window": "W19",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_19/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38863736.32,
+      "balance_post": 38763735.04,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "21f73846-b968-4a16-9cd9-8eb681c68c08",
+      "decision_id": "9ab29488-0f4f-3dc8-97cd-0aeac0b8c9d5",
+      "timestamp_ms": 1792439644013,
+      "action": "BUY",
+      "balance_at_trade": 38663736.32,
+      "window": "W19",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_19/trades.csv",
+      "result": "WIN",
+      "delta": 82001.92,
+      "balance_pre": 38763735.04,
+      "balance_post": 38845736.96,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "87936905-29ec-4222-80b5-5f98fbd7eac1",
+      "decision_id": "19489e09-17a5-39ac-9194-5ce72112644f",
+      "timestamp_ms": 1792439824559,
+      "action": "BUY",
+      "balance_at_trade": 38745735.68,
+      "window": "W19",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_19/trades.csv",
+      "result": "WIN",
+      "delta": 81999.36,
+      "balance_pre": 38845736.96,
+      "balance_post": 38927736.32,
+      "return_r": 0.82
+    },
+    {
+      "trade_id": "f39264b6-3e73-4846-9c37-7ff0a926c28d",
+      "decision_id": "ac622f04-41b3-3e3c-9c2b-ac70f1e433c4",
+      "timestamp_ms": 1792439944773,
+      "action": "SELL",
+      "balance_at_trade": 38827735.04,
+      "window": "W19",
+      "payout": 0.82,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_19/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38927736.32,
+      "balance_post": 38827735.04,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "6d8f8372-29d5-407b-a8ce-5f08b4d10c1b",
+      "decision_id": "ab6b092a-a7ad-3b0f-ae5a-5ea0023bc905",
+      "timestamp_ms": 1792449787463,
+      "action": "SELL",
+      "balance_at_trade": 38727736.32,
+      "window": "W20",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_20/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 38827735.04,
+      "balance_post": 38910735.36,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "c95dcd8c-ca23-4465-a345-0e950f66b252",
+      "decision_id": "47c9a035-1f23-3942-b1c0-3f4ad88eb587",
+      "timestamp_ms": 1792449907592,
+      "action": "BUY",
+      "balance_at_trade": 38810736.64,
+      "window": "W20",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_20/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 38910735.36,
+      "balance_post": 38810736.64,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "4e692edd-17d0-48d6-a6dc-a1d49d783a61",
+      "decision_id": "8be19512-bece-3475-9802-fdc0348a8eba",
+      "timestamp_ms": 1792450091242,
+      "action": "BUY",
+      "balance_at_trade": 38710735.36,
+      "window": "W20",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_20/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38810736.64,
+      "balance_post": 38710735.36,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "7aa816fd-9b89-4f68-8699-5b1cdb0eca32",
+      "decision_id": "572f5188-e083-3aca-ba83-278bf1fa4caa",
+      "timestamp_ms": 1792450408237,
+      "action": "SELL",
+      "balance_at_trade": 38610736.64,
+      "window": "W20",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_20/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 38710735.36,
+      "balance_post": 38610736.64,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "1760976a-353b-4665-a2c5-44ede0b5c1bd",
+      "decision_id": "e4688e10-c5b9-3de1-af7b-f94c4d397efd",
+      "timestamp_ms": 1792450564438,
+      "action": "SELL",
+      "balance_at_trade": 38510735.36,
+      "window": "W20",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_20/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 38610736.64,
+      "balance_post": 38693736.96,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "5c781864-da38-4ecb-a565-ca5feb8ca933",
+      "decision_id": "5d349969-0362-3be1-a83f-b072d69935a9",
+      "timestamp_ms": 1792450985363,
+      "action": "SELL",
+      "balance_at_trade": 38593735.68,
+      "window": "W20",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_20/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38693736.96,
+      "balance_post": 38593735.68,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "ceaff3d0-2fbb-412a-bd0a-253f386c310b",
+      "decision_id": "1e71c4a1-9437-3d3c-8be7-de5245e2269a",
+      "timestamp_ms": 1792532044170,
+      "action": "BUY",
+      "balance_at_trade": 38493736.96,
+      "window": "W21",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_21/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 38593735.68,
+      "balance_post": 38493736.96,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "4b3f3105-f700-4364-b8d5-2e45c44ba08e",
+      "decision_id": "8ad04a78-31d7-3346-8516-e876e1e47067",
+      "timestamp_ms": 1792532344957,
+      "action": "BUY",
+      "balance_at_trade": 38393735.68,
+      "window": "W21",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_21/trades.csv",
+      "result": "WIN",
+      "delta": 83000.32,
+      "balance_pre": 38493736.96,
+      "balance_post": 38576737.28,
+      "return_r": 0.83
+    },
+    {
+      "trade_id": "d74c7a8a-4b16-459a-9b0e-1b2bd604cabd",
+      "decision_id": "eefe71cb-9150-3749-93ba-4831d48ac160",
+      "timestamp_ms": 1792532644896,
+      "action": "BUY",
+      "balance_at_trade": 38476736.0,
+      "window": "W21",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_21/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38576737.28,
+      "balance_post": 38476736.0,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "796df03c-a530-40bc-be53-997c58f32ec4",
+      "decision_id": "e9dad910-9988-366a-97c3-71062f8ff0d1",
+      "timestamp_ms": 1792532944622,
+      "action": "SELL",
+      "balance_at_trade": 38376737.28,
+      "window": "W21",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_21/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 38476736.0,
+      "balance_post": 38376737.28,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "b24987fa-bb26-45cc-9733-b7ac373fe97b",
+      "decision_id": "d03c1d99-5996-31c3-bba5-ec4e1bb64c97",
+      "timestamp_ms": 1792533065258,
+      "action": "SELL",
+      "balance_at_trade": 38276736.0,
+      "window": "W21",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_21/trades.csv",
+      "result": "LOSS",
+      "delta": -100001.28,
+      "balance_pre": 38376737.28,
+      "balance_post": 38276736.0,
+      "return_r": -1.0
+    },
+    {
+      "trade_id": "679ac341-50db-40af-ba22-13d0a0a9b5f1",
+      "decision_id": "3524419d-de38-3d71-9b91-f4914d4ea2d6",
+      "timestamp_ms": 1792543686286,
+      "action": "SELL",
+      "balance_at_trade": 38176737.28,
+      "window": "W22",
+      "payout": 0.83,
+      "stake": 100000.0,
+      "source": "loops/r23k_validation/window_22/trades.csv",
+      "result": "LOSS",
+      "delta": -99998.72,
+      "balance_pre": 38276736.0,
+      "balance_post": 38176737.28,
+      "return_r": -1.0
+    }
+  ]
+}

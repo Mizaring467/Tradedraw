@@ -1,0 +1,7 @@
+beat_1={"status":"ok","app":"TradeDraw","port":8080} t=1793157403
+beat_2={"status":"ok","app":"TradeDraw","port":8080} t=1793157524
+beat_3={"status":"ok","app":"TradeDraw","port":8080} t=1793157644
+beat_4={"status":"ok","app":"TradeDraw","port":8080} t=1793157764
+beat_5={"status":"ok","app":"TradeDraw","port":8080} t=1793157884
+beat_6={"status":"ok","app":"TradeDraw","port":8080} t=1793157945
+T_FINAL=2026-10-27T22:25:45-05:00

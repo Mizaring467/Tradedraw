@@ -884,7 +884,15 @@ class SyntheticCandleEngine {
         if (!isCounterTrend) return true
 
         val isYolo = (subMode == AutonomousSubMode.YOLO)
-        val minWick = if (isYolo) 0.30f else 0.50f
+        // R23C Fase 3: la mecha exigida se separa por DIRECCION. La spec solo pedia endurecer SELL,
+        // pero dejar BUY en 0.30f creaba una asimetria nueva que la evidencia no respalda: los 3 BUY
+        // contra-tendencia medidos rindieron 2W/1L, asi que subirles el liston tambien es defendible.
+        // Se aplica el criterio de la spec (SELL 45%, BUY 30%) para no cambiar dos cosas a la vez:
+        // esta iteracion mide el efecto de SELL, y tocar BUY en el mismo paso confundiria la lectura.
+        // Queda anotado como candidato para una fase propia.
+        val minWick = if (isYolo) {
+            if (action == TradeAction.SELL) 0.45f else 0.30f
+        } else 0.50f
 
         // Excepciones cuantitativas válidas contra-tendencia (Master Traders):
         // 1. Patrón MT_3_VELAS_AGOT (Agotamiento monótono de 3 velas con contracción)
@@ -1043,7 +1051,19 @@ class SyntheticCandleEngine {
         // 2. Matriz Cuantitativa de Confluencia
         val score = calculateConfluenceScore(action, reason, tick, prev)
         val isYolo = (subMode == AutonomousSubMode.YOLO)
-        val requiredScore = if (isYolo) 75 else 80
+        // R23C Fase 3: endurecimiento SELECTIVO de SELL. La evidencia de la Fase 1 mostro un WR
+        // direccional asimetrico (BUY mejor que SELL), asi que en YOLO se exige mas a las ventas y se
+        // dejan intactos los umbrales de compra, que ya rendian por encima del break-even.
+        //   YOLO  -> BUY 75 pts | SELL 80 pts
+        //   resto -> 80 pts
+        // ADVERTENCIA REGISTRADA EN EL REPORTE: con N=23 la asimetria NO es estadisticamente
+        // significativa (p=0.55, IC95% de ambos brazos solapa con el break-even). El delta de 12,7 pp
+        // de la spec esta dentro del ruido; en el subconjunto confirmado por balance la brecha es
+        // mucho mayor (18,2% vs 80%) pero n=16 con 5 BUY. Esta calibracion se trata como HIPOTESIS A
+        // MEDIR, no como optimizacion validada.
+        val requiredScore = if (isYolo) {
+            if (action == TradeAction.SELL) 80 else 75
+        } else 80
 
         if (score < requiredScore) {
             suppressedByConfluence++
@@ -1193,7 +1213,12 @@ class SyntheticCandleEngine {
             // 1. ESTRATEGIA MT_REJECTION (Rechazo en S/R con Mechas Claras)
             if (allowRejection) {
                 val supZoneLimit = if (isYolo) 0.28f else 0.24f
+                // R23C Fase 3: la mecha se separa por direccion. `wickLimit` era COMPARTIDO por CALL y
+                // PUT, asi que subirlo para ventas habria endurecido tambien las compras — que la
+                // evidencia senala como el brazo rentable. Se desdobla: PUT (SELL) 0.40f en YOLO,
+                // CALL (BUY) mantiene 0.30f.
                 val wickLimit = if (isYolo) 0.30f else 0.45f
+                val sellWickLimit = if (isYolo) 0.40f else 0.45f
                 val bodyLimit = if (isYolo) 0.54f else 0.40f
 
                 // CALL: Rechazo en Soporte con mecha inferior y sin impulso bajista
@@ -1210,7 +1235,7 @@ class SyntheticCandleEngine {
 
                 // PUT: Rechazo en Resistencia con mecha superior y sin impulso alcista
                 val resZoneLimit = if (isYolo) 0.28f else 0.24f
-                if (distToResistance <= resZoneLimit && prev.upperWickRatio >= wickLimit && prev.bodyRatio <= bodyLimit && !tick.isBullishImpulse && syntheticTickRsi >= 25.0) {
+                if (distToResistance <= resZoneLimit && prev.upperWickRatio >= sellWickLimit && prev.bodyRatio <= bodyLimit && !tick.isBullishImpulse && syntheticTickRsi >= 25.0) {
                     val wickPct = (prev.upperWickRatio * 100).toInt()
                     val distPct = (distToResistance * 100).toInt()
                     if (dispatchSniperSignal(

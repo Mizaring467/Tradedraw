@@ -1,0 +1,200 @@
+{"atMs": 1792216328056, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216327540, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216326618, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216326129, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216326098, "kind": "ORDER_STATE", "detail": "NINGUNA BUY sin operacion en curso", "decisionId": "4877955e-e3d1-3ebc-9f11-60baca2c445a", "tradeId": "573abb32-6303-462d-bee3-c74126c5c1ca"}
+{"atMs": 1792216324873, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216322832, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216318940, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216315772, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216314254, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216313950, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216310188, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216306957, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216303131, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216302251, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216300872, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216299118, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216294778, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216291611, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216287504, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216283559, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216279844, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216279006, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216278471, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216274932, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216270982, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216268213, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216267052, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216265906, "kind": "VETO", "detail": "RISK_LIMIT Operación abierta en curso (3s)", "decisionId": "36e55ffd-6dae-39ca-a9cb-427283c4c67d"}
+{"atMs": 1792216265528, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216265515, "kind": "VETO", "detail": "RISK_LIMIT Operación abierta en curso (3s)", "decisionId": "a3b9e10f-128d-324a-8720-ea8b3eafa06a"}
+{"atMs": 1792216265109, "kind": "VETO", "detail": "RISK_LIMIT Operación abierta en curso (2s)", "decisionId": "1163af66-74c5-3445-baaa-eeb17f71f4e2"}
+{"atMs": 1792216264718, "kind": "VETO", "detail": "RISK_LIMIT Operación abierta en curso (2s)", "decisionId": "b48c847b-cac5-32bf-a23d-bc737f0ed4dd"}
+{"atMs": 1792216264300, "kind": "VETO", "detail": "RISK_LIMIT Operación abierta en curso (2s)", "decisionId": "ede1acf8-32a3-3dae-bb46-02795a6a961f"}
+{"atMs": 1792216264231, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 75pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=0%) - inversión deshabilitada", "decisionId": "bb136beb-ad18-3229-86cd-003ad62e265e"}
+{"atMs": 1792216264223, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 75pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=0%) - inversión deshabilitada", "decisionId": "8b42a666-4bb4-31a2-90a1-f89404c8cbc5"}
+{"atMs": 1792216264217, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 75pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=0%) - inversión deshabilitada", "decisionId": "24fdbd5c-abb9-3603-bb0a-ad876e5256fb"}
+{"atMs": 1792216264208, "kind": "VETO", "detail": "RISK_LIMIT Operación abierta en curso (1s)", "decisionId": "0382de37-2a11-3cc8-b30e-096cba17cc2f"}
+{"atMs": 1792216264206, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 75pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=0%) - inversión deshabilitada", "decisionId": "b1420904-d8e1-3817-ad45-85c25a967498"}
+{"atMs": 1792216264200, "kind": "ORDER_STATE", "detail": "CONFIRMADA BUY saldo movido", "decisionId": "4877955e-e3d1-3ebc-9f11-60baca2c445a", "tradeId": "573abb32-6303-462d-bee3-c74126c5c1ca"}
+{"atMs": 1792216264066, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216262413, "kind": "TAP", "detail": "END root (249.84,1340.8) exit=0 durMs=182 bypassHud=false startTs=1792216262231 endTs=1792216262413 csTapEnd=2", "decisionId": "4877955e-e3d1-3ebc-9f11-60baca2c445a", "tradeId": "573abb32-6303-462d-bee3-c74126c5c1ca"}
+{"atMs": 1792216262271, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216262233, "kind": "TAP", "detail": "START (249.84,1340.8) bypassHud=false", "decisionId": "4877955e-e3d1-3ebc-9f11-60baca2c445a", "tradeId": "573abb32-6303-462d-bee3-c74126c5c1ca"}
+{"atMs": 1792216262226, "kind": "ORDER_STATE", "detail": "ENVIADA BUY tap despachado", "decisionId": "4877955e-e3d1-3ebc-9f11-60baca2c445a", "tradeId": "573abb32-6303-462d-bee3-c74126c5c1ca"}
+{"atMs": 1792216261765, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216261107, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 88pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=2%) - inversión deshabilitada", "decisionId": "b18f0e00-f6dd-3f59-bb88-9a2039dcdd06"}
+{"atMs": 1792216259426, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216255351, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216254141, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216252933, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216251525, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216248473, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216245428, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216242611, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216242392, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216241266, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216238961, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216235829, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216232796, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216230196, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216229299, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216228775, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216225082, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216220966, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216218433, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216218296, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216217450, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216214152, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216210574, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216208039, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216207576, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216207408, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216203843, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216200150, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216197482, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216196542, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216195558, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216194375, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216191172, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216187905, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216183412, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216183099, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216181968, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216179686, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216175886, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216172838, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216170353, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216167585, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216167583, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216163821, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216160221, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216157376, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216157202, "kind": "ORDER_STATE", "detail": "NINGUNA BUY sin operacion en curso", "decisionId": "b9c7952b-2cff-38dd-9069-bfb2ccd27718", "tradeId": "97f255dd-9427-403e-8b13-7e417d54f42e"}
+{"atMs": 1792216156585, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216156534, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216155551, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216155172, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216154712, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216154331, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216153920, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216153869, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216153818, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216153769, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216153753, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216152675, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216151559, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216151294, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216151261, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216151195, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216151164, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216151128, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216151054, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216150149, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216149377, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216148431, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216147533, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216147488, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216147451, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216147403, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216147351, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216146589, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216145678, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216145120, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216144819, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216144086, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216144061, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216140373, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216136494, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216133897, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216133830, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216132667, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216128623, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216124631, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216122115, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216120360, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216120088, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216116048, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216112649, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216110146, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216109614, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216109043, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216105802, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216101891, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216099158, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216099044, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216098377, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216094800, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216090903, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216085914, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 90pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=4%) - inversión deshabilitada", "decisionId": "16168a61-6d3d-3107-b279-78c401eeac1d"}
+{"atMs": 1792216085606, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216085572, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216085503, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 90pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=9%) - inversión deshabilitada", "decisionId": "933828e8-cf93-3b26-8b50-a4243c4f483b"}
+{"atMs": 1792216085133, "kind": "VETO", "detail": "RISK_LIMIT Operación abierta en curso (2s)", "decisionId": "85322999-24ae-3a00-8c6b-ef68ba292bbe"}
+{"atMs": 1792216084894, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 95pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=4%) - inversión deshabilitada", "decisionId": "d8028934-9425-3d5a-baf1-755215a2eac9"}
+{"atMs": 1792216084879, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 95pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=4%) - inversión deshabilitada", "decisionId": "73f3e9c2-e8d4-3c97-81c8-23066cd0e9a9"}
+{"atMs": 1792216084875, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 90pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=4%) - inversión deshabilitada", "decisionId": "c6b72e51-6317-3119-a539-4dbaeb35daac"}
+{"atMs": 1792216084871, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 90pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=4%) - inversión deshabilitada", "decisionId": "cdf8d617-3c2e-3ce4-af1e-7e65a1714c35"}
+{"atMs": 1792216084868, "kind": "VETO", "detail": "RISK_LIMIT Operación abierta en curso (1s)", "decisionId": "4cfd7d76-0efc-3032-920e-f878331bfe94"}
+{"atMs": 1792216084866, "kind": "VETO", "detail": "RISK_LIMIT Operación abierta en curso (1s)", "decisionId": "620916dc-92ff-305a-bd69-26ff9b891964"}
+{"atMs": 1792216084864, "kind": "VETO", "detail": "RISK_LIMIT Operación abierta en curso (1s)", "decisionId": "3c07c81c-d0ad-34b6-9919-0378bb64a2fe"}
+{"atMs": 1792216084862, "kind": "ORDER_STATE", "detail": "CONFIRMADA BUY saldo movido", "decisionId": "b9c7952b-2cff-38dd-9069-bfb2ccd27718", "tradeId": "97f255dd-9427-403e-8b13-7e417d54f42e"}
+{"atMs": 1792216083622, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216083196, "kind": "TAP", "detail": "END root (249.84,1340.8) exit=0 durMs=194 bypassHud=false startTs=1792216083002 endTs=1792216083196 csTapEnd=3", "decisionId": "b9c7952b-2cff-38dd-9069-bfb2ccd27718", "tradeId": "97f255dd-9427-403e-8b13-7e417d54f42e"}
+{"atMs": 1792216083018, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216083002, "kind": "TAP", "detail": "START (249.84,1340.8) bypassHud=false", "decisionId": "b9c7952b-2cff-38dd-9069-bfb2ccd27718", "tradeId": "97f255dd-9427-403e-8b13-7e417d54f42e"}
+{"atMs": 1792216083000, "kind": "ORDER_STATE", "detail": "ENVIADA BUY tap despachado", "decisionId": "b9c7952b-2cff-38dd-9069-bfb2ccd27718", "tradeId": "97f255dd-9427-403e-8b13-7e417d54f42e"}
+{"atMs": 1792216082850, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216082103, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216081504, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 95pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=4%) - inversión deshabilitada", "decisionId": "3aa7cc5b-a283-328f-83c4-dd399f9a2fe8"}
+{"atMs": 1792216081104, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 90pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=4%) - inversión deshabilitada", "decisionId": "359854b3-1580-3f42-9e9e-523593efc5b8"}
+{"atMs": 1792216079553, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216075706, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216073289, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216072890, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216072047, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216068221, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216064466, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216062599, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216061936, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216060945, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216056930, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216053218, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216050715, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216048181, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216048181, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216044271, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216040410, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216036781, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216036401, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216035389, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216033135, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216029947, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216026967, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216025904, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 90pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=14%) - inversión deshabilitada", "decisionId": "accc19f7-172e-3651-8a19-246795266c60"}
+{"atMs": 1792216025507, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 90pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=4%) - inversión deshabilitada", "decisionId": "0acca326-09ac-3094-aa8c-299b1181d11b"}
+{"atMs": 1792216025108, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 90pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=4%) - inversión deshabilitada", "decisionId": "e4da260c-6f46-3fff-9893-fcff8ebb2c98"}
+{"atMs": 1792216025096, "kind": "ASSET", "detail": "visible='Crypto IDX' ric='Z-CRY/IDX'"}
+{"atMs": 1792216024714, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 90pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=9%) - inversión deshabilitada", "decisionId": "a3558741-896d-3f20-8221-4b9fccac9786"}
+{"atMs": 1792216024304, "kind": "VETO", "detail": "ADAPTIVE_BLOCK [sim:99%] [Confluencia: 95pts] Anti-patrón perdedor recurrente (99% similitud en contexto S/R=9%) - inversión deshabilitada", "decisionId": "7e052871-dbad-3e25-a146-cf137fde2e13"}

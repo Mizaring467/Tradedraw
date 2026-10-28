@@ -31,6 +31,18 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         var isDemoAccount: Boolean = true
             internal set
 
+        /**
+         * R23A Iter 1: guard de seguridad fail-closed para CUALQUIER tap.
+         *
+         * Funcion pura (recibe el estado, no lo lee) para poder fijarla por test sin Android.
+         * Fail-closed por construccion: solo autoriza el valor EXPLICITAMENTE `true`. `null`, un
+         * estado no observado o una cuenta real caen todos en el bloqueo.
+         *
+         * Se usa en las DOS puertas de despacho (`performClick` y `performClickAt`) y en
+         * `executeRootTap`, que es la primitiva que realmente teclea `input tap`.
+         */
+        fun puedeDespacharTap(esDemo: Boolean): Boolean = esDemo
+
         @Volatile
         var observedOrderAmount: Double = 0.0
             internal set
@@ -138,6 +150,30 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             y: Float,
             onResult: ((Boolean, String?) -> Unit)? = null
         ) {
+            performClick(x, y, decisionId = null, tradeId = null, onResult = onResult)
+        }
+
+        fun performClick(
+            x: Float,
+            y: Float,
+            decisionId: String?,
+            tradeId: String?,
+            onResult: ((Boolean, String?) -> Unit)? = null
+        ) {
+            // R23A Iter 1: BLOQUEO CRITICO DE SEGURIDAD (fail-closed). Ningun tap puede salir si la
+            // cuenta observada no es DEMO. Va ANTES de hasRootAccess()/executeRootTap para que no se
+            // despache nada: el tap es la accion irreversible (coloca la orden en el broker).
+            if (!puedeDespacharTap(isDemoAccount)) {
+                Log.e("TradeDraw", "⛔ BLOQUEO DE SEGURIDAD: intento de click fuera de cuenta DEMO.")
+                TradeEventLog.add(
+                    TradeEventLog.Kind.VETO,
+                    "SEGURIDAD_CLICK_NO_DEMO",
+                    decisionId = decisionId,
+                    tradeId = tradeId
+                )
+                onResult?.invoke(false, "BLOQUEO_SEGURIDAD_NO_DEMO")
+                return
+            }
             // Ronda 3: en este dispositivo (root) Binomo FILTRA los eventos sintéticos de
             // dispatchGesture (el tap se "confirma" pero la orden no se registra → VOID),
             // mientras que `input tap` vía root SÍ coloca la orden. Por eso el root tap es
@@ -150,10 +186,10 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                 val overlay = OverlayService.instance
                 if (overlay != null && overlay.isPointInsideHUD(x, y)) {
                     overlay.temporarilyBypassHUD(350L) {
-                        executeRootTap(x, y, onResult, bypassHud = true)
+                        executeRootTap(x, y, decisionId, tradeId, onResult, bypassHud = true)
                     }
                 } else {
-                    executeRootTap(x, y, onResult)
+                    executeRootTap(x, y, decisionId, tradeId, onResult)
                 }
                 return
             }
@@ -162,14 +198,14 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                 inst.performClickAt(x, y) { success, err ->
                     if (!success) {
                         Log.w("TradeDraw", "⚠️ Click por accesibilidad falló ($err). Probando fallback ROOT...")
-                        executeRootTap(x, y, onResult)
+                        executeRootTap(x, y, decisionId, tradeId, onResult)
                     } else {
                         onResult?.invoke(true, null)
                     }
                 }
             } else {
                 Log.w("TradeDraw", "⚠️ AutoTradeAccessibilityService inactivo. Ejecutando tap con fallback ROOT...")
-                executeRootTap(x, y, onResult)
+                executeRootTap(x, y, decisionId, tradeId, onResult)
                 autoHealAccessibility()
             }
         }
@@ -215,9 +251,40 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             onResult: ((Boolean, String?) -> Unit)? = null,
             bypassHud: Boolean = false
         ) {
+            executeRootTap(x, y, decisionId = null, tradeId = null, onResult = onResult, bypassHud = bypassHud)
+        }
+
+        fun executeRootTap(
+            x: Float,
+            y: Float,
+            decisionId: String?,
+            tradeId: String?,
+            onResult: ((Boolean, String?) -> Unit)? = null,
+            bypassHud: Boolean = false
+        ) {
+            // R23A Iter 1: TERCERA puerta de seguridad. `executeRootTap` es la primitiva que escribe
+            // `input tap` de verdad y se puede invocar directamente (fallbacks de accesibilidad,
+            // auto-heal). Sin este guard, un fallback podria saltarse los otros dos bloqueos.
+            if (!puedeDespacharTap(isDemoAccount)) {
+                Log.e("TradeDraw", "⛔ BLOQUEO DE SEGURIDAD: root tap bloqueado fuera de cuenta DEMO.")
+                TradeEventLog.add(
+                    TradeEventLog.Kind.VETO,
+                    "SEGURIDAD_ROOT_TAP_NO_DEMO",
+                    decisionId = decisionId,
+                    tradeId = tradeId
+                )
+                onResult?.invoke(false, "BLOQUEO_SEGURIDAD_NO_DEMO")
+                return
+            }
             Thread {
                 val inicioMs = System.currentTimeMillis()
                 lastTapStartTs = inicioMs
+                TradeEventLog.add(
+                    TradeEventLog.Kind.TAP,
+                    "START ($x,$y) bypassHud=$bypassHud",
+                    decisionId = decisionId,
+                    tradeId = tradeId
+                )
                 try {
                     val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "input tap ${x.toInt()} ${y.toInt()}"))
                     val exit = p.waitFor()
@@ -228,8 +295,10 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                     lastTapCandleSecond = ((lastTapEndTs / 1000L) % 60L).toInt()
                     TradeEventLog.add(
                         TradeEventLog.Kind.TAP,
-                        "root ($x,$y) exit=$exit durMs=$duracionMs bypassHud=$bypassHud " +
-                            "startTs=$inicioMs endTs=$lastTapEndTs csTapEnd=$lastTapCandleSecond"
+                        "END root ($x,$y) exit=$exit durMs=$duracionMs bypassHud=$bypassHud " +
+                            "startTs=$inicioMs endTs=$lastTapEndTs csTapEnd=$lastTapCandleSecond",
+                        decisionId = decisionId,
+                        tradeId = tradeId
                     )
                     if (exit == 0) {
                         Log.i("TradeDraw", "⚡ Tap ejecutado con éxito vía ROOT en ($x, $y) en ${duracionMs}ms")
@@ -412,6 +481,16 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         y: Float,
         onResult: ((Boolean, String?) -> Unit)? = null
     ) {
+        // R23A Iter 1: mismo bloqueo que en `performClick`. Sin esto el guard tendria un BYPASE
+        // trivial: `/trade` (endpoint HTTP) y los botones CALL/PUT del HUD llaman a `performClickAt`
+        // directamente, sin pasar por `performClick`. Un guard que solo cubre una de las dos puertas
+        // de dispatch no es un guard.
+        if (!puedeDespacharTap(isDemoAccount)) {
+            Log.e("TradeDraw", "⛔ BLOQUEO DE SEGURIDAD: click por accesibilidad fuera de cuenta DEMO.")
+            TradeEventLog.add(TradeEventLog.Kind.VETO, "SEGURIDAD_CLICK_NO_DEMO")
+            onResult?.invoke(false, "BLOQUEO_SEGURIDAD_NO_DEMO")
+            return
+        }
         val overlay = OverlayService.instance
         if (overlay != null && overlay.isPointInsideHUD(x, y)) {
             overlay.temporarilyBypassHUD(250L) {

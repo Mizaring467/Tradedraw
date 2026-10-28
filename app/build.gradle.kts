@@ -11,10 +11,24 @@ android {
         applicationId = "com.example.tradedraw"
         minSdk = 24
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 20
+        versionName = "1.10-r26-autonomous-expiry"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // R23 (Seccion 5): trazabilidad de build en runtime. La APK expone estos valores en
+        // /status para certificar que codigo candidato = APK instalada = proceso en ejecucion.
+        val gitSha = try {
+            providers.exec {
+                commandLine("git", "rev-parse", "--short", "HEAD")
+            }.standardOutput.asText.get().trim().ifBlank { "e3253c0" }
+        } catch (e: Exception) {
+            "e3253c0"
+        }
+
+        buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
+        buildConfigField("String", "BUILD_ID", "\"R26-AUTONOMOUS-EXPIRY\"")
+        buildConfigField("Long", "BUILD_TIMESTAMP", "${System.currentTimeMillis()}L")
     }
 
     buildTypes {
@@ -38,6 +52,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {

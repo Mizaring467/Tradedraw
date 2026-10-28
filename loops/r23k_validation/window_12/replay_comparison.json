@@ -1,0 +1,61 @@
+{
+  "mode": "trades",
+  "summary": {
+    "total_live_trades": 1,
+    "total_replay_trades": 2,
+    "paired_decisions": 0,
+    "exact_matches": 0,
+    "divergences": 0,
+    "missing_live": 2,
+    "missing_replay": 1,
+    "match_rate_pct": 0.0,
+    "pass": false
+  },
+  "divergence_breakdown": {},
+  "pairs": [
+    {
+      "live": {
+        "decision_id": "b014e197-0902-3225-a6e6-9f010dee4bac",
+        "trade_id": "a4439f1b-3178-4a98-be78-f21dbba469ad",
+        "timestamp": 1792392723567,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "CONFIRMADA BUY saldo movido",
+        "balance": 38985735.68,
+        "candle_second": 3
+      },
+      "replay": null,
+      "status": "MISSING_REPLAY"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "7954c405-90bd-3d2d-9e8e-5e6ce76bd992",
+        "trade_id": "",
+        "timestamp": 1792392905121,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_MOMENTUM: Impulso Alcista Temprano (Dist R: 25% | ⏱ 5s) -> CALL [Confluencia: 80pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 5
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "aee647d4-833e-3b22-b4bd-283e88dcfaa6",
+        "trade_id": "",
+        "timestamp": 1792393504569,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_REJECTION: Rechazo en Resistencia (Mecha: 52% | Dist R: 15% | ⏱ 4s) -> PUT [Confluencia: 80pts]",
+        "price": 641.87,
+        "result": "WIN",
+        "candle_second": 4
+      },
+      "status": "MISSING_LIVE"
+    }
+  ]
+}

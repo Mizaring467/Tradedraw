@@ -1,0 +1,3 @@
+trade_id,decision_id,timestamp_ms,asset,action,detail,balance_at_trade
+d7c929e9-78ef-4433-a4e7-d7d037243fc6,7e849159-1fcc-30cd-923a-eb7afc83b77c,1792103703791,Z-CRY/IDX,UNKNOWN,CONFIRMADA saldo movido,37954736.64
+36e596f9-220e-407c-be13-95cee861daff,1551c87f-44a9-3112-999b-4bc0174fd3f4,1792104125346,Z-CRY/IDX,UNKNOWN,CONFIRMADA saldo movido,38036736.0

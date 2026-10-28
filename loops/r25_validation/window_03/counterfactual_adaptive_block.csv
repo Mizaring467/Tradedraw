@@ -1,0 +1,1 @@
+counterfactual_id,decision_id,asset,action,decision_ts,entry_price,expiry_ts,exit_price,result,score,similarity,market_regime,trend,payout,theoretical_ev

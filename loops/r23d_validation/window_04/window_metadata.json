@@ -1,0 +1,21 @@
+{
+  "iter": 4,
+  "nominal_window_end_ts": 1792175165.0,
+  "actual_capture_end_ts": 1792174893.0,
+  "settlement_extra_seconds": 0.0,
+  "settlement_grace_period_sec": 75.0,
+  "samples_captured": 89,
+  "initial_balance": 38273735.68,
+  "final_balance_raw": 38273735.68,
+  "final_balance_validated": 38273735.68,
+  "min_validated_balance": 38273735.68,
+  "max_validated_balance": 38273735.68,
+  "drawdown_validated_pct": 0.0,
+  "balance_outliers_filtered": 0,
+  "balance_outlier_abs_threshold": 1000000.0,
+  "balance_outlier_stake_multiplier": 10.0,
+  "decisions_captured": 14,
+  "trades_confirmed": 0,
+  "aborted_for_safety": true,
+  "abort_reason": "isDemoAccount flipped to false due to Binomo promo modal ('¿Lo quiere en su cuenta real?')"
+}

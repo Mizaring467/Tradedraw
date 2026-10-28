@@ -58,3 +58,35 @@ loops/screenshots/**/status_log.txt
 
 # Ronda 13: temporales de analisis y scripts de dispositivo
 .tmp_*
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# R23J Fase A (vi): politica de versionado de artefactos de validacion.
+# Se versionan informes, manifiestos, decisiones, trades y journals de replay.
+# NO se versionan: ticks crudos (regenerables desde el APK y pesados), streams
+# crudos por ciclo (/status, /events, live_samples), capturas de pantalla, logs
+# de ejecucion ni temporales. Un ticks_live.csv se reconstruye; un decisions.csv
+# es evidencia unica y si se versiona.
+loops/**/ticks_live.csv
+loops/**/live_ticks.csv
+loops/**/*.jsonl
+loops/screenshots/
+loops/**/*.log
+tmp/
+
+# R24: higiene de artefactos de validacion.
+# _v2_tmp/ son temporales del motor de replay v2 (se regeneran en cada corrida).
+# scripts/preflight_*_output.txt son volcados de consola de cada preflight.
+loops/**/_v2_tmp/
+scripts/preflight_*_output.txt
+scripts/preflight_*.bat
+
+# R24: estado local de la herramienta `trail` (indice de busqueda de 2 MB en
+# .trail/cache/.cache/ask-index.json + extracciones). Regenerable, sin valor
+# reproducible y sin credenciales (verificado: solo frecuencias de terminos).
+# No se versiona nada de .trail/: es estado de maquina, no evidencia de ronda.
+.trail/
+
+# Artefactos locales de sesion (capturas y respaldos de datos de la app)
+backups/
