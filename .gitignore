@@ -87,3 +87,6 @@ scripts/preflight_*.bat
 # reproducible y sin credenciales (verificado: solo frecuencias de terminos).
 # No se versiona nada de .trail/: es estado de maquina, no evidencia de ronda.
 .trail/
+
+# Artefactos locales de sesion (capturas y respaldos de datos de la app)
+backups/

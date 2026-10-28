@@ -52,3 +52,17 @@ Cifras de resultado de las 2 operaciones (`INFORMATIVO — FUERA DE ALCANCE DE R
 ## 6. Estado final
 
 `mode=DISABLED`, `orderState=NINGUNA`, `hasPendingTrade=null`, `isDemoAccount=true`, balance **36.865.735,68 COP**. Cero órdenes abiertas.
+
+---
+
+## ADENDA 2026-10-27 22:26 — el pendiente (a) queda cerrado en R26
+
+La caducidad de `AUTONOMOUS` que §5 declaraba ausente **ya está implementada y certificada en vivo**:
+
+- Código: `f491ca4` (v20, `R26-AUTONOMOUS-EXPIRY`) — `AutonomousWatchdog` + tick de 30 s + heartbeat en el bridge.
+- Certificación P1: armado por bridge, silencio real → `DISABLED` con `source=engine:autonomous-expiry` a los **630 s** (tope 10 min + tick).
+- Certificación P2: con heartbeat cada 121 s, a los **11 min** seguía `AUTONOMOUS` y sin evento de caducidad.
+- Evidencia: [`loops/r26_validation/R26_REPORTE.md`](../r26_validation/R26_REPORTE.md) · preregistro [`workflows/PREREGISTRO_R26.md`](../../workflows/PREREGISTRO_R26.md).
+
+El pendiente (b) — V5 con ≥ 20 trades live — **sigue abierto** y no se ve afectado por esta adenda. El
+veredicto del cubo R25 no cambia: `NO EVALUABLE (por V5)`.
