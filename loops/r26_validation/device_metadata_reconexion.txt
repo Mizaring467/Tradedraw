@@ -1,0 +1,7 @@
+capturado_en=2026-10-27T22:58:54-05:00
+nota=medicion POSTERIOR a la reconexion de red (22:58), no la del cierre de R26 (22:25)
+220733SL
+  status: 2
+  level: 56
+16195 21:54:44 com.example.tradedraw
+mode DISABLED | gitSha f491ca4 | orderState NINGUNA | hasPending False | taps 0 | health BLOCKED
