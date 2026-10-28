@@ -81,6 +81,10 @@ class TradeDrawHttpBridge(
                 val path = fullPath.substringBefore("?")
                 val queryString = fullPath.substringAfter("?", "")
 
+                // R26: cualquier peticion es senal de vida del host. Alimenta la caducidad de
+                // `AUTONOMOUS`: si el host deja de sondear, el motor se desarma solo.
+                overlayService.tradingEngine.noteBridgeHeartbeat()
+
                 // Parse query parameters
                 val params = mutableMapOf<String, String>()
                 if (queryString.isNotEmpty()) {

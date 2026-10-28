@@ -110,11 +110,22 @@ class TradingEngine(
         )
 
         if (newMode == AutoTradeMode.AUTONOMOUS) {
+            // R26: el armado por bridge abre la ventana de caducidad; el armado por HUD no.
+            autonomousWatchdog.arm(System.currentTimeMillis(), source.startsWith("bridge:"))
             agentController.start()
         } else {
+            autonomousWatchdog.disarm()
             agentController.stop()
         }
         return true
+    }
+
+    /**
+     * R26: senal de vida del host que supervisa. Cualquier peticion al bridge la emite; sin
+     * peticiones durante [AUTONOMOUS_HEARTBEAT_TIMEOUT_MS] el motor se desarma solo.
+     */
+    fun noteBridgeHeartbeat() {
+        autonomousWatchdog.heartbeat(System.currentTimeMillis())
     }
 
     /**
@@ -196,6 +207,29 @@ class TradingEngine(
     private var lastProcessTime = 0L
     private val PROCESS_INTERVAL_MS = 1000L
 
+    /**
+     * R26: caducidad de `AUTONOMOUS` armado desde el bridge cuando el host deja de dar senal.
+     * Ver [AutonomousWatchdog] para el alcance y el porque de excluir el armado por HUD.
+     */
+    private val autonomousWatchdog = AutonomousWatchdog(AUTONOMOUS_HEARTBEAT_TIMEOUT_MS)
+
+    private val autonomousWatchdogTick = object : Runnable {
+        override fun run() {
+            try {
+                if (mode == AutoTradeMode.AUTONOMOUS &&
+                    autonomousWatchdog.shouldExpire(System.currentTimeMillis())
+                ) {
+                    // `setTradingMode` ya registra el MODE_CHANGE; el source permite atribuirlo.
+                    setTradingMode(AutoTradeMode.DISABLED, "engine:autonomous-expiry")
+                }
+            } catch (e: Exception) {
+                Log.e("TradingEngine", "Fallo en el watchdog de AUTONOMOUS", e)
+            } finally {
+                handler.postDelayed(this, AUTONOMOUS_WATCHDOG_TICK_MS)
+            }
+        }
+    }
+
     private var pendingTradeHasObservedWin: Boolean = false
     private val isTradeResolving = java.util.concurrent.atomic.AtomicBoolean(false)
     private var lastFeedbackEmitTime: Long = 0L
@@ -253,6 +287,11 @@ class TradingEngine(
                 }
             }
         }
+
+        // R26: arranca el vigilante de caducidad. Es un tick barato (una comparacion de relojes)
+        // y arranca con el motor, no con el armado: asi una sesion armada antes de este codigo
+        // tambien queda cubierta.
+        handler.postDelayed(autonomousWatchdogTick, AUTONOMOUS_WATCHDOG_TICK_MS)
     }
 
     /** Desbloquea todas las líneas para que la IA las recalcule */
@@ -751,6 +790,20 @@ class TradingEngine(
          * la hipotesis a medir en vivo, no una optimizacion cerrada.
          */
         const val VETO_BUY_UPTREND_MAX_CALL_POWER = 70
+
+        /**
+         * R26: silencio maximo tolerado con `AUTONOMOUS` armado desde el bridge antes de
+         * desarmarlo solo.
+         *
+         * El preregistro R25 exige sondeo de `/status` cada <= 2 min durante una ventana; 10 min
+         * son 5x esa cadencia, asi que una ventana bien supervisada no puede caducar por error.
+         * Los dos incidentes de rearme desatendido habrian quedado cortados (R24: 3 h 15 min;
+         * R25/W02: ~5 min). Congelado en `workflows/PREREGISTRO_R26.md` antes de medir nada.
+         */
+        const val AUTONOMOUS_HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000L
+
+        /** Cadencia del vigilante. Barato: solo compara relojes cuando el modo es AUTONOMOUS. */
+        const val AUTONOMOUS_WATCHDOG_TICK_MS = 30 * 1000L
 
         /**
          * Ronda 12 (B2, veto V2): rango relativo minimo para considerar que un feed tiene
