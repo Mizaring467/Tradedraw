@@ -220,4 +220,31 @@ class LiquidationIdempotencyTest {
         assertEquals("Dos correcciones manuales", 2, riskManager.totalWins)
         assertEquals("Ambas etiquetadas", 2, riskManager.manualWins)
     }
+
+    /**
+     * Verificacion especifica de la anomalia reportada:
+     * Una victoria no debe duplicar el contador (ej. 7 -> 9 en vez de 7 -> 8) si se dispara
+     * tanto la via manual como el fallback automatico sobre el mismo trade.
+     */
+    @Test
+    fun victoriaNoDuplicaContadorDeSieteANueve() {
+        riskManager.setStats(7, 0)
+        assertEquals("Contador inicial debe ser 7", 7, riskManager.totalWins)
+
+        val tradeId = "trade-victoria-7-a-8"
+        riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 100.0, baseBalance = 1000.0, tradeId = tradeId)
+        val startMs = riskManager.pendingTradeStartTime
+
+        // Ruta 1: liquidacion manual (HUD o bridge)
+        val manualOk = riskManager.settleManual("MANUAL_HUD", win = true)
+        assertTrue("La primera resolucion (manual) debe tener exito", manualOk)
+        assertEquals("El contador debe subir exactamente de 7 a 8", 8, riskManager.totalWins)
+
+        // Ruta 2: fallback o motor automatico intentando liquidar el mismo tradeId
+        val autoOk = riskManager.settleTradeOnce(tradeId, startMs, win = true)
+        assertFalse("El segundo intento debe ser ignorado por idempotencia", autoOk)
+
+        // Verificacion critica: debe ser 8, no 9
+        assertEquals("El contador debe mantenerse en 8 (7->8), nunca 9 (7->9)", 8, riskManager.totalWins)
+    }
 }
