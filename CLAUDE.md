@@ -101,3 +101,19 @@ Tienes a tu disposición las habilidades y plugins oficiales de alto impacto:
 > - **Formato de Opciones Múltiples Cerradas**: Presenta siempre las preguntas con opciones estructuradas por letras (`A)`, `B)`, `C)`, `D)`).
 > - **Una Pregunta a la Vez**: Formula **una sola pregunta por turno** (o un bloque con letras inmediatas) para que el usuario pueda responder con un solo clic o una sola letra (ej: "A").
 > - **Recomendación Destacada**: Incluye siempre la respuesta recomendada (`➡️ Opción recomendada: A - ...`) con una justificación técnica de 1 línea, permitiendo que el usuario solo confirme si está de acuerdo.
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+Los issues se registran como GitHub issues en `Mizaring467/Tradedraw` mediante la CLI `gh`. Ver `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Cinco roles canónicos con nombre idéntico al rol: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. Ver `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Layout de contexto único: `GLOSSARY.md` y `docs/adr/` en la raíz. Ver `docs/agents/domain.md`.

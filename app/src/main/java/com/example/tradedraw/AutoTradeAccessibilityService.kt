@@ -15,8 +15,42 @@ enum class AssetClassification {
 class AutoTradeAccessibilityService : AccessibilityService() {
 
     companion object {
-        var instance: AutoTradeAccessibilityService? = null
-            private set
+        /**
+         * R27-H / Loop 1: la referencia vive en un [ActiveInstance], no en un `var` suelto.
+         *
+         * Motivo: `onUnbind` devuelve `true` (pide rebind) y hasta ahora NO liberaba la
+         * referencia, así que entre unbind y rebind los 25 puntos que la consultan seguían
+         * operando sobre un servicio desenlazado. [ActiveInstance] garantiza además que un
+         * `onDestroy` tardío de una instancia vieja no borre una instancia nueva.
+         */
+        private val activeRef = ActiveInstance<AutoTradeAccessibilityService>()
+
+        /**
+         * Instancia activa, de solo lectura para el resto del código.
+         *
+         * R27-H / cierre de loops: se elimina el setter. Antes existía un `private set` cuyo único
+         * uso era escribir `null`, y para eso delegaba en `clearForTests()`, un método que
+         * existía solo para pruebas y que liberaba **sin comparar identidad**. Era una puerta
+         * abierta a saltarse el invariante desde producción. La liberación solo puede ocurrir por
+         * [detach], que compara por identidad de forma atómica.
+         */
+        val instance: AutoTradeAccessibilityService?
+            get() = activeRef.current
+
+        /** Promueve [service] como instancia activa (onServiceConnected / onRebind). */
+        internal fun attach(service: AutoTradeAccessibilityService) {
+            activeRef.promote(service)
+        }
+
+        /**
+         * Libera la referencia solo si sigue siendo [service].
+         *
+         * @return `true` si esta llamada liberó la referencia; `false` si ya había otra instancia
+         *   activa (caso de un `onDestroy` tardío) y por tanto no se tocó nada.
+         */
+        internal fun detach(service: AutoTradeAccessibilityService): Boolean =
+            activeRef.release(service)
+
         var onGestureClickListener: ((Float, Float) -> Unit)? = null
 
         @Volatile
@@ -383,7 +417,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        instance = this
+        attach(this)
         Log.i("TradeDraw", "AutoTradeAccessibilityService connected")
         try {
             OverlayService.instance?.updateHUDView(true)
@@ -420,7 +454,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
 
     override fun onRebind(intent: android.content.Intent?) {
         super.onRebind(intent)
-        instance = this
+        attach(this)
         Log.i("TradeDraw", "AutoTradeAccessibilityService rebinded exitosamente")
         try {
             OverlayService.instance?.updateHUDView(true)
@@ -444,6 +478,11 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                 val finalBal = bal ?: readCurrentBalance()
                 if (finalBal != null && finalBal > 0.0) {
                     latestObservedBalance = finalBal
+                    // R27 (C.1): esta ruta NO estampaba lastBalanceReadMs, asi que el health
+                    // consideraba el balance eternamente obsoleto (BALANCE_NOT_FRESH permanente)
+                    // aunque se acabara de leer por eventos. La ruta activa readCurrentBalance()
+                    // ya la estampa; aqui faltaba. Sin marca no hay frescura observable.
+                    lastBalanceReadMs = System.currentTimeMillis()
                     onBalanceUpdatedListener?.invoke(finalBal)
                 }
             } catch (e: Exception) {}
@@ -456,6 +495,11 @@ class AutoTradeAccessibilityService : AccessibilityService() {
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         Log.w("TradeDraw", "AutoTradeAccessibilityService unbinded transitoriamente, retornando true para rebind")
+        // R27-H / Loop 1: se libera la referencia al desenlazar. Se devuelve `true` (el sistema
+        // volverá a llamar a onRebind, que la vuelve a promover), pero mientras dura la ventana
+        // no debe quedar publicada una instancia que ya no recibe eventos. `detach` compara por
+        // identidad, así que si otra instancia ya se promovió ésta no la borra.
+        detach(this)
         try {
             OverlayService.instance?.updateHUDView(true)
         } catch (e: Exception) {}
@@ -463,9 +507,9 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
-        if (instance == this) {
-            instance = null
-        }
+        // R27-H / Loop 1: misma guarda por identidad que `onUnbind`. Un onDestroy tardío de una
+        // instancia vieja no puede borrar una instancia nueva ya promovida.
+        detach(this)
         try {
             unregisterReceiver(commandReceiver)
         } catch (e: Exception) {}

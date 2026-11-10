@@ -620,7 +620,10 @@ class TradeDrawHttpBridge(
             tradingEngine = te,
             riskManager = rm,
             wsClient = ws,
-            accessibilityService = AutoTradeAccessibilityService.instance
+            accessibilityService = AutoTradeAccessibilityService.instance,
+            // R27-H / Loop 2: la fuente se pasa EXPLÍCITAMENTE desde quien la conoce. Antes se
+            // omitía y el diagnóstico dependía del valor por defecto de HealthSupervisor.
+            dataSource = overlayService.dataSource
         )
 
         return """{

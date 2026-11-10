@@ -56,3 +56,59 @@ Cuando `SyntheticCandleEngine` genera una señal (CALL o PUT), la señal entra a
 | **`TradeDrawHttpBridge.kt`** | Intermediario para llamadas REST, independiente del WSS, usado para sincronización de balances o reportes. |
 | **`TradeJournalLogger.kt`** | Registra de forma estructurada cada señal, veto y resultado en disco para análisis offline de estrategias (DeepSeek/Hermes). |
 | **`TradeLearningEngine.kt`** | Sub-motor para procesar logs de `TradeJournalLogger` y retroalimentar a `AdaptiveLearningEngine`. |
+
+---
+
+## 5. Actualización R29-A (2026-11-09) — Arquitectura REAL verificada
+
+> Sección añadida de forma aditiva por la Ronda 5 de R29-A. El contenido anterior (§1–4) se
+> conserva: describe correctamente el flujo headless, pero es PARCIAL (R2 §4.9: omite health,
+> journals, bridge de 28 endpoints y el estado estático global). Lo que sigue es la arquitectura
+> medida sobre el código (HEAD `c934835` + trabajo R27/R28 sin commit). Fuente de verdad completa:
+> [`loops/r29a/ROUND_02_COMPONENT_INVENTORY.md`](../loops/r29a/ROUND_02_COMPONENT_INVENTORY.md) y
+> [`loops/r29a/ROUND_03_ISOLATION_AUDIT.md`](../loops/r29a/ROUND_03_ISOLATION_AUDIT.md).
+
+### 5.1 Forma del sistema (VERIFICADO)
+
+- **Monolito Android de 1 módulo Gradle** (`:app`; `settings.gradle.kts`): 47 clases Kotlin
+  (19.241 LOC) en un paquete plano + `health/` + `ui/theme/`. Stack: AGP 8.5.2, Kotlin 1.9.24,
+  OkHttp 4.12.0. **Sin Room/DataStore/Hilt/Retrofit/Coroutines**; loops con `Handler`/`Thread`/
+  `Executors`. **0 interfaces** en todo el código de producción (grep → 0).
+- **Estado estático global como columna vertebral**: el `companion object` de
+  `AutoTradeAccessibilityService` es consumido por **11 archivos** (88 refs: `.instance` ×26,
+  `.latestObservedBalance` ×14, `.latestObservedAsset` ×10…); `OverlayService.instance` por 9
+  archivos (39 refs). Ciclos: TradingEngine ↔ OverlayService y → ATAS.
+- **Núcleo**: `TradingEngine` (2.970 LOC — decisión + cascada de vetos + ejecución + liquidación +
+  journals) y `AutoTradeAccessibilityService` (930 LOC — sensor UI del broker + actuador de taps +
+  almacén de estado: tres roles sin separar).
+- **3 vías de tap real + root como PRIMARIA** (el propio código lo declara, `ATAS:211-216`):
+  shell root (`su -c input tap`, exec en `ATAS:323` — la cita ":327" de R2 apunta a un comentario
+  posterior; operativa incluso con accesibilidad caída), gesto de accesibilidad
+  (`dispatchGesture`, `ATAS:576`, fallback) y tap directo bridge/HUD (`performClickAt`,
+  `ATAS:523`). Sin frontera de ejecución: no existe `OrderGateway` (re-verificado, R28-B + R3).
+- **Bridge HTTP loopback de 28 endpoints** (`TradeDrawHttpBridge.kt:130-530`, sin auth —
+  `docs/SECURITY_MODEL.md` §2–3); **SHADOW decision-only** (registra la decisión y hace `return`
+  antes de toda primitiva de tap, `TE:2493-2518`; no simula el ciclo de órdenes).
+- Detalle completo de límites, contratos de datos y pruebas: `docs/SYSTEM_BOUNDARIES.md`,
+  `docs/DATA_CONTRACTS.md`, `docs/TESTING_STRATEGY.md`, `docs/SECURITY_MODEL.md` (creados en
+  Ronda 5).
+
+### 5.2 Arquitectura objetivo (R29-A) — 11 dominios [PROPUESTA]
+
+El diseño completo (contratos por dominio, mapa de estáticos→puertos, 7 fases de migración con
+riesgo regla-15, matriz de trazabilidad de las 47 clases) está en
+[`loops/r29a/ROUND_04_TARGET_ARCHITECTURE.md`](../loops/r29a/ROUND_04_TARGET_ARCHITECTURE.md)
+— **aquí solo el resumen** (el detalle NO se duplica):
+
+- **Dominios (11):** `core` · `market` · `strategy` · `risk` · `execution` · `simulation` ·
+  `research` (incluye backtesting; JVM/Python, fuera de la APK) · `observability` (incluye
+  analytics) · `ui` · `adapters` · `persistence`.
+- **Contratos P0** (los 5 prerrequisitos de toda frontera): `OrderGateway.dispatch(OrderRequest):
+  OrderReceipt` + `TapTransport`×3, `ExecutionPolicy` (cascada congelada veto-a-veto),
+  `BalanceSource`, `EventSink`, `CredentialProvider/CredentialSink`.
+- **Fases F0–F6** con criterio de aceptación y rollback por fase; riesgo máximo en F3 (frontera de
+  ejecución) — punto de STOP si algún guard cambia de orden o alcance.
+- **No-migrables (reglas 1-2/15):** interior de las 14 estrategias, orden de la cascada de 13
+  vetos, esquemas CSV (29/11 col.), algoritmo de `decisionId`, heurística demo/real, root-tap y
+  auto-heal, defaults de RiskManager.
+- **Estado:** PROPUESTA-R29-B. Nada de esto existe hoy (0 interfaces); R29-A no implementó código.

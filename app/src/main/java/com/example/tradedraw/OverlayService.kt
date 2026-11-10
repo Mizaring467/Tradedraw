@@ -113,6 +113,35 @@ class OverlayService : Service() {
      */
     val healthSupervisor: com.example.tradedraw.health.HealthSupervisor = com.example.tradedraw.health.HealthSupervisor()
 
+    /**
+     * R27-H / Loop 2 — fuente de datos real del servicio, en un solo sitio autoritativo.
+     *
+     * Antes el diagnóstico tenía que *adivinar* la fuente: `HealthSupervisor.evaluate()` usa
+     * `WEBSOCKET_PURO` por defecto y el bridge lo invocaba sin pasar nada. Hoy la captura de
+     * pantalla está desactivada por producto (`OverlayService.kt:238` fuerza
+     * `hasMediaProjection = false`) y `ScreenCaptureManager` no se instancia en ningún punto, así
+     * que el valor por defecto *casualmente* acierta. Pero si mañana se reactivara la captura, el
+     * diagnóstico seguiría diciendo "WebSocket puro" sin que nadie lo note.
+     *
+     * Regla: **la fuente se declara donde se decide, y se consume explícitamente.** Este campo es
+     * el único lugar del sistema que responde "¿estamos capturando pantalla?".
+     */
+    @Volatile
+    var dataSource: com.example.tradedraw.health.HealthSupervisor.DataSource =
+        com.example.tradedraw.health.HealthSupervisor.DataSource.WEBSOCKET_PURO
+        private set
+
+    /**
+     * Declara la fuente de datos activa.
+     *
+     * No infiere captura de pantalla: solo acepta `WEBSOCKET_CON_PANTALLA` cuando el llamador
+     * afirma explícitamente que hay un `MediaProjection` vivo. Evitar adivinar es deliberado —
+     * declarar una pantalla inexistente produciría `SCREEN_FEED_MISMATCH` espurio.
+     */
+    internal fun setDataSource(source: com.example.tradedraw.health.HealthSupervisor.DataSource) {
+        dataSource = source
+    }
+
     private var hudView: View? = null
     private var hudParams: WindowManager.LayoutParams? = null
     var isHudVisible = false
@@ -236,6 +265,10 @@ class OverlayService : Service() {
         // de producto (consume batería del teléfono muy rápido y lo ralentiza). Aunque llegue un
         // dataIntent de MediaProjection, se ignora y nunca se arranca ScreenCaptureManager.
         startTradeDrawForeground(hasMediaProjection = false)
+        // R27-H / Loop 2: el servicio declara la fuente real. Como no hay MediaProjection, la
+        // verdad es WebSocket puro; se fija aquí para que no dependa del valor por defecto de
+        // HealthSupervisor.
+        setDataSource(com.example.tradedraw.health.HealthSupervisor.DataSource.WEBSOCKET_PURO)
         if (dataIntent != null) {
             Log.w("TradeDraw", "DataIntent de MediaProjection recibido pero IGNORADO (captura deshabilitada por batería)")
         }

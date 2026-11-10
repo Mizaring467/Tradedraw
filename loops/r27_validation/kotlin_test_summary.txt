@@ -1,0 +1,4 @@
+R27 kotlin_test_summary — 2026-11-05T20:34:07+00:00
+comando: ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache
+HEAD: c934835
+clases=55 tests=528 skipped=2 failures=0 errors=0

@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.tradedraw"
         minSdk = 24
         targetSdk = 34
-        versionCode = 20
-        versionName = "1.10-r26-autonomous-expiry"
+        versionCode = 21
+        versionName = "1.11-r27h-activeinstance-atomic"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

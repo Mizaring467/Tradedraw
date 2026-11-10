@@ -19,9 +19,11 @@ Auditorías de pares integradas (copias versionadas en [`loops/r26_validation/au
 ## 1. Estado actual (una frase por dimensión)
 
 - **Código:** `75f005e` compila; APK v20 `1.10-r26-autonomous-expiry` construida e instalada; suite Kotlin **513/513**.
+  - ⚠️ **Corrección (R29-A, 2026-11-09):** este claim describe la reconstrucción R26 y quedó desfasado. Verificado hoy: el working tree contiene trabajo R27/R28 **sin commit** con `versionCode=21` / `versionName "1.11-r27h-activeinstance-atomic"` (`app/build.gradle.kts`), mientras la APK **instalada** sigue siendo v20 (no contiene esos cambios; `loops/r28a_verification/R28A_CIERRE.md` §7.2). La cifra de tests vigente es **565** (detalle en la sección "Actualización R29-A" del final). El texto original se conserva.
 - **Instrumentación:** R25 certificó V1–V4; R26 certificó la caducidad de `AUTONOMOUS` (P1/P2).
 - **Edge/estrategia:** **no demostrado**. R25 cerró `NO EVALUABLE (por V5)` y R26 no midió trading.
 - **Repo:** limpio, `r10-night` empujado; `main` **no** contiene R25/R26.
+  - ⚠️ **Corrección (R29-A, 2026-11-09):** **"Repo: limpio" es FALSO hoy** (era cierto en la fecha de la reconstrucción R26). `git status` verificado hoy: **9 archivos modificados (+582/−109) y 13 rutas sin rastrear** (30 archivos) — todo el trabajo R27/R27-H/R28-A/R28-B vive **solo en el working tree, sin commit** (`loops/r29a/ROUND_01_GIT_AUDIT.md` §2–3, §8). El texto original se conserva.
 - **Dispositivo:** **inalcanzable por ADB desde las 22:50** (`No route to host`). Última lectura verificada: 22:25:58, `mode=DISABLED`.
 
 ---
@@ -105,6 +107,27 @@ solo se usó para P1/P2 de R26 (caducidad de modo), que no coloca órdenes.
 
 ## 8. Próxima tarea técnica (y por qué es esa)
 
+> **Actualización 2026-11-05 (R27-H):** se abrió una ronda de corrección de **diagnóstico** bajo el
+> nombre R27 que el enunciado del usuario asignó. Ver `loops/r27_validation/R27_REPORTE.md`.
+> Resultado: `SCREEN_FEED_MISMATCH` y `BALANCE_UNREADABLE` eran falsos positivos de la capa de
+> health (que solo alimenta `/status`, no decide trading); `lastBalanceReadMs` no se estampaba en la
+> ruta pasiva de balance. Corregido + 20 pruebas. `health=READY` verificado en `duchamp` (SDK 36).
+>
+> **La ronda V5 de trading sigue pendiente y sin consumir:** no se creó
+> `workflows/PREREGISTRO_R27.md` porque esta ronda no mide rendimiento ni coloca órdenes. Cuando se
+> aborde V5 necesita su propio preregistro commiteado **antes** de medir (lección F-2 de R26), y
+> probablemente conviene renombrar esta a `R27-H` para no colisionar.
+
+> **Actualización 2026-11-05 (R27-H loops):** cuatro loops cerrados sobre el mismo HEAD.
+> **L1** ciclo de vida de `AccessibilityService` (nueva clase pura `ActiveInstance`, `onUnbind`
+> ahora libera la referencia; 13 tests). **L2** fuente de datos explícita: `OverlayService` es el
+> poseedor autoritativo y el bridge la pasa (12 tests). **L3** verificación de la separación
+> diagnóstico (10 s) vs guard del motor (3 s), sin cambios de código (13 tests). **L4** regresión:
+> **566 tests, 0 fallos**.
+> **Sin validación en dispositivo:** instalar y reiniciar servicios están prohibidos sin
+> autorización expresa, así que el APK instalado sigue siendo el de R27-H.
+> Detalle en `loops/r27h_loops/`. Ver también `SIGUIENTE_AUDITORIA.md` para los candidatos a L5+.
+
 > **R27 — preregistro + acumulación de ≥ 20 trades live para evaluar V5.**
 
 Cadena de evidencia (no afirmación):
@@ -161,3 +184,54 @@ Nadie está trabajando ahora mismo en P-1…P-8: los tres paneles cerraron sus a
    correcto está en §6.
 7. ~~Dos verdades sobre R24 C/D~~ (F-7): **resuelto** con la adenda de `R24_FINAL_REPORT.md`; el cuerpo
    histórico se conserva y la adenda explicita qué prevalece.
+
+---
+
+## 11. Actualización R29-A (2026-11-09)
+
+> Sección añadida de forma aditiva por la misión **R29-A** (auditoría, estabilización y preparación
+> de arquitectura; identidad: Quantitative Research Platform). Preserva todo el contenido previo;
+> corrige los dos claims desfasados con notas fechadas in situ (§1 de este documento). Fuente de
+> verdad de la fase: [`loops/r29a/`](loops/r29a/STATE.md) — informes R0–R4 aprobados.
+
+### 11.1 Estado real verificado del working tree (hoy)
+
+| Dimensión | Valor verificado (etiqueta) |
+| :--- | :--- |
+| Rama / HEAD | `r10-night` @ `c934835` = `origin/r10-night` [VERIFICADO — `git rev-parse`] |
+| Working tree | **NO limpio**: 9 modificados (+582/−109) + 13 rutas sin rastrear (30 archivos) — trabajo R27/R27-H/R28-A/R28-B **sin commit** [VERIFICADO — `git status`; detalle `loops/r29a/ROUND_01_GIT_AUDIT.md`] |
+| Tests Kotlin vigentes | **565 tests / 55 clases / 0 fallos / 0 errores / 2 skipped** según XML on-disk (el bruto en disco es 573/58 XML; 3 XML obsoletos de clases borradas: `AssetRicMappingTest`, `HudGeometriaTest`, `OrderStateReposoTest`) [VERIFICADO — re-agregado de XML en `loops/r29a/ROUND_02_COMPONENT_INVENTORY.md` §5] |
+| APK | **Instalada v20** ≠ working tree `versionCode=21` (`1.11-r27h-activeinstance-atomic`) — el working tree no está validado en dispositivo [VERIFICADO — `loops/r28a_verification/R28A_CIERRE.md` §7.2] |
+| Python | 43 `def test_` en `tests/` — **SIN VERIFICAR por ejecución** en rondas recientes (sin artefacto en disco) [PARCIALMENTE VERIFICADO] |
+| CI | Solo `assembleDebug` sobre `main`; no ejecuta tests ni cubre `r10-night` [VERIFICADO — `.github/workflows/android-build.yml`] |
+| Supervisor externo | `scripts/td_supervisor.sh` (AUTO_REARM=1) inactivo desde 2026-11-07T18:27:41Z; lock obsoleto conservado [VERIFICADO — R0 §2.4] |
+
+### 11.2 Informes R28 (hoy huérfanos) y workspace R29-A
+
+- [`loops/r28a_verification/R28A_CIERRE.md`](loops/r28a_verification/R28A_CIERRE.md): cierre R28-A
+  ("CIERRE CON UNA CORRECCIÓN": prueba de concurrencia de `ActiveInstance` vacua corregida con
+  latches; suite 573/0/2 con horas; bump de versión sin justificación §7). **Este documento no lo
+  referenciaba** (grep "R28" sin coincidencias — inconsistencia 3 de R1 §6).
+- [`loops/r28b_autonomy/R28B_BLOQUEO_AISLAMIENTO.md`](loops/r28b_autonomy/R28B_BLOQUEO_AISLAMIENTO.md):
+  bloqueo arquitectónico — autonomía E2E **NO demostrable** (no existe simulador de órdenes ni
+  abstracción de ejecución; la única vía es `dispatchGesture`/root-tap; "DEMO" es etiqueta del
+  broker, no sandbox). Recomienda `OrderGateway`+`SimulatedOrderGateway` → motiva R29-A/R29-B.
+- Workspace de la fase: [`loops/r29a/`](loops/r29a/STATE.md) con `STATE.md`, `MISSION.md`,
+  `DECISIONS.md` y los informes `ROUND_00…04` aprobados.
+
+### 11.3 Estado de la fase R29-A
+
+- **Rondas aprobadas:** R0 (preparación), R1 (auditoría git: working tree íntegro y explicable al
+  100 %; 8 inconsistencias documentales), R2 (inventario: 47 clases/19.241 LOC, 0 interfaces,
+  3 vías de tap + root primaria, bridge 28 endpoints), R3 (aislamiento: 7/10 dominios nominales,
+  SHADOW decision-only que consume la vela, demo≠sandbox), R4 (arquitectura objetivo: 11 dominios,
+  contratos P0/P1/P2, 7 fases, enmiendas §14).
+- **Ronda 5 (esta actualización):** documentación central — se crearon
+  [`docs/SYSTEM_BOUNDARIES.md`](docs/SYSTEM_BOUNDARIES.md),
+  [`docs/DATA_CONTRACTS.md`](docs/DATA_CONTRACTS.md),
+  [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md),
+  [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md) y se actualizó aditivamente
+  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) + este documento.
+- **Pendientes heredados que R29-A no ejecuta:** commit del trabajo R27/R28 (regla 10), validación
+  en dispositivo del working tree (APK v21), preregistro V5 (≥20 trades), L5+, y para R29-B:
+  `OrderGateway`/`SimulatedOrderGateway` (recomendación R28-B; diseño R4).
