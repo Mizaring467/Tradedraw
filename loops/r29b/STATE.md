@@ -4,7 +4,7 @@
 | :--- | :--- |
 | Fase actual | F5 — Gradle Multi-Module Split & Módulos desacoplados |
 | Tarea actual | T-5.1 (:core), T-5.2 (:market, :persistence), T-5.3 (:strategy, :risk, :execution, :simulation), T-5.4 (:observability, :ui, :adapters, :research) |
-| HEAD | Pendiente commit F4 en `r10-night` |
+| HEAD | `48653e7` (commit F4 en `r10-night`) |
 | Último Gate | **Gate G4: APROBADO** (ver `loops/r29b/ROUND_04_F4_REPORT.md`) |
 | Política operativa | Sesión visible obligatoria (AGY / Solo Routine). |
 | Decisiones aprobadas | P-1 / OD-6 (`7a3b008`), P-2 (`0ec5369`), P-3 (`/trade` por modo), P-4 (SHADOW simulado con flag off por defecto y esquema v2) |
@@ -43,9 +43,9 @@
 | T-4.3 | COMPLETADA | SHADOW delega en `SimulatedOrderGateway` tras flag apagado por defecto; esquema `shadow_journal` v2 versionado con lector tolerante. |
 | **Gate G4** | **APROBADO** | JVM 626/0/0, Python 43/43 OK, 3 nuevas suites verdes (`SimLedgerTest`, `SimulatedOrderGatewayTest`, `ShadowJournalSchemaV2Test`). |
 | **F5: Split Modular** | **EN CURSO** | |
-| T-5.1..4 | PENDIENTE | Organización modular, límites arquitectónicos y compilación desacoplada. |
+| T-5.1 | COMPLETADA | Módulo `:core` puro JVM creado e incluido en Gradle. 16 archivos core movidos a `core/`. Zero dependencias Android/OkHttp. JVM 626/0/0, Python 43/43, assembleDebug OK. |
+| T-5.2..4 | PENDIENTE | Módulos desacoplados y compilación multi-módulo. |
 | **Gate G5** | PENDIENTE | `assembleDebug` + suite de tests desde la raíz. |
 
 ## Próxima acción
-- Commitear y pushear los cambios verificados de F4 a `r10-night`.
-- Ejecutar F5 (T-5.1 a T-5.4) y validar Gate G5.
+- Avanzar con T-5.2 a T-5.4 hacia Gate G5.

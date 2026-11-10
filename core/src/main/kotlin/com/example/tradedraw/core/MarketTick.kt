@@ -74,7 +74,7 @@ object MarketTickFilters {
         second in entryEarliestSecond..ENTRY_WINDOW_LAST_SECOND
 
     /** Restaura el flag a su valor por defecto. Uso en tests. */
-    internal fun resetEntryEarliestSecondForTests() {
+    fun resetEntryEarliestSecondForTests() {
         entryEarliestSecond = ENTRY_WINDOW_FIRST_SECOND_DEFAULT
     }
 

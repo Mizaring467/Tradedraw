@@ -23,4 +23,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "TradeDraw"
+include(":core")
 include(":app")
