@@ -14,7 +14,8 @@ import android.widget.Toast
  */
 class ChartViewportController(
     private val context: Context? = null,
-    private val riskManager: RiskManager? = null
+    private val riskManager: RiskManager? = null,
+    var hudPort: com.example.tradedraw.core.HudPort? = null
 ) {
     companion object {
         private const val TAG = "ChartViewport"
@@ -151,7 +152,7 @@ class ChartViewportController(
         service.performSwipe(x1, y1, x2, y2, GESTURE_DURATION_MS)
 
         mainHandler.post {
-            OverlayService.instance?.drawingView?.triggerClickAnimation(x1, y1)
+            (hudPort ?: OverlayService.instance)?.triggerClickAnimation(x1, y1)
             notifyUser("🤖 AGENTE: $description")
         }
     }

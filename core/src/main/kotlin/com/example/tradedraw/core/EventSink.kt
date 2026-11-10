@@ -19,3 +19,7 @@ interface EventSink {
         tradeId: String? = null
     ) = add(kind.toString(), detail, decisionId, tradeId)
 }
+
+class NoOpEventSink : EventSink {
+    override fun add(kind: String, detail: String, decisionId: String?, tradeId: String?) {}
+}

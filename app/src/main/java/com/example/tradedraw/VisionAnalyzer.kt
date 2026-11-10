@@ -11,9 +11,7 @@ enum class CandleType {
     GREEN, RED, DOJI
 }
 
-enum class TrendDirection {
-    UPTREND, DOWNTREND, SIDEWAYS
-}
+typealias TrendDirection = com.example.tradedraw.core.TrendDirection
 
 enum class TradeOutcome {
     WIN, LOSS

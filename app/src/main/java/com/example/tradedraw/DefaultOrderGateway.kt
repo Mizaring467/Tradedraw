@@ -74,6 +74,7 @@ class DefaultOrderGateway(
  */
 class RootTapTransport(
     private val eventSink: EventSink = RingBufferEventSink(),
+    var hudPort: HudPort? = null,
     private val rootCheck: () -> Boolean = { AutoTradeAccessibilityService.hasRootAccess() },
     private val rootTapExecutor: (Float, Float, String?, String?, ((Boolean, String?) -> Unit)?, Boolean) -> Unit = { x, y, did, tid, cb, bypass ->
         AutoTradeAccessibilityService.executeRootTap(x, y, did, tid, cb, bypass)
@@ -84,7 +85,7 @@ class RootTapTransport(
     override fun isAvailable(): Boolean = rootCheck()
 
     override fun dispatch(request: OrderRequest, onResult: (OrderReceipt) -> Unit) {
-        val overlay = OverlayService.instance
+        val overlay = hudPort ?: OverlayService.instance
         val bypassNeeded = overlay != null && overlay.isPointInsideHUD(request.x, request.y)
         val startTime = System.currentTimeMillis()
 

@@ -98,9 +98,11 @@ class BinomoWebSocketClient(
             // Ronda 15 / B2: avisar al motor para que limpie el estado POR ACTIVO que no vive en
             // este cliente. Antes solo la via de accesibilidad disparaba `onAssetChanged`, asi que
             // un cambio por `/asset` dejaba la referencia de inoperabilidad del activo anterior.
-            OverlayService.instance?.tradingEngine?.onAssetChanged()
+            onAssetChangedListener?.invoke() ?: OverlayService.instance?.tradingEngine?.onAssetChanged()
         }
     }
+
+    var onAssetChangedListener: (() -> Unit)? = null
 
     var isEnabled: Boolean
         get() = prefs.getBoolean("ws_client_enabled", true)

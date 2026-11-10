@@ -18,8 +18,14 @@ enum class MoneyManagementMode {
 class RiskManager(
     context: Context? = null,
     val eventSink: EventSink = RingBufferEventSink(),
-    val balanceSource: BalanceSource = AccessibilityBalanceSource()
+    val balanceSource: BalanceSource = AccessibilityBalanceSource(),
+    var hudPort: com.example.tradedraw.core.HudPort? = null,
+    var brokerSensor: com.example.tradedraw.core.BrokerSensor? = null
 ) : CapitalPolicy {
+
+    private fun notifyHud() {
+        hudPort?.updateHUDView() ?: OverlayService.instance?.updateHUDView()
+    }
 
     private val prefs: SharedPreferences? = try {
         context?.getSharedPreferences("TradeDraw_RiskConfig", Context.MODE_PRIVATE)
@@ -546,7 +552,7 @@ class RiskManager(
             // Ya liquidado por la ruta automatica: no sumar. Se cierra el pendiente igual para que
             // el HUD no quede mostrando "Trade Activo".
             clearPendingTrade()
-            OverlayService.instance?.updateHUDView()
+            notifyHud()
             return false
         }
         markManualIncrement(origin, if (win) "WIN" else "LOSS")
@@ -728,7 +734,7 @@ class RiskManager(
         // cualquier llamada sin argumento en "sin limites de sesion" — un fail-open latente.
         val effectiveSubMode = subMode ?: currentSubMode
         val currentBal = balanceSource.read().balance
-        val isDemo = currentBal >= 1_000_000.0 || (AutoTradeAccessibilityService.isDemoAccount && currentBal > 500_000.0)
+        val isDemo = currentBal >= 1_000_000.0 || ((brokerSensor?.getBrokerState()?.isDemoAccount ?: AutoTradeAccessibilityService.isDemoAccount) && currentBal > 500_000.0)
         if (currentBal > 0.0) {
             if (isDemo) {
                 if (currentBal < absoluteEquityFloor) {
@@ -744,7 +750,7 @@ class RiskManager(
                 }
 
                 // Si la orden configurada en pantalla supera el saldo disponible, avisar claramente
-                val observedStake = AutoTradeAccessibilityService.observedOrderAmount
+                val observedStake = brokerSensor?.getBrokerState()?.observedOrderAmount ?: AutoTradeAccessibilityService.observedOrderAmount
                 if (observedStake > 0.0 && observedStake > currentBal) {
                     val stakeInt = observedStake.toInt()
                     val balInt = currentBal.toInt()
@@ -871,14 +877,14 @@ class RiskManager(
         // 3. Take Profit diario: 2 victorias
         // 4. Máximo 3 operaciones ejecutadas por sesión diaria (acumulando W + L + Voids)
         if (effectiveSubMode == AutonomousSubMode.SNIPER) {
-            val currentAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
-            val isSynthetic = AutoTradeAccessibilityService.isSyntheticOrOTC ||
+            val currentAsset = (brokerSensor?.getBrokerState()?.observedAsset ?: AutoTradeAccessibilityService.latestObservedAsset).ifBlank { "Crypto IDX" }
+            val isSynthetic = (brokerSensor?.getBrokerState()?.isSyntheticOrOTC ?: AutoTradeAccessibilityService.isSyntheticOrOTC) ||
                 currentAsset.contains("IDX", ignoreCase = true) ||
                 currentAsset.contains("OTC", ignoreCase = true)
             if (isSynthetic) {
                 return Pair(false, "⚠️ Veto Francotirador: Activo sintético/OTC ($currentAsset) prohibido para dinero real. Selecciona un par Forex real en Binomo")
             }
-            val classification = AutoTradeAccessibilityService.classifyAsset(currentAsset)
+            val classification = com.example.tradedraw.core.AssetClassifier.classifyAsset(currentAsset)
             if (classification != AssetClassification.FOREX_REAL) {
                 return Pair(false, "⚠️ Francotirador: Activo ($currentAsset) no es un par Forex real válido. Selecciona EUR/USD, GBP/USD, etc.")
             }
@@ -1062,7 +1068,7 @@ class RiskManager(
         pendingTradeDecisionId = ""
         pendingTradeTradeId = ""
         lastTradeTime = System.currentTimeMillis()
-        OverlayService.instance?.updateHUDView()
+        notifyHud()
     }
 
     @Synchronized
@@ -1100,7 +1106,7 @@ class RiskManager(
         totalVoids += safeCount
         lastTradeTime = System.currentTimeMillis()
         clearPendingTrade()
-        OverlayService.instance?.updateHUDView()
+        notifyHud()
     }
 
     @Synchronized
@@ -1136,7 +1142,7 @@ class RiskManager(
         }
         lastTradeTime = System.currentTimeMillis()
         clearPendingTrade()
-        OverlayService.instance?.updateHUDView()
+        notifyHud()
     }
 
     @Synchronized
@@ -1167,7 +1173,7 @@ class RiskManager(
         }
         lastTradeTime = System.currentTimeMillis()
         clearPendingTrade()
-        OverlayService.instance?.updateHUDView()
+        notifyHud()
     }
 
     @Synchronized
@@ -1237,7 +1243,7 @@ class RiskManager(
         // lo toca). Corregir el marcador a mano no puede borrar la cuenta de liquidaciones sin
         // evidencia: es justo la correccion manual la que hace sospechoso el marcador.
         setStats(wins, losses, lossStreak)
-        OverlayService.instance?.updateHUDView()
+        notifyHud()
         android.util.Log.i("RiskManager", "Marcador corregido a: $wins W | $losses L (Racha=$currentLossStreak)")
     }
 
@@ -1281,7 +1287,7 @@ class RiskManager(
      */
     @Synchronized
     fun getEffectiveStake(subMode: AutonomousSubMode? = null): Double =
-        stakeEfectivo(AutoTradeAccessibilityService.observedOrderAmount, getCurrentInvestmentAmount(subMode).toDouble())
+        stakeEfectivo(brokerSensor?.getBrokerState()?.observedOrderAmount ?: AutoTradeAccessibilityService.observedOrderAmount, getCurrentInvestmentAmount(subMode).toDouble())
 
     @Synchronized
     fun getMartingaleStatusBadge(subMode: AutonomousSubMode? = null): String {

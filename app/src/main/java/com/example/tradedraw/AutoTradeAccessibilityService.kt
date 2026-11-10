@@ -7,15 +7,11 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import com.example.tradedraw.core.EventSink
 
-enum class AssetClassification {
-    FOREX_REAL,
-    SYNTHETIC_OTC,
-    UNKNOWN
-}
+typealias AssetClassification = com.example.tradedraw.core.AssetClassification
 
 class AutoTradeAccessibilityService : AccessibilityService() {
 
-    companion object {
+    companion object : com.example.tradedraw.core.BrokerSensor {
         /**
          * R27-H / Loop 1: la referencia vive en un [ActiveInstance], no en un `var` suelto.
          *
@@ -106,23 +102,19 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         var onBalanceUpdatedListener: ((Double) -> Unit)? = null
         var onAssetUpdatedListener: ((String, Boolean) -> Unit)? = null
 
-        fun classifyAsset(assetName: String): AssetClassification {
-            val upper = assetName.uppercase().trim()
-            if (upper.isEmpty()) return AssetClassification.UNKNOWN
-            if (upper.contains("IDX") || upper.contains("OTC")) {
-                return AssetClassification.SYNTHETIC_OTC
-            }
-            val forexRegex = Regex("^[A-Z]{3}\\s*/\\s*[A-Z]{3}$")
-            if (forexRegex.matches(upper)) {
-                return AssetClassification.FOREX_REAL
-            }
-            val currencies = listOf("EUR", "USD", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD")
-            val count = currencies.count { upper.contains(it) }
-            if (count >= 2 && upper.contains("/")) {
-                return AssetClassification.FOREX_REAL
-            }
-            return AssetClassification.UNKNOWN
-        }
+        fun classifyAsset(assetName: String): AssetClassification =
+            com.example.tradedraw.core.AssetClassifier.classifyAsset(assetName)
+
+        override fun getBrokerState(): com.example.tradedraw.core.BrokerStateView =
+            com.example.tradedraw.core.BrokerStateView(
+                balance = latestObservedBalance,
+                lastBalanceReadMs = lastBalanceReadMs,
+                isDemoAccount = isDemoAccount,
+                observedAsset = latestObservedAsset.ifBlank { "Crypto IDX" },
+                observedPayout = PayoutReader.effectivePayout(observedPayout, 82.0).first,
+                observedOrderAmount = observedOrderAmount,
+                isSyntheticOrOTC = isSyntheticOrOTC
+            )
 
         fun extractAssetCandidate(rawText: String): String? {
             val clean = rawText.trim()

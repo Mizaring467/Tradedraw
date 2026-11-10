@@ -28,7 +28,7 @@ import java.util.Locale
  * Servicio maestro con submenús inteligentes que detectan los límites de la pantalla.
  * Implementa el borrado prioritario de elementos seleccionados.
  */
-class OverlayService : Service() {
+class OverlayService : Service(), com.example.tradedraw.core.HudPort {
 
     companion object {
         private const val ACTION_STOP = "com.example.tradedraw.STOP"
@@ -290,7 +290,7 @@ class OverlayService : Service() {
         startTradeDrawForeground()
         setupCanvasWindow()
 
-        riskManager = RiskManager(this)
+        riskManager = RiskManager(this, hudPort = this, brokerSensor = AutoTradeAccessibilityService)
         calibrationManager = CalibrationManager(this)
         tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager)
         tradingEngine.adaptiveLearningEngine.loadState(this)
@@ -339,6 +339,7 @@ class OverlayService : Service() {
         // Iniciar Cliente WebSocket nativo para recepción de micro-ticks
         val wsClient = BinomoWebSocketClient(this)
         binomoWebSocketClient = wsClient
+        wsClient.onAssetChangedListener = { tradingEngine.onAssetChanged() }
         wsClient.onTickListener = { tick ->
             tradingEngine.onMarketTick(tick)
             // HUD se actualiza via onFrameProcessedListener del tradingEngine — no duplicar aquí
@@ -954,7 +955,7 @@ class OverlayService : Service() {
         hudView?.findViewById<View>(R.id.hud_manual_fallback_alert)?.visibility = View.GONE
     }
 
-    fun showManualFallbackAlert(action: TradeAction, durationMs: Long = 2500L) {
+    override fun showManualFallbackAlert(action: TradeAction, durationMs: Long) {
         mainHandler.post {
             val alert = hudView?.findViewById<View>(R.id.hud_manual_fallback_alert)
             val actionTxt = hudView?.findViewById<TextView>(R.id.hud_manual_fallback_action)
@@ -1435,7 +1436,7 @@ class OverlayService : Service() {
         }
     }
 
-    fun isPointInsideHUD(x: Float, y: Float): Boolean {
+    override fun isPointInsideHUD(x: Float, y: Float): Boolean {
         if (!isHudVisible) return false
         val p = hudParams ?: return false
         val v = hudView ?: return false
@@ -1461,7 +1462,7 @@ class OverlayService : Service() {
      * de esos 17 fallos sigue sin determinar; el evento TAP de `TradeEventLog` registra ahora
      * `bypassHud=` junto a coordenadas y duracion para poder distinguirlo sin suposiciones.
      */
-    fun temporarilyBypassHUD(durationMs: Long = 1500L, onBypassed: (() -> Unit)? = null) {
+    override fun temporarilyBypassHUD(durationMs: Long, onBypassed: (() -> Unit)?) {
         val v = hudView ?: run {
             onBypassed?.invoke()
             return
@@ -1492,7 +1493,7 @@ class OverlayService : Service() {
      * Restaura la interactividad del HUD y cancela el failsafe. Debe llamarse cuando el tap
      * ha terminado (R13/A4); es idempotente y seguro si el HUD no existe.
      */
-    fun restoreHudTouchable() {
+    override fun restoreHudTouchable() {
         mainHandler.post {
             hudBypassFailsafe?.let { mainHandler.removeCallbacks(it) }
             hudBypassFailsafe = null
@@ -1609,7 +1610,7 @@ class OverlayService : Service() {
     }
 
 
-    fun updateHUDView(force: Boolean = false) {
+    override fun updateHUDView(force: Boolean) {
         // Si no es forzado (timer), respetar throttle de 400ms
         val now = System.currentTimeMillis()
         if (!force && now - lastHudUpdateMs < 400L) return
@@ -2464,5 +2465,10 @@ class OverlayService : Service() {
             if (::submenuWindowView.isInitialized) windowManager.removeView(submenuWindowView)
             hudView?.let { windowManager.removeView(it) }
         } catch (e: Exception) {}
+    }
+    override fun triggerClickAnimation(x: Float, y: Float) {
+        if (::drawingView.isInitialized) {
+            drawingView.triggerClickAnimation(x, y)
+        }
     }
 }
