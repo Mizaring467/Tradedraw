@@ -100,8 +100,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateBinomoTokenState() {
         val btnLinkBinomo = findViewById<Button>(R.id.btn_link_binomo) ?: return
-        val prefs = getSharedPreferences("TradeDraw_WSConfig", android.content.Context.MODE_PRIVATE)
-        val token = prefs.getString("ws_auth_token", "") ?: ""
+        val token = com.example.tradedraw.core.SharedPreferencesCredentialStore.fromContext(this).getAuthToken()
         if (token.isNotEmpty()) {
             btnLinkBinomo.text = "🔑 Sesión Binomo: VINCULADA ✓"
             btnLinkBinomo.setTextColor(android.graphics.Color.parseColor("#22c55e"))

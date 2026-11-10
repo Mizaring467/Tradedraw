@@ -1,6 +1,7 @@
 package com.example.tradedraw
 
 import java.util.Locale
+import com.example.tradedraw.core.EventSink
 
 /**
  * Ronda 13 (adenda, A4/A5): buffer circular EN MEMORIA de eventos de ejecucion.
@@ -244,4 +245,26 @@ object TradeEventLog {
             buffer.size, vetosV1, vetosV2, lista
         )
     }
+
+    val defaultSink: EventSink by lazy { RingBufferEventSink() }
 }
+
+class RingBufferEventSink : EventSink {
+    override fun add(kind: String, detail: String, decisionId: String?, tradeId: String?) {
+        val k = try {
+            TradeEventLog.Kind.valueOf(kind)
+        } catch (_: Exception) {
+            TradeEventLog.Kind.VETO
+        }
+        TradeEventLog.add(k, detail, decisionId, tradeId)
+    }
+
+    override fun add(kind: Any, detail: String, decisionId: String?, tradeId: String?) {
+        if (kind is TradeEventLog.Kind) {
+            TradeEventLog.add(kind, detail, decisionId, tradeId)
+        } else {
+            add(kind.toString(), detail, decisionId, tradeId)
+        }
+    }
+}
+

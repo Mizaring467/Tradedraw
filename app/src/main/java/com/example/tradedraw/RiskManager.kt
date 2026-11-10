@@ -2,6 +2,9 @@ package com.example.tradedraw
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.tradedraw.core.BalanceSource
+import com.example.tradedraw.core.CapitalPolicy
+import com.example.tradedraw.core.EventSink
 import com.example.tradedraw.core.OrderState
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -12,7 +15,11 @@ enum class MoneyManagementMode {
     FIXED_AMOUNT
 }
 
-class RiskManager(context: Context? = null) {
+class RiskManager(
+    context: Context? = null,
+    val eventSink: EventSink = RingBufferEventSink(),
+    val balanceSource: BalanceSource = AccessibilityBalanceSource()
+) : CapitalPolicy {
 
     private val prefs: SharedPreferences? = try {
         context?.getSharedPreferences("TradeDraw_RiskConfig", Context.MODE_PRIVATE)
@@ -330,7 +337,7 @@ class RiskManager(context: Context? = null) {
      */
     fun markManualIncrement(origin: String, result: String) {
         if (result == "WIN") manualWinsCounter.incrementAndGet() else manualLossesCounter.incrementAndGet()
-        TradeEventLog.add(
+        eventSink.add(
             TradeEventLog.Kind.MANUAL_INCREMENT,
             "[$origin] $result",
             decisionId = pendingTradeDecisionId.ifBlank { null },
@@ -561,7 +568,7 @@ class RiskManager(context: Context? = null) {
         // validador la extraigan de forma deterministica. Antes el evento era "CONFIRMADA saldo
         // movido" y `trades.csv` acababa con `action = UNKNOWN`, obligando al parser a adivinar.
         val actionPrefix = pendingTradeAction?.name?.let { "$it " } ?: ""
-        TradeEventLog.add(
+        eventSink.add(
             TradeEventLog.Kind.ORDER_STATE,
             "${nuevo.name} $actionPrefix$motivo".trim(),
             decisionId = pendingTradeDecisionId.ifBlank { null },
@@ -710,9 +717,9 @@ class RiskManager(context: Context? = null) {
     }
 
     @Synchronized
-    fun canExecuteTrade(
-        subMode: AutonomousSubMode? = null,
-        confidence: Float = 1.0f
+    override fun canExecuteTrade(
+        subMode: AutonomousSubMode?,
+        confidence: Float
     ): Pair<Boolean, String> {
         // R23B Iter 1: submodo EFECTIVO. Los callers de produccion siempre pasan el submodo explicito
         // (`canExecuteTrade(autonomousSubMode)`), pero `canTrade(confidence)` no. El fallback es
@@ -720,7 +727,7 @@ class RiskManager(context: Context? = null) {
         // los guards). Antes su default era YOLO, que con la bifurcacion de abajo habria convertido
         // cualquier llamada sin argumento en "sin limites de sesion" — un fail-open latente.
         val effectiveSubMode = subMode ?: currentSubMode
-        val currentBal = AutoTradeAccessibilityService.latestObservedBalance
+        val currentBal = balanceSource.read().balance
         val isDemo = currentBal >= 1_000_000.0 || (AutoTradeAccessibilityService.isDemoAccount && currentBal > 500_000.0)
         if (currentBal > 0.0) {
             if (isDemo) {
@@ -930,7 +937,7 @@ class RiskManager(context: Context? = null) {
         consecutiveVoids = 0
         // Reanudar = nueva linea base de sesion. Sin esto, el Trailing Profit Lock y el Stop Loss de
         // sesion (calculados contra sessionStart/Peak) seguian bloqueando aunque la UI dijera "reanudada".
-        val bal = AutoTradeAccessibilityService.latestObservedBalance
+        val bal = balanceSource.read().balance
         sessionStartBalance = if (bal > 0.0) bal else 0.0
         sessionPeakBalance = sessionStartBalance
         trailingProfitLockTriggered = false
@@ -1104,7 +1111,7 @@ class RiskManager(context: Context? = null) {
         }
         
         if (!force) {
-            val currentBal = AutoTradeAccessibilityService.latestObservedBalance
+            val currentBal = balanceSource.read().balance
             if (pendingTradeBaseBalance > 0.0 && currentBal > 0.0) {
                 val diff = Math.abs(currentBal - pendingTradeBaseBalance)
                 if (diff <= 10.0) {
@@ -1140,7 +1147,7 @@ class RiskManager(context: Context? = null) {
         }
         
         if (!force) {
-            val currentBal = AutoTradeAccessibilityService.latestObservedBalance
+            val currentBal = balanceSource.read().balance
             if (pendingTradeBaseBalance > 0.0 && currentBal > 0.0) {
                 val diff = Math.abs(currentBal - pendingTradeBaseBalance)
                 if (diff <= 10.0) {
@@ -1327,7 +1334,7 @@ class RiskManager(context: Context? = null) {
         consecutiveVoids = 0
         lastTradeTime = 0L
         // Misma linea base que resetStreakOnly(): sin esto el Trailing Lock sobrevive al reinicio
-        val bal = AutoTradeAccessibilityService.latestObservedBalance
+        val bal = balanceSource.read().balance
         sessionStartBalance = if (bal > 0.0) bal else 0.0
         sessionPeakBalance = sessionStartBalance
         trailingProfitLockTriggered = false

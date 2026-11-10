@@ -24,7 +24,8 @@ import java.util.concurrent.Executors
  */
 class TradeDrawHttpBridge(
     private val overlayService: OverlayService,
-    private val port: Int = 8080
+    private val port: Int = 8080,
+    val eventSink: com.example.tradedraw.core.EventSink = RingBufferEventSink()
 ) {
     private var serverSocket: ServerSocket? = null
     private val threadPool = Executors.newCachedThreadPool()
@@ -339,7 +340,7 @@ class TradeDrawHttpBridge(
                                         activado = true
                                     }
                                 }
-                                TradeEventLog.add(
+                                eventSink.add(
                                     TradeEventLog.Kind.INOPERABLE,
                                     "INOPERABLE activo=INYECTADO(prueba B2) segundos=${det.holdSeconds} " +
                                         "ratio=%.3e".format(java.util.Locale.US, det.lastRatio)

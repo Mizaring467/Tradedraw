@@ -21,7 +21,9 @@ import java.util.Date
 import java.util.Locale
 import com.example.tradedraw.core.AutoTradeMode
 import com.example.tradedraw.core.AutonomousSubMode
+import com.example.tradedraw.core.CapitalPolicy
 import com.example.tradedraw.core.DecisionIds
+import com.example.tradedraw.core.EventSink
 import com.example.tradedraw.core.MarketTick
 import com.example.tradedraw.core.TradeAction
 
@@ -30,7 +32,9 @@ class TradingEngine(
     private val drawingView: CustomDrawingView,
     val riskManager: RiskManager,
     var calibrationManager: CalibrationManager? = null,
-    val aiClient: AIClient = AIClient(context)
+    val aiClient: AIClient = AIClient(context),
+    val eventSink: EventSink = RingBufferEventSink(),
+    val capitalPolicy: CapitalPolicy = riskManager
 ) {
     val chartViewportController = ChartViewportController(context, riskManager)
     val agentController = AutonomousAgentController(context, this, riskManager, chartViewportController)
@@ -92,7 +96,7 @@ class TradingEngine(
         // Solo observabilidad: registrar el cambio NO lo altera. El ORIGEN es lo unico que permite
         // atribuir un rearme espontaneo: sin el, un cambio automatico y un toque humano son
         // indistinguibles.
-        TradeEventLog.add(
+        eventSink.add(
             TradeEventLog.Kind.MODE_CHANGE,
             "de=$anterior a=$newMode source=$source origen=$origen"
         )
@@ -465,7 +469,7 @@ class TradingEngine(
         // (cuando el aviso se enciende), o `/events` se llenaria con el mismo aviso repetido.
         // La frescura la aporta el propio tick: si el feed estuviera caido no llegaria ninguno.
         if (inoperabilityDetector.onTick(tick.price, tick.timestampMs, feedFresh = true)) {
-            TradeEventLog.add(
+            eventSink.add(
                 TradeEventLog.Kind.INOPERABLE,
                 "INOPERABLE activo=${tick.asset} segundos=${inoperabilityDetector.holdSeconds} " +
                     "ratio=%.3e".format(Locale.US, inoperabilityDetector.lastRatio)
@@ -1847,7 +1851,7 @@ class TradingEngine(
             callPower = analysis.signalPowerCall
         )?.let { motivoVeto ->
             android.util.Log.w("TradingEngine", "⛔ Señal $action VETADA por agotamiento de compra: $motivoVeto")
-            TradeEventLog.add(TradeEventLog.Kind.VETO, motivoVeto)
+            eventSink.add(TradeEventLog.Kind.VETO, motivoVeto)
             return
         }
 
@@ -2165,7 +2169,7 @@ class TradingEngine(
         // toda la distincion demo/real y que ya no puede mentir por diseño fail-closed.
         if (mode == AutoTradeMode.AUTONOMOUS && !puedeOperarAutonomoEnDemo(AutoTradeAccessibilityService.isDemoAccount)) {
             Log.e("TradingEngine", "⛔ BLOQUEO CRÍTICO DE SEGURIDAD: Cuenta NO DEMO detectada. Abortando trade autónomo.")
-            TradeEventLog.add(
+            eventSink.add(
                 TradeEventLog.Kind.VETO,
                 "SEGURIDAD_NO_DEMO cuenta_real_bloqueada",
                 decisionId = currentDecisionId
@@ -2189,14 +2193,14 @@ class TradingEngine(
             // YA queda cubierto por este guard, porque sin tick su edad es null o >= umbral.
             // Se registra para que sea observable por `/events` en vez de solo por logcat, que
             // en este dispositivo no funciona. No se anade un veto nuevo: seria duplicar este.
-            TradeEventLog.add(
+            eventSink.add(
                 TradeEventLog.Kind.VETO,
                 "FEED_RANCIO ageMs=${tickAgeMs ?: -1} activo=" +
                     AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "?" },
                 decisionId = currentDecisionId
             )
             if (tickAgeMs == null) {
-                TradeEventLog.add(
+                eventSink.add(
                     TradeEventLog.Kind.FEED_MUDO,
                     "activo=${AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "?" }} sin_ningun_tick",
                     decisionId = currentDecisionId
@@ -2230,7 +2234,7 @@ class TradingEngine(
             )
             // R13/A5: sin logd no hay observabilidad por logcat, asi que el veto se registra
             // ademas en el buffer consultable por `/events`.
-            TradeEventLog.add(
+            eventSink.add(
                 TradeEventLog.Kind.VETO,
                 "V2 rango=%.3e umbral=%.0e activo=%s".format(
                     java.util.Locale.US, rangoRelativo, umbralMinimo, currentObservedAsset
@@ -2248,7 +2252,7 @@ class TradingEngine(
                 "TradingEngine",
                 "⛔ Headless Trade $action VETADO por precio congelado (activo=$currentObservedAsset)"
             )
-            TradeEventLog.add(
+            eventSink.add(
                 TradeEventLog.Kind.VETO,
                 "CONGELADO activo=$currentObservedAsset",
                 decisionId = currentDecisionId
@@ -2280,7 +2284,7 @@ class TradingEngine(
         if (motivoDesajuste != null) {
             vetoActivoDesajustado++
             Log.w("TradingEngine", "⛔ Headless Trade $action VETADO por $motivoDesajuste")
-            TradeEventLog.add(TradeEventLog.Kind.VETO, motivoDesajuste, decisionId = currentDecisionId)
+            eventSink.add(TradeEventLog.Kind.VETO, motivoDesajuste, decisionId = currentDecisionId)
             return
         }
 
@@ -2288,7 +2292,7 @@ class TradingEngine(
         synchronized(this) {
             if (lastExecutedCandleEpochMinute == currentCandleEpochMinute) {
                 Log.d("TradingEngine", "⛔ Headless Trade $action bloqueado: Vela de minuto $currentCandleEpochMinute ya fue operada (1 orden por vela máx).")
-                TradeEventLog.add(TradeEventLog.Kind.VETO, "VELA_YA_OPERADA minuto=$currentCandleEpochMinute", decisionId = currentDecisionId)
+                eventSink.add(TradeEventLog.Kind.VETO, "VELA_YA_OPERADA minuto=$currentCandleEpochMinute", decisionId = currentDecisionId)
                 return
             }
         }
@@ -2304,7 +2308,7 @@ class TradingEngine(
                 currentAsset.contains("OTC", ignoreCase = true)
             if (isSynthetic && strategy != AutoTradeStrategy.MT_MASTER_COMBO && strategy != AutoTradeStrategy.AUTO_ADAPTIVE && strategy != AutoTradeStrategy.SUPPORT_RESISTANCE && strategy != AutoTradeStrategy.MT_REJECTION) {
                 Log.d("TradingEngine", "Headless bloqueado por Veto Francotirador: Activo sintético/OTC ($currentAsset)")
-                TradeEventLog.add(TradeEventLog.Kind.VETO, "FRANCOTIRADOR activo=$currentAsset", decisionId = currentDecisionId)
+                eventSink.add(TradeEventLog.Kind.VETO, "FRANCOTIRADOR activo=$currentAsset", decisionId = currentDecisionId)
                 return
             }
         }
@@ -2313,7 +2317,7 @@ class TradingEngine(
         val inWindow = MarketTickFilters.isInEntryWindow(sec)
         if (!inWindow) {
             Log.d("TradingEngine", "Headless bloqueado fuera de ventana timing sniper (⏱ ${sec}s | SNIPER=$isSniper | YOLO=$isYolo)")
-            TradeEventLog.add(TradeEventLog.Kind.VETO, "FUERA_DE_VENTANA sec=$sec", decisionId = currentDecisionId)
+            eventSink.add(TradeEventLog.Kind.VETO, "FUERA_DE_VENTANA sec=$sec", decisionId = currentDecisionId)
             return
         }
         val isRejectionOrBounce = reasonDescription.contains("MT_REJECTION") ||
@@ -2325,7 +2329,7 @@ class TradingEngine(
                 reasonDescription.contains("QUANT_CRYPTO")
         if (syntheticCandleEngine.isChoppinessDetected() && !isRejectionOrBounce) {
             Log.d("TradingEngine", "Headless bloqueado por Filtro Anti-Choppy (<0.05% y ticks alternantes)")
-            TradeEventLog.add(TradeEventLog.Kind.VETO, "CHOP", decisionId = currentDecisionId)
+            eventSink.add(TradeEventLog.Kind.VETO, "CHOP", decisionId = currentDecisionId)
             return
         }
 
@@ -2338,7 +2342,7 @@ class TradingEngine(
         }
         if (lastTradeResolutionTime > 0L && timeSinceLastResolution < minSpacingMs) {
             Log.d("TradingEngine", "Headless bloqueado por Cooldown post-resolución (${timeSinceLastResolution / 1000}s < ${minSpacingMs / 1000}s)")
-            TradeEventLog.add(TradeEventLog.Kind.VETO, "COOLDOWN ${timeSinceLastResolution}ms", decisionId = currentDecisionId)
+            eventSink.add(TradeEventLog.Kind.VETO, "COOLDOWN ${timeSinceLastResolution}ms", decisionId = currentDecisionId)
             return
         }
 
@@ -2360,7 +2364,7 @@ class TradingEngine(
             callPower = effectiveAnalysis.signalPowerCall
         )?.let { motivoVeto ->
             Log.d("TradingEngine", "⛔ Headless Trade $action VETADO por agotamiento de compra: $motivoVeto")
-            TradeEventLog.add(TradeEventLog.Kind.VETO, motivoVeto, decisionId = currentDecisionId)
+            eventSink.add(TradeEventLog.Kind.VETO, motivoVeto, decisionId = currentDecisionId)
             return
         }
 
@@ -2381,7 +2385,7 @@ class TradingEngine(
                 // para que el pipeline contrafactual pueda segmentar por similitud y por score
                 // sin parsear prosa. `reasonDescription` trae el score real cuando la senal paso
                 // por la matriz de confluencia.
-                TradeEventLog.add(
+                eventSink.add(
                     TradeEventLog.Kind.VETO,
                     buildAdaptiveBlockDetail(adaptiveDecision.reason, reasonDescription),
                     decisionId = currentDecisionId
@@ -2404,10 +2408,10 @@ class TradingEngine(
         }
 
         val headlessConfidence = (0.85f * adaptiveModifier).coerceIn(0.1f, 1.0f)
-        val (canTrade, riskReason) = riskManager.canExecuteTrade(autonomousSubMode, headlessConfidence)
+        val (canTrade, riskReason) = capitalPolicy.canExecuteTrade(autonomousSubMode, headlessConfidence)
         if (!canTrade) {
             Log.d("TradingEngine", "Headless bloqueado por riesgo: $riskReason")
-            TradeEventLog.add(TradeEventLog.Kind.VETO, "RISK_LIMIT $riskReason", decisionId = currentDecisionId)
+            eventSink.add(TradeEventLog.Kind.VETO, "RISK_LIMIT $riskReason", decisionId = currentDecisionId)
             if (isSniper && (riskReason.contains("alcanzado", ignoreCase = true) || riskReason.contains("finalizada", ignoreCase = true) || riskReason.contains("Límite", ignoreCase = true))) {
                 setTradingMode(AutoTradeMode.DISABLED, "engine:sniper-limite(headless)")
                 sniperShutdownReason = riskReason
@@ -2434,7 +2438,7 @@ class TradingEngine(
                     "SR=\"${reasoning.srFilterStatus}\" PLAN=\"${reasoning.actionPlan}\""
             )
             // R13/A5: el veto queda observable desde `/events` sin depender de logcat.
-            TradeEventLog.add(
+            eventSink.add(
                 TradeEventLog.Kind.VETO,
                 "V1 SR=\"${reasoning.srFilterStatus}\" PLAN=\"${reasoning.actionPlan}\"",
                 decisionId = currentDecisionId
@@ -2477,7 +2481,7 @@ class TradingEngine(
             shadowOrdersGenerated++
             val currentPrice = latestMarketTick?.price ?: 0.0
             Log.i("TradingEngine", "👻 [SHADOW MODE] Orden simulada autorizada: $finalAction @ $currentPrice (segundo=$sec, decisionId=$currentDecisionId) - Cero taps, saldo intacto")
-            TradeEventLog.add(
+            eventSink.add(
                 TradeEventLog.Kind.SHADOW_DECISION,
                 "SHADOW $finalAction @ $currentPrice conf=$headlessConfidence strat=${strategy.name} sub=${autonomousSubMode.name}",
                 decisionId = currentDecisionId,

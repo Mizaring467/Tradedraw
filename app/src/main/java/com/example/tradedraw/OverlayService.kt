@@ -108,6 +108,8 @@ class OverlayService : Service() {
     var modeJournal: ModeEventJournal? = null
         private set
 
+    var eventSink: com.example.tradedraw.core.EventSink = RingBufferEventSink()
+
     /**
      * Ronda 21 (Frente D): Health Supervisor Unificado que agrega estado READY, DEGRADED o BLOCKED.
      */
@@ -304,7 +306,7 @@ class OverlayService : Service() {
 
         tradingEngine.marcarModoInicial("onCreate(servicio recreado)")
 
-        TradeEventLog.add(
+        eventSink.add(
             TradeEventLog.Kind.MODE_CHANGE,
             "de=NINGUNO a=${tradingEngine.mode} source=onCreate(servicio recreado) origen=onCreate(servicio recreado)"
         )

@@ -5,6 +5,7 @@ import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import com.example.tradedraw.core.EventSink
 
 enum class AssetClassification {
     FOREX_REAL,
@@ -52,6 +53,9 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             activeRef.release(service)
 
         var onGestureClickListener: ((Float, Float) -> Unit)? = null
+
+        @Volatile
+        var eventSink: EventSink = RingBufferEventSink()
 
         @Volatile
         var latestObservedBalance: Double = 0.0
@@ -199,7 +203,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             // despache nada: el tap es la accion irreversible (coloca la orden en el broker).
             if (!puedeDespacharTap(isDemoAccount)) {
                 Log.e("TradeDraw", "⛔ BLOQUEO DE SEGURIDAD: intento de click fuera de cuenta DEMO.")
-                TradeEventLog.add(
+                eventSink.add(
                     TradeEventLog.Kind.VETO,
                     "SEGURIDAD_CLICK_NO_DEMO",
                     decisionId = decisionId,
@@ -301,7 +305,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             // auto-heal). Sin este guard, un fallback podria saltarse los otros dos bloqueos.
             if (!puedeDespacharTap(isDemoAccount)) {
                 Log.e("TradeDraw", "⛔ BLOQUEO DE SEGURIDAD: root tap bloqueado fuera de cuenta DEMO.")
-                TradeEventLog.add(
+                eventSink.add(
                     TradeEventLog.Kind.VETO,
                     "SEGURIDAD_ROOT_TAP_NO_DEMO",
                     decisionId = decisionId,
@@ -313,7 +317,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             Thread {
                 val inicioMs = System.currentTimeMillis()
                 lastTapStartTs = inicioMs
-                TradeEventLog.add(
+                eventSink.add(
                     TradeEventLog.Kind.TAP,
                     "START ($x,$y) bypassHud=$bypassHud",
                     decisionId = decisionId,
@@ -327,7 +331,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                     // el journal guardaba el segundo de la decision, no el de la ejecucion.
                     lastTapEndTs = System.currentTimeMillis()
                     lastTapCandleSecond = ((lastTapEndTs / 1000L) % 60L).toInt()
-                    TradeEventLog.add(
+                    eventSink.add(
                         TradeEventLog.Kind.TAP,
                         "END root ($x,$y) exit=$exit durMs=$duracionMs bypassHud=$bypassHud " +
                             "startTs=$inicioMs endTs=$lastTapEndTs csTapEnd=$lastTapCandleSecond",
@@ -348,7 +352,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                     }
                 } catch (e: Exception) {
                     Log.e("TradeDraw", "Excepción ejecutando root tap", e)
-                    TradeEventLog.add(
+                    eventSink.add(
                         TradeEventLog.Kind.TAP,
                         "root ($x,$y) EXCEPCION ${e.message ?: "?"}"
                     )
@@ -531,7 +535,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         // de dispatch no es un guard.
         if (!puedeDespacharTap(isDemoAccount)) {
             Log.e("TradeDraw", "⛔ BLOQUEO DE SEGURIDAD: click por accesibilidad fuera de cuenta DEMO.")
-            TradeEventLog.add(TradeEventLog.Kind.VETO, "SEGURIDAD_CLICK_NO_DEMO")
+            eventSink.add(TradeEventLog.Kind.VETO, "SEGURIDAD_CLICK_NO_DEMO")
             onResult?.invoke(false, "BLOQUEO_SEGURIDAD_NO_DEMO")
             return
         }
@@ -732,7 +736,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                         if (actual.fromButtonRatio != null &&
                             Math.abs(pct - actual.fromButtonRatio) > PayoutReader.TOLERANCIA
                         ) {
-                            TradeEventLog.add(
+                            eventSink.add(
                                 TradeEventLog.Kind.PAYOUT_DISCREPANTE,
                                 "etiqueta=%.3f boton=%.3f".format(java.util.Locale.US, pct, actual.fromButtonRatio)
                             )
@@ -752,7 +756,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                             // R13 (adenda 3): los cambios de activo deben quedar en `/events`.
                             // Sin esto no habia forma de ver QUE RIC se estaba suscribiendo, que
                             // es justo lo que hacia falta para diagnosticar el activo sin ticks.
-                            TradeEventLog.add(
+                            eventSink.add(
                                 TradeEventLog.Kind.ASSET,
                                 "visible=\"$assetCandidate\" ric=\"$formattedRic\""
                             )

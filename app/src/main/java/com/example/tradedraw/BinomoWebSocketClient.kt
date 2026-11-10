@@ -1,6 +1,10 @@
 package com.example.tradedraw
 
 import android.content.Context
+import com.example.tradedraw.core.CredentialProvider
+import com.example.tradedraw.core.CredentialSink
+import com.example.tradedraw.core.EventSink
+import com.example.tradedraw.core.SharedPreferencesCredentialStore
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -15,19 +19,25 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Cliente WebSocket nativo para recepción de micro-ticks de cotización en tiempo real.
  * Se conecta de forma asíncrona mediante OkHttp y procesa cotizaciones sin necesidad de captura de pantalla.
  */
-class BinomoWebSocketClient(private val context: Context) {
+class BinomoWebSocketClient(
+    private val context: Context,
+    private val credStore: SharedPreferencesCredentialStore = SharedPreferencesCredentialStore.fromContext(context),
+    val credentialProvider: CredentialProvider = credStore,
+    val credentialSink: CredentialSink = credStore,
+    val eventSink: EventSink = RingBufferEventSink()
+) {
 
     private val TAG = "BinomoWebSocketClient"
 
     private val prefs = context.getSharedPreferences("TradeDraw_WSConfig", Context.MODE_PRIVATE)
 
     var wsUrl: String
-        get() = prefs.getString("ws_endpoint_url", "wss://ws.binomo.com/") ?: "wss://ws.binomo.com/"
-        set(value) = prefs.edit().putString("ws_endpoint_url", value.trim()).apply()
+        get() = credentialProvider.getEndpointUrl().ifBlank { "wss://ws.binomo.com/" }
+        set(value) = credentialSink.setEndpointUrl(value.trim())
 
     var activeAsset: String
-        get() = prefs.getString("ws_active_asset", "Z-CRY/IDX") ?: "Z-CRY/IDX"
-        set(value) = prefs.edit().putString("ws_active_asset", value.trim()).apply()
+        get() = credentialProvider.getActiveAsset().ifBlank { "Z-CRY/IDX" }
+        set(value) = credentialSink.setActiveAsset(value.trim())
 
     /**
      * Ronda 20: cambio de activo ordenado a proposito (por `/asset` o por diagnostico).
@@ -202,16 +212,16 @@ class BinomoWebSocketClient(private val context: Context) {
     private var ricSecundarioANotificar: String = ""
 
     var authToken: String
-        get() = prefs.getString("ws_auth_token", "") ?: ""
-        set(value) = prefs.edit().putString("ws_auth_token", value.trim()).apply()
+        get() = credentialProvider.getAuthToken()
+        set(value) = credentialSink.setAuthToken(value.trim())
 
     var deviceId: String
-        get() = prefs.getString("ws_device_id", "") ?: ""
-        set(value) = prefs.edit().putString("ws_device_id", value.trim()).apply()
+        get() = credentialProvider.getDeviceId()
+        set(value) = credentialSink.setDeviceId(value.trim())
 
     var cookieHeader: String
-        get() = prefs.getString("ws_cookie_header", "") ?: ""
-        set(value) = prefs.edit().putString("ws_cookie_header", value.trim()).apply()
+        get() = credentialProvider.getCookieHeader()
+        set(value) = credentialSink.setCookieHeader(value.trim())
 
     private val client: OkHttpClient = OkHttpClient.Builder()
         .pingInterval(15, TimeUnit.SECONDS)
@@ -335,7 +345,7 @@ class BinomoWebSocketClient(private val context: Context) {
         smoothedVelocity = 0f
         recentTicks.clear()
         webSocket?.let { subscribeToAsset(it, sano) }
-        TradeEventLog.add(
+        eventSink.add(
             TradeEventLog.Kind.FEED_SIN_TICKS,
             "activo=$actual segundos=$segundosLegibles recuperado=$sano"
         )

@@ -18,6 +18,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.Toast
+import com.example.tradedraw.core.SharedPreferencesCredentialStore
 import androidx.appcompat.app.AppCompatActivity
 import java.net.URLDecoder
 
@@ -106,8 +107,8 @@ class BinomoAuthActivity : AppCompatActivity() {
         fun onWsUrl(url: String) {
             val sanitizedUrl = url.replace(Regex("""([?&](?:authtoken|token)=)[^&#]+"""), "$1<REDACTED>")
             Log.i(TAG, "🎯 WebSocket URL interceptada desde Binomo Web: $sanitizedUrl")
-            val prefs = getSharedPreferences("TradeDraw_WSConfig", Context.MODE_PRIVATE)
-            prefs.edit().putString("ws_endpoint_url", url).apply()
+            val credStore = SharedPreferencesCredentialStore.fromContext(this@BinomoAuthActivity)
+            credStore.setEndpointUrl(url)
             OverlayService.instance?.binomoWebSocketClient?.wsUrl = url
         }
 
@@ -354,12 +355,10 @@ class BinomoAuthActivity : AppCompatActivity() {
         val devMatch = regexDevice.find(cookies)
         val devId = devMatch?.groupValues?.get(1)?.trim() ?: ""
 
-        val prefs = getSharedPreferences("TradeDraw_WSConfig", Context.MODE_PRIVATE)
-        val editor = prefs.edit()
-        if (cookies.isNotEmpty()) editor.putString("ws_cookie_header", cookies)
-        if (token.isNotEmpty()) editor.putString("ws_auth_token", token)
-        if (devId.isNotEmpty()) editor.putString("ws_device_id", devId)
-        editor.apply()
+        val credStore = SharedPreferencesCredentialStore.fromContext(this)
+        if (cookies.isNotEmpty()) credStore.setCookieHeader(cookies)
+        if (token.isNotEmpty()) credStore.setAuthToken(token)
+        if (devId.isNotEmpty()) credStore.setDeviceId(devId)
 
         Log.d(TAG, "Sesión vinculada: token=${maskSecret(token)}, devId=${maskSecret(devId)}, cookiesLen=${cookies.length}")
 
@@ -382,8 +381,8 @@ class BinomoAuthActivity : AppCompatActivity() {
     }
 
     private fun saveTokenAndNotify(token: String) {
-        val prefs = getSharedPreferences("TradeDraw_WSConfig", Context.MODE_PRIVATE)
-        prefs.edit().putString("ws_auth_token", token).apply()
+        val credStore = SharedPreferencesCredentialStore.fromContext(this)
+        credStore.setAuthToken(token)
 
         linkCurrentSession()
     }
