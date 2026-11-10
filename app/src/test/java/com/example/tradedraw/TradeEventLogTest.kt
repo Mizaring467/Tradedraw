@@ -255,7 +255,7 @@ class OrderStateReposoTest {
         val rm = RiskManager()
         assertEquals(
             "Sin operaciones aun, el estado debe ser NINGUNA (reposo), no un fallo",
-            RiskManager.OrderState.NINGUNA, rm.orderState
+            OrderState.NINGUNA, rm.orderState
         )
         assertFalse(rm.hasPendingTrade)
         assertFalse(rm.hasConfirmedTrade)
@@ -267,12 +267,12 @@ class OrderStateReposoTest {
         // o se perderia la capacidad de contar ordenes no registradas (A4).
         assertTrue(
             "NO_PROCESADA y NINGUNA no pueden colapsarse: una es fallo y otra es reposo",
-            RiskManager.OrderState.NO_PROCESADA != RiskManager.OrderState.NINGUNA
+            OrderState.NO_PROCESADA != OrderState.NINGUNA
         )
         @Suppress("UNUSED_VARIABLE")
-        val todos = RiskManager.OrderState.values().toList()
+        val todos = OrderState.values().toList()
         assertTrue("Existen los cuatro estados", todos.size == 4)
-        assertNotNull(todos.find { it == RiskManager.OrderState.ENVIADA })
-        assertNotNull(todos.find { it == RiskManager.OrderState.CONFIRMADA })
+        assertNotNull(todos.find { it == OrderState.ENVIADA })
+        assertNotNull(todos.find { it == OrderState.CONFIRMADA })
     }
 }

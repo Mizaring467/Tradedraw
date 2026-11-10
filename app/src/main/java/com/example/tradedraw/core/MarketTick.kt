@@ -1,4 +1,4 @@
-package com.example.tradedraw
+package com.example.tradedraw.core
 
 /**
  * Representa un micro-tick de cotización recibido en tiempo real por WebSocket.

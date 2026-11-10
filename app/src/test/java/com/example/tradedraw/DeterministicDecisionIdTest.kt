@@ -102,4 +102,14 @@ class DeterministicDecisionIdTest {
         assertEquals("debe ser un UUID derivado de nombre (v3)", 3, id[14].digitToInt())
         assertTrue("v3 estable ante reformateo", UUID.nameUUIDFromBytes("x".toByteArray()).version() == 3)
     }
+
+    @Test
+    fun paridadEntreTradingEngineYCoreDecisionIds() {
+        val asset = "Crypto IDX"
+        val ts = 1792095485676L
+        val action = "BUY"
+        val viaEngine = TradingEngine.generateDeterministicDecisionId(asset, ts, action)
+        val viaCore = com.example.tradedraw.core.DecisionIds.generateDeterministicDecisionId(asset, ts, action)
+        assertEquals("TradingEngine y core.DecisionIds deben producir exactamente el mismo ID", viaEngine, viaCore)
+    }
 }

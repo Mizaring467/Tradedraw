@@ -57,7 +57,7 @@ data class HudSnapshot(
      * Ronda 12 (B1): estado de envio de la operacion. El HUD solo muestra "Trade Activo"
      * cuando vale CONFIRMADA; en ENVIADA avisa de que falta confirmacion del broker.
      */
-    val orderState: RiskManager.OrderState,
+    val orderState: OrderState,
     val pendingAction: TradeAction?,
     val pendingElapsedSec: Long,
     val pendingEntryPrice: Double,

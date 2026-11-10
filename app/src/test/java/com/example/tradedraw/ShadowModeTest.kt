@@ -98,7 +98,7 @@ class ShadowModeTest {
 
         // En SHADOW mode, un intento simulado NO debe llamar a recordTradeSent
         // Verificamos que el estado permanece en reposo
-        assertEquals(RiskManager.OrderState.NINGUNA, rm.orderState)
+        assertEquals(OrderState.NINGUNA, rm.orderState)
         assertFalse(rm.hasPendingTrade)
         assertFalse(rm.hasConfirmedTrade)
         assertEquals(0, rm.totalWins)

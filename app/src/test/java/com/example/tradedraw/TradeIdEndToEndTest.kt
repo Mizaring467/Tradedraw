@@ -59,7 +59,7 @@ class TradeIdEndToEndTest {
 
         assertEquals("RiskManager debe retener decisionId", decisionId, rm.pendingTradeDecisionId)
         assertEquals("RiskManager debe retener tradeId", tradeId, rm.pendingTradeTradeId)
-        assertEquals(RiskManager.OrderState.ENVIADA, rm.orderState)
+        assertEquals(OrderState.ENVIADA, rm.orderState)
 
         // Verificar que TradeEventLog registró ORDER_STATE con ambos IDs
         val events = TradeEventLog.recent()
@@ -84,7 +84,7 @@ class TradeIdEndToEndTest {
         )
 
         // El estado de orden en RiskManager debe seguir en NINGUNA y sin tradeId
-        assertEquals(RiskManager.OrderState.NINGUNA, rm.orderState)
+        assertEquals(OrderState.NINGUNA, rm.orderState)
         assertEquals("", rm.pendingTradeTradeId)
         assertEquals("", rm.pendingTradeDecisionId)
         assertFalse("Veto nunca debe marcar hasPendingTrade", rm.hasPendingTrade)
@@ -116,7 +116,7 @@ class TradeIdEndToEndTest {
         rm.markOrderUnprocessed()
 
         // El estado pasa a NO_PROCESADA y los IDs pendientes se limpian para no contaminar
-        assertEquals(RiskManager.OrderState.NO_PROCESADA, rm.orderState)
+        assertEquals(OrderState.NO_PROCESADA, rm.orderState)
         assertFalse(rm.hasPendingTrade)
         assertEquals("", rm.pendingTradeDecisionId)
         assertEquals("", rm.pendingTradeTradeId)

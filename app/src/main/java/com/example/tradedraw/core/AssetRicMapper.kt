@@ -1,4 +1,4 @@
-package com.example.tradedraw
+package com.example.tradedraw.core
 
 /**
  * Ronda 20: mapeo del nombre de activo VISIBLE en pantalla al RIC real que habla el feed.

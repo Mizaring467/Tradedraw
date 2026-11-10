@@ -1,4 +1,4 @@
-package com.example.tradedraw
+package com.example.tradedraw.core
 
 import java.util.Locale
 

@@ -19,23 +19,11 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-enum class TradeAction {
-    BUY, SELL
-}
-
-enum class AutoTradeMode {
-    AUTONOMOUS,      // Ejecuta clics automáticos
-    SEMIAUTOMATIC,   // Alerta y prepara dibujos, usuario opera
-    DISABLED,        // Apagado
-    SHADOW           // Ronda 21 (Frente E): Análisis y decisiones reales con decision_id, sin taps ni alteración de saldo/W-L
-}
-
-enum class AutonomousSubMode {
-    CONSERVATIVE,    // Con gestión de riesgo estándar (Stop Loss, Take Profit, Cooldown)
-    YOLO,            // Sin Stop Loss ni límites, operativa continua y desatendida
-    SNIPER           // Modo Francotirador: Stake plano (M0), SL 2 derrotas, TP 2 victorias, máx 3 ops por sesión
-}
+import com.example.tradedraw.core.AutoTradeMode
+import com.example.tradedraw.core.AutonomousSubMode
+import com.example.tradedraw.core.DecisionIds
+import com.example.tradedraw.core.MarketTick
+import com.example.tradedraw.core.TradeAction
 
 class TradingEngine(
     private val context: Context,
@@ -911,13 +899,8 @@ class TradingEngine(
          * fila, no corrompe el emparejamiento. Se documenta en vez de inventar un contador de
          * secuencia, que no seria reproducible entre los dos motores.
          */
-        fun generateDeterministicDecisionId(asset: String, signalTimestampMs: Long, action: String): String {
-            val ric = AssetRicMapper.ricParaActivoVisible(asset.trim())
-            // Acepta segundos (valor < 1e11) o milisegundos; la clave siempre sale en ms.
-            val nonceMs = if (signalTimestampMs > 100_000_000_000L) signalTimestampMs else signalTimestampMs * 1000L
-            val key = "${ric}_${nonceMs}_${action.trim().uppercase()}"
-            return java.util.UUID.nameUUIDFromBytes(key.toByteArray(Charsets.UTF_8)).toString()
-        }
+        fun generateDeterministicDecisionId(asset: String, signalTimestampMs: Long, action: String): String =
+            DecisionIds.generateDeterministicDecisionId(asset, signalTimestampMs, action)
 
         internal fun tieJournalResult(isTie: Boolean, saldoFresco: Boolean): String? =
             if (!isTie) null else if (saldoFresco) "TIE" else "TIE_INCIERTO"
@@ -2586,7 +2569,7 @@ class TradingEngine(
      */
     private fun checkOrderConfirmation() {
         val snapshot = synchronized(riskManager) {
-            if (!riskManager.hasPendingTrade || riskManager.orderState != RiskManager.OrderState.ENVIADA) null
+            if (!riskManager.hasPendingTrade || riskManager.orderState != OrderState.ENVIADA) null
             else Triple(riskManager.pendingTradeStartTime, riskManager.pendingTradeBaseBalance, riskManager.pendingTradeAction)
         } ?: return
 

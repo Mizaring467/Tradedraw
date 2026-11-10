@@ -1105,7 +1105,7 @@ class RiskManagerTest {
         TradeEventLog.clear()
         riskManager.pendingTradeAction = TradeAction.BUY
 
-        riskManager.setOrderState(RiskManager.OrderState.CONFIRMADA, "saldo movido")
+        riskManager.setOrderState(OrderState.CONFIRMADA, "saldo movido")
 
         val evento = ultimoEventoDeOrden()
         assertNotNull("Debe existir un evento ORDER_STATE", evento)
@@ -1121,7 +1121,7 @@ class RiskManagerTest {
         TradeEventLog.clear()
         riskManager.pendingTradeAction = TradeAction.SELL
 
-        riskManager.setOrderState(RiskManager.OrderState.CONFIRMADA, "saldo movido")
+        riskManager.setOrderState(OrderState.CONFIRMADA, "saldo movido")
 
         assertEquals(
             "Misma garantia para SELL",
@@ -1135,11 +1135,11 @@ class RiskManagerTest {
         TradeEventLog.clear()
         // `setOrderState` retorna temprano si el estado no cambia, asi que hay que mover el estado a
         // otro valor primero o no se emite evento alguno.
-        riskManager.setOrderState(RiskManager.OrderState.ENVIADA, "previo")
+        riskManager.setOrderState(OrderState.ENVIADA, "previo")
         TradeEventLog.clear()
         riskManager.pendingTradeAction = null
 
-        riskManager.setOrderState(RiskManager.OrderState.NINGUNA, "sin operacion en curso")
+        riskManager.setOrderState(OrderState.NINGUNA, "sin operacion en curso")
 
         // Compatibilidad regresiva: sin accion pendiente el formato es el de antes, sin dobles
         // espacios ni prefijo vacio.
@@ -1189,7 +1189,7 @@ class RiskManagerTest {
         riskManager.markOrderUnprocessed()
 
         val evento = ultimoEventoDeOrden()
-        assertEquals(RiskManager.OrderState.NO_PROCESADA, riskManager.orderState)
+        assertEquals(OrderState.NO_PROCESADA, riskManager.orderState)
         assertTrue(
             "El evento NO_PROCESADA debe llevar la accion. Detalle: ${evento?.detail}",
             evento?.detail?.startsWith("NO_PROCESADA SELL") == true

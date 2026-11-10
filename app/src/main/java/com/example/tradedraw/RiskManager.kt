@@ -2,6 +2,7 @@ package com.example.tradedraw
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.tradedraw.core.OrderState
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -269,8 +270,6 @@ class RiskManager(context: Context? = null) {
      *  - CONFIRMADA  : el broker movio el saldo, o la operacion aparece registrada.
      *  - NO_PROCESADA: se agoto el tiempo sin ninguna prueba de que la orden existiera.
      */
-    enum class OrderState { NINGUNA, ENVIADA, CONFIRMADA, NO_PROCESADA }
-
     @Volatile
     var orderState: OrderState = OrderState.NINGUNA
         internal set

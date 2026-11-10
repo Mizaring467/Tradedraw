@@ -2077,7 +2077,7 @@ class OverlayService : Service() {
             // Medido en el journal del dispositivo: 17 TIE (8,0%) con el saldo intacto, incluida
             // una racha de 5 seguidos, mientras LOSS/WIN mueven +-100.000. Eso no son empates de
             // precio: son taps que no crearon operacion. Antes el HUD los anunciaba como activos.
-            val mustConfirm = hud.orderState == RiskManager.OrderState.ENVIADA
+            val mustConfirm = hud.orderState == OrderState.ENVIADA
             if (hud.hasPendingTrade && mustConfirm) {
                 // Enviada pero SIN confirmar: se dice explicitamente, no se presenta como activa.
                 val act = if (hud.pendingAction == TradeAction.BUY) "CALL ▲" else "PUT ▼"

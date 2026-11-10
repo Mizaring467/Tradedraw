@@ -1,4 +1,4 @@
-package com.example.tradedraw
+package com.example.tradedraw.core
 
 import java.util.concurrent.atomic.AtomicReference
 
@@ -39,7 +39,7 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * @param T tipo de la instancia. Debe ser una referencia (no primitivo).
  */
-internal class ActiveInstance<T : Any> {
+class ActiveInstance<T : Any> {
 
     private val ref = AtomicReference<T?>(null)
 
