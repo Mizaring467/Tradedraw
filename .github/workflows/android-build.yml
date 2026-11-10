@@ -2,9 +2,9 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, r10-night]
   pull_request:
-    branches: [main]
+    branches: [main, r10-night]
   workflow_dispatch:
 
 jobs:
@@ -33,6 +33,9 @@ jobs:
 
       - name: Otorgar permisos al wrapper
         run: chmod +x gradlew
+
+      - name: Ejecutar pruebas unitarias Android
+        run: ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache
 
       - name: Compilar APK Debug
         run: ./gradlew assembleDebug --no-daemon --no-configuration-cache
