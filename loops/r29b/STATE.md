@@ -2,13 +2,13 @@
 
 | Campo | Valor |
 | :--- | :--- |
-| Fase actual | F4 — Simulation Engine (semilla SHADOW, P-4) |
-| Tarea actual | T-4.1 (SimClock/SimLedger), T-4.2 (SimulatedOrderGateway), T-4.3 (SHADOW delega + esquema v2) |
-| HEAD | Pendiente commit F3 en `r10-night` |
-| Último Gate | **Gate G3: APROBADO** (ver `loops/r29b/ROUND_03_F3_REPORT.md`) |
+| Fase actual | F5 — Gradle Multi-Module Split & Módulos desacoplados |
+| Tarea actual | T-5.1 (:core), T-5.2 (:market, :persistence), T-5.3 (:strategy, :risk, :execution, :simulation), T-5.4 (:observability, :ui, :adapters, :research) |
+| HEAD | Pendiente commit F4 en `r10-night` |
+| Último Gate | **Gate G4: APROBADO** (ver `loops/r29b/ROUND_04_F4_REPORT.md`) |
 | Política operativa | Sesión visible obligatoria (AGY / Solo Routine). |
 | Decisiones aprobadas | P-1 / OD-6 (`7a3b008`), P-2 (`0ec5369`), P-3 (`/trade` por modo), P-4 (SHADOW simulado con flag off por defecto y esquema v2) |
-| Estado general | EN PROCESO · F0, F2, F1 y F3 completadas, iniciando F4 |
+| Estado general | EN PROCESO · F0, F2, F1, F3 y F4 completadas, iniciando F5 |
 
 ## Historial de Tareas y Fases
 
@@ -37,12 +37,15 @@
 | T-3.4 | COMPLETADA | `CandleRateLimiter` (D-7 rate limit por vela con separación SHADOW bajo flag). |
 | T-3.5 | COMPLETADA | `/trade` por modo (P-3 aprobada: rechazo explícito en DISABLED/SHADOW con evento y HTTP 403). |
 | **Gate G3** | **APROBADO** | JVM 614/0/0, Python 43/43 OK, 5 nuevas suites verdes (`TapCoordinateResolverTest`, `CandleRateLimiterTest`, `TapTransportParityTest`, `TradeEndpointModeGuardTest`, `VetoCascadeEquivalenceTest`). |
-| **F4: Simulation Engine** | **EN CURSO** | |
-| T-4.1 | PENDIENTE | `simulation/SimClock` + `SimLedger` (balance simulado, puros, apagados). |
-| T-4.2 | PENDIENTE | `SimulatedOrderGateway: OrderGateway` reutilizando `ExecutionPolicy`. |
-| T-4.3 | PENDIENTE | SHADOW delega en `SimulatedOrderGateway` tras flag apagado por defecto; esquema `shadow_journal` v2 versionado. |
-| **Gate G4** | PENDIENTE | Suite JVM + ShadowModeTest ampliado + SimulatedOrderGatewayTest + Python contra journal v1/v2. |
+| **F4: Simulation Engine** | **APROBADA** | Ver `ROUND_04_F4_REPORT.md` |
+| T-4.1 | COMPLETADA | `simulation/SimClock` + `SimLedger` (balance simulado, puros JVM). |
+| T-4.2 | COMPLETADA | `SimulatedOrderGateway: OrderGateway` reutilizando `ExecutionPolicy` y resolución a 60s. |
+| T-4.3 | COMPLETADA | SHADOW delega en `SimulatedOrderGateway` tras flag apagado por defecto; esquema `shadow_journal` v2 versionado con lector tolerante. |
+| **Gate G4** | **APROBADO** | JVM 626/0/0, Python 43/43 OK, 3 nuevas suites verdes (`SimLedgerTest`, `SimulatedOrderGatewayTest`, `ShadowJournalSchemaV2Test`). |
+| **F5: Split Modular** | **EN CURSO** | |
+| T-5.1..4 | PENDIENTE | Organización modular, límites arquitectónicos y compilación desacoplada. |
+| **Gate G5** | PENDIENTE | `assembleDebug` + suite de tests desde la raíz. |
 
 ## Próxima acción
-- Commitear y pushear los cambios verificados de F3 a `r10-night`.
-- Ejecutar F4 (T-4.1 a T-4.3) y validar Gate G4.
+- Commitear y pushear los cambios verificados de F4 a `r10-night`.
+- Ejecutar F5 (T-5.1 a T-5.4) y validar Gate G5.

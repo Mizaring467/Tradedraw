@@ -223,8 +223,10 @@ object TradeJournalLogger {
         }
     }
 
-    /** Cabecera del journal de modo SHADOW (Ronda 21, Frente E). */
+    /** Cabecera del journal de modo SHADOW (Ronda 21, Frente E) - Esquema v1 (11 columnas). */
     private const val SHADOW_HEADER = "timestamp,iso_date,strategy,submode,action,confidence,price_y,trend,candle_second,decision_id,reason\n"
+    /** Cabecera del journal de modo SHADOW - Esquema v2 versionado (15 columnas). */
+    const val SHADOW_HEADER_V2 = "timestamp,iso_date,strategy,submode,action,confidence,price_y,trend,candle_second,decision_id,reason,schema_version,sim_result,sim_exit_price,sim_balance\n"
     private const val SHADOW_JOURNAL_NAME = "shadow_journal.csv"
 
     /**
@@ -269,6 +271,55 @@ object TradeJournalLogger {
             true
         } catch (e: Exception) {
             Log.e(TAG, "Error escribiendo en shadow_journal.csv", e)
+            false
+        }
+    }
+
+    /**
+     * Registra una decisión simulada autorizada en modo SHADOW usando el esquema v2 (15 columnas).
+     */
+    fun logShadowTradeV2(
+        context: Context,
+        strategy: String,
+        submode: String,
+        action: String,
+        confidence: Float,
+        priceY: Float,
+        trend: String = "SIDEWAYS",
+        candleSecond: Int = 0,
+        decisionId: String = "",
+        reason: String = "",
+        simResult: String = "",
+        simExitPrice: Double = 0.0,
+        simBalance: Double = 0.0
+    ): Boolean {
+        return try {
+            val (dir, _) = resolveDirs(context)
+            val file = File(dir, SHADOW_JOURNAL_NAME)
+            val now = System.currentTimeMillis()
+            val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(now))
+            val cleanReason = reason.replace(",", ";").replace("\n", " ").take(140)
+            val sanitizeId = decisionId.trim().replace(",", "").replace("\n", "")
+            val line = String.format(
+                Locale.US,
+                "%d,%s,%s,%s,%s,%.2f,%s,%s,%d,%s,\"%s\",2,%s,%.4f,%.2f\n",
+                now, isoDate, strategy, submode, action, confidence, formatDynamicPrice(priceY.toDouble()),
+                trend, candleSecond, sanitizeId, cleanReason,
+                simResult, simExitPrice, simBalance
+            )
+            synchronized(lock) {
+                if (!dir.exists()) dir.mkdirs()
+                val writeHeader = !file.exists() || file.length() == 0L
+                FileWriter(file, true).use { writer ->
+                    if (writeHeader) writer.write(SHADOW_HEADER_V2)
+                    writer.write(line)
+                    writer.flush()
+                }
+            }
+            Log.d(TAG, "Shadow trade v2 registrado: $action @ $priceY conf=$confidence (decisionId=$decisionId)")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error escribiendo en shadow_journal.csv v2", e)
             false
         }
     }

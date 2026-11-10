@@ -43,6 +43,8 @@ class TradingEngine(
 ) {
     var executionPolicyEnabled: Boolean = false
     val executionPolicy: ExecutionPolicy = ExecutionPolicy()
+    var shadowSimulationEnabled: Boolean = false
+    val simulatedOrderGateway: com.example.tradedraw.simulation.SimulatedOrderGateway = com.example.tradedraw.simulation.SimulatedOrderGateway(eventSink = eventSink)
     val chartViewportController = ChartViewportController(context, riskManager)
     val agentController = AutonomousAgentController(context, this, riskManager, chartViewportController)
 
@@ -2465,6 +2467,20 @@ class TradingEngine(
         if (mode == AutoTradeMode.SHADOW) {
             shadowOrdersGenerated++
             val currentPrice = latestMarketTick?.price ?: 0.0
+            if (shadowSimulationEnabled) {
+                simulatedOrderGateway.currentPriceSupplier = { currentPrice }
+                simulatedOrderGateway.dispatch(
+                    com.example.tradedraw.core.OrderRequest(
+                        action = finalAction,
+                        x = x,
+                        y = y,
+                        decisionId = currentDecisionId,
+                        mode = mode
+                    )
+                ) { receipt ->
+                    Log.i("TradingEngine", "👻 [SHADOW SIMULADA] Orden simulada procesada por gateway: $receipt")
+                }
+            }
             Log.i("TradingEngine", "👻 [SHADOW MODE] Orden simulada autorizada: $finalAction @ $currentPrice (segundo=$sec, decisionId=$currentDecisionId) - Cero taps, saldo intacto")
             eventSink.add(
                 TradeEventLog.Kind.SHADOW_DECISION,
