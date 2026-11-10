@@ -101,7 +101,21 @@ Además: **ninguna prueba cubre el ciclo de órdenes simulado** (no existe simul
 cascada (solo guard demo heurístico; ver `docs/SECURITY_MODEL.md` §3-4). UI pura sin cobertura JVM:
 AIClient, AgentChatOverlay, ModelPickerDialog, MainActivity, vistas HUD (R2 §5).
 
+## 7. Baseline de paridad y fixtures golden (R29-B F0 / T-0.3)
+
+Para garantizar la no regresión estricta de esquemas y contratos de API durante las extracciones arquitectónicas de R29-B, se han congelado los siguientes fixtures canónicos en `data/fixtures/golden/`:
+
+- `trades_journal_golden.csv`: Esquema canónico de 29 columnas (`TradeJournalLogger.kt:22`), incluyendo campos de auditoría, latencia e identificadores deterministas (`decision_id`, `trade_id`).
+- `shadow_journal_golden.csv`: Esquema v1 canónico de 11 columnas (`TradeJournalLogger.kt:227-228`) para modo SHADOW.
+- `status_golden.json`: Estructura JSON sintácticamente estricta de `/status` (`TradeDrawHttpBridge.kt:555-746`), con valores centinela válidos y ausencia de identificadores sensibles o tokens.
+- `events_golden.json`: Formato de respuesta JSON de observabilidad `/events` (`TradeEventLog.kt:237-246`).
+- `shadow_journal_golden.json`: Contrato de serialización del endpoint `/shadow_journal`.
+
+### Protocolo de comparación de paridad (Comparator)
+1. **Esquema CSV:** `header.trim().split(",")` debe ser idéntico al fixture golden en número, nombre y posición de columnas de versiones anteriores. Nuevas columnas solo pueden añadirse al final (append-only).
+2. **Endpoints JSON:** Los campos raíz y sub-estructuras (`analysis`, `risk`, `feed`, `engine`, `health`) deben contener exactamente los tipos y claves tipificadas en los fixtures dorados, rechazando `NaN` o valores no finitos (RFC 8259).
+3. **Equivalencia de eventos:** Todo evento `VETO` o `TAP` despachado debe mantener paridad byte-a-byte en mensajes de detalle e invariabilidad en orden de corte.
+
 ---
 
-*Documento creado por la Ronda 5 de R29-A. Etiquetado por claim: VERIFICADO (con ruta:línea o
-artefacto) / PARCIALMENTE VERIFICADO / NO VERIFICADO / PROPUESTA-R29-B.*
+*Documento creado por la Ronda 5 de R29-A y actualizado aditivamente en R29-B F0. Etiquetado por claim: VERIFICADO (con ruta:línea o artefacto) / PARCIALMENTE VERIFICADO / NO VERIFICADO / PROPUESTA-R29-B.*
