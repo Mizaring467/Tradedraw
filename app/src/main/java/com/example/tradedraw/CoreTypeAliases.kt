@@ -11,6 +11,7 @@ typealias AutonomousSubMode = com.example.tradedraw.core.AutonomousSubMode
 typealias OrderState = com.example.tradedraw.core.OrderState
 typealias AutoTradeStrategy = com.example.tradedraw.core.AutoTradeStrategy
 typealias ActiveInstance<T> = com.example.tradedraw.core.ActiveInstance<T>
+typealias TapCoordinateResolver = com.example.tradedraw.core.TapCoordinateResolver
 
 val AssetRicMapper = com.example.tradedraw.core.AssetRicMapper
 val MarketTickFilters = com.example.tradedraw.core.MarketTickFilters

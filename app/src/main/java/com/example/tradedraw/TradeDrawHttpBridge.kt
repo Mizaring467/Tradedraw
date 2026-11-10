@@ -142,6 +142,23 @@ class TradeDrawHttpBridge(
                     "/trade" -> {
                         val actionStr = params["action"]?.uppercase() ?: "BUY"
                         val action = if (actionStr == "SELL" || actionStr == "PUT") TradeAction.SELL else TradeAction.BUY
+                        val currentMode = overlayService.tradingEngine.mode
+
+                        // Decisión P-3 (D-7): DISABLED y SHADOW rechazan explícitamente el despacho y emiten evidencia
+                        val guardDecision = evaluateTradeEndpointModeGuard(currentMode, action)
+                        if (!guardDecision.allowed) {
+                            eventSink.add(
+                                TradeEventLog.Kind.VETO,
+                                guardDecision.eventMessage ?: "TRADE_ENDPOINT_MODE_REJECTED mode=$currentMode action=$action"
+                            )
+                            sendJsonResponse(
+                                output,
+                                guardDecision.statusCode,
+                                """{"success":false,"error":"${guardDecision.errorMessage}","mode":"$currentMode"}"""
+                            )
+                            return@handleClient
+                        }
+
                         val access = AutoTradeAccessibilityService.instance
                         if (access != null) {
                             val cal = overlayService.tradingEngine.calibrationManager
@@ -151,7 +168,7 @@ class TradeDrawHttpBridge(
                                 cal?.getSellCoordinates() ?: Pair(600f, 600f)
                             }
                             access.performClickAt(x, y)
-                            sendJsonResponse(output, 200, """{"success":true,"action":"$action","targetX":$x,"targetY":$y}""")
+                            sendJsonResponse(output, 200, """{"success":true,"action":"$action","targetX":$x,"targetY":$y,"mode":"$currentMode"}""")
                         } else {
                             sendJsonResponse(output, 503, """{"success":false,"error":"Servicio de Accesibilidad inactivo"}""")
                         }
@@ -970,6 +987,34 @@ internal fun buildTicksJson(ticks: List<TickRingBuffer.Entry>, totalEnBuffer: In
     }
     return """{"success":true,"total":${ticks.size},"totalEnBuffer":$totalEnBuffer,"ticks":[$cuerpo]}"""
 }
+
+/**
+ * P-3 / D-7: Decisión de guardia para el endpoint `/trade`.
+ * En modos DISABLED y SHADOW, rechaza el despacho al broker y provee el evento VETO a registrar.
+ */
+data class TradeEndpointDecision(
+    val allowed: Boolean,
+    val statusCode: Int,
+    val errorMessage: String? = null,
+    val eventMessage: String? = null
+)
+
+fun evaluateTradeEndpointModeGuard(mode: AutoTradeMode, action: TradeAction): TradeEndpointDecision {
+    return if (mode == AutoTradeMode.DISABLED || mode == AutoTradeMode.SHADOW) {
+        TradeEndpointDecision(
+            allowed = false,
+            statusCode = 403,
+            errorMessage = "Despacho rechazado: modo $mode no autoriza ordenes al broker",
+            eventMessage = "TRADE_ENDPOINT_MODE_REJECTED mode=$mode action=$action"
+        )
+    } else {
+        TradeEndpointDecision(
+            allowed = true,
+            statusCode = 200
+        )
+    }
+}
+
 
 /**
  * R23 Iter 4: serializa el tail de ticks a CSV con cabecera `ts,ric,price`.

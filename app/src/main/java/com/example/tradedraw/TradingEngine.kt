@@ -25,7 +25,10 @@ import com.example.tradedraw.core.CapitalPolicy
 import com.example.tradedraw.core.DecisionIds
 import com.example.tradedraw.core.EventSink
 import com.example.tradedraw.core.MarketTick
+import com.example.tradedraw.core.TapCoordinateResolver
 import com.example.tradedraw.core.TradeAction
+import com.example.tradedraw.execution.CandleRateLimiter
+import com.example.tradedraw.execution.ExecutionPolicy
 
 class TradingEngine(
     private val context: Context,
@@ -34,8 +37,12 @@ class TradingEngine(
     var calibrationManager: CalibrationManager? = null,
     val aiClient: AIClient = AIClient(context),
     val eventSink: EventSink = RingBufferEventSink(),
-    val capitalPolicy: CapitalPolicy = riskManager
+    val capitalPolicy: CapitalPolicy = riskManager,
+    var tapCoordinateResolver: TapCoordinateResolver = CalibrationTapCoordinateResolver { calibrationManager },
+    val candleRateLimiter: CandleRateLimiter = CandleRateLimiter()
 ) {
+    var executionPolicyEnabled: Boolean = false
+    val executionPolicy: ExecutionPolicy = ExecutionPolicy()
     val chartViewportController = ChartViewportController(context, riskManager)
     val agentController = AutonomousAgentController(context, this, riskManager, chartViewportController)
 
@@ -326,9 +333,11 @@ class TradingEngine(
     )
 
     /** Minuto de época (epochMs / 60000) de la última orden ejecutada. Garantiza máx 1 trade por vela. */
-    @Volatile
-    var lastExecutedCandleEpochMinute: Long = -1L
-        internal set
+    var lastExecutedCandleEpochMinute: Long
+        get() = candleRateLimiter.lastExecutedCandleEpochMinute
+        set(value) {
+            candleRateLimiter.lastExecutedCandleEpochMinute = value
+        }
 
     var currentActiveSignal: ActiveSignal? = null
         private set
@@ -2290,7 +2299,7 @@ class TradingEngine(
 
         val currentCandleEpochMinute = (latestMarketTick?.timestampMs ?: System.currentTimeMillis()) / 60000L
         synchronized(this) {
-            if (lastExecutedCandleEpochMinute == currentCandleEpochMinute) {
+            if (candleRateLimiter.isCandleAlreadyExecuted(currentCandleEpochMinute, mode)) {
                 Log.d("TradingEngine", "⛔ Headless Trade $action bloqueado: Vela de minuto $currentCandleEpochMinute ya fue operada (1 orden por vela máx).")
                 eventSink.add(TradeEventLog.Kind.VETO, "VELA_YA_OPERADA minuto=$currentCandleEpochMinute", decisionId = currentDecisionId)
                 return
@@ -2448,31 +2457,7 @@ class TradingEngine(
 
         val (screenW, screenH) = CalibrationManager.getRealScreenDimensions(context)
         val isLand = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || screenW > screenH
-
-        val calibCoords = if (calibrationManager != null && calibrationManager!!.isCalibrated()) {
-            if (finalAction == TradeAction.BUY) calibrationManager!!.getBuyCoordinates()
-            else calibrationManager!!.getSellCoordinates()
-        } else null
-
-        val (rawX, rawY) = if (calibCoords != null) {
-            calibCoords
-        } else {
-            if (isLand) {
-                if (finalAction == TradeAction.BUY) Pair(screenW * 0.881f, screenH * 0.735f)
-                else Pair(screenW * 0.881f, screenH * 0.844f)
-            } else {
-                if (finalAction == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.903f)
-                else Pair(screenW * 0.75f, screenH * 0.903f)
-            }
-        }
-
-        // Sanitización estricta: en modo vertical, nunca permitir clics por encima del 80.0% (fila de gráfico/indicadores)
-        val (x, y) = if (!isLand && rawY < screenH * 0.80f) {
-            Log.w("TradingEngine", "⚠️ Coordenada Y corregida de $rawY a ${screenH * 0.838f} para tocar botones de orden")
-            Pair(rawX, screenH * 0.838f)
-        } else {
-            Pair(rawX, rawY)
-        }
+        val (x, y) = tapCoordinateResolver.resolve(finalAction, isLand, screenW, screenH)
 
         // Ronda 21 (Frente E): SHADOW MODE FORMAL
         // Si el motor está en SHADOW, todas las defensas y cálculos corren exactamente igual,
@@ -2500,7 +2485,7 @@ class TradingEngine(
                 reason = "SHADOW_AUTORIZADA: pasó todos los vetos"
             )
             synchronized(this) {
-                lastExecutedCandleEpochMinute = currentCandleEpochMinute
+                candleRateLimiter.recordExecution(currentCandleEpochMinute, mode)
             }
             return
         }
@@ -2525,7 +2510,7 @@ class TradingEngine(
             tradeId = currentTradeId
         )
         synchronized(this) {
-            lastExecutedCandleEpochMinute = currentCandleEpochMinute
+            candleRateLimiter.recordExecution(currentCandleEpochMinute, mode)
         }
         adaptiveLearningEngine.recordTradeOpened(
             action = finalAction,
