@@ -90,3 +90,7 @@ scripts/preflight_*.bat
 
 # Artefactos locales de sesion (capturas y respaldos de datos de la app)
 backups/
+
+# Supervisor runtime artifacts
+scripts/td_supervisor.lock
+scripts/td_supervisor.log
