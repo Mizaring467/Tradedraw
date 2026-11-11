@@ -25,3 +25,9 @@ Suite raíz y replay: 599 app + 6 core + 8 simulation + 40 market = 653, cero fa
 Responsabilidades trasladadas: SyntheticCandleEngine, MarketRegimeClassifier, AdaptiveLearningEngine, MarketInoperabilityDetector, DTO de análisis, TradeEventLog/RingBufferEventSink, ModeEventJournal y CrashLogger. Ambos módulos Android → core; sin dependencia hacia app. AdaptiveReplayPort expone una fachada de lectura para el harness externo, delegando literalmente a las funciones internal congeladas. Pruebas de setters internal se ubican en strategy; el caso de reposo de RiskManager permanece como integración en app.
 
 479 app + 6 core + 8 simulation + 40 market + 91 strategy + 29 observability = 653 pruebas, cero fallos/errores/skips; replay y build PASS (td-strategy-pass.log). Comparación de cuerpos conservados en STRATEGY_MOVE_HASHES.md. CI e instalación pendientes del commit de este corte. La extracción de risk/execution/ui/adapters/research y F6 sigue abierta.
+
+## Tercer corte — risk
+
+RiskManager reside en :risk (Android → core/observability), sin referencias a estáticos de accesibilidad ni OverlayService. La app inyecta BalanceSource, BrokerSensor y HudPort. Los tests de detalles internal viven con el módulo; sus observaciones son fixtures locales, con los mismos valores y expectativas anteriores. La app conserva pruebas de paridad del adaptador real. Riesgo sin adaptadores usa lectura no disponible; no accede por detrás a la app.
+
+Suite raíz: app=410, core=6, simulation=8, market=40, strategy=91, observability=29, risk=71, total 655, cero fallos/errores/skips; replay y APK PASS (td-risk-pass.log). Se compararon también los cuatro cuerpos estratégicos con 20bd936: igualdad exacta salvo package/import/líneas vacías. CI e instalación del corte pendientes.

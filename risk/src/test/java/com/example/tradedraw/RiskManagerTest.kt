@@ -1,16 +1,30 @@
 package com.example.tradedraw
 
+import com.example.tradedraw.core.*
+
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 
 class RiskManagerTest {
+    private object BrokerFixture : BalanceSource, BrokerSensor {
+        var isDemoAccount = true
+        var latestObservedBalance = 0.0
+        var observedOrderAmount = 0.0
+        var latestObservedAsset = ""
+        var isSyntheticOrOTC = false
+        override fun read() = BalanceReading(latestObservedBalance, System.currentTimeMillis(), true)
+        override fun getBrokerState() = BrokerStateView(balance = latestObservedBalance,
+            isDemoAccount = isDemoAccount, observedOrderAmount = observedOrderAmount,
+            observedAsset = latestObservedAsset.ifBlank { "Crypto IDX" }, isSyntheticOrOTC = isSyntheticOrOTC)
+    }
+
 
     private lateinit var riskManager: RiskManager
 
     @Before
     fun setUp() {
-        riskManager = RiskManager(null)
+        riskManager = RiskManager(null, balanceSource = BrokerFixture, brokerSensor = BrokerFixture)
         riskManager.baseAmount = 10.0f
         riskManager.martingaleMultiplier = 2.2f
         riskManager.martingaleEnabled = true
@@ -18,11 +32,11 @@ class RiskManagerTest {
         riskManager.takeProfitWins = 5
         riskManager.cooldownSeconds = 10
         riskManager.resetSession()
-        AutoTradeAccessibilityService.isDemoAccount = true
-        AutoTradeAccessibilityService.latestObservedBalance = 0.0
-        AutoTradeAccessibilityService.observedOrderAmount = 0.0
-        AutoTradeAccessibilityService.latestObservedAsset = ""
-        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        BrokerFixture.isDemoAccount = true
+        BrokerFixture.latestObservedBalance = 0.0
+        BrokerFixture.observedOrderAmount = 0.0
+        BrokerFixture.latestObservedAsset = ""
+        BrokerFixture.isSyntheticOrOTC = false
     }
 
     @Test
@@ -67,13 +81,13 @@ class RiskManagerTest {
         riskManager.minPeakProfitToLock = 80_000.0
         val sub = AutonomousSubMode.CONSERVATIVE
 
-        AutoTradeAccessibilityService.latestObservedBalance = 39_422_735.0 // fija sessionStart
+        BrokerFixture.latestObservedBalance = 39_422_735.0 // fija sessionStart
         assertTrue("Debe operar al inicio de la sesion", riskManager.canExecuteTrade(sub).first)
 
-        AutoTradeAccessibilityService.latestObservedBalance = 39_504_736.0 // pico +82,001
+        BrokerFixture.latestObservedBalance = 39_504_736.0 // pico +82,001
         riskManager.canExecuteTrade(sub)
 
-        AutoTradeAccessibilityService.latestObservedBalance = 39_404_736.0 // devuelve > 40% del pico
+        BrokerFixture.latestObservedBalance = 39_404_736.0 // devuelve > 40% del pico
         val (blocked, reason) = riskManager.canExecuteTrade(sub)
         assertFalse("El Trailing Lock debe bloquear tras devolver el pico", blocked)
         assertTrue("La razon debe nombrar el Trailing Lock", reason.contains("Trailing"))
@@ -473,13 +487,13 @@ class RiskManagerTest {
         riskManager.sessionMaxLossRatio = 0.03f // Max loss: 1.5M, so session floor is 48.5M
         
         // 1. Below absolute floor
-        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 39000000.0
+        BrokerFixture.latestObservedBalance = 39000000.0
         val (canTrade1, reason1) = riskManager.canExecuteTrade()
         assertFalse("Must block if below absolute floor", canTrade1)
         assertTrue("Reason must mention Absolute Equity Stop", reason1.contains("Stop Equity Absoluto Alcanzado"))
 
         // 2. Below session floor
-        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 48000000.0
+        BrokerFixture.latestObservedBalance = 48000000.0
         val (canTrade2, reason2) = riskManager.canExecuteTrade()
         assertFalse("Must block if below session floor", canTrade2)
         assertTrue("Reason must mention Session Loss", reason2.contains("Stop Loss"))
@@ -487,9 +501,9 @@ class RiskManagerTest {
 
     @Test
     fun testBug3_VoidDoesNotIncrementStreak() {
-        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 50000000.0
+        BrokerFixture.latestObservedBalance = 50000000.0
         riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 0.0, baseBalance = 50000000.0)
-        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 49920000.0
+        BrokerFixture.latestObservedBalance = 49920000.0
         riskManager.recordTradeLoss() // Real loss
         assertEquals(1, riskManager.currentLossStreak)
 
@@ -502,7 +516,7 @@ class RiskManagerTest {
 
     @Test
     fun testBug3_ThreeVoidsCauseHardStop() {
-        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 50000000.0
+        BrokerFixture.latestObservedBalance = 50000000.0
         for (i in 1..3) {
             riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 0.0, baseBalance = 50000000.0)
             riskManager.recordTradeLoss() // Interpreted as void
@@ -515,9 +529,9 @@ class RiskManagerTest {
 
     @Test
     fun testRealAccount_AllowsTradingWith36000Cop() {
-        com.example.tradedraw.AutoTradeAccessibilityService.isDemoAccount = false
-        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 36000.0
-        com.example.tradedraw.AutoTradeAccessibilityService.observedOrderAmount = 4000.0
+        BrokerFixture.isDemoAccount = false
+        BrokerFixture.latestObservedBalance = 36000.0
+        BrokerFixture.observedOrderAmount = 4000.0
         riskManager.absoluteEquityFloor = 40000000.0
         riskManager.sessionStartBalance = 36000.0
 
@@ -527,9 +541,9 @@ class RiskManagerTest {
 
     @Test
     fun testRealAccount_BlocksIfBalanceBelowMinBrokerStake() {
-        com.example.tradedraw.AutoTradeAccessibilityService.isDemoAccount = false
-        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 2500.0
-        com.example.tradedraw.AutoTradeAccessibilityService.observedOrderAmount = 4000.0
+        BrokerFixture.isDemoAccount = false
+        BrokerFixture.latestObservedBalance = 2500.0
+        BrokerFixture.observedOrderAmount = 4000.0
         riskManager.sessionStartBalance = 2500.0
 
         val (canTrade, reason) = riskManager.canExecuteTrade()
@@ -539,9 +553,9 @@ class RiskManagerTest {
 
     @Test
     fun testRealAccount_BlocksIfOrderAmountExceedsBalance() {
-        com.example.tradedraw.AutoTradeAccessibilityService.isDemoAccount = false
-        com.example.tradedraw.AutoTradeAccessibilityService.latestObservedBalance = 36000.0
-        com.example.tradedraw.AutoTradeAccessibilityService.observedOrderAmount = 100000.0
+        BrokerFixture.isDemoAccount = false
+        BrokerFixture.latestObservedBalance = 36000.0
+        BrokerFixture.observedOrderAmount = 100000.0
         riskManager.sessionStartBalance = 36000.0
 
         val (canTrade, reason) = riskManager.canExecuteTrade()
@@ -557,7 +571,7 @@ class RiskManagerTest {
     fun elStakeEfectivoUsaLaCantidadDePantallaCuandoExiste() {
         // Caso medido por OpenCode en la iter 1: baseAmount interno 1.0 USD, pantalla 100.000 COP.
         // El broker debita y liquida con 100.000: ESE es el stake del modelo, no 1.0.
-        AutoTradeAccessibilityService.observedOrderAmount = 100_000.0
+        BrokerFixture.observedOrderAmount = 100_000.0
         riskManager.baseAmount = 1.0f
 
         assertEquals(
@@ -572,7 +586,7 @@ class RiskManagerTest {
     fun elStakeEfectivoCaeAlCalculadoSiLaPantallaAunNoSeLeyo() {
         // observedOrderAmount == 0.0 significa "sin leer", no "apuesta cero". Si se tomara como cero,
         // el journal registraria stake 0 y el dimensionamiento de riesgo quedaria desactivado.
-        AutoTradeAccessibilityService.observedOrderAmount = 0.0
+        BrokerFixture.observedOrderAmount = 0.0
         riskManager.baseAmount = 10.0f
 
         assertEquals(
@@ -592,7 +606,7 @@ class RiskManagerTest {
     @Test
     fun elStakeEfectivoIgnoraLecturasNegativas() {
         // Un valor negativo solo puede venir de una lectura corrupta: nunca es un stake valido.
-        AutoTradeAccessibilityService.observedOrderAmount = -5.0
+        BrokerFixture.observedOrderAmount = -5.0
         riskManager.baseAmount = 10.0f
 
         assertEquals("negativo no es stake valido", 10.0, riskManager.getEffectiveStake(), 0.0)
@@ -609,27 +623,27 @@ class RiskManagerTest {
 
     @Test
     fun testTrailingProfitLock_SecuresPeakProfitsOnRetracement() {
-        AutoTradeAccessibilityService.isDemoAccount = true
+        BrokerFixture.isDemoAccount = true
         riskManager.absoluteEquityFloor = 40000000.0
         riskManager.minPeakProfitToLock = 80000.0
         riskManager.trailingProfitRetracementRatio = 0.40f
 
         // 1. Inicio de sesión en 40.500.000 COP
-        AutoTradeAccessibilityService.latestObservedBalance = 40500000.0
+        BrokerFixture.latestObservedBalance = 40500000.0
         val (canTrade1, _) = riskManager.canExecuteTrade()
         assertTrue("Sesión inicial debe permitir operar", canTrade1)
         assertEquals(40500000.0, riskManager.sessionStartBalance, 0.01)
         assertEquals(40500000.0, riskManager.sessionPeakBalance, 0.01)
 
         // 2. Ganancias consecutivas elevan el saldo a un pico de 40.650.000 COP (+150.000 COP de beneficio)
-        AutoTradeAccessibilityService.latestObservedBalance = 40650000.0
+        BrokerFixture.latestObservedBalance = 40650000.0
         val (canTrade2, _) = riskManager.canExecuteTrade()
         assertTrue("En pico de ganancias debe permitir operar", canTrade2)
         assertEquals(40650000.0, riskManager.sessionPeakBalance, 0.01)
 
         // 3. Retroceso: el saldo cae a 40.580.000 COP (retroceso de 70.000 COP = 46.6% del pico > 40% permitido)
         // Suelo trailing = 40.650.000 - (150.000 * 0.40) = 40.590.000 COP
-        AutoTradeAccessibilityService.latestObservedBalance = 40580000.0
+        BrokerFixture.latestObservedBalance = 40580000.0
         val (canTrade3, reason3) = riskManager.canExecuteTrade()
         assertFalse("Debe bloquearse por Trailing Profit Lock al ceder más del 40% del pico", canTrade3)
         assertTrue("Razón debe mencionar Trailing Profit Lock", reason3.contains("Trailing Profit Lock"))
@@ -706,8 +720,8 @@ class RiskManagerTest {
 
     @Test
     fun testSniperMode_StopLoss_MaxTwoLosses() {
-        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        BrokerFixture.latestObservedAsset = "EUR/USD"
+        BrokerFixture.isSyntheticOrOTC = false
         riskManager.cooldownSeconds = 0
         riskManager.lossCooldownSeconds = 0
 
@@ -727,8 +741,8 @@ class RiskManagerTest {
 
     @Test
     fun testSniperMode_TakeProfit_TwoWins() {
-        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        BrokerFixture.latestObservedAsset = "EUR/USD"
+        BrokerFixture.isSyntheticOrOTC = false
         riskManager.cooldownSeconds = 0
 
         riskManager.recordTradeSent(TradeAction.BUY)
@@ -747,8 +761,8 @@ class RiskManagerTest {
 
     @Test
     fun testSniperMode_MaxThreeTradesPerSession() {
-        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        BrokerFixture.latestObservedAsset = "EUR/USD"
+        BrokerFixture.isSyntheticOrOTC = false
         riskManager.cooldownSeconds = 0
         riskManager.lossCooldownSeconds = 0
 
@@ -775,28 +789,28 @@ class RiskManagerTest {
 
     @Test
     fun testSniperMode_SyntheticAssetVeto() {
-        AutoTradeAccessibilityService.latestObservedAsset = "Crypto IDX"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = true
+        BrokerFixture.latestObservedAsset = "Crypto IDX"
+        BrokerFixture.isSyntheticOrOTC = true
         val (canTradeIdx, reasonIdx) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
         assertFalse("Crypto IDX debe ser vetado en modo Francotirador", canTradeIdx)
         assertTrue("Razón debe mencionar Veto Francotirador", reasonIdx.contains("Veto Francotirador"))
 
-        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD OTC"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = true
+        BrokerFixture.latestObservedAsset = "EUR/USD OTC"
+        BrokerFixture.isSyntheticOrOTC = true
         val (canTradeOtc, reasonOtc) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
         assertFalse("OTC debe ser vetado en modo Francotirador", canTradeOtc)
         assertTrue("Razón debe mencionar Veto Francotirador", reasonOtc.contains("Veto Francotirador"))
 
-        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        BrokerFixture.latestObservedAsset = "EUR/USD"
+        BrokerFixture.isSyntheticOrOTC = false
         val (canTradeForex, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
         assertTrue("Forex real EUR/USD debe ser permitido", canTradeForex)
     }
 
     @Test
     fun testSniperMode_CumulativeTradesWithAlternatingVoids() {
-        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        BrokerFixture.latestObservedAsset = "EUR/USD"
+        BrokerFixture.isSyntheticOrOTC = false
         riskManager.cooldownSeconds = 0
         riskManager.lossCooldownSeconds = 0
 
@@ -830,8 +844,8 @@ class RiskManagerTest {
 
     @Test
     fun testSniperMode_ResetSniperSession_clearsStatsAndResumes() {
-        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        BrokerFixture.latestObservedAsset = "EUR/USD"
+        BrokerFixture.isSyntheticOrOTC = false
         riskManager.cooldownSeconds = 0
         riskManager.lossCooldownSeconds = 0
 
@@ -945,7 +959,7 @@ class RiskManagerTest {
      */
     private fun montarSesionConPicoYRetroceso() {
         riskManager.absoluteEquityFloor = 20_000_000.0
-        AutoTradeAccessibilityService.isDemoAccount = true
+        BrokerFixture.isDemoAccount = true
         riskManager.sessionStartBalance = 40_500_000.0
         riskManager.sessionPeakBalance = 40_650_000.0
         riskManager.minPeakProfitToLock = 80_000.0
@@ -956,7 +970,7 @@ class RiskManagerTest {
         riskManager.lastTradeTime = 0L
         riskManager.martingaleEnabled = false
         // Suelo trailing = 40.650.000 - (150.000 * 0.40) = 40.590.000; el saldo queda por debajo.
-        AutoTradeAccessibilityService.latestObservedBalance = 40_580_000.0
+        BrokerFixture.latestObservedBalance = 40_580_000.0
     }
 
     @Test
@@ -985,7 +999,7 @@ class RiskManagerTest {
         // Variante del anterior sin pico: el saldo cae por debajo del SUELO DE SESION (perdida del 3%
         // del startBalance). YOLO debe ignorarlo igual que el trailing.
         riskManager.absoluteEquityFloor = 20_000_000.0
-        AutoTradeAccessibilityService.isDemoAccount = true
+        BrokerFixture.isDemoAccount = true
         riskManager.sessionStartBalance = 40_500_000.0
         riskManager.sessionPeakBalance = 40_500_000.0
         riskManager.sessionMaxLossRatio = 0.03f
@@ -995,7 +1009,7 @@ class RiskManagerTest {
         riskManager.lastTradeTime = 0L
         riskManager.martingaleEnabled = false
         // Suelo de sesion = 40.500.000 - max(1.215.000, 100.000) = 39.285.000. Saldo por debajo.
-        AutoTradeAccessibilityService.latestObservedBalance = 39_000_000.0
+        BrokerFixture.latestObservedBalance = 39_000_000.0
 
         val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
         assertTrue("YOLO debe ignorar el suelo de sesion: $reasonYolo", canTradeYolo)
@@ -1029,14 +1043,14 @@ class RiskManagerTest {
         // submodo continuo vaciaria la cuenta demo. Es el limite entre "operativa continua" y
         // "sin limites en absoluto".
         riskManager.absoluteEquityFloor = 20_000_000.0
-        AutoTradeAccessibilityService.isDemoAccount = true
+        BrokerFixture.isDemoAccount = true
         riskManager.martingaleEnabled = false
         riskManager.cooldownSeconds = 0
         riskManager.lossCooldownSeconds = 0
         riskManager.yoloLossCooldownSeconds = 0
         riskManager.lastTradeTime = 0L
         // Saldo por debajo del suelo absoluto (y aun asi es una cuenta demo valida).
-        AutoTradeAccessibilityService.latestObservedBalance = 19_500_000.0
+        BrokerFixture.latestObservedBalance = 19_500_000.0
 
         val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
         assertFalse("YOLO SI debe detenerse por suelo de equity absoluto", canTradeYolo)
@@ -1047,8 +1061,8 @@ class RiskManagerTest {
     fun canExecuteTrade_yoloStillRespectsAntiTiltAndPendingTrade() {
         // Los guards que la especificacion pide MANTENER, verificados que siguen mordiendo en YOLO.
         riskManager.absoluteEquityFloor = 20_000_000.0
-        AutoTradeAccessibilityService.isDemoAccount = true
-        AutoTradeAccessibilityService.latestObservedBalance = 40_000_000.0
+        BrokerFixture.isDemoAccount = true
+        BrokerFixture.latestObservedBalance = 40_000_000.0
         riskManager.martingaleEnabled = true
         riskManager.maxMartingaleLevel = 1
         riskManager.yoloLossCooldownSeconds = 35

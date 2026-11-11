@@ -290,7 +290,7 @@ class OverlayService : Service(), com.example.tradedraw.core.HudPort {
         startTradeDrawForeground()
         setupCanvasWindow()
 
-        riskManager = RiskManager(this, hudPort = this, brokerSensor = AutoTradeAccessibilityService)
+        riskManager = RiskManager(this, balanceSource = AccessibilityBalanceSource(), hudPort = this, brokerSensor = AutoTradeAccessibilityService)
         calibrationManager = CalibrationManager(this)
         tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager)
         tradingEngine.adaptiveLearningEngine.loadState(this)

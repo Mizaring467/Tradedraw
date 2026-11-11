@@ -20,7 +20,7 @@ class CapitalPolicyDelegationTest {
 
     @Test
     fun delegacionDeCapitalPolicyCoincideConEvaluacionDirecta() {
-        val rm = RiskManager()
+        val rm = RiskManager(balanceSource = AccessibilityBalanceSource(), brokerSensor = AutoTradeAccessibilityService)
         val policy: CapitalPolicy = rm
 
         val direct = rm.canExecuteTrade(AutonomousSubMode.CONSERVATIVE, 0.85f)
@@ -33,7 +33,7 @@ class CapitalPolicyDelegationTest {
     @Test
     fun vetoPorEquityBajoEmiteMensajeEsperado() {
         AutoTradeAccessibilityService.latestObservedBalance = 19_000_000.0 // Demo pero bajo suelo absoluto 20M
-        val rm = RiskManager()
+        val rm = RiskManager(balanceSource = AccessibilityBalanceSource(), brokerSensor = AutoTradeAccessibilityService)
         val policy: CapitalPolicy = rm
 
         val (allowed, reason) = policy.canExecuteTrade(AutonomousSubMode.CONSERVATIVE, 0.85f)

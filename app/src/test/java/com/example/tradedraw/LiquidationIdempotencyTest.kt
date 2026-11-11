@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * devuelve `false` y el fallback `recordTradeWin/Loss(force = true)` incrementaba un trade YA
  * contado. El fallback ahora pasa por `settleTradeOnce`, que deduplica por `tradeId`.
  *
- * Estos tests viven en JVM puro: `RiskManager(null)` no toca SharedPreferences y
+ * Estos tests viven en JVM puro: `RiskManager(null, balanceSource = AccessibilityBalanceSource(), brokerSensor = AutoTradeAccessibilityService)` no toca SharedPreferences y
  * `OverlayService.instance` es null, asi que `updateHUDView()` es un no-op.
  */
 class LiquidationIdempotencyTest {
@@ -26,7 +26,7 @@ class LiquidationIdempotencyTest {
 
     @Before
     fun setUp() {
-        riskManager = RiskManager(null)
+        riskManager = RiskManager(null, balanceSource = AccessibilityBalanceSource(), brokerSensor = AutoTradeAccessibilityService)
         riskManager.baseAmount = 10.0f
         riskManager.resetStats()
         AutoTradeAccessibilityService.latestObservedBalance = 0.0

@@ -71,6 +71,7 @@ dependencies {
     implementation(project(":market"))
     implementation(project(":strategy"))
     implementation(project(":observability"))
+    implementation(project(":risk"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

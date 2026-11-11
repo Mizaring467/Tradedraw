@@ -1,5 +1,7 @@
 package com.example.tradedraw
 
+import com.example.tradedraw.core.*
+
 import android.content.Context
 import android.content.SharedPreferences
 import com.example.tradedraw.core.BalanceSource
@@ -18,13 +20,17 @@ enum class MoneyManagementMode {
 class RiskManager(
     context: Context? = null,
     val eventSink: EventSink = RingBufferEventSink(),
-    val balanceSource: BalanceSource = AccessibilityBalanceSource(),
+    val balanceSource: BalanceSource = object : BalanceSource {
+        override fun read() = BalanceReading(0.0, 0L, false)
+    },
     var hudPort: com.example.tradedraw.core.HudPort? = null,
     var brokerSensor: com.example.tradedraw.core.BrokerSensor? = null
 ) : CapitalPolicy {
 
+    private fun brokerState() = brokerSensor?.getBrokerState() ?: BrokerStateView(isDemoAccount = false, observedAsset = "")
+
     private fun notifyHud() {
-        hudPort?.updateHUDView() ?: OverlayService.instance?.updateHUDView()
+        hudPort?.updateHUDView()
     }
 
     private val prefs: SharedPreferences? = try {
@@ -763,7 +769,7 @@ class RiskManager(
         // cualquier llamada sin argumento en "sin limites de sesion" — un fail-open latente.
         val effectiveSubMode = subMode ?: currentSubMode
         val currentBal = balanceSource.read().balance
-        val isDemo = currentBal >= 1_000_000.0 || ((brokerSensor?.getBrokerState()?.isDemoAccount ?: AutoTradeAccessibilityService.isDemoAccount) && currentBal > 500_000.0)
+        val isDemo = currentBal >= 1_000_000.0 || ((brokerState().isDemoAccount) && currentBal > 500_000.0)
         if (currentBal > 0.0) {
             if (isDemo) {
                 if (currentBal < absoluteEquityFloor) {
@@ -779,7 +785,7 @@ class RiskManager(
                 }
 
                 // Si la orden configurada en pantalla supera el saldo disponible, avisar claramente
-                val observedStake = brokerSensor?.getBrokerState()?.observedOrderAmount ?: AutoTradeAccessibilityService.observedOrderAmount
+                val observedStake = brokerState().observedOrderAmount
                 if (observedStake > 0.0 && observedStake > currentBal) {
                     val stakeInt = observedStake.toInt()
                     val balInt = currentBal.toInt()
@@ -907,8 +913,8 @@ class RiskManager(
         // 3. Take Profit diario: 2 victorias
         // 4. Máximo 3 operaciones ejecutadas por sesión diaria (acumulando W + L + Voids)
         if (effectiveSubMode == AutonomousSubMode.SNIPER) {
-            val currentAsset = (brokerSensor?.getBrokerState()?.observedAsset ?: AutoTradeAccessibilityService.latestObservedAsset).ifBlank { "Crypto IDX" }
-            val isSynthetic = (brokerSensor?.getBrokerState()?.isSyntheticOrOTC ?: AutoTradeAccessibilityService.isSyntheticOrOTC) ||
+            val currentAsset = (brokerState().observedAsset).ifBlank { "Crypto IDX" }
+            val isSynthetic = (brokerState().isSyntheticOrOTC) ||
                 currentAsset.contains("IDX", ignoreCase = true) ||
                 currentAsset.contains("OTC", ignoreCase = true)
             if (isSynthetic) {
@@ -1330,7 +1336,7 @@ class RiskManager(
      */
     @Synchronized
     fun getEffectiveStake(subMode: AutonomousSubMode? = null): Double =
-        stakeEfectivo(brokerSensor?.getBrokerState()?.observedOrderAmount ?: AutoTradeAccessibilityService.observedOrderAmount, getCurrentInvestmentAmount(subMode).toDouble())
+        stakeEfectivo(brokerState().observedOrderAmount, getCurrentInvestmentAmount(subMode).toDouble())
 
     @Synchronized
     fun getMartingaleStatusBadge(subMode: AutonomousSubMode? = null): String {

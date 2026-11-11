@@ -7,7 +7,7 @@ class TradingEngineTest {
 
     @Test
     fun tieJournalResult_countsOnlyFreshBalanceAsVoid() {
-        val riskManager = RiskManager().apply { resetStats() }
+        val riskManager = RiskManager(balanceSource = AccessibilityBalanceSource(), brokerSensor = AutoTradeAccessibilityService).apply { resetStats() }
         val now = System.currentTimeMillis()
         assertTrue(TradingEngine.isBalanceFresh(instanceAvailable = true, lastReadMs = now - 1000L, nowMs = now))
         assertFalse(TradingEngine.isBalanceFresh(instanceAvailable = false, lastReadMs = now - 1000L, nowMs = now))

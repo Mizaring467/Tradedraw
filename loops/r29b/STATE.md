@@ -1,3 +1,21 @@
+## Actualización vigente — 2026-11-11 · Risk validado localmente
+
+HEAD base: 494b0a0, CI push43000749073 y PR43000757041 success. :risk integrado sin estáticos de negocio: suite raíz completa, replay y :app:assembleDebug PASS; ver MODULE_EXTRACTION_STATUS.md. Compromiso siguiente: commit/push/CI de risk; extracción execution y puertos HUD del motor; después ui/adapters/research y F6. Dispositivo: se detectó otra app en horizontal; coordinación de pantalla consultada, sin nuevas órdenes ni navegación hasta resolver ese uso concurrente. Código/pruebas continúan independientemente. APK instalada aún 8b3973f; instalación de cambios posteriores y prueba de reserva confirmada pendientes. R29-B abierta.
+
+## Estado vigente — 2026-11-11 · Extracción de risk EN CURSO
+
+HEAD: 494b0a0; commits de esta continuidad b9d948f → 8b3973f → a1d0cf1 → 494b0a0 en r10-night. Push autorizado en curso/comprobación de CI de los dos últimos cortes. Estrategias frozen.
+
+- Integración simulada durable/journal v2: 647 app +6 core,45 Python,replay/build PASS; CI b9d948f verde; APK hash coincidente y sonda con dos reinicios/WIN único comprobada.
+- DEMO: una orden mínima Col$4000 vía gateway, confirmada y WIN por saldo acreditado; journal con ambos IDs. DISABLED después de la prueba.
+- Primer corte modular 8b3973f: 653 pruebas/replay/build y CI verde; instalado y verificado READY, saldo/DEMO/feed y ledger conservados.
+- Strategy/observability a1d0cf1: 653 pruebas/replay/build PASS, cuerpos congelados comparados; CI/instalación final por comprobar.
+- Reserva confirmada 494b0a0: se conserva hasta resultado; suite raíz/replay/build PASS y 2 pruebas dirigidas adicionales PASS. CI y recorrido del intervalo confirmado→liquidado en APK pendientes.
+
+Cambios actuales: :risk con saldo/BrokerSensor/HudPort explícitos; se retiran fallbacks estáticos de ese dominio. Suite raíz, replay y compilación en curso (td-risk-build.log). Criterios pendientes: aprobar risk, completar execution/ui/adapters/research y F6, confirmar CI e instalar/verificar la APK final. No se declara R29-B cerrada. Próxima acción: revisar salida completa de Gradle, corregir y registrar el corte.
+
+## Historial conservado — no sustituye el estado vigente
+
 ## Actualización vigente — 2026-11-11 · Recuperación confirmada pendiente de endurecer
 
 8b3973f publicado, CI 42998393139 success. APK instalada hash 4d042e37875b5f8418e86ef90fe345284acb7f16b504213348a4ccb0ad0abc64 coincidente; /status 8b3973f, READY, DEMO, saldo36790056.96, DISABLED. Ledger conserva WIN/saldo1008.2 tras actualización. Strategy/observability en working tree, pruebas en curso; cuerpos congelados preservados y hashes registrados.
