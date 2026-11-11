@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from live_monitor_r23_autonomous import ratio_celda  # noqa: E402
+from shadow_journal_reader import parse_shadow_rows  # noqa: E402
 
 # R24/B2: contrato solo-append de `decisions.csv`. Las 14 historicas primero, en su orden
 # original; las dos de S/R al final. Mismo orden que `live_monitor_r23_autonomous.py`.
@@ -244,6 +245,10 @@ def main():
     # Volcar shadow_journal (R23 Iter 2)
     shadow_journal_data = fetch_json(f"{base_url}/shadow_journal?max=500")
     if shadow_journal_data:
+        try:
+            shadow_journal_data["entries"] = parse_shadow_rows(shadow_journal_data.get("lines", []))
+        except (ValueError, TypeError) as exc:
+            shadow_journal_data["schema_error"] = str(exc)
         out_shadow_journal = os.path.join(out_dir, "shadow_journal.json")
         with open(out_shadow_journal, "w", encoding="utf-8") as f_sj:
             json.dump(shadow_journal_data, f_sj, indent=2, ensure_ascii=False)

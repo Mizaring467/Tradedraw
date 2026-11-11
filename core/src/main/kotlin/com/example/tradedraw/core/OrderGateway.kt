@@ -65,7 +65,8 @@ data class OrderRequest(
     val decisionId: String? = null,
     val tradeId: String? = null,
     val bypassHud: Boolean = false,
-    val mode: AutoTradeMode = AutoTradeMode.AUTONOMOUS
+    val mode: AutoTradeMode = AutoTradeMode.AUTONOMOUS,
+    val recoveryContext: BrokerRecoveryContext? = null
 )
 
 sealed class OrderReceipt {

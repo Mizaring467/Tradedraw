@@ -1,96 +1,40 @@
 package com.example.tradedraw.simulation
 
-import com.example.tradedraw.RingBufferEventSink
 import com.example.tradedraw.core.*
 import java.util.UUID
 
-/**
- * Pasarela de órdenes simuladas para backtests y modo SHADOW con ciclo de vida completo.
- * Reutiliza las políticas de ejecución sin tocar brokers reales ni pantallas.
- */
-class SimulatedOrderGateway(
-    val simLedger: SimLedger = SimLedger(),
-    val simClock: SimClock = SystemSimClock(),
-    val eventSink: EventSink = RingBufferEventSink(),
-    var currentPriceSupplier: () -> Double = { 0.0 },
-    var defaultStake: Double = 10.0
-) : OrderGateway {
+class SimulatedOrderGateway(val simLedger: SimLedger = SimLedger(), val simClock: SimClock = SystemSimClock(),
+    val eventSink: EventSink = NoOpEventSink(), var currentPriceSupplier: () -> Double = { 0.0 }, var defaultStake: Double = 10.0) : OrderGateway {
+    override fun dispatch(request: OrderRequest, onResult: (OrderReceipt) -> Unit) =
+        dispatchAt(request, currentPriceSupplier(), simClock.nowMs(), "", SimMetadata(), onResult)
 
-    private val pendingTrades = mutableListOf<OpenSimulatedTrade>()
-
-    override fun dispatch(request: OrderRequest, onResult: (OrderReceipt) -> Unit) {
-        if (request.mode == AutoTradeMode.DISABLED) {
-            val msg = "TRADE_DISPATCH_REJECTED_MODE_DISABLED"
-            eventSink.add(
-                "VETO",
-                "SIMULATED_GATEWAY_REJECTED mode=${request.mode}",
-                decisionId = request.decisionId,
-                tradeId = request.tradeId
-            )
-            onResult(OrderReceipt.Vetoed(msg))
-            return
+    @Synchronized fun dispatchAt(request: OrderRequest, price: Double, timestamp: Long, asset: String,
+        metadata: SimMetadata, onResult: (OrderReceipt) -> Unit) {
+        if (request.mode != AutoTradeMode.SHADOW) {
+            onResult(OrderReceipt.Vetoed("TRADE_DISPATCH_REJECTED_MODE_${request.mode}")); return
         }
-
-        val now = simClock.nowMs()
-        val entryPrice = currentPriceSupplier()
-        val tradeId = request.tradeId ?: UUID.randomUUID().toString()
-        val decisionId = request.decisionId ?: UUID.randomUUID().toString()
-        val candleSec = ((now / 1000L) % 60L).toInt()
-
-        val openTrade = simLedger.openTrade(
-            tradeId = tradeId,
-            decisionId = decisionId,
-            action = request.action,
-            entryPrice = entryPrice,
-            stake = defaultStake,
-            timestampMs = now
-        )
-
-        synchronized(pendingTrades) {
-            pendingTrades.add(openTrade)
-        }
-
-        eventSink.add(
-            "SHADOW_DECISION",
-            "SIMULATED_ORDER ${request.action} @ $entryPrice stake=$defaultStake",
-            decisionId = decisionId,
-            tradeId = tradeId
-        )
-
-        onResult(OrderReceipt.Success("SIMULATED", latencyMs = 0L, candleSecond = candleSec))
-    }
-
-    /**
-     * Evalúa la resolución de órdenes pendientes que hayan superado los 60 segundos de expiración.
-     */
-    fun onNewTick(tickPrice: Double, tickTimestampMs: Long = simClock.nowMs()): List<SettledSimulatedTrade> {
-        val resolved = mutableListOf<SettledSimulatedTrade>()
-        synchronized(pendingTrades) {
-            val iterator = pendingTrades.iterator()
-            while (iterator.hasNext()) {
-                val open = iterator.next()
-                if (tickTimestampMs - open.entryTimestampMs >= 60_000L) {
-                    val settled = simLedger.resolveTrade(open.tradeId, tickPrice, tickTimestampMs)
-                    if (settled != null) {
-                        resolved.add(settled)
-                        val pnl = String.format(java.util.Locale.US, "%.2f", settled.settledBalance - settled.baseBalance)
-                        eventSink.add(
-                            "TRADE_RESULT",
-                            "SIM_SETTLED ${settled.action} ${settled.result} @ ${settled.exitPrice} PnL=$pnl",
-                            decisionId = settled.decisionId,
-                            tradeId = settled.tradeId
-                        )
-                    }
-                    iterator.remove()
-                }
+        val decisionId = request.decisionId ?: request.tradeId?.let { "decision-$it" } ?: UUID.randomUUID().toString()
+        val tradeId = request.tradeId ?: "sim-$decisionId"
+        val receipt = try {
+            val (old, settled) = simLedger.findByIds(tradeId, decisionId)
+            if (settled != null) {
+                require(settled.action == request.action && settled.asset == asset && settled.stake == defaultStake) { "SIM_RETRY_CONFLICT" }
+            } else {
+                simLedger.openTrade(tradeId, decisionId, request.action, price, defaultStake, timestamp, asset, metadata)
             }
+            if (old == null && settled == null) runCatching { eventSink.add("SHADOW_DECISION", "SIMULATED_ORDER ${request.action} @ $price stake=$defaultStake", decisionId, tradeId) }
+            OrderReceipt.Success("SIMULATED", 0L, ((timestamp / 1000L) % 60).toInt())
+        } catch (e: Exception) {
+            val persisted = runCatching { simLedger.findByIds(tradeId, decisionId) }.getOrNull()
+            if (persisted?.first != null || persisted?.second != null) OrderReceipt.Success("SIMULATED", 0L, ((timestamp / 1000L) % 60).toInt())
+            else OrderReceipt.Vetoed(e.message ?: "SIM_PERSISTENCE_FAILED")
         }
-        return resolved
+        onResult(receipt)
     }
-
-    fun getPendingTradesCount(): Int {
-        synchronized(pendingTrades) {
-            return pendingTrades.size
-        }
+    fun onNewTick(tickPrice: Double, tickTimestampMs: Long = simClock.nowMs(), asset: String = ""): List<SettledSimulatedTrade> {
+        val results = simLedger.onTick(asset, tickPrice, tickTimestampMs)
+        results.forEach { s -> eventSink.add("TRADE_RESULT", "SIM_SETTLED ${s.action} ${s.result} @ ${s.exitPrice} PnL=%.2f".format(java.util.Locale.US, s.settledBalance-s.baseBalance), s.decisionId, s.tradeId) }
+        return results
     }
+    fun getPendingTradesCount() = simLedger.getOpenTrades().size
 }

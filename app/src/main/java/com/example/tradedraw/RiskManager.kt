@@ -515,8 +515,36 @@ class RiskManager(
      * Es el sustituto exacto del fallback `recordTradeWin/Loss(force = true)`: mismo incremento,
      * pero idempotente. Devuelve true si ESTA llamada fue la que registro el resultado.
      */
+    @Volatile var requiresBrokerReconciliation: Boolean = false
+        private set
+
+    @Synchronized fun holdForBrokerReconciliation(reservation: com.example.tradedraw.core.DispatchReservation) {
+        val c = reservation.context
+        if (!hasPendingTrade || pendingTradeTradeId != reservation.requestId) {
+            recordTradeSent(reservation.action, c?.entryPrice ?: 0.0, baseBalance = c?.baseBalance ?: 0.0,
+                confidence = c?.confidence ?: 0f, reason = c?.reason ?: "RECOVERED_LEGACY_RESERVATION",
+                decisionId = reservation.decisionId, tradeId = reservation.requestId)
+            if (c != null) { pendingTradeStartTime = c.createdAtMs; pendingTradeSignalTs = c.createdAtMs }
+        }
+        requiresBrokerReconciliation = true
+        notifyHud()
+    }
+    @Synchronized fun applyBrokerRecovery(requestId: String, outcome: com.example.tradedraw.core.BrokerRecoveredOutcome): Boolean {
+        if (!hasPendingTrade || pendingTradeTradeId != requestId) return false
+        requiresBrokerReconciliation = false
+        when (outcome) {
+            com.example.tradedraw.core.BrokerRecoveredOutcome.CLOSED_WIN -> settleManual("MANUAL_BROKER_HISTORY", true)
+            com.example.tradedraw.core.BrokerRecoveredOutcome.CLOSED_LOSS -> settleManual("MANUAL_BROKER_HISTORY", false)
+            com.example.tradedraw.core.BrokerRecoveredOutcome.CLOSED_TIE -> { if (markLiquidated(pendingTradeTradeId, pendingTradeStartTime)) recordTradeVoid() }
+            com.example.tradedraw.core.BrokerRecoveredOutcome.NOT_PLACED -> markOrderUnprocessed(tapDespachado = false)
+        }
+        notifyHud()
+        return true
+    }
+
     @Synchronized
     fun settleTradeOnce(tradeId: String, tradeStartMs: Long, win: Boolean): Boolean {
+        if (requiresBrokerReconciliation) return false
         if (!markLiquidated(tradeId, tradeStartMs)) return false
         if (win) recordTradeWins(1, force = true) else recordTradeLosses(1, force = true)
         return true
@@ -541,6 +569,7 @@ class RiskManager(
      */
     @Synchronized
     fun settleManual(origin: String, win: Boolean): Boolean {
+        if (requiresBrokerReconciliation) return false
         val id = pendingTradeTradeId
         val start = pendingTradeStartTime
         // Se usa `markLiquidated` SIEMPRE, no solo cuando hay `tradeId`: con un trade abierto sin id
@@ -831,6 +860,7 @@ class RiskManager(
             return Pair(false, "Stop Loss alcanzado ($stopLossStreak derrotas)")
         }
 
+        if (requiresBrokerReconciliation) return Pair(false, "Reserva broker requiere reconciliación explícita")
         if (hasPendingTrade) {
             val elapsed = (System.currentTimeMillis() - pendingTradeStartTime) / 1000
             // Timeout de seguridad según timeframe: 85s para 1m, 330s para 5m
@@ -1030,6 +1060,7 @@ class RiskManager(
     @Synchronized
     fun markOrderConfirmed() {
         if (hasPendingTrade && orderState == OrderState.ENVIADA) {
+            requiresBrokerReconciliation = false
             setOrderState(OrderState.CONFIRMADA, "saldo movido")
         }
     }

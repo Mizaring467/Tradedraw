@@ -185,7 +185,9 @@ class TradeDrawHttpBridge(
                                 val status = if (ok) 200 else if (receipt is com.example.tradedraw.core.OrderReceipt.Vetoed) 403 else 503
                                 sendJsonResponse(output, status, org.json.JSONObject().put("success", ok)
                                     .put("action", action.name).put("mode", currentMode.name)
-                                    .put("requestId", requestId).put("receipt", receipt.toString()).toString())
+                                    .put("requestId", requestId).put("brokerConfirmed", overlayService.riskManager.orderState == OrderState.CONFIRMADA)
+                                    .put("brokerReconciliationPending", (engine.orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway)?.pendingRequestId() != null)
+                                    .put("receipt", receipt.toString()).toString())
                             }
                         }
                     }
@@ -241,6 +243,88 @@ class TradeDrawHttpBridge(
                             output, 200,
                             """{"success":true,"total":${lineas.size},"events":[$cuerpo]}"""
                         )
+                    }
+                    "/dispatch_recovery" -> {
+                        val engine = overlayService.tradingEngine
+                        val flight = engine.orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
+                        if (method == "POST") {
+                            if (params["confirmation"] != "BROKER_HISTORY_REVIEWED") {
+                                sendJsonResponse(output, 409, """{"success":false,"error":"BROKER_HISTORY_EVIDENCE_REQUIRED"}"""); return@handleClient
+                            }
+                            val outcome = runCatching { com.example.tradedraw.core.BrokerRecoveredOutcome.valueOf(params["outcome"].orEmpty()) }.getOrNull()
+                            val observedAt = params["observedAtMs"]?.toLongOrNull()
+                            val reference = params["brokerReference"].orEmpty()
+                            val id = params["requestId"].orEmpty()
+                            if (outcome == null || observedAt == null || observedAt > System.currentTimeMillis() || reference.isBlank() || reference.length > 256 || id.isBlank()) {
+                                sendJsonResponse(output, 400, """{"success":false,"error":"INVALID_BROKER_EVIDENCE"}"""); return@handleClient
+                            }
+                            val done = java.util.concurrent.CountDownLatch(1)
+                            var accepted = false
+                            engine.reconcileBrokerDispatch(com.example.tradedraw.core.BrokerDispatchEvidence(id, reference, outcome, observedAt)) { accepted = it; done.countDown() }
+                            val completed = done.await(2, java.util.concurrent.TimeUnit.SECONDS)
+                            sendJsonResponse(output, if (!completed) 202 else if (accepted) 200 else 409,
+                                org.json.JSONObject().put("success", completed && accepted).put("pending", !completed)
+                                    .put("source", "MANUAL_BROKER_HISTORY").put("error", if (accepted) "" else "EVIDENCE_INSUFFICIENT_OR_ACCOUNT_NOT_CONFIRMED_DEMO").toString())
+                            return@handleClient
+                        }
+                        val pending = flight?.reservation()
+                        val last = flight?.lastEvidence()
+                        sendJsonResponse(output, 200, org.json.JSONObject().put("success", true)
+                            .put("pendingRequestId", pending?.requestId ?: "").put("decisionId", pending?.decisionId ?: "")
+                            .put("createdAtMs", pending?.context?.createdAtMs ?: 0L).put("baseBalance", pending?.context?.baseBalance)
+                            .put("recovered", flight?.isRecovered() == true).put("requiresReview", flight?.requiresReview() == true)
+                            .put("riskHold", overlayService.riskManager.requiresBrokerReconciliation)
+                            .put("state", if (pending == null) "CLEAR" else if (flight?.requiresReview() == true) "UNCERTAIN" else "AWAITING_BROKER_CONFIRMATION")
+                            .put("lastOutcome", last?.outcome?.name ?: "").put("lastBrokerReference", last?.brokerReference ?: "")
+                            .put("requiredAction", if (pending == null) "NONE" else "Inspect broker history; POST exact requestId, brokerReference, observedAtMs, closed outcome and confirmation=BROKER_HISTORY_REVIEWED; fresh DEMO required. No automatic resend.").toString())
+                    }
+                    "/simulation" -> {
+                        val engine = overlayService.tradingEngine
+                        val runtime = engine.shadowSimulation
+                        val sim = runtime.simulation
+                        if (method == "POST") {
+                            val enabled = params["enabled"]
+                            if (enabled != null) {
+                                if (enabled !in setOf("true", "false") || enabled == "true" && engine.mode != AutoTradeMode.SHADOW) {
+                                    sendJsonResponse(output, 409, """{"success":false,"error":"SHADOW_MODE_REQUIRED"}""")
+                                    return@handleClient
+                                }
+                                engine.shadowSimulationEnabled = enabled == "true"
+                                eventSink.add("SIMULATION_CONTROL", "enabled=$enabled source=bridge:/simulation")
+                            }
+                            if (params["operation"] == "retry") sim?.flushResults()
+                            if (params["operation"] in setOf("probe_open", "probe_tick")) {
+                                val id = params["id"].orEmpty()
+                                val price = params["price"]?.toDoubleOrNull()
+                                if (!BuildConfig.DEBUG || !id.matches(Regex("[A-Za-z0-9_-]{1,64}")) || price == null || !price.isFinite() || price <= 0) {
+                                    sendJsonResponse(output, 400, """{"success":false,"error":"INVALID_SIMULATION_PROBE"}"""); return@handleClient
+                                }
+                                val tick = com.example.tradedraw.core.MarketTick("TEST/$id", price, System.currentTimeMillis())
+                                if (params["operation"] == "probe_open") {
+                                    if (engine.mode != AutoTradeMode.SHADOW || !runtime.enabled) {
+                                        sendJsonResponse(output, 409, """{"success":false,"error":"SHADOW_SIMULATION_DISABLED"}"""); return@handleClient
+                                    }
+                                    val action = params["action"] ?: "BUY"
+                                    if (action !in setOf("BUY", "SELL")) {
+                                        sendJsonResponse(output, 400, """{"success":false,"error":"INVALID_ACTION"}"""); return@handleClient
+                                    }
+                                    var receipt: com.example.tradedraw.core.OrderReceipt? = null
+                                    runtime.open(com.example.tradedraw.core.OrderRequest(TradeAction.valueOf(action), 0f, 0f,
+                                        "probe-$id", "sim-probe-$id", mode = engine.mode), tick,
+                                        com.example.tradedraw.simulation.SimMetadata(strategy = "CONTROLLED_PROBE", reason = "SYNTHETIC_TEST_QUOTE")) { receipt = it }
+                                    if (receipt !is com.example.tradedraw.core.OrderReceipt.Success) {
+                                        sendJsonResponse(output, 409, org.json.JSONObject().put("success", false).put("receipt", receipt.toString()).toString()); return@handleClient
+                                    }
+                                } else runtime.onTick(tick)
+                            }
+                        }
+                        val ledger = sim?.gateway?.simLedger
+                        sendJsonResponse(output, 200, org.json.JSONObject().put("success", sim != null)
+                            .put("enabled", runtime.enabled).put("balance", ledger?.currentBalance)
+                            .put("openOrders", ledger?.getOpenTrades()?.size).put("settlements", ledger?.totalTrades)
+                            .put("pendingResults", ledger?.pendingJournal()?.size).put("error", runtime.errorMessage ?: "")
+                            .put("expiryRule", "FIRST_ACCEPTED_SAME_ASSET_TICK_AT_OR_AFTER_ENTRY_PLUS_60000_MS")
+                            .put("retryAction", "POST /simulation?operation=retry").toString())
                     }
                     "/shadow_journal" -> {
                         // R23 Iter 2: decisiones persistidas en disco por SHADOW MODE. Antes solo
@@ -873,12 +957,7 @@ class TradeDrawHttpBridge(
         return try {
             val interno = java.io.File(overlayService.filesDir, "TradeDraw_Audits")
             val externo = overlayService.getExternalFilesDir(null)?.let { java.io.File(it, "TradeDraw_Audits") }
-            val candidatos = listOfNotNull(externo, interno)
-            val archivo = candidatos.firstOrNull { java.io.File(it, "shadow_journal.csv").isFile }
-                ?.let { java.io.File(it, "shadow_journal.csv") }
-                ?: return emptyList<String>() to 0
-            val todas = archivo.readLines(Charsets.UTF_8).filter { it.isNotBlank() }
-            todas.takeLast(limite) to todas.size
+            com.example.tradedraw.persistence.ShadowJournalFilesReader(listOfNotNull(externo, interno)).readTail(limite)
         } catch (e: Exception) {
             Log.e("TradeDrawHttp", "Error leyendo shadow_journal.csv", e)
             emptyList<String>() to 0

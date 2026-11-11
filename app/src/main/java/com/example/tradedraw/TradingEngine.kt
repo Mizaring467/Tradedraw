@@ -50,8 +50,10 @@ class TradingEngine(
         PersistentPendingDispatchStore(context))
 ) {
     val executionPolicy: ExecutionPolicy = ExecutionPolicy()
-    var shadowSimulationEnabled: Boolean = false
-    val simulatedOrderGateway: com.example.tradedraw.simulation.SimulatedOrderGateway = com.example.tradedraw.simulation.SimulatedOrderGateway(eventSink = eventSink)
+    val shadowSimulation = com.example.tradedraw.simulation.ShadowSimulationRuntime(context, eventSink)
+    var shadowSimulationEnabled: Boolean
+        get() = shadowSimulation.enabled
+        set(value) { shadowSimulation.enabled = value }
     val chartViewportController = ChartViewportController(context, riskManager)
     val agentController = AutonomousAgentController(context, this, riskManager, chartViewportController)
 
@@ -476,6 +478,7 @@ class TradingEngine(
      * Invocado cuando llega un nuevo micro-tick en tiempo real vía WebSocket.
      */
     fun onMarketTick(tick: MarketTick) {
+        shadowSimulation.onTick(tick)
         latestMarketTick = tick
         // El `asset` del MarketTick ya es el RIC del feed; se guarda tal cual para que el id
         // determinista y el replay coincidan sin pasar por el mapeo de nombre visible.
@@ -787,6 +790,33 @@ class TradingEngine(
         )
         lastSignalReason = reason
         return action
+    }
+
+    init {
+        handler.post {
+            val flight = orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
+            if (flight?.isRecovered() == true) flight.reservation()?.let {
+                riskManager.holdForBrokerReconciliation(it)
+                eventSink.add("DISPATCH_RECOVERY", "RECOVERED_UNCERTAIN requires=broker_history_review", it.decisionId, it.requestId)
+            }
+        }
+    }
+
+    fun reconcileBrokerDispatch(evidence: com.example.tradedraw.core.BrokerDispatchEvidence, callback: (Boolean) -> Unit) {
+        handler.post {
+            val flight = orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
+            AutoTradeAccessibilityService.instance?.readCurrentBalance()
+            val freshDemo = AutoTradeAccessibilityService.demoAccountGuard.getAccountType() == com.example.tradedraw.core.AccountType.DEMO &&
+                AutoTradeAccessibilityService.demoAccountGuard.isDemoConfirmedFresh(10_000L)
+            val pending = flight?.reservation()
+            val ok = flight?.reconcileWithBrokerEvidence(evidence, freshDemo) == true
+            if (ok && pending != null) {
+                riskManager.holdForBrokerReconciliation(pending)
+                riskManager.applyBrokerRecovery(pending.requestId, evidence.outcome)
+                eventSink.add("DISPATCH_RECOVERY", "${evidence.outcome} source=${evidence.source} reference=${evidence.brokerReference}", pending.decisionId, pending.requestId)
+            }
+            callback(ok)
+        }
     }
 
     companion object {
@@ -2042,6 +2072,7 @@ class TradingEngine(
         handler.post {
             val balance = AutoTradeAccessibilityService.instance?.readCurrentBalance() ?: 0.0
             val coordinator = orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
+            coordinator?.cachedReceipt(tradeId)?.let { onResult(it); return@post }
             if (riskManager.hasPendingTrade || coordinator?.pendingRequestId() != null || coordinator?.wasDispatched(tradeId) == true) {
                 onResult(OrderReceipt.Vetoed("ORDER_PENDING_RECONCILIATION"))
                 return@post
@@ -2056,13 +2087,19 @@ class TradingEngine(
             riskManager.recordTradeSent(action, latestMarketTick?.price ?: 0.0, 0f, balance,
                 confidence, ((System.currentTimeMillis() / 1000L) % 60).toInt(), reason, decisionId, tradeId)
             val terminal = java.util.concurrent.atomic.AtomicBoolean(false)
-            orderGateway.dispatch(OrderRequest(action, x, y, decisionId, tradeId, mode = mode)) { receipt ->
+            val recovery = com.example.tradedraw.core.BrokerRecoveryContext(System.currentTimeMillis(), balance,
+                latestMarketTick?.price ?: 0.0, confidence, reason)
+            orderGateway.dispatch(OrderRequest(action, x, y, decisionId, tradeId, mode = mode, recoveryContext = recovery)) { receipt ->
                 if (terminal.compareAndSet(false, true)) {
                     handler.post {
                         when (receipt) {
                             is OrderReceipt.Vetoed -> riskManager.clearPendingTrade()
                             is OrderReceipt.Failure -> {
                                 if (!receipt.requiresReconciliation) riskManager.markOrderUnprocessed(tapDespachado = false)
+                                else (orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway)?.reservation()?.let {
+                                    riskManager.holdForBrokerReconciliation(it)
+                                    eventSink.add("DISPATCH_RECOVERY", "UNCERTAIN requires=broker_history_review", it.decisionId, it.requestId)
+                                }
                                 // Uncertain delivery remains pending; never ask for a second manual tap.
                             }
                             is OrderReceipt.Success -> {
@@ -2291,22 +2328,20 @@ class TradingEngine(
         // Si el motor está en SHADOW, todas las defensas y cálculos corren exactamente igual,
         // pero NUNCA se despacha un tap al broker ni se altera el saldo ni el W/L real.
         if (mode == AutoTradeMode.SHADOW) {
-            shadowOrdersGenerated++
             val currentPrice = latestMarketTick?.price ?: 0.0
             if (shadowSimulationEnabled) {
-                simulatedOrderGateway.currentPriceSupplier = { currentPrice }
-                simulatedOrderGateway.dispatch(
-                    com.example.tradedraw.core.OrderRequest(
-                        action = finalAction,
-                        x = x,
-                        y = y,
-                        decisionId = currentDecisionId,
-                        mode = mode
-                    )
-                ) { receipt ->
-                    Log.i("TradingEngine", "👻 [SHADOW SIMULADA] Orden simulada procesada por gateway: $receipt")
+                val tick = latestMarketTick ?: return
+                shadowSimulation.open(OrderRequest(finalAction, x, y, currentDecisionId, "sim-$currentDecisionId", mode = mode),
+                    tick, com.example.tradedraw.simulation.SimMetadata(strategy.name, autonomousSubMode.name,
+                        headlessConfidence, syntheticCandleEngine.detectedTrend.name, finalReason)) { receipt ->
+                    if (receipt is OrderReceipt.Success) {
+                        shadowOrdersGenerated++
+                        synchronized(this) { candleRateLimiter.recordExecution(currentCandleEpochMinute, mode) }
+                    } else eventSink.add("SIMULATION_ERROR", receipt.toString(), decisionId = currentDecisionId)
                 }
+                return
             }
+            shadowOrdersGenerated++
             Log.i("TradingEngine", "👻 [SHADOW MODE] Orden simulada autorizada: $finalAction @ $currentPrice (segundo=$sec, decisionId=$currentDecisionId) - Cero taps, saldo intacto")
             eventSink.add(
                 TradeEventLog.Kind.SHADOW_DECISION,
@@ -2372,6 +2407,8 @@ class TradingEngine(
      * de apertura, la orden NO se registro: es una operacion fantasma, no un empate.
      */
     private fun checkOrderConfirmation() {
+        val coordinator = orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
+        if (coordinator?.isRecovered() == true) return
         val snapshot = synchronized(riskManager) {
             if (!riskManager.hasPendingTrade || riskManager.orderState != OrderState.ENVIADA) null
             else Triple(riskManager.pendingTradeStartTime, riskManager.pendingTradeBaseBalance, riskManager.pendingTradeAction)
@@ -2384,6 +2421,7 @@ class TradingEngine(
         val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance()
             ?: AutoTradeAccessibilityService.latestObservedBalance
 
+        if (!AutoTradeAccessibilityService.demoAccountGuard.isDemoConfirmedFresh(10_000L)) return
         if (riskManager.isOrderConfirmed(baseBalance, currentBal, elapsedSec)) {
             riskManager.markOrderConfirmed()
             (orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway)
@@ -2397,43 +2435,16 @@ class TradingEngine(
         }
 
         if (riskManager.isOrderUnprocessed(baseBalance, currentBal, elapsedSec)) {
-            // La orden nunca llego al broker. Se cierra el estado pendiente para que el HUD deje
-            // de mostrar "Trade Activo" y el motor pueda volver a operar; se registra el fallo
-            // en el journal como fallo de ENVIO, no como empate de precio.
-            //
-            // R24/B4: la causa se clasifica con la evidencia DISPONIBLE, no se supone:
-            //  - `tapDespachado`: el tap dejo sus instantes (captureTapLatency solo corre cuando
-            //    el gesto termino con exito).
-            //  - `feedFresco`: el cliente WS considera el feed fresco ahora mismo.
-            //  - `saldoObservable`: se acaba de leer el saldo y es > 0.
-            // Es solo la ETIQUETA del diagnostico: no altera la decision de marcar NO_PROCESADA.
-            val tapDespachado = riskManager.pendingTradeTapEndTs > 0L
-            val feedFresco = isFeedFresh()
-            val saldoObservable = currentBal > 0.0
-            riskManager.markOrderUnprocessed(
-                tapDespachado = tapDespachado,
-                feedFresco = feedFresco,
-                saldoObservable = saldoObservable
-            )
-            Log.w(
-                "TradingEngine",
-                "⛔ ORDEN NO PROCESADA: el saldo no se movio en ${elapsedSec}s " +
-                    "(base=$baseBalance ahora=$currentBal) | $action | el tap no creo operacion"
-            )
-            handler.post {
-                Toast.makeText(
-                    context,
-                    "⛔ Orden NO procesada: el tap no llego al broker (saldo sin cambios)",
-                    Toast.LENGTH_LONG
-                ).show()
-                OverlayService.instance?.updateHUDView()
-            }
-            return
+            coordinator?.markUncertain("BROKER_CONFIRMATION_TIMEOUT")
+            coordinator?.reservation()?.let { riskManager.holdForBrokerReconciliation(it) }
+            eventSink.add("DISPATCH_RECOVERY", "BROKER_CONFIRMATION_TIMEOUT requires=broker_history_review",
+                riskManager.pendingTradeDecisionId, riskManager.pendingTradeTradeId)
         }
     }
 
     private fun checkHeadlessTradeResolution() {
         checkOrderConfirmation()
+        if (riskManager.requiresBrokerReconciliation) return
         val snapshot = synchronized(riskManager) {
             if (!riskManager.hasPendingTrade) null
             else {

@@ -6,15 +6,35 @@ interface PendingDispatchStore {
     fun save(requestId: String?)
     fun wasDispatched(requestId: String): Boolean = false
     fun remember(requestId: String) {}
+    fun reserve(request: OrderRequest) { save(request.tradeId ?: request.decisionId); remember(requireNotNull(request.tradeId ?: request.decisionId)) }
+    fun reservation(): DispatchReservation? = load()?.let { DispatchReservation(it) }
+    fun readReceipt(requestId: String): OrderReceipt? = null
+    fun writeReceipt(requestId: String, receipt: OrderReceipt) {}
+    fun lastEvidence(): BrokerDispatchEvidence? = null
+    fun reviewReason(): String? = null
+    fun setReviewReason(reason: String?) {}
+    fun resolve(evidence: BrokerDispatchEvidence) { save(null) }
 }
 
 class MemoryPendingDispatchStore : PendingDispatchStore {
     private var id: String? = null
     private val dispatched = mutableSetOf<String>()
+    private var reserved: DispatchReservation? = null
+    private val receipts = mutableMapOf<String, OrderReceipt>()
+    private var evidence: BrokerDispatchEvidence? = null
+    private var review: String? = null
+    override fun reviewReason() = review
+    override fun setReviewReason(reason: String?) { review = reason }
+    override fun reserve(request: OrderRequest) { val key = requireNotNull(request.tradeId ?: request.decisionId); save(key); remember(key); reserved = DispatchReservation(key, request.decisionId.orEmpty(), request.action, request.recoveryContext) }
+    override fun reservation() = if (id == null) null else reserved ?: DispatchReservation(requireNotNull(id))
+    override fun readReceipt(requestId: String) = receipts[requestId]
+    override fun writeReceipt(requestId: String, receipt: OrderReceipt) { receipts[requestId] = receipt }
+    override fun lastEvidence() = evidence
+    override fun resolve(evidence: BrokerDispatchEvidence) { this.evidence = evidence; save(null) }
     override fun wasDispatched(requestId: String): Boolean = requestId in dispatched
     override fun remember(requestId: String) { dispatched.add(requestId) }
     override fun load(): String? = id
-    override fun save(requestId: String?) { id = requestId }
+    override fun save(requestId: String?) { id = requestId; if (id == null) review = null }
 }
 
 /** Delivery acknowledgements are distinct from broker reconciliation. */
@@ -24,6 +44,26 @@ class SingleFlightOrderGateway(
 ) : OrderGateway {
     private var pendingId: String? = store.load()
     private val terminal = mutableMapOf<String, OrderReceipt>()
+    private var recovered = pendingId != null
+    @Synchronized fun cachedReceipt(requestId: String): OrderReceipt? = terminal[requestId] ?: store.readReceipt(requestId)
+    @Synchronized fun reservation(): DispatchReservation? = store.reservation()
+    @Synchronized fun isRecovered(): Boolean = recovered && pendingId != null
+    @Synchronized fun requiresReview(): Boolean = isRecovered() || store.reviewReason() != null || pendingId?.let { store.readReceipt(it) is OrderReceipt.Failure } == true
+    @Synchronized fun lastEvidence(): BrokerDispatchEvidence? = store.lastEvidence()
+    @Synchronized fun markUncertain(reason: String) {
+        if (pendingId != null) store.setReviewReason(reason)
+    }
+    @Synchronized fun reconcileWithBrokerEvidence(evidence: BrokerDispatchEvidence, freshDemo: Boolean): Boolean {
+        if (!freshDemo || evidence.brokerReference.isBlank() || evidence.observedAtMs <= 0) return false
+        val previous = store.lastEvidence()
+        if (pendingId == null) return previous == evidence
+        if (evidence.requestId != pendingId) return false
+        val created = store.reservation()?.context?.createdAtMs ?: 0L
+        if (evidence.observedAtMs < created || evidence.outcome == BrokerRecoveredOutcome.NOT_PLACED && created > 0 && evidence.observedAtMs - created < 120_000L) return false
+        store.resolve(evidence)
+        pendingId = null; recovered = false
+        return true
+    }
 
     @Synchronized
     fun pendingRequestId(): String? = pendingId
@@ -37,6 +77,7 @@ class SingleFlightOrderGateway(
         if (requestId != pendingId) return false
         store.save(null)
         pendingId = null
+        recovered = false
         return true
     }
 
@@ -47,7 +88,7 @@ class SingleFlightOrderGateway(
             return
         }
         synchronized(this) {
-            terminal[id]?.let { onResult(it); return }
+            (terminal[id] ?: store.readReceipt(id))?.let { onResult(it); return }
             if (store.wasDispatched(id)) {
                 onResult(OrderReceipt.Vetoed("REQUEST_ALREADY_DISPATCHED"))
                 return
@@ -57,7 +98,8 @@ class SingleFlightOrderGateway(
                 return
             }
             // A failed durable reservation must never reach the transport.
-            try { store.save(id); pendingId = id; store.remember(id) } catch (e: Exception) {
+            try { store.reserve(request); pendingId = id } catch (e: Exception) {
+                pendingId = store.load()
                 onResult(OrderReceipt.Vetoed("DISPATCH_PERSISTENCE_FAILED"))
                 return
             }
@@ -67,6 +109,7 @@ class SingleFlightOrderGateway(
         fun complete(receipt: OrderReceipt) {
             if (!completed.compareAndSet(false, true)) return
             synchronized(this) {
+                try { store.writeReceipt(id, receipt) } catch (_: Exception) { recovered = true }
                 terminal[id] = receipt
                 if (receipt is OrderReceipt.Vetoed ||
                     receipt is OrderReceipt.Failure && !receipt.requiresReconciliation) {

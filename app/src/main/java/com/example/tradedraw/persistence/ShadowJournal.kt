@@ -17,7 +17,8 @@ data class ShadowJournalEntry(
     val schemaVersion: Int = 1,
     val simResult: String? = null,
     val simExitPrice: Double? = null,
-    val simBalance: Double? = null
+    val simBalance: Double? = null,
+    val entryPrice: Double? = null
 )
 
 /**
@@ -44,17 +45,12 @@ object ShadowJournal {
     }
 
     fun formatLineV2(entry: ShadowJournalEntry): String {
-        val resultStr = entry.simResult ?: ""
-        val exitPriceStr = entry.simExitPrice?.let { String.format(Locale.US, "%.4f", it) } ?: ""
-        val balanceStr = entry.simBalance?.let { String.format(Locale.US, "%.2f", it) } ?: ""
-        return String.format(
-            Locale.US,
-            "%d,%s,%s,%s,%s,%.2f,%.4f,%s,%d,%s,\"%s\",2,%s,%s,%s\n",
-            entry.timestamp, entry.isoDate, entry.strategy, entry.submode, entry.action,
-            entry.confidence, entry.priceY, entry.trend, entry.candleSecond,
-            entry.decisionId.trim().replace(",", ""), entry.reason.replace(",", ";").take(140),
-            resultStr, exitPriceStr, balanceStr
-        )
+        fun clean(value: String) = value.replace(",", ";").replace("\n", " ").replace("\r", " ").replace('"', '\'')
+        val fields = listOf(entry.timestamp.toString(), clean(entry.isoDate), clean(entry.strategy), clean(entry.submode),
+            clean(entry.action), entry.confidence.toString(), (entry.entryPrice ?: entry.priceY.toDouble()).toString(),
+            clean(entry.trend), entry.candleSecond.toString(), clean(entry.decisionId), "\"${clean(entry.reason)}\"",
+            "2", clean(entry.simResult.orEmpty()), entry.simExitPrice?.toString().orEmpty(), entry.simBalance?.toString().orEmpty())
+        return fields.joinToString(",") + "\n"
     }
 
     fun parseLine(line: String): ShadowJournalEntry? {
@@ -91,7 +87,8 @@ object ShadowJournal {
                     schemaVersion = 2,
                     simResult = parts[12].ifBlank { null },
                     simExitPrice = parts[13].toDoubleOrNull(),
-                    simBalance = parts[14].toDoubleOrNull()
+                    simBalance = parts[14].toDoubleOrNull(),
+                    entryPrice = parts[6].toDoubleOrNull()
                 )
             } else {
                 ShadowJournalEntry(

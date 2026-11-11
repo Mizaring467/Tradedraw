@@ -1,5 +1,11 @@
 # TradeDraw · R29-B — STATE
 
+## Estado vigente — 2026-11-11 · Ronda de simulación durable EN CURSO
+
+Base y HEAD inicial: `20bd936` en `r10-night`, árbol limpio al iniciar, sin cambios posteriores. Se reutiliza la evidencia de `8571128` para código no modificado. Trabajo actual: ledger transaccional y outbox, ticks por activo y escritor/lectores v2. Nuevas pruebas, build, dispositivo y CI pendientes; no se declara gate aprobado. Dispositivo al iniciar: 2311DRK48G / API36 / batería100%, sin carga. Se preservan sesiones ajenas; no se delega. Próxima acción: pruebas de reinicio/fallos/idempotencia y activación controlada; recuperación broker después.
+
+## Historial anterior (no sustituye el estado vigente)
+
 ## Checkpoint verificado — 2026-11-10 (America/Bogota)
 
 **R29-B ABIERTA.** Código publicado e instalado: `8571128` en `r10-night`; commits previos de esta ejecución: `82afad5`, `735f420`. Las tablas originales se conservan como historia y no acreditan el cierre integral.

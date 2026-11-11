@@ -294,30 +294,10 @@ object TradeJournalLogger {
         simBalance: Double = 0.0
     ): Boolean {
         return try {
-            val (dir, _) = resolveDirs(context)
-            val file = File(dir, SHADOW_JOURNAL_NAME)
-            val now = System.currentTimeMillis()
-            val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(now))
-            val cleanReason = reason.replace(",", ";").replace("\n", " ").take(140)
-            val sanitizeId = decisionId.trim().replace(",", "").replace("\n", "")
-            val line = String.format(
-                Locale.US,
-                "%d,%s,%s,%s,%s,%.2f,%s,%s,%d,%s,\"%s\",2,%s,%.4f,%.2f\n",
-                now, isoDate, strategy, submode, action, confidence, formatDynamicPrice(priceY.toDouble()),
-                trend, candleSecond, sanitizeId, cleanReason,
-                simResult, simExitPrice, simBalance
-            )
-            synchronized(lock) {
-                if (!dir.exists()) dir.mkdirs()
-                val writeHeader = !file.exists() || file.length() == 0L
-                FileWriter(file, true).use { writer ->
-                    if (writeHeader) writer.write(SHADOW_HEADER_V2)
-                    writer.write(line)
-                    writer.flush()
-                }
-            }
-            Log.d(TAG, "Shadow trade v2 registrado: $action @ $priceY conf=$confidence (decisionId=$decisionId)")
-            true
+            com.example.tradedraw.persistence.SimulationResultFileJournal(File(context.filesDir, "TradeDraw_Audits"))
+                .appendEntry(com.example.tradedraw.persistence.ShadowJournalEntry(
+                    System.currentTimeMillis(), "", strategy, submode, action, confidence, priceY,
+                    trend, candleSecond, decisionId, reason, 2, simResult, simExitPrice, simBalance))
         } catch (e: Exception) {
             Log.e(TAG, "Error escribiendo en shadow_journal.csv v2", e)
             false
