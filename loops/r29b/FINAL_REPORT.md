@@ -1,5 +1,18 @@
 # TradeDraw · Ronda R29-B · Reporte Final de Misión
 
+> **Adenda 2026-11-11 · Estado real tras V1/V2 sobre `ab2b73b`.** El cuerpo de abajo es histórico (HEAD `460995f`, 633 tests) y no acredita el estado actual. Estado vigente: HEAD `ab2b73b`, 658 tests / 84 clases / 0F/0E/0 skips, Python 47 PASS, replay PASS, APK PASS, CI push `43014306435` y PR `43014313683` SUCCESS.
+>
+> **VERIFICADO EN RUNTIME:** Adapters/F6; DISABLED fail-closed (`/trade` 403); V1 SHADOW completo (activación, cero despacho, `SimLedger`, regla +60 s, journal v2 único, idempotencia, reinicio con liquidación única).
+>
+> **VERIFICADO POR TEST:** V2 pasos E/F/G (liquidación única, liberación sólo al SETTLED, idempotencia) vía `BrokerRecoveryRiskIntegrationTest` 2/2.
+>
+> **VERIFICADO EN RUNTIME (parcial V2):** reserva confirmada recuperada tras reinicio con identidad conservada, `riskHold=true`, `tapsDespachados=0`, segundo despacho vetado, `/resume` sin destruir la reserva.
+>
+> **NO VERIFICADO:** liquidación/liberación de V2 en runtime (requiere cuenta DEMO fresca del broker; el guard respondió `EVIDENCE_INSUFFICIENT_OR_ACCOUNT_NOT_CONFIRMED_DEMO`), operación con dinero real y rentabilidad.
+>
+> **Gate final:** los 25 criterios no están todos demostrados → **R29-B PERMANECE ABIERTA** con una sola deuda: cerrar E/F/G de V2 en runtime con cuenta DEMO.
+
+
 | Campo | Valor |
 | :--- | :--- |
 | Misión | **TradeDraw R29-B: Arquitectura Modular, Contratos P0, Simulación y Desacoplamiento de Plataforma** |

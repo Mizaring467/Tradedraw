@@ -1,4 +1,13 @@
-## Adenda vigente — 2026-11-11 · Reserva hasta liquidación
+## Adenda vigente — 2026-11-11 · Verificación runtime V1/V2 sobre ab2b73b
+
+**VERIFICADO EN RUNTIME (V1, SHADOW):** activación explícita `DISABLED→SHADOW`; `/trade` rechazado 403 con `TRADE_ENDPOINT_MODE_REJECTED mode=SHADOW`; `tapsDespachados=0` y logcat sin gestos/root tap; `probe_open`→`SimLedger`→liquidación simulada (balance 1008.2→998.2); tick prematuro (+10 s) no liquidó y tick elegible sí; journal v2 con cabecera, `decision_id`, `tradeId`, resultado y **una** fila; tick repetido y `retry` no alteraron nada; reinicio con simulación pendiente recuperó la orden sin duplicado y liquidó una sola vez; estado final `DISABLED`.
+
+**VERIFICADO EN RUNTIME (V2, reserva):** reserva sembrada sintéticamente, reinicio, identidad conservada (`v2-reservation-01`/`dec-v2-01`), `riskHold=true`, `recovered=true`, `tapsDespachados=0` (sin re-despacho), segundo despacho vetado con `ORDER_PENDING_RECONCILIATION`, y `POST /resume` no destruyó la retención.
+
+**NO VERIFICADO EN RUNTIME (V2):** liquidación y liberación (pasos E/F/G). `POST /dispatch_recovery` devolvió `EVIDENCE_INSUFFICIENT_OR_ACCOUNT_NOT_CONFIRMED_DEMO` porque el guard exige cuenta DEMO fresca (<10 s) desde pantalla de Binomo, inexistente en el emulador. Es el guard fail-closed actuando, no un defecto. Cubierto por `BrokerRecoveryRiskIntegrationTest` (2 tests, 0 fallos).
+
+**NO VERIFICADO:** operación con dinero real; y no se declara rentabilidad.
+
 
 El recorrido DEMO anterior mostró una reserva liberada al confirmar. Se corrigió el intervalo confirmación→liquidación: confirmar ya no borra la reserva durable; solo el resultado de RiskManager notifica su liberación. Reiniciar con orden confirmada conserva el ID y restaura la retención, sin reenvío. El bridge distingue CONFIRMED_AWAITING_SETTLEMENT de incertidumbre. Limpiar el marcador o forzar contadores sin evidencia no elimina una retención de recuperación.
 

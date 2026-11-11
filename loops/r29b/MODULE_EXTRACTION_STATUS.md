@@ -1,5 +1,13 @@
 # Estado vigente — 2026-11-11 · Extracción incremental en curso
 
+## Verificación final V1/V2 sobre ab2b73b (sin cambios de código)
+
+V1 SHADOW **verificado en runtime**: activación por `/mode`, `/trade` 403 en SHADOW, `tapsDespachados=0`, `SimLedger` liquidando (1008.2→998.2), regla entry+60000 ms respetada, journal v2 con una sola fila, idempotencia ante tick repetido/`retry`, y recuperación tras reinicio liquidando una única vez. Estado final `DISABLED`.
+
+V2 **parcial**: recuperación de reserva confirmada tras reinicio verificada en runtime (misma identidad, `riskHold=true`, `tapsDespachados=0`, segundo despacho vetado con `ORDER_PENDING_RECONCILIATION`, `/resume` sin destruirla). Liquidación/liberación (E/F/G) **no** demostradas en runtime por ausencia de cuenta DEMO fresca; el guard respondió `EVIDENCE_INSUFFICIENT_OR_ACCOUNT_NOT_CONFIRMED_DEMO`. Cubierto por test: `BrokerRecoveryRiskIntegrationTest` 2/2 PASS.
+
+R29-B permanece **ABIERTA** por esa única deuda. Adapters/F6 y V1 quedan validados.
+
 ## Séptimo corte — adapters y cierre F6 (working tree recuperado)
 
 HEAD base 5be6418. El corte `:adapters` existía sin commit y sin compilar; se terminó sin resetear ni reescribir el motor. `adapters/` reúne los adaptadores Android/broker: `AIClient` (implementando `AIAdvisor` de `:execution`), `AccessibilityBalanceSource`, `AndroidBrokerRuntime` (implementa `BrokerRuntimePort`), `AndroidOrderComposition`, `AutoTradeAccessibilityService` y `BrokerDetector`.

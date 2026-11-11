@@ -1,4 +1,60 @@
-## Actualización vigente — 2026-11-11 · :adapters + F6 recuperados y validados localmente
+## Actualización vigente — 2026-11-11 · V1 verificado; V2 parcial (runtime) — R29-B ABIERTA
+
+Candidato `ab2b73b`, sin cambios de código en esta sesión (sólo documentación). V1 y V2 se intentaron primero sin tocar producción, como se pidió.
+
+### V1 — SHADOW runtime: VERIFICADO EN RUNTIME
+
+Ejecutado sobre el APK `ab2b73b` en `emulator-5554`, todo por el harness debug existente (`/mode`, `/simulation` con `probe_open`/`probe_tick`, gateado por `BuildConfig.DEBUG`). Cero dinero, cero broker.
+
+| Comprobación | Resultado |
+|---|---|
+| Activación | `DISABLED → SHADOW` por `POST /mode`; eventos `MODE_CHANGE` |
+| No despacho al broker | `POST /trade` en SHADOW → **403** + `TRADE_ENDPOINT_MODE_REJECTED mode=SHADOW`; `risk.tapsDespachados = 0`; logcat sin `input tap`/`dispatchGesture`/`performOrderClickAt` |
+| SimulatedOrderGateway → SimLedger | `probe_open` → `openOrders: 1`; tras tick válido `openOrders: 0`, `settlements: 2`, balance 1008.2 → 998.2 |
+| Tick de liquidación | Tick a +10 s **no** liquidó (regla entry+60000 ms respetada); tick elegible posterior liquidó |
+| Journal v2 | `schema_version=2`, `decision_id=probe-v1a`, `tradeId=sim-probe-v1a`, `sim_result=LOSS`, `sim_balance=998.2`; **1** fila para esa simulación |
+| Idempotencia | Tick repetido y `operation=retry`: sin cambios (`settlements` 2, balance 998.2) |
+| Reinicio con pendiente | `force-stop` + relanzar: `openOrders: 1` recuperado, sin duplicado; liquidó **una vez** al llegar el tick elegible |
+| Estado final | `DISABLED`, simulación `enabled=false` |
+
+### V2 — Reserva confirmada hasta liquidación: PARCIAL
+
+Sembrada sintéticamente una reserva `v2-reservation-01` en `TradeDraw_Dispatch.xml` (mecanismo debug, sin despachar al broker), luego `force-stop`:
+
+| Paso | Resultado | Evidencia |
+|---|---|---|
+| A. Reserva existe | SÍ | `pendingRequestId=v2-reservation-01`, `riskHold=true` |
+| B. Reinicio con reserva | SÍ | relanzado con reserva pendiente |
+| C. Recuperación | SÍ, misma identidad | `decisionId=dec-v2-01`, `recovered=true`, `requiresReview=true`, **`tapsDespachados=0`** (sin re-despacho) |
+| D. Segundo despacho bloqueado | SÍ | `Vetoed(reason=ORDER_PENDING_RECONCILIATION)`, `brokerReconciliationPending=true` |
+| D'. Admin no destruye reserva | SÍ | `POST /resume` 200 y la reserva siguió `riskHold=true` |
+| E. Liquidación | **NO EN RUNTIME** | `POST /dispatch_recovery` → `EVIDENCE_INSUFFICIENT_OR_ACCOUNT_NOT_CONFIRMED_DEMO` |
+| F. Liberación sólo al SETTLED | **SÓLO POR TEST** | `BrokerRecoveryRiskIntegrationTest` |
+| G. Idempotencia | **SÓLO POR TEST** | ídem |
+
+**Causa del límite, no del fallo:** la liquidación por evidencia exige `demoAccountGuard` DEMO **fresco** (< 10 s), que sólo existe leyendo pantalla de Binomo con cuenta demo. El emulador no tiene Binomo, así que el guard fail-closed rechaza correctamente. Es el comportamiento esperado, no una regresión: la reserva quedó intacta tras el rechazo (`riskHold=true`, `taps=0`, `orderState=ENVIADA`).
+
+Test JVM reejecutado: `BrokerRecoveryRiskIntegrationTest` **2 tests, 0 fallos**: reserva conservada tras reinicio, segundo despacho vetado, liberación sólo con resultado real, y `clear`/`force WIN`/`force LOSS`/`VOID` no destruyen la retención.
+
+### Veredicto
+
+- Adapters/F6 = **VALIDADO**.
+- V1 = **VALIDADO EN RUNTIME**.
+- V2 = **VALIDADO POR TEST**; en runtime quedan sin demostrar E/F/G (liquidación y liberación), por ausencia de cuenta DEMO del broker en el emulador.
+- **R29-B = ABIERTA.** Deuda única y concreta: cerrar E/F/G de V2 en runtime con una cuenta DEMO fresca.
+
+
+HEAD `ab2b73b`, working tree limpio, `r10-night == origin/r10-night`. CI push run `43014306435` SUCCESS y CI PR run `43014313683` SUCCESS (12/12 pasos, incluidos Python, pruebas Android, APK y artefactos).
+
+Gate multimódulo verificado sobre `clean` (no incremental): **658 pruebas, 84 clases, 0 fallos, 0 errores, 0 skips**. Python **47 PASS**. Replay **ejecutado** (no omitido) con CSV versionado, 6 filas. `:app:assembleDebug` PASS.
+
+Runtime del candidato instalado: `gitSha = ab2b73b` (coincide con HEAD), `accessibilityActive = true`, feed activo (~553 ticks, `Z-CRY/IDX`), `mode = DISABLED`. Guard fail-closed comprobado: `POST /trade` → **HTTP 403** en DISABLED, con eventos `TRADE_ENDPOINT_MODE_REJECTED mode=DISABLED` y `MODE_CHANGE`. Sin `ClassNotFound`/`NoClassDefFoundError` por las clases movidas; el `SecurityException` de `commandReceiver` es preexistente (idéntico a 5be6418, API 36, capturado).
+
+- **Adapters/F6 = VALIDADO.**
+- **R29-B = ABIERTA.** Faltan exactamente dos verificaciones: V1 (SHADOW runtime real usando simulación y sin despacho al broker) y V2 (reserva CONFIRMED_AWAITING_SETTLEMENT → SETTLED atravesando reinicio).
+
+Nota de método: `GIT_SHA` se resuelve en tiempo de configuración de Gradle y queda cacheado, así que una reconstrucción incremental puede estampar un SHA anterior. Para certifi­car que el binario corresponde al HEAD hay que reconstruir desde `clean`.
+
 
 HEAD base 5be6418. El working tree contenía el corte `:adapters` sin commit y sin compilar; se recuperó sin reset, sin descartar cambios y sin reescribir el motor. Se publicaron incrementalmente persistence/market/simulation, strategy/observability, risk, execution, ui y research; este cierre es el de adapters y el desacoplamiento estático F6.
 
