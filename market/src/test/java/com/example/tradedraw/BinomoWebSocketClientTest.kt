@@ -1,5 +1,7 @@
 package com.example.tradedraw
 
+import com.example.tradedraw.core.MarketTick
+
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*

@@ -1,3 +1,11 @@
+## Estado vigente — 2026-11-11 · Integración aprobada; modularización EN CURSO
+
+HEAD de integración: b9d948f (push r10-night). 647 app + 6 core, 45 Python; replay y APK correctos. CI 42996460043 verde. APK instalada con SHA-256 coincidente; simulación completa con dos reinicios, tick repetido y journal v2 comprobados. DEMO Col$4.000 vía gateway: confirmación y WIN por saldo acreditado, journal con decisionId/tradeId; modo final DISABLED. Evidencia detallada: DURABLE_SIMULATION_REPORT.md.
+
+Tarea actual: corte :simulation/:persistence/:market validado localmente. 599 app + 6 core + 8 simulation + 40 market = 653 pruebas, cero fallos/errores/skips; replay y :app:assembleDebug PASS. Los fallos iniciales de corte se corrigieron: smart cast entre módulos y imports explícitos en pruebas trasladadas. Criterio pendiente: commit/push/CI e instalación del corte. Después: dominios restantes de T-5.3/T-5.4 y F6. R29-B abierta. Ver MODULE_EXTRACTION_STATUS.md.
+
+## Historial conservado (cierres anteriores no sustituyen el estado vigente)
+
 # TradeDraw · R29-B — STATE
 
 ## Estado vigente — 2026-11-11 · Ronda de simulación durable EN CURSO

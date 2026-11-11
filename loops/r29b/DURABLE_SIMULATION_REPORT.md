@@ -1,6 +1,6 @@
 # Estado vigente — 2026-11-11
 
-Implementación y verificación local completas; aprobación de ronda pendiente de CI, instalación y recorrido en dispositivo. Base: 20bd936. Estrategias y parámetros congelados.
+Integración simulada y recuperación aprobadas sobre b9d948f: pruebas locales, CI e instalación verificadas; recorrido sintético con reinicios y orden DEMO con liquidación comprobados. Modularización en curso. Base: 20bd936. Estrategias y parámetros congelados.
 
 ## Integración
 
@@ -20,6 +20,15 @@ Las reservas del broker conservan contexto y recibo durable. RiskManager recuper
 - Desconexiones controladas: retirar alimentación de ticks y retirar escritura del journal hace fallar el recorrido integrado. Ambas restauradas byte a byte; logs td-sim-mutant-ticks.log y td-sim-mutant-writer.log.
 - Casos: WIN/LOSS/TIE, varias órdenes, ticks ausentes/duplicados/atrasados/fuera de orden, activos, cambios de modo, reinicios, fallos antes/después de commit y escritura antes de acuse, reservas recuperadas y reconciliación única.
 
-## Pendientes de aprobación
+## Validación en dispositivo y CI — 2026-11-11
 
-CI del commit, APK instalada y pruebas de recuperación en dispositivo; DEMO mínimo con confirmación y liquidación. El feed y saldo del checkpoint se recuperaron al arrancar OverlayService y Binomo: cuenta Demo visible, 36,786,736.64 COP y feed fresco. Todavía no se envió una orden en esta ronda. T-5.2 a T-5.4 y F6 siguen pendientes; no se declara R29-B cerrada.
+- CI b9d948f: https://github.com/Mizaring467/Tradedraw/actions/runs/42996460043 — success.
+- Modelo 2311DRK48G, Android 36, serial ADB emulator-5554. APK local e instalada: SHA-256 0b4338bb561fe1aa36046b5cb24e4146218412c014b5708f6963d818ed68b185; /status gitSha=b9d948f.
+- Sonda probe-r29b1111: apertura a 100, reinicio antes de expirar, SHADOW apagado al volver, tick elegible 101, WIN, saldo 1008.2, outbox 0. Tick repetido y segundo reinicio: siguen 1 liquidación y saldo 1008.2. /shadow_journal devuelve cabecera v2 y una fila con ambos IDs.
+- DEMO: mínimo medido mediante validación del broker, Col$4.000. /trade BUY requestId=r29b-demo-1111-once en segundo 01; GESTURE 148ms; ENVIADA→CONFIRMADA→NINGUNA. decisionId=8c0b0e22-ea98-4b32-ba7c-838632217425.
+- Journal productivo confirma WIN por saldo acreditado en 66s, entrada 36,786,736.64 COP, salida 36,790,056.96 COP, diferencia +3320.32 COP. Riesgo 1 WIN / 0 LOSS, sin pendientes; reserva CLEAR. Estrategias intactas. Modo final DISABLED.
+- Reinicios requieren reactivar solo el componente de accesibilidad de TradeDraw en este dispositivo; se preservaron los otros servicios. Feed fresco y saldo disponibles tras volver a Binomo.
+
+## Pendientes reales
+
+T-5.2 a T-5.4 y F6 siguen pendientes; extracción incremental en curso. No se declara R29-B cerrada. La reconciliación manual requiere evidencia aportada por el operador: su procedencia es explícita, no verificación automática del historial remoto.

@@ -25,3 +25,6 @@ dependencyResolutionManagement {
 rootProject.name = "TradeDraw"
 include(":core")
 include(":app")
+
+include(":simulation", ":persistence")
+include(":market")

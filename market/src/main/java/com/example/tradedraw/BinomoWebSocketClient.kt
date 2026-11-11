@@ -4,7 +4,11 @@ import android.content.Context
 import com.example.tradedraw.core.CredentialProvider
 import com.example.tradedraw.core.CredentialSink
 import com.example.tradedraw.core.EventSink
-import com.example.tradedraw.core.SharedPreferencesCredentialStore
+import com.example.tradedraw.persistence.SharedPreferencesCredentialStore
+import com.example.tradedraw.core.MarketTick
+import com.example.tradedraw.core.MarketTickFilters
+import com.example.tradedraw.core.WebSocketState
+import com.example.tradedraw.core.NoOpEventSink
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -24,7 +28,7 @@ class BinomoWebSocketClient(
     private val credStore: SharedPreferencesCredentialStore = SharedPreferencesCredentialStore.fromContext(context),
     val credentialProvider: CredentialProvider = credStore,
     val credentialSink: CredentialSink = credStore,
-    val eventSink: EventSink = RingBufferEventSink()
+    val eventSink: EventSink = NoOpEventSink()
 ) {
 
     private val TAG = "BinomoWebSocketClient"
@@ -98,7 +102,7 @@ class BinomoWebSocketClient(
             // Ronda 15 / B2: avisar al motor para que limpie el estado POR ACTIVO que no vive en
             // este cliente. Antes solo la via de accesibilidad disparaba `onAssetChanged`, asi que
             // un cambio por `/asset` dejaba la referencia de inoperabilidad del activo anterior.
-            onAssetChangedListener?.invoke() ?: OverlayService.instance?.tradingEngine?.onAssetChanged()
+            onAssetChangedListener?.invoke()
         }
     }
 
@@ -348,7 +352,7 @@ class BinomoWebSocketClient(
         recentTicks.clear()
         webSocket?.let { subscribeToAsset(it, sano) }
         eventSink.add(
-            TradeEventLog.Kind.FEED_SIN_TICKS,
+            "FEED_SIN_TICKS",
             "activo=$actual segundos=$segundosLegibles recuperado=$sano"
         )
     }

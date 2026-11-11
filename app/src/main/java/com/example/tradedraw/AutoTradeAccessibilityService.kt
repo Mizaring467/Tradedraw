@@ -797,11 +797,12 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                         Regex("(\\d{1,3}\\s*%)").find(text)?.value
                     )?.let { pct ->
                         val actual = observedPayout
+                        val buttonRatio = actual.fromButtonRatio
                         observedPayout = PayoutReader.reconcile(pct, actual.fromButtonRatio)
                         // R13/A3: si el metodo 1 acaba funcionando, el cruce con el metodo 2 pasa
                         // a ser informativo de verdad. Se registra para que `/events` lo muestre.
-                        if (actual.fromButtonRatio != null &&
-                            Math.abs(pct - actual.fromButtonRatio) > PayoutReader.TOLERANCIA
+                        if (buttonRatio != null &&
+                            Math.abs(pct - buttonRatio) > PayoutReader.TOLERANCIA
                         ) {
                             eventSink.add(
                                 TradeEventLog.Kind.PAYOUT_DISCREPANTE,

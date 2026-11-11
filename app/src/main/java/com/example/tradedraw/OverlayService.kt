@@ -337,7 +337,7 @@ class OverlayService : Service(), com.example.tradedraw.core.HudPort {
         httpBridge = TradeDrawHttpBridge(this, 8080).apply { start() }
 
         // Iniciar Cliente WebSocket nativo para recepción de micro-ticks
-        val wsClient = BinomoWebSocketClient(this)
+        val wsClient = BinomoWebSocketClient(this, eventSink = RingBufferEventSink())
         binomoWebSocketClient = wsClient
         wsClient.onAssetChangedListener = { tradingEngine.onAssetChanged() }
         wsClient.onTickListener = { tick ->

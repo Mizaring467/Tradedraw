@@ -1,5 +1,7 @@
 package com.example.tradedraw
 
+import com.example.tradedraw.core.AssetRicMapper
+
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

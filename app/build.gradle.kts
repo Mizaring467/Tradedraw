@@ -66,6 +66,9 @@ android {
 
 dependencies {
     api(project(":core"))
+    implementation(project(":simulation"))
+    implementation(project(":persistence"))
+    implementation(project(":market"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
