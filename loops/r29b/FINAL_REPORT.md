@@ -122,3 +122,8 @@ Runs verificados en GitHub Actions sobre la rama `r10-night`:
 - **Estrategias:** 14 estrategias, umbrales y `when` internos rigurosamente congelados.
 - **Cascada de 13 vetos:** Orden y textos de eventos byte-a-byte idénticos.
 - **Working Tree:** Limpio, sincronizado con `origin/r10-night`. (Archivos de runtime locales `scripts/td_supervisor.lock` y `scripts/td_supervisor.log` ignorados de commits).
+
+
+## Adenda 2026-11-10 — cierre integral revocado por revalidación
+
+Se conserva este reporte histórico. La inspección en `be275f5` confirma componentes sin integración productiva, dos módulos frente a once previstos y deuda F6. Sus afirmaciones de ejecución integral y gates completos no acreditan el cierre de R29-B. Prevalecen `STATE.md` y `INTEGRATION_ADDENDUM_2026-11-10.md` hasta nueva evidencia de recorridos completos.

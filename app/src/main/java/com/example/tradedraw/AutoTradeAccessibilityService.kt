@@ -36,6 +36,10 @@ class AutoTradeAccessibilityService : AccessibilityService() {
 
         /** Promueve [service] como instancia activa (onServiceConnected / onRebind). */
         internal fun attach(service: AutoTradeAccessibilityService) {
+            if (activeRef.current !== service) {
+                demoAccountGuard.reset()
+                isDemoAccount = false
+            }
             activeRef.promote(service)
         }
 
@@ -45,8 +49,14 @@ class AutoTradeAccessibilityService : AccessibilityService() {
          * @return `true` si esta llamada liberó la referencia; `false` si ya había otra instancia
          *   activa (caso de un `onDestroy` tardío) y por tanto no se tocó nada.
          */
-        internal fun detach(service: AutoTradeAccessibilityService): Boolean =
-            activeRef.release(service)
+        internal fun detach(service: AutoTradeAccessibilityService): Boolean {
+            val released = activeRef.release(service)
+            if (released) {
+                demoAccountGuard.reset()
+                isDemoAccount = false
+            }
+            return released
+        }
 
         var onGestureClickListener: ((Float, Float) -> Unit)? = null
 
@@ -62,7 +72,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             internal set
 
         @Volatile
-        var isDemoAccount: Boolean = true
+        var isDemoAccount: Boolean = false
             internal set
 
         /**
@@ -75,7 +85,27 @@ class AutoTradeAccessibilityService : AccessibilityService() {
          * Se usa en las DOS puertas de despacho (`performClick` y `performClickAt`) y en
          * `executeRootTap`, que es la primitiva que realmente teclea `input tap`.
          */
+        val demoAccountGuard = com.example.tradedraw.core.StandardDemoAccountGuard(maxAgeMs = 10_000L)
+
+        private fun isRawOrderTouch(x: Float, y: Float): Boolean {
+            val service = instance ?: return true
+            val (width, height) = CalibrationManager.getRealScreenDimensions(service)
+            return com.example.tradedraw.core.OrderTouchPolicy.isOrderRegion(x, y, width.toInt(), height.toInt())
+        }
+
         fun puedeDespacharTap(esDemo: Boolean): Boolean = esDemo
+
+        private fun isAccountDispatchAllowed(): Boolean {
+            val service = instance ?: return false
+            return try {
+                service.readCurrentBalance()
+                demoAccountGuard.isDispatchAllowed()
+            } catch (_: Exception) {
+                demoAccountGuard.reset()
+                isDemoAccount = false
+                false
+            }
+        }
 
         @Volatile
         var observedOrderAmount: Double = 0.0
@@ -190,18 +220,8 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             tradeId: String?,
             onResult: ((Boolean, String?) -> Unit)? = null
         ) {
-            // R23A Iter 1: BLOQUEO CRITICO DE SEGURIDAD (fail-closed). Ningun tap puede salir si la
-            // cuenta observada no es DEMO. Va ANTES de hasRootAccess()/executeRootTap para que no se
-            // despache nada: el tap es la accion irreversible (coloca la orden en el broker).
-            if (!puedeDespacharTap(isDemoAccount)) {
-                Log.e("TradeDraw", "⛔ BLOQUEO DE SEGURIDAD: intento de click fuera de cuenta DEMO.")
-                eventSink.add(
-                    TradeEventLog.Kind.VETO,
-                    "SEGURIDAD_CLICK_NO_DEMO",
-                    decisionId = decisionId,
-                    tradeId = tradeId
-                )
-                onResult?.invoke(false, "BLOQUEO_SEGURIDAD_NO_DEMO")
+            if (isRawOrderTouch(x, y)) {
+                onResult?.invoke(false, "ORDER_REQUIRES_GATEWAY")
                 return
             }
             // Ronda 3: en este dispositivo (root) Binomo FILTRA los eventos sintéticos de
@@ -226,12 +246,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             val inst = instance
             if (inst != null) {
                 inst.performClickAt(x, y) { success, err ->
-                    if (!success) {
-                        Log.w("TradeDraw", "⚠️ Click por accesibilidad falló ($err). Probando fallback ROOT...")
-                        executeRootTap(x, y, decisionId, tradeId, onResult)
-                    } else {
-                        onResult?.invoke(true, null)
-                    }
+                    onResult?.invoke(success, err)
                 }
             } else {
                 Log.w("TradeDraw", "⚠️ AutoTradeAccessibilityService inactivo. Ejecutando tap con fallback ROOT...")
@@ -264,9 +279,13 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             rootAccessKnown?.let { return it }
             val result = try {
                 val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
-                val out = p.inputStream.bufferedReader().readText() + p.errorStream.bufferedReader().readText()
-                p.waitFor()
-                out.contains("uid=0")
+                if (!p.waitFor(1, java.util.concurrent.TimeUnit.SECONDS)) {
+                    p.destroy()
+                    false
+                } else {
+                    val out = p.inputStream.bufferedReader().readText() + p.errorStream.bufferedReader().readText()
+                    out.contains("uid=0")
+                }
             } catch (e: Exception) {
                 false
             }
@@ -279,7 +298,8 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             x: Float,
             y: Float,
             onResult: ((Boolean, String?) -> Unit)? = null,
-            bypassHud: Boolean = false
+            bypassHud: Boolean = false,
+            orderAuthorized: Boolean = false
         ) {
             executeRootTap(x, y, decisionId = null, tradeId = null, onResult = onResult, bypassHud = bypassHud)
         }
@@ -290,12 +310,13 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             decisionId: String?,
             tradeId: String?,
             onResult: ((Boolean, String?) -> Unit)? = null,
-            bypassHud: Boolean = false
+            bypassHud: Boolean = false,
+            orderAuthorized: Boolean = false
         ) {
             // R23A Iter 1: TERCERA puerta de seguridad. `executeRootTap` es la primitiva que escribe
             // `input tap` de verdad y se puede invocar directamente (fallbacks de accesibilidad,
             // auto-heal). Sin este guard, un fallback podria saltarse los otros dos bloqueos.
-            if (!puedeDespacharTap(isDemoAccount)) {
+            if ((orderAuthorized && !isAccountDispatchAllowed()) || (!orderAuthorized && isRawOrderTouch(x, y))) {
                 Log.e("TradeDraw", "⛔ BLOQUEO DE SEGURIDAD: root tap bloqueado fuera de cuenta DEMO.")
                 eventSink.add(
                     TradeEventLog.Kind.VETO,
@@ -316,8 +337,17 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                     tradeId = tradeId
                 )
                 try {
+                    if (orderAuthorized && !isAccountDispatchAllowed()) {
+                        onResult?.invoke(false, "ACCOUNT_CHANGED_BEFORE_DISPATCH")
+                        return@Thread
+                    }
                     val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "input tap ${x.toInt()} ${y.toInt()}"))
-                    val exit = p.waitFor()
+                    if (!p.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                        p.destroy()
+                        onResult?.invoke(false, "ROOT_TIMEOUT_RECONCILIATION_REQUIRED")
+                        return@Thread
+                    }
+                    val exit = p.exitValue()
                     val duracionMs = System.currentTimeMillis() - inicioMs
                     // R14/A2: instante y segundo de vela AL TERMINAR el tap. Es el dato que faltaba:
                     // el journal guardaba el segundo de la decision, no el de la ejecucion.
@@ -469,6 +499,8 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         if (now - lastBalanceScanTime >= 5000L) {
             lastBalanceScanTime = now
             try {
+                val activeRoot = rootInActiveWindow
+                if (activeRoot != null) observeAccount(activeRoot)
                 val sourceNode = event.source
                 val bal = if (sourceNode != null) findBalanceInNode(sourceNode) else null
                 val finalBal = bal ?: readCurrentBalance()
@@ -521,16 +553,28 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         y: Float,
         onResult: ((Boolean, String?) -> Unit)? = null
     ) {
-        // R23A Iter 1: mismo bloqueo que en `performClick`. Sin esto el guard tendria un BYPASE
-        // trivial: `/trade` (endpoint HTTP) y los botones CALL/PUT del HUD llaman a `performClickAt`
-        // directamente, sin pasar por `performClick`. Un guard que solo cubre una de las dos puertas
-        // de dispatch no es un guard.
-        if (!puedeDespacharTap(isDemoAccount)) {
-            Log.e("TradeDraw", "⛔ BLOQUEO DE SEGURIDAD: click por accesibilidad fuera de cuenta DEMO.")
-            eventSink.add(TradeEventLog.Kind.VETO, "SEGURIDAD_CLICK_NO_DEMO")
+        if (isRawOrderTouch(x, y)) {
+            onResult?.invoke(false, "ORDER_REQUIRES_GATEWAY")
+            return
+        }
+        dispatchClickWithHud(x, y, onResult)
+    }
+
+    internal fun performOrderClickAt(x: Float, y: Float, onResult: ((Boolean, String?) -> Unit)?) {
+        if (!isAccountDispatchAllowed()) {
             onResult?.invoke(false, "BLOQUEO_SEGURIDAD_NO_DEMO")
             return
         }
+        val overlay = OverlayService.instance
+        val send = {
+            if (isAccountDispatchAllowed()) dispatchClickGesture(x, y, onResult)
+            else onResult?.invoke(false, "ACCOUNT_CHANGED_BEFORE_DISPATCH")
+        }
+        if (overlay != null && overlay.isPointInsideHUD(x, y)) overlay.temporarilyBypassHUD(250L) { send() }
+        else send()
+    }
+
+    private fun dispatchClickWithHud(x: Float, y: Float, onResult: ((Boolean, String?) -> Unit)?) {
         val overlay = OverlayService.instance
         if (overlay != null && overlay.isPointInsideHUD(x, y)) {
             overlay.temporarilyBypassHUD(250L) {
@@ -607,6 +651,11 @@ class AutoTradeAccessibilityService : AccessibilityService() {
      * Simula un gesto de arrastre o swipe entre dos puntos.
      */
     fun performSwipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long = 300L) {
+        val (width, height) = CalibrationManager.getRealScreenDimensions(this)
+        if (com.example.tradedraw.core.OrderTouchPolicy.crossesOrderRegion(x1, y1, x2, y2, width.toInt(), height.toInt())) {
+            eventSink.add(TradeEventLog.Kind.VETO, "ORDER_GESTURE_REQUIRES_GATEWAY")
+            return
+        }
         val path = Path().apply {
             moveTo(x1, y1)
             lineTo(x2, y2)
@@ -633,7 +682,11 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     fun readCurrentBalance(): Double? {
         val root = try { rootInActiveWindow } catch (e: Exception) { null }
         if (root != null) {
+            observeAccount(root)
             scanScreenContext(root)
+        } else {
+            demoAccountGuard.reset()
+            isDemoAccount = false
         }
         val found = if (root != null) findBalanceInNode(root) else null
         if (found != null && found > 0.0) {
@@ -648,6 +701,33 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             return found
         }
         return if (latestObservedBalance > 0.0) latestObservedBalance else null
+    }
+
+    /** Positive evidence from the complete active broker tree; ambiguity fails closed. */
+    private fun observeAccount(root: android.view.accessibility.AccessibilityNodeInfo) {
+        val brokerPackage = root.packageName?.toString().orEmpty()
+        if (!brokerPackage.contains("marketly.trading") && !brokerPackage.contains("binomo")) {
+            demoAccountGuard.reset()
+            isDemoAccount = false
+            return
+        }
+        var demo = false
+        var real = false
+        fun scan(node: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (node == null) return
+            val text = (node.text?.toString().orEmpty() + " " + node.contentDescription?.toString().orEmpty()).lowercase().trim()
+            demo = demo || text.contains("cuenta demo") || text == "demo"
+            real = real || text.contains("cuenta real") || text == "real"
+            for (i in 0 until node.childCount) scan(node.getChild(i))
+        }
+        scan(root)
+        val type = when {
+            real -> com.example.tradedraw.core.AccountType.REAL
+            demo -> com.example.tradedraw.core.AccountType.DEMO
+            else -> com.example.tradedraw.core.AccountType.UNKNOWN
+        }
+        demoAccountGuard.recordAccountObservation(type)
+        isDemoAccount = type == com.example.tradedraw.core.AccountType.DEMO
     }
 
     private fun scanScreenContext(root: android.view.accessibility.AccessibilityNodeInfo?) {
@@ -696,11 +776,6 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         val text = node.text?.toString() ?: ""
         if (text.isNotBlank()) {
             val lower = text.lowercase()
-            if (lower.contains("cuenta real") || lower == "real") {
-                isDemoAccount = false
-            } else if (lower.contains("cuenta demo") || lower == "demo") {
-                isDemoAccount = true
-            }
 
             val assetCandidate = extractAssetCandidate(text)
             if (assetCandidate != null) {
@@ -836,11 +911,6 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         val text = node.text?.toString() ?: ""
         if (text.isNotBlank()) {
             val lower = text.lowercase()
-            if (lower.contains("cuenta real") || lower == "real") {
-                isDemoAccount = false
-            } else if (lower.contains("cuenta demo") || lower == "demo") {
-                isDemoAccount = true
-            }
             if (!lower.contains("m0") && !lower.contains("m1") && !lower.contains("m2") && !lower.contains("strat") && !lower.contains("auto") && !lower.contains("crypto") && !lower.contains("idx")) {
                 val parsed = parseBalanceString(text)
                 if (parsed != null && parsed > 0.0) return parsed

@@ -28,12 +28,14 @@ class StandardDemoAccountGuard(
     @Volatile
     var ownerRealAccountAuthorized: Boolean = false
 
+    @Synchronized
     override fun isDemoConfirmedFresh(maxAgeMs: Long): Boolean {
         val now = clock()
         val age = now - lastObservedTs
         return observedType == AccountType.DEMO && age in 0..maxAgeMs
     }
 
+    @Synchronized
     override fun recordAccountObservation(accountType: AccountType, timestampMs: Long) {
         observedType = accountType
         lastObservedTs = timestampMs
@@ -41,6 +43,7 @@ class StandardDemoAccountGuard(
 
     override fun getAccountType(): AccountType = observedType
 
+    @Synchronized
     override fun isDispatchAllowed(): Boolean {
         if (observedType == AccountType.REAL) {
             return ownerRealAccountAuthorized
@@ -48,6 +51,7 @@ class StandardDemoAccountGuard(
         return isDemoConfirmedFresh(maxAgeMs)
     }
 
+    @Synchronized
     override fun reset() {
         observedType = AccountType.UNKNOWN
         lastObservedTs = 0L
@@ -73,7 +77,8 @@ sealed class OrderReceipt {
 
     data class Failure(
         val reason: String,
-        val transport: String? = null
+        val transport: String? = null,
+        val requiresReconciliation: Boolean = true
     ) : OrderReceipt()
 
     data class Vetoed(

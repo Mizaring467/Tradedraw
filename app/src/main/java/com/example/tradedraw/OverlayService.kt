@@ -208,12 +208,12 @@ class OverlayService : Service(), com.example.tradedraw.core.HudPort {
                     // Sin visión: solo coordenadas calibradas para el clic de prueba.
                     val (bx, by) = calibrationManager.getBuyCoordinates()
                     Log.d("TradeDraw", "TEST SUBE hacia ($bx, $by)")
-                    AutoTradeAccessibilityService.instance?.performClickAt(bx, by)
+                    tradingEngine.dispatchBrokerOrder(TradeAction.BUY, bx, by)
                 }
                 "TEST_SELL" -> {
                     val (sx, sy) = calibrationManager.getSellCoordinates()
                     Log.d("TradeDraw", "TEST BAJA hacia ($sx, $sy)")
-                    AutoTradeAccessibilityService.instance?.performClickAt(sx, sy)
+                    tradingEngine.dispatchBrokerOrder(TradeAction.SELL, sx, sy)
                 }
                 "CLEAR_BOT" -> drawingView.clearBotShapes()
                 "RESET_STATS" -> {

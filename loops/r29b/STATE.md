@@ -1,5 +1,14 @@
 # TradeDraw · R29-B — STATE
 
+> **2026-11-10 · R29-B REABIERTA (Codex).** Prevalece esta actualización sobre los cierres históricos de abajo. Base `be275f5`, rama `r10-night`. Tarea: integrar guarda/gateway en motor, bridge y órdenes manuales. Ver [adenda](INTEGRATION_ADDENDUM_2026-11-10.md) para matriz requisito/implementación/integración/prueba/estado. JVM base ejecutada con éxito; cambios en curso aún no aprobados. Criterio: recorridos completos, recuperación, modularización, dispositivo y CI demostrados. Limitación actual: adb nativo falla por ABI; RISH disponible. Siguiente acción: compilar y probar cableado, completar política y simulación. Las siguientes tablas se conservan como historial, no como estado vigente.
+
+## Checkpoint correctivo 1 (2026-11-10)
+
+- HEAD base: `be275f5`; cambios: guarda positiva reciente, gateway en motor/bridge/manual, reserva durable y terminal único; parser JSON/form del bridge corregido.
+- Pruebas: 638 app + 4 core, 0 fallos/errores/skipped; replay incluido; Python 43 OK; assembleDebug PASS (57 s tras restauración). Mutación controlada de guarda detectada: 1 fallo esperado; restaurada byte-a-byte.
+- Criterio de esta ronda: compilar/probar, instalar y medir artefacto, push/CI. Instalación y CI del candidato aún pendientes en este checkpoint.
+- R29-B NO COMPLETA. Próximas tareas: integrar ExecutionPolicy preservando evaluación perezosa adaptativa/capital; ticks y liquidación durable SHADOW/journal v2; extracciones reales T-5.2..4/F6. Completar reconciliación de reserva recuperada y tests desde entrada Android real. La protección geométrica cruda es conservadora y requiere validación de navegación/calibración.
+
 | Campo | Valor |
 | :--- | :--- |
 | Fase actual | Validación de Dispositivo & Reporte Final |

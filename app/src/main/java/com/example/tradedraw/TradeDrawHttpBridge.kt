@@ -118,13 +118,11 @@ class TradeDrawHttpBridge(
                         readTotal += r
                     }
                     val bodyStr = String(bodyChars, 0, readTotal)
-                    for (pair in bodyStr.split("&")) {
-                        val kv = pair.split("=", limit = 2)
-                        if (kv.isNotEmpty()) {
-                            val key = URLDecoder.decode(kv[0], "UTF-8")
-                            val value = if (kv.size > 1) URLDecoder.decode(kv[1], "UTF-8") else ""
-                            params[key] = value
-                        }
+                    try {
+                        params.putAll(parseBridgeBody(bodyStr))
+                    } catch (_: Exception) {
+                        sendJsonResponse(output, 400, """{"success":false,"error":"INVALID_BODY"}""")
+                        return@handleClient
                     }
                 }
 
@@ -141,6 +139,11 @@ class TradeDrawHttpBridge(
                     }
                     "/trade" -> {
                         val actionStr = params["action"]?.uppercase() ?: "BUY"
+                        if (actionStr !in setOf("BUY", "CALL", "SELL", "PUT") ||
+                            params["requestId"]?.let { it.isBlank() || it.length > 128 } == true) {
+                            sendJsonResponse(output, 400, """{"success":false,"error":"INVALID_ORDER_REQUEST"}""")
+                            return@handleClient
+                        }
                         val action = if (actionStr == "SELL" || actionStr == "PUT") TradeAction.SELL else TradeAction.BUY
                         val currentMode = overlayService.tradingEngine.mode
 
@@ -159,18 +162,31 @@ class TradeDrawHttpBridge(
                             return@handleClient
                         }
 
-                        val access = AutoTradeAccessibilityService.instance
-                        if (access != null) {
-                            val cal = overlayService.tradingEngine.calibrationManager
-                            val (x, y) = if (action == TradeAction.BUY) {
-                                cal?.getBuyCoordinates() ?: Pair(200f, 600f)
-                            } else {
-                                cal?.getSellCoordinates() ?: Pair(600f, 600f)
-                            }
-                            access.performClickAt(x, y)
-                            sendJsonResponse(output, 200, """{"success":true,"action":"$action","targetX":$x,"targetY":$y,"mode":"$currentMode"}""")
+                        val engine = overlayService.tradingEngine
+                        val cal = engine.calibrationManager
+                        if (cal == null || !cal.isCalibrated()) {
+                            sendJsonResponse(output, 409, """{"success":false,"error":"CALIBRATION_REQUIRED"}""")
                         } else {
-                            sendJsonResponse(output, 503, """{"success":false,"error":"Servicio de Accesibilidad inactivo"}""")
+                            val (x, y) = if (action == TradeAction.BUY) cal.getBuyCoordinates() else cal.getSellCoordinates()
+                            val done = java.util.concurrent.CountDownLatch(1)
+                            val result = java.util.concurrent.atomic.AtomicReference<com.example.tradedraw.core.OrderReceipt>()
+                            val requestId = params["requestId"]?.takeIf { it.isNotBlank() && it.length <= 128 }
+                                ?: java.util.UUID.randomUUID().toString()
+                            engine.dispatchBrokerOrder(action, x, y, tradeId = requestId, reason = "BRIDGE_TRADE") {
+                                result.set(it)
+                                done.countDown()
+                            }
+                            if (!done.await(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                                sendJsonResponse(output, 202, org.json.JSONObject().put("success", false).put("pending", true)
+                                    .put("requestId", requestId).put("error", "DISPATCH_PENDING_RECONCILIATION").toString())
+                            } else {
+                                val receipt = result.get()
+                                val ok = receipt is com.example.tradedraw.core.OrderReceipt.Success
+                                val status = if (ok) 200 else if (receipt is com.example.tradedraw.core.OrderReceipt.Vetoed) 403 else 503
+                                sendJsonResponse(output, status, org.json.JSONObject().put("success", ok)
+                                    .put("action", action.name).put("mode", currentMode.name)
+                                    .put("requestId", requestId).put("receipt", receipt.toString()).toString())
+                            }
                         }
                     }
                     "/strategy" -> {
@@ -431,10 +447,16 @@ class TradeDrawHttpBridge(
                         if (x == null || y == null) {
                             sendJsonResponse(output, 400, """{"success":false,"error":"Parámetros 'x' e 'y' requeridos"}""")
                         } else {
-                            AutoTradeAccessibilityService.performClick(x, y) { success, err ->
-                                Log.d("TradeDrawHttp", "Click en ($x, $y): success=$success err=$err")
+                            val done = java.util.concurrent.CountDownLatch(1)
+                            var success = false
+                            var error: String? = null
+                            AutoTradeAccessibilityService.performClick(x, y) { ok, err ->
+                                success = ok; error = err; done.countDown()
                             }
-                            sendJsonResponse(output, 200, """{"success":true,"x":$x,"y":$y}""")
+                            val completed = done.await(2, java.util.concurrent.TimeUnit.SECONDS)
+                            sendJsonResponse(output, if (!completed) 202 else if (success) 200 else 403,
+                                org.json.JSONObject().put("success", completed && success)
+                                    .put("pending", !completed).put("error", error ?: "").toString())
                         }
                     }
                     "/swipe" -> {
@@ -1028,4 +1050,16 @@ internal fun buildTicksCsv(ticks: List<TickRingBuffer.Entry>): String {
     val sb = StringBuilder("ts,ric,price\n")
     for (t in ticks) sb.append(t.ts).append(',').append(t.ric).append(',').append(t.price).append('\n')
     return sb.toString()
+}
+
+/** The bridge accepts JSON and historical form bodies; neither may silently change SELL to BUY. */
+internal fun parseBridgeBody(body: String): Map<String, String> {
+    if (body.trimStart().startsWith("{")) {
+        val json = org.json.JSONObject(body)
+        return json.keys().asSequence().associateWith { json.get(it).toString() }
+    }
+    return body.split("&").filter { it.isNotEmpty() }.associate { pair ->
+        val parts = pair.split("=", limit = 2)
+        URLDecoder.decode(parts[0], "UTF-8") to URLDecoder.decode(parts.getOrElse(1) { "" }, "UTF-8")
+    }
 }

@@ -26,6 +26,9 @@ import com.example.tradedraw.core.DecisionIds
 import com.example.tradedraw.core.EventSink
 import com.example.tradedraw.core.MarketTick
 import com.example.tradedraw.core.TapCoordinateResolver
+import com.example.tradedraw.core.OrderGateway
+import com.example.tradedraw.core.OrderRequest
+import com.example.tradedraw.core.OrderReceipt
 import com.example.tradedraw.core.TradeAction
 import com.example.tradedraw.execution.CandleRateLimiter
 import com.example.tradedraw.execution.ExecutionPolicy
@@ -39,7 +42,10 @@ class TradingEngine(
     val eventSink: EventSink = RingBufferEventSink(),
     val capitalPolicy: CapitalPolicy = riskManager,
     var tapCoordinateResolver: TapCoordinateResolver = CalibrationTapCoordinateResolver { calibrationManager },
-    val candleRateLimiter: CandleRateLimiter = CandleRateLimiter()
+    val candleRateLimiter: CandleRateLimiter = CandleRateLimiter(),
+    val orderGateway: OrderGateway = com.example.tradedraw.core.SingleFlightOrderGateway(
+        DefaultOrderGateway(demoAccountGuard = AutoTradeAccessibilityService.demoAccountGuard),
+        PersistentPendingDispatchStore(context))
 ) {
     var executionPolicyEnabled: Boolean = false
     val executionPolicy: ExecutionPolicy = ExecutionPolicy()
@@ -1999,30 +2005,8 @@ class TradingEngine(
 
         android.util.Log.d("TradingEngine", "executeAutonomousTrade: $action hacia ($x, $y) [Vision:${visionCoords != null}] Motivo: $reasonDescription")
 
-        val accessibility = AutoTradeAccessibilityService.instance
-        val observed = accessibility?.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
-        val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
-        isTradeResolving.set(false)
-        // Ronda 11 (T3): el strike se registra en dominio de PRECIO. `analysis.currentPriceY` era
-        // una Y de visión (0 en headless): guardarla como entryPrice dejaba la liquidación sin
-        // referencia real.
-        riskManager.recordTradeSent(action, latestMarketTick?.price ?: 0.0, 0f, baseBal, confidence, analysis.candleSecond, reasonDescription)
-        // Despacho táctil único con verificación y fallback ROOT transparente
-        AutoTradeAccessibilityService.performClick(x, y) { success, error ->
-            if (!success) {
-                triggerManualFallback(action, error ?: "Auto-clic falló en 300ms")
-            } else {
-                // R14/A2: el tap ya termino: se completa la instrumentacion de latencia con sus
-                // instantes REALES. Se hace en el callback (no antes) porque `executeRootTap`
-                // corre en su propio hilo y hasta que no vuelve no se sabe cuando acabo.
-                riskManager.captureTapLatency(
-                    tapStartTs = AutoTradeAccessibilityService.lastTapStartTs,
-                    tapEndTs = AutoTradeAccessibilityService.lastTapEndTs,
-                    candleSecondAtTapEnd = AutoTradeAccessibilityService.lastTapCandleSecond,
-                    priceAtTapEnd = latestMarketTick?.price ?: 0.0
-                )
-            }
-        }
+        dispatchBrokerOrder(action, x, y, confidence = confidence, reason = reasonDescription) { receipt ->
+            if (receipt !is OrderReceipt.Success) return@dispatchBrokerOrder
 
         handler.post {
             drawingView.triggerClickAnimation(x, y)
@@ -2039,6 +2023,57 @@ class TradingEngine(
             saveAuditScreenshot(bitmap, action)
             val stake = riskManager.getEffectiveStake(autonomousSubMode)
             Toast.makeText(context, "🤖 BOT OPERÓ: $action ($$$stake)\n$reasonDescription", Toast.LENGTH_LONG).show()
+        }
+        }
+    }
+
+    /** Shared entry for engine, bridge and manual CALL/PUT. Gesture completion is not broker confirmation. */
+    fun dispatchBrokerOrder(
+        action: TradeAction,
+        x: Float,
+        y: Float,
+        decisionId: String = java.util.UUID.randomUUID().toString(),
+        tradeId: String = java.util.UUID.randomUUID().toString(),
+        confidence: Float = 0.85f,
+        reason: String = "MANUAL_ORDER",
+        onResult: (OrderReceipt) -> Unit = {}
+    ) {
+        handler.post {
+            val balance = AutoTradeAccessibilityService.instance?.readCurrentBalance() ?: 0.0
+            val coordinator = orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
+            if (riskManager.hasPendingTrade || coordinator?.pendingRequestId() != null || coordinator?.wasDispatched(tradeId) == true) {
+                onResult(OrderReceipt.Vetoed("ORDER_PENDING_RECONCILIATION"))
+                return@post
+            }
+            // Reserve risk only for an allowed account/mode; the gateway rechecks at dispatch.
+            if (mode == AutoTradeMode.DISABLED || mode == AutoTradeMode.SHADOW ||
+                !AutoTradeAccessibilityService.demoAccountGuard.isDispatchAllowed()) {
+                orderGateway.dispatch(OrderRequest(action, x, y, decisionId, tradeId, mode = mode), onResult)
+                return@post
+            }
+            isTradeResolving.set(false)
+            riskManager.recordTradeSent(action, latestMarketTick?.price ?: 0.0, 0f, balance,
+                confidence, ((System.currentTimeMillis() / 1000L) % 60).toInt(), reason, decisionId, tradeId)
+            val terminal = java.util.concurrent.atomic.AtomicBoolean(false)
+            orderGateway.dispatch(OrderRequest(action, x, y, decisionId, tradeId, mode = mode)) { receipt ->
+                if (terminal.compareAndSet(false, true)) {
+                    handler.post {
+                        when (receipt) {
+                            is OrderReceipt.Vetoed -> riskManager.clearPendingTrade()
+                            is OrderReceipt.Failure -> {
+                                if (!receipt.requiresReconciliation) riskManager.markOrderUnprocessed(tapDespachado = false)
+                                // Uncertain delivery remains pending; never ask for a second manual tap.
+                            }
+                            is OrderReceipt.Success -> {
+                                val endTs = System.currentTimeMillis()
+                                riskManager.captureTapLatency(endTs - receipt.latencyMs, endTs,
+                                    receipt.candleSecond, latestMarketTick?.price ?: 0.0)
+                            }
+                        }
+                        onResult(receipt)
+                    }
+                }
+            }
         }
     }
 
@@ -2097,11 +2132,11 @@ class TradingEngine(
         val (sellX, sellY) = calibration?.getSellCoordinates() ?: Pair(600f, 600f)
 
         Toast.makeText(context, "👉 Probando clic en SUBE...", Toast.LENGTH_SHORT).show()
-        accessibility.performClickAt(buyX, buyY)
+        dispatchBrokerOrder(TradeAction.BUY, buyX, buyY)
 
         handler.postDelayed({
             Toast.makeText(context, "👉 Probando clic en BAJA...", Toast.LENGTH_SHORT).show()
-            accessibility.performClickAt(sellX, sellY)
+            dispatchBrokerOrder(TradeAction.SELL, sellX, sellY)
         }, 1200)
     }
 
@@ -2178,6 +2213,7 @@ class TradingEngine(
         //     seguridad que apaga el motor a DISABLED convertiria un fallo de LECTURA en un apagon.
         // La seguridad de "no operar en real" la da `isDemoAccount`, que es el dato del que depende
         // toda la distincion demo/real y que ya no puede mentir por diseño fail-closed.
+        if (mode == AutoTradeMode.AUTONOMOUS) AutoTradeAccessibilityService.instance?.readCurrentBalance()
         if (mode == AutoTradeMode.AUTONOMOUS && !puedeOperarAutonomoEnDemo(AutoTradeAccessibilityService.isDemoAccount)) {
             Log.e("TradingEngine", "⛔ BLOQUEO CRÍTICO DE SEGURIDAD: Cuenta NO DEMO detectada. Abortando trade autónomo.")
             eventSink.add(
@@ -2506,47 +2542,19 @@ class TradingEngine(
             return
         }
 
-        val accessibility = AutoTradeAccessibilityService.instance
-        val observed = accessibility?.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
-        val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
         val currentTradeId = java.util.UUID.randomUUID().toString()
         // H9: telemetría del segundo REAL de entrada (no el de liquidación del journal). Permite
         // correlacionar el segundo de disparo con el resultado, la métrica que el journal no captura.
         Log.i("TradingEngine", "🎯 ENTRADA despachada | ${finalAction} | segundo=$sec | estrategia=${strategy.name} | decisionId=$currentDecisionId | tradeId=$currentTradeId | $finalReason")
-        isTradeResolving.set(false)
-        riskManager.recordTradeSent(
-            action = finalAction,
-            entryPrice = latestMarketTick?.price ?: 0.0,
-            entryPriceY = 0f,
-            baseBalance = baseBal,
-            confidence = headlessConfidence,
-            entryCandleSecond = sec,
-            reason = finalReason,
-            decisionId = currentDecisionId,
-            tradeId = currentTradeId
-        )
-        synchronized(this) {
-            candleRateLimiter.recordExecution(currentCandleEpochMinute, mode)
-        }
-        adaptiveLearningEngine.recordTradeOpened(
-            action = finalAction,
-            analysis = effectiveAnalysis,
-            tick = latestMarketTick,
-            strategyName = strategy.name
-        )
-        // Despacho táctil único con verificación y fallback ROOT transparente
-        AutoTradeAccessibilityService.performClick(x, y, decisionId = currentDecisionId, tradeId = currentTradeId) { success, error ->
-            if (!success) {
-                triggerManualFallback(finalAction, error ?: "Auto-clic headless falló en 300ms")
-            } else {
-                riskManager.captureTapLatency(
-                    tapStartTs = AutoTradeAccessibilityService.lastTapStartTs,
-                    tapEndTs = AutoTradeAccessibilityService.lastTapEndTs,
-                    candleSecondAtTapEnd = AutoTradeAccessibilityService.lastTapCandleSecond,
-                    priceAtTapEnd = latestMarketTick?.price ?: 0.0
-                )
+        dispatchBrokerOrder(finalAction, x, y, currentDecisionId, currentTradeId,
+            headlessConfidence, finalReason) { receipt ->
+            if (receipt !is OrderReceipt.Success) return@dispatchBrokerOrder
+            synchronized(this) {
+                candleRateLimiter.recordExecution(currentCandleEpochMinute, mode)
             }
-        }
+            adaptiveLearningEngine.recordTradeOpened(
+                action = finalAction, analysis = effectiveAnalysis,
+                tick = latestMarketTick, strategyName = strategy.name)
 
         handler.post {
             drawingView.triggerClickAnimation(x, y)
@@ -2562,6 +2570,7 @@ class TradingEngine(
             val stake = riskManager.getEffectiveStake(autonomousSubMode)
             Toast.makeText(context, "⚡ [${strategy.name}] BOT OPERÓ: $finalAction ($$$stake)\n$finalReason", Toast.LENGTH_LONG).show()
             onTradeExecutedListener?.invoke(finalAction, true)
+        }
         }
     }
 
@@ -2587,6 +2596,8 @@ class TradingEngine(
 
         if (riskManager.isOrderConfirmed(baseBalance, currentBal, elapsedSec)) {
             riskManager.markOrderConfirmed()
+            (orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway)
+                ?.reconcile(riskManager.pendingTradeTradeId)
             Log.i(
                 "TradingEngine",
                 "✅ ORDEN CONFIRMADA por movimiento de saldo | $action | base=$baseBalance ahora=$currentBal (${elapsedSec}s)"

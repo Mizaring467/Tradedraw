@@ -45,26 +45,22 @@ class DefaultOrderGateway(
             return
         }
 
-        // 3. Cascada de transportes: Root primario -> Gesto fallback -> Root final
-        if (rootTransport.isAvailable()) {
-            rootTransport.dispatch(request, onResult)
-        } else if (gestureTransport.isAvailable()) {
-            gestureTransport.dispatch(request) { receipt ->
-                if (receipt is OrderReceipt.Failure) {
-                    // Fallback a root si gesto falla
-                    if (rootTransport.isAvailable()) {
-                        rootTransport.dispatch(request, onResult)
-                    } else {
-                        onResult(receipt)
-                    }
-                } else {
-                    onResult(receipt)
-                }
+        // Once a transport starts, failure may mean a delivered tap with a lost callback.
+        // Never retry another transport until the broker outcome has been reconciled.
+        val transport = listOf(rootTransport, gestureTransport, bridgeTransport).firstOrNull { it.isAvailable() }
+        if (transport == null) {
+            onResult(OrderReceipt.Failure("No hay transporte de tap disponible", requiresReconciliation = false))
+            return
+        }
+        val terminal = java.util.concurrent.atomic.AtomicBoolean(false)
+        try {
+            transport.dispatch(request) { receipt ->
+                if (terminal.compareAndSet(false, true)) onResult(receipt)
             }
-        } else if (bridgeTransport.isAvailable()) {
-            bridgeTransport.dispatch(request, onResult)
-        } else {
-            onResult(OrderReceipt.Failure("No hay transporte de tap disponible"))
+        } catch (e: Exception) {
+            if (terminal.compareAndSet(false, true)) {
+                onResult(OrderReceipt.Failure(e.message ?: "Transporte interrumpido", transport.name))
+            }
         }
     }
 }
@@ -77,7 +73,7 @@ class RootTapTransport(
     var hudPort: HudPort? = null,
     private val rootCheck: () -> Boolean = { AutoTradeAccessibilityService.hasRootAccess() },
     private val rootTapExecutor: (Float, Float, String?, String?, ((Boolean, String?) -> Unit)?, Boolean) -> Unit = { x, y, did, tid, cb, bypass ->
-        AutoTradeAccessibilityService.executeRootTap(x, y, did, tid, cb, bypass)
+        AutoTradeAccessibilityService.executeRootTap(x, y, did, tid, cb, bypass, orderAuthorized = true)
     }
 ) : TapTransport {
     override val name: String = "ROOT"
@@ -129,7 +125,7 @@ class GestureTapTransport(
             return
         }
         val startTime = System.currentTimeMillis()
-        inst.performClickAt(request.x, request.y) { success, err ->
+        inst.performOrderClickAt(request.x, request.y) { success, err ->
             val latency = System.currentTimeMillis() - startTime
             val candleSec = ((System.currentTimeMillis() / 1000L) % 60L).toInt()
             if (success) {
