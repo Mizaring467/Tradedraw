@@ -2,6 +2,12 @@
 
 > **2026-11-10 · R29-B REABIERTA (Codex).** Prevalece esta actualización sobre los cierres históricos de abajo. Base `be275f5`, rama `r10-night`. Tarea: integrar guarda/gateway en motor, bridge y órdenes manuales. Ver [adenda](INTEGRATION_ADDENDUM_2026-11-10.md) para matriz requisito/implementación/integración/prueba/estado. JVM base ejecutada con éxito; cambios en curso aún no aprobados. Criterio: recorridos completos, recuperación, modularización, dispositivo y CI demostrados. Limitación actual: adb nativo falla por ABI; RISH disponible. Siguiente acción: compilar y probar cableado, completar política y simulación. Las siguientes tablas se conservan como historial, no como estado vigente.
 
+## Ronda correctiva 2 — en curso
+
+HEAD de código validado/instalado: `82afad5` (CI push 42957780132 y PR 42957785838 success). APK SHA256 `31a7d25bff2eae4832db667ffb25be347ee78a54b2d53b3c0a7f3e9721efef2b`, coincidencia instalada verificada. Runtime: /trade DISABLED y SHADOW403, SEMI+cuenta desconocida403, /click zona de órdenes403, acción inválida400; estado restaurado DISABLED. Accesibilidad TradeDraw enlazada; overlay allow. Feed desconectado/saldo ausente, sin prueba positiva DEMO.
+
+Tarea actual: conectar ExecutionPolicy al motor preservando suppliers perezosos y retirar cascada duplicada después del gate. Snapshot histórico exacto en LEGACY_HEADLESS_CASCADE_82afad5.txt. Gate local ronda2: 639 app + 4 core, cero fallos/errores/skips, replay y assembleDebug PASS. Comparación diferencial de 3.000 contextos frente a oráculo congelado y comprobación de orden de suppliers. Instalación/CI de ronda2 pendientes; no se declara validación Android de todos los efectos.
+
 ## Checkpoint correctivo 1 (2026-11-10)
 
 - HEAD base: `be275f5`; cambios: guarda positiva reciente, gateway en motor/bridge/manual, reserva durable y terminal único; parser JSON/form del bridge corregido.

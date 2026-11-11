@@ -69,7 +69,15 @@ class ExecutionPolicy {
      * CARVE-OUT DOCUMENTADO: El sitio :1867 (`handleSignal` en TradingEngine) queda fuera de esta
      * cascada por contención de alcance. Esta política gobierna la cascada formal de ejecución (13 vetos).
      */
-    fun evaluate(ctx: ExecutionContext): ExecutionPolicyResult {
+    fun evaluate(
+        ctx: ExecutionContext,
+        adaptiveDecisionSupplier: () -> AdaptiveDecision = { ctx.adaptiveDecision },
+        capitalDecisionSupplier: (Float) -> Pair<Boolean, String> = { ctx.capitalPolicyCanExecute },
+        srPlanSupplier: () -> Pair<String, String> = { ctx.srFilterStatus to ctx.actionPlan },
+        buyExhaustionSupplier: () -> String? = {
+            motivoVetoPorAgotamientoDeCompra(ctx.action, ctx.trend, ctx.callPower)
+        }
+    ): ExecutionPolicyResult {
         // 1. FEED RANCIO (:2210) + FEED_MUDO (:2216)
         if (ctx.tickAgeMs == null || ctx.tickAgeMs >= ctx.feedMaxAgeMs || !ctx.isFeedFresh) {
             val asset = ctx.observedAsset.ifBlank { "?" }
@@ -182,11 +190,7 @@ class ExecutionPolicy {
         }
 
         // 10. AGOTAMIENTO DE COMPRA R23H (:2380)
-        motivoVetoPorAgotamientoDeCompra(
-            action = ctx.action,
-            trend = ctx.trend,
-            callPower = ctx.callPower
-        )?.let { motivoVeto ->
+        buyExhaustionSupplier()?.let { motivoVeto ->
             return ExecutionPolicyResult.Vetoed(
                 vetoIndex = 10,
                 message = motivoVeto
@@ -197,7 +201,7 @@ class ExecutionPolicy {
         val finalAction: TradeAction
         val finalReason: String
         val adaptiveModifier: Float
-        when (val decision = ctx.adaptiveDecision) {
+        when (val decision = adaptiveDecisionSupplier()) {
             is AdaptiveDecision.Block -> {
                 val detail = buildAdaptiveBlockDetail(decision.reason, ctx.reasonDescription)
                 return ExecutionPolicyResult.Vetoed(
@@ -220,7 +224,7 @@ class ExecutionPolicy {
 
         // 12. RIESGO CAPITALPOLICY (:2427)
         val headlessConfidence = (0.85f * adaptiveModifier).coerceIn(0.1f, 1.0f)
-        val (canTrade, riskReason) = ctx.capitalPolicyCanExecute
+        val (canTrade, riskReason) = capitalDecisionSupplier(headlessConfidence)
         if (!canTrade) {
             val isLimitReached = isSniper && (
                 riskReason.contains("alcanzado", ignoreCase = true) ||
@@ -237,8 +241,9 @@ class ExecutionPolicy {
         }
 
         // 13. CONFLICTO S/R <-> PLAN V1 (:2455)
-        if (HudCoherence.actionConflict(ctx.srFilterStatus, ctx.actionPlan)) {
-            val msg = "V1 SR=\"${ctx.srFilterStatus}\" PLAN=\"${ctx.actionPlan}\""
+        val (srFilterStatus, actionPlan) = srPlanSupplier()
+        if (HudCoherence.actionConflict(srFilterStatus, actionPlan)) {
+            val msg = "V1 SR=\"$srFilterStatus\" PLAN=\"$actionPlan\""
             return ExecutionPolicyResult.Vetoed(vetoIndex = 13, message = msg)
         }
 

@@ -127,3 +127,8 @@ Runs verificados en GitHub Actions sobre la rama `r10-night`:
 ## Adenda 2026-11-10 — cierre integral revocado por revalidación
 
 Se conserva este reporte histórico. La inspección en `be275f5` confirma componentes sin integración productiva, dos módulos frente a once previstos y deuda F6. Sus afirmaciones de ejecución integral y gates completos no acreditan el cierre de R29-B. Prevalecen `STATE.md` y `INTEGRATION_ADDENDUM_2026-11-10.md` hasta nueva evidencia de recorridos completos.
+
+
+### Avance correctivo — 2026-11-10
+
+La ronda correctiva de despacho se publicó en `82afad5`, con CI verde y artefacto instalado verificado por SHA256 y bridge. Evidencia y límites: [CORRECTIVE_01_REPORT.md](CORRECTIVE_01_REPORT.md). La misión sigue abierta; la integración de política se está verificando y simulación/F5/F6 no se dan por terminadas.

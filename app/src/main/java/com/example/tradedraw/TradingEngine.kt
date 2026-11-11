@@ -31,6 +31,8 @@ import com.example.tradedraw.core.OrderRequest
 import com.example.tradedraw.core.OrderReceipt
 import com.example.tradedraw.core.TradeAction
 import com.example.tradedraw.execution.CandleRateLimiter
+import com.example.tradedraw.execution.ExecutionContext
+import com.example.tradedraw.execution.ExecutionPolicyResult
 import com.example.tradedraw.execution.ExecutionPolicy
 
 class TradingEngine(
@@ -47,7 +49,6 @@ class TradingEngine(
         DefaultOrderGateway(demoAccountGuard = AutoTradeAccessibilityService.demoAccountGuard),
         PersistentPendingDispatchStore(context))
 ) {
-    var executionPolicyEnabled: Boolean = false
     val executionPolicy: ExecutionPolicy = ExecutionPolicy()
     var shadowSimulationEnabled: Boolean = false
     val simulatedOrderGateway: com.example.tradedraw.simulation.SimulatedOrderGateway = com.example.tradedraw.simulation.SimulatedOrderGateway(eventSink = eventSink)
@@ -2225,273 +2226,62 @@ class TradingEngine(
             return
         }
 
-        // GUARD DE FRESCURA DEL FEED (fail-closed, fuente única = WebSocket).
-        // Sin tick reciente (<5000 ms) o sin conexión, se veta la operación: no se degrada
-        // a ninguna otra fuente (la captura de pantalla fue retirada por consumo de batería).
-        val tickAgeMs = latestMarketTick?.let { System.currentTimeMillis() - it.timestampMs }
-        if (tickAgeMs == null || tickAgeMs >= FEED_MAX_AGE_MS || !isFeedFresh()) {
-            Log.w(
-                "TradingEngine",
-                "⛔ Headless Trade $action VETADO por feed rancio: " +
-                    "ageMs=${tickAgeMs ?: -1} (umbral=${FEED_MAX_AGE_MS}ms) " +
-                    "fresh=${isFeedFresh()} → no se degrada a otra fuente"
-            )
-            // R13/A2d + A5: el caso "activo activo sin feed" (Aave(OTC): socket vivo, 0 ticks)
-            // YA queda cubierto por este guard, porque sin tick su edad es null o >= umbral.
-            // Se registra para que sea observable por `/events` en vez de solo por logcat, que
-            // en este dispositivo no funciona. No se anade un veto nuevo: seria duplicar este.
-            eventSink.add(
-                TradeEventLog.Kind.VETO,
-                "FEED_RANCIO ageMs=${tickAgeMs ?: -1} activo=" +
-                    AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "?" },
-                decisionId = currentDecisionId
-            )
-            if (tickAgeMs == null) {
-                eventSink.add(
-                    TradeEventLog.Kind.FEED_MUDO,
-                    "activo=${AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "?" }} sin_ningun_tick",
-                    decisionId = currentDecisionId
-                )
-            }
-            return
-        }
-
-        // GUARD DE PRECIO CONGELADO / FEED SIN VOLATILIDAD MEDIBLE (veto V2 de B2).
-        // El feed puede estar fresco (l llegan ticks) y aun asi no aportar nada operable: el
-        // emisor entrega marcas de precio que caben en el error de redondeo. En ese estado
-        // cualquier decision CALL/PUT es equivalente a lanzar una moneda.
-        //
-        // Ronda 12: antes habia una EXCEPCION explicita para los activos "IDX", que anulaba
-        // justo este veto en el unico activo que lo necesitaba. Medido en `data/ticks`:
-        // Z-CRY/IDX tiene rango relativo 2,547e-09 frente a 4,164e-02 de ETHUSD-OTC (8 ordenes
-        // de magnitud). El veto pasa a ser POR CONDICION DE FEED, no por nombre de activo:
-        // se aplica a cualquiera que no se mueva, con el umbral congelado en PREREGISTRO_R12.
-        val rangoRelativo = recentPriceRangeRatio()
-        val currentObservedAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
-        // R23A Iter 1: el umbral se clasifica por familia de activo (`IDX` -> 1e-11, resto -> 1e-5)
-        // en vez de ser universal. Razon medida: el indice sintetico mueve 2,9e-10 de mediana, o sea
-        // 4 ordenes por debajo de 1e-5, asi que con el umbral universal V2 vetaba el 100% de las
-        // decisiones y el activo era inoperable por construccion. Ver el KDoc de la constante.
-        val umbralMinimo = rangoRelativoMinimoParaActivo(currentObservedAsset)
-        if (rangoRelativo >= 0.0 && rangoRelativo < umbralMinimo) {
-            Log.w(
-                "TradingEngine",
-                "⛔ Headless Trade $action VETADO (V2) por feed sin volatilidad medible: " +
-                    "rangoRelativo=$rangoRelativo < $umbralMinimo (activo=$currentObservedAsset)"
-            )
-            // R13/A5: sin logd no hay observabilidad por logcat, asi que el veto se registra
-            // ademas en el buffer consultable por `/events`.
-            eventSink.add(
-                TradeEventLog.Kind.VETO,
-                "V2 rango=%.3e umbral=%.0e activo=%s".format(
-                    java.util.Locale.US, rangoRelativo, umbralMinimo, currentObservedAsset
-                ),
-                decisionId = currentDecisionId
-            )
-            return
-        }
-
-        // Veto complementario: el feed declara congelacion (metodo del cliente WebSocket).
-        // Se mantiene ademas del anterior porque cubre el caso de precio identico tick a tick,
-        // donde el rango relativo es exactamente 0 y ya lo captura V2.
-        if (isPriceFrozen()) {
-            Log.w(
-                "TradingEngine",
-                "⛔ Headless Trade $action VETADO por precio congelado (activo=$currentObservedAsset)"
-            )
-            eventSink.add(
-                TradeEventLog.Kind.VETO,
-                "CONGELADO activo=$currentObservedAsset",
-                decisionId = currentDecisionId
-            )
-            return
-        }
-
-        // GUARD DE COINCIDENCIA PANTALLA <-> FEED (Ronda 20, fail-closed).
-        //
-        // Por que existe. La recuperacion de activo sin feed (PREREGISTRO_R20 §4.1) puede dejar el
-        // feed apuntando a un RIC DISTINTO del grafico que el usuario tiene abierto en el broker.
-        // Medido: con el grafico en `Aave (OTC)`, el feed sano disponible es `ETHUSD-OTC`.
-        //
-        // Sin este guard, el bot decidiria CALL/PUT con el precio de un subyacente y pulsaria los
-        // botones del grafico de OTRO. En opciones binarias eso no es un fallo de calidad: es una
-        // orden a ciegas sobre un activo distinto.
-        //
-        // Antes de esta ronda NO existia ninguna comprobacion de este tipo (verificado leyendo
-        // `executeHeadlessTrade`: los guards eran feed rancio, V2, congelado, una-por-vela, veto
-        // francotirador, ventana sniper, anti-chop, cooldown y decision adaptativa; ninguno
-        // comparaba activos). Este guard solo ANADE una restriccion: no relaja ninguna.
-        //
-        // FAIL-CLOSED: sin confirmacion de pantalla no se autoriza (criterio B.4 del PREREGISTRO_
-        // R20). La logica vive en una funcion pura para poder fijarla por test.
-        val motivoDesajuste = motivoVetoPorDesajusteDeActivo(
-            activoPantallaVisible = AutoTradeAccessibilityService.latestObservedAsset,
-            activoFeed = feedAsset()
-        )
-        if (motivoDesajuste != null) {
-            vetoActivoDesajustado++
-            Log.w("TradingEngine", "⛔ Headless Trade $action VETADO por $motivoDesajuste")
-            eventSink.add(TradeEventLog.Kind.VETO, motivoDesajuste, decisionId = currentDecisionId)
-            return
-        }
-
-        val currentCandleEpochMinute = (latestMarketTick?.timestampMs ?: System.currentTimeMillis()) / 60000L
-        synchronized(this) {
-            if (candleRateLimiter.isCandleAlreadyExecuted(currentCandleEpochMinute, mode)) {
-                Log.d("TradingEngine", "⛔ Headless Trade $action bloqueado: Vela de minuto $currentCandleEpochMinute ya fue operada (1 orden por vela máx).")
-                eventSink.add(TradeEventLog.Kind.VETO, "VELA_YA_OPERADA minuto=$currentCandleEpochMinute", decisionId = currentDecisionId)
-                return
-            }
-        }
-
-        val sec = latestMarketTick?.candleSecond ?: (((System.currentTimeMillis() / 1000L) % 60L).toInt())
-        val isYolo = (autonomousSubMode == AutonomousSubMode.YOLO)
-        val isSniper = (autonomousSubMode == AutonomousSubMode.SNIPER)
-
-        if (isSniper) {
-            val currentAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
-            val isSynthetic = AutoTradeAccessibilityService.isSyntheticOrOTC ||
-                currentAsset.contains("IDX", ignoreCase = true) ||
-                currentAsset.contains("OTC", ignoreCase = true)
-            if (isSynthetic && strategy != AutoTradeStrategy.MT_MASTER_COMBO && strategy != AutoTradeStrategy.AUTO_ADAPTIVE && strategy != AutoTradeStrategy.SUPPORT_RESISTANCE && strategy != AutoTradeStrategy.MT_REJECTION) {
-                Log.d("TradingEngine", "Headless bloqueado por Veto Francotirador: Activo sintético/OTC ($currentAsset)")
-                eventSink.add(TradeEventLog.Kind.VETO, "FRANCOTIRADOR activo=$currentAsset", decisionId = currentDecisionId)
-                return
-            }
-        }
-
-        // Ventana Sniper Quirúrgica conforme a master_traders_skill (inicio por A3, default :01)
-        val inWindow = MarketTickFilters.isInEntryWindow(sec)
-        if (!inWindow) {
-            Log.d("TradingEngine", "Headless bloqueado fuera de ventana timing sniper (⏱ ${sec}s | SNIPER=$isSniper | YOLO=$isYolo)")
-            eventSink.add(TradeEventLog.Kind.VETO, "FUERA_DE_VENTANA sec=$sec", decisionId = currentDecisionId)
-            return
-        }
-        val isRejectionOrBounce = reasonDescription.contains("MT_REJECTION") ||
-                reasonDescription.contains("MT_RANGE") ||
-                reasonDescription.contains("MT_3_VELAS") ||
-                reasonDescription.contains("MT_REVERSAL") ||
-                reasonDescription.contains("MT_CONFIRM") ||
-                reasonDescription.contains("MT_ENGULFING") ||
-                reasonDescription.contains("QUANT_CRYPTO")
-        if (syntheticCandleEngine.isChoppinessDetected() && !isRejectionOrBounce) {
-            Log.d("TradingEngine", "Headless bloqueado por Filtro Anti-Choppy (<0.05% y ticks alternantes)")
-            eventSink.add(TradeEventLog.Kind.VETO, "CHOP", decisionId = currentDecisionId)
-            return
-        }
-
-        // 1. Espaciado y Cooldown post-resolución
-        val timeSinceLastResolution = System.currentTimeMillis() - lastTradeResolutionTime
-        val minSpacingMs = when {
-            isYolo -> 8000L // 8 segundos en YOLO para no trabar la siguiente vela
-            riskManager.currentLossStreak > 0 -> 35000L
-            else -> 12000L
-        }
-        if (lastTradeResolutionTime > 0L && timeSinceLastResolution < minSpacingMs) {
-            Log.d("TradingEngine", "Headless bloqueado por Cooldown post-resolución (${timeSinceLastResolution / 1000}s < ${minSpacingMs / 1000}s)")
-            eventSink.add(TradeEventLog.Kind.VETO, "COOLDOWN ${timeSinceLastResolution}ms", decisionId = currentDecisionId)
-            return
-        }
-
-        // 2. Evaluación por Motor de Autoaprendizaje Adaptativo
-        // El análisis se construye SIEMPRE desde el motor sintético de ticks WebSocket.
-        // Ya no se reutiliza latestAnalysisResult (visión): sus mechas/S-R/choppiness son
-        // ceros en modo WebSocket puro y vetaban señales sobre datos nulos.
-        val effectiveAnalysis = buildAnalysisFromSyntheticEngine(latestMarketTick ?: return)
-
-        // 2.b R23H Fase 1: VETO_BUY_EXHAUSTION_CLIMAX (hipótesis ganadora de compras).
-        // Va ANTES del motor adaptativo a propósito: un veto de política no debe registrar la
-        // firma de entrada en `AdaptiveLearningEngine` ni consumir su evaluación. Solo mira BUY;
-        // SELL, `ADAPTIVE_BLOCK` (0.99f), stake y payout quedan intactos.
-        // El `callPower` sale del MISMO análisis sintético que alimenta al motor adaptativo, así
-        // que el veto y el resto de filtros miran el mismo instante de mercado.
-        motivoVetoPorAgotamientoDeCompra(
-            action = action,
-            trend = effectiveAnalysis.trend,
-            callPower = effectiveAnalysis.signalPowerCall
-        )?.let { motivoVeto ->
-            Log.d("TradingEngine", "⛔ Headless Trade $action VETADO por agotamiento de compra: $motivoVeto")
-            eventSink.add(TradeEventLog.Kind.VETO, motivoVeto, decisionId = currentDecisionId)
-            return
-        }
-
-        val adaptiveDecision = adaptiveLearningEngine.evaluateSignalSuitability(
-            candidateAction = action,
-            analysis = effectiveAnalysis,
-            tick = latestMarketTick,
-            strategyName = strategy.name
-        )
-        val finalAction: TradeAction
-        val finalReason: String
-        val adaptiveModifier: Float
-
-        when (adaptiveDecision) {
-            is AdaptiveDecision.Block -> {
-                Log.w("TradingEngine", "⛔ Headless Trade $action VETADO por Autoaprendizaje: ${adaptiveDecision.reason}")
-                // R23E (REQ 1): el detail se enriquece con `[sim:NN%]` y `[Confluencia: NNpts]`
-                // para que el pipeline contrafactual pueda segmentar por similitud y por score
-                // sin parsear prosa. `reasonDescription` trae el score real cuando la senal paso
-                // por la matriz de confluencia.
-                eventSink.add(
-                    TradeEventLog.Kind.VETO,
-                    buildAdaptiveBlockDetail(adaptiveDecision.reason, reasonDescription),
-                    decisionId = currentDecisionId
-                )
-                handler.post {
-                    Toast.makeText(context, "⛔ [Autoaprendizaje] Entrada bloqueada: ${adaptiveDecision.reason}", Toast.LENGTH_SHORT).show()
+        val now = System.currentTimeMillis()
+        val currentCandleEpochMinute = (latestMarketTick?.timestampMs ?: now) / 60000L
+        val sec = latestMarketTick?.candleSecond ?: ((now / 1000L) % 60L).toInt()
+        // Preserve legacy short-circuiting: no analysis/adaptive/capital work before its veto stage.
+        val effectiveAnalysis by lazy { buildAnalysisFromSyntheticEngine(requireNotNull(latestMarketTick)) }
+        val policyResult = executionPolicy.evaluate(
+            ExecutionContext(
+                action = action, mode = mode, autonomousSubMode = autonomousSubMode,
+                strategy = strategy, currentDecisionId = currentDecisionId,
+                tickAgeMs = latestMarketTick?.let { now - it.timestampMs },
+                isFeedFresh = isFeedFresh(), feedMaxAgeMs = FEED_MAX_AGE_MS,
+                observedAsset = AutoTradeAccessibilityService.latestObservedAsset,
+                feedAsset = feedAsset(), rangoRelativo = recentPriceRangeRatio(),
+                isPriceFrozen = isPriceFrozen(), isSyntheticOrOtc = AutoTradeAccessibilityService.isSyntheticOrOTC,
+                sec = sec, isChoppinessDetected = syntheticCandleEngine.isChoppinessDetected(),
+                reasonDescription = reasonDescription, lastTradeResolutionTime = lastTradeResolutionTime,
+                currentLossStreak = riskManager.currentLossStreak, currentTimeMs = now,
+                currentCandleEpochMinute = currentCandleEpochMinute,
+                isCandleAlreadyExecuted = synchronized(this) {
+                    candleRateLimiter.isCandleAlreadyExecuted(currentCandleEpochMinute, mode)
                 }
-                return
+            ),
+            adaptiveDecisionSupplier = {
+                adaptiveLearningEngine.evaluateSignalSuitability(action, effectiveAnalysis, latestMarketTick, strategy.name)
+            },
+            capitalDecisionSupplier = { confidence -> capitalPolicy.canExecuteTrade(autonomousSubMode, confidence) },
+            srPlanSupplier = {
+                val reasoning = getEngineReasoning()
+                reasoning.srFilterStatus to reasoning.actionPlan
+            },
+            buyExhaustionSupplier = {
+                motivoVetoPorAgotamientoDeCompra(action, effectiveAnalysis.trend, effectiveAnalysis.signalPowerCall)
             }
-            is AdaptiveDecision.Invert -> {
-                finalAction = adaptiveDecision.invertedAction
-                finalReason = "$reasonDescription [🔄 Invertida por Autoaprendizaje]"
-                adaptiveModifier = 1.15f
+        )
+        if (policyResult is ExecutionPolicyResult.Vetoed) {
+            if (policyResult.incrementVetoActivoDesajustado) vetoActivoDesajustado++
+            eventSink.add(TradeEventLog.Kind.VETO, policyResult.message, decisionId = currentDecisionId)
+            policyResult.secondaryEventKind?.let {
+                eventSink.add(it, policyResult.secondaryEventMessage.orEmpty(), decisionId = currentDecisionId)
             }
-            is AdaptiveDecision.Allow -> {
-                finalAction = adaptiveDecision.action
-                finalReason = reasonDescription
-                adaptiveModifier = adaptiveDecision.confidenceModifier
+            policyResult.disableModeReason?.let {
+                setTradingMode(AutoTradeMode.DISABLED, it)
+                sniperShutdownReason = policyResult.message.removePrefix("RISK_LIMIT ")
             }
-        }
-
-        val headlessConfidence = (0.85f * adaptiveModifier).coerceIn(0.1f, 1.0f)
-        val (canTrade, riskReason) = capitalPolicy.canExecuteTrade(autonomousSubMode, headlessConfidence)
-        if (!canTrade) {
-            Log.d("TradingEngine", "Headless bloqueado por riesgo: $riskReason")
-            eventSink.add(TradeEventLog.Kind.VETO, "RISK_LIMIT $riskReason", decisionId = currentDecisionId)
-            if (isSniper && (riskReason.contains("alcanzado", ignoreCase = true) || riskReason.contains("finalizada", ignoreCase = true) || riskReason.contains("Límite", ignoreCase = true))) {
-                setTradingMode(AutoTradeMode.DISABLED, "engine:sniper-limite(headless)")
-                sniperShutdownReason = riskReason
+            policyResult.toastMessage?.let { message ->
                 handler.post {
-                    Toast.makeText(context, "🛑 $riskReason", Toast.LENGTH_LONG).show()
-                    OverlayService.instance?.updateHUDView()
+                    Toast.makeText(context, message, if (policyResult.isLongToast) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
+                    if (policyResult.disableModeReason != null) OverlayService.instance?.updateHUDView()
                 }
             }
             return
         }
-
-        // VETO V1 (B2): exclusividad mutua S/R <-> anti-chop.
-        // El filtro S/R y el plan de accion pueden pedir direcciones OPUESTAS; es una
-        // contradiccion interna del analisis, no una senal debil. Caso real capturado en R11
-        // (`clock_03.png`): "Toque Directo en Resistencia [PUT Optimo]" frente a
-        // "Cerca de Soporte (15%) ... CALL". Hasta ahora solo se ETIQUETABA en el HUD
-        // (`HudCoherence.actionConflict` se usaba unicamente para pintar el aviso) y la orden
-        // se disparaba igual. Ahora veta, con el umbral congelado en PRAGEREGISTRO_R12.
-        val reasoning = getEngineReasoning()
-        if (HudCoherence.actionConflict(reasoning.srFilterStatus, reasoning.actionPlan)) {
-            Log.w(
-                "TradingEngine",
-                "⛔ Headless Trade $action VETADO (V1) por conflicto S/R<->Plan: " +
-                    "SR=\"${reasoning.srFilterStatus}\" PLAN=\"${reasoning.actionPlan}\""
-            )
-            // R13/A5: el veto queda observable desde `/events` sin depender de logcat.
-            eventSink.add(
-                TradeEventLog.Kind.VETO,
-                "V1 SR=\"${reasoning.srFilterStatus}\" PLAN=\"${reasoning.actionPlan}\"",
-                decisionId = currentDecisionId
-            )
-            return
-        }
+        val allowed = policyResult as ExecutionPolicyResult.Allowed
+        val finalAction = allowed.finalAction
+        val finalReason = allowed.finalReason
+        val headlessConfidence = allowed.headlessConfidence
 
         val (screenW, screenH) = CalibrationManager.getRealScreenDimensions(context)
         val isLand = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || screenW > screenH

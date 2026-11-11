@@ -258,4 +258,70 @@ class VetoCascadeEquivalenceTest {
         val res10y11 = policy.evaluate(ctx10y11) as ExecutionPolicyResult.Vetoed
         assertEquals("Veto 10 debe cortar antes que Veto 11", 10, res10y11.vetoIndex)
     }
+    @Test
+    fun productionSuppliersMatchFrozenOracleAndPreserveShortCircuitSideEffects() {
+        val oracle = com.example.tradedraw.legacy.LegacyExecutionPolicyOracle()
+        val random = java.util.Random(2929L)
+        repeat(3000) {
+            val action = if (random.nextBoolean()) TradeAction.BUY else TradeAction.SELL
+            val adaptive = when (random.nextInt(3)) {
+                0 -> AdaptiveDecision.Block("fixture bloqueo")
+                1 -> AdaptiveDecision.Invert(if (action == TradeAction.BUY) TradeAction.SELL else TradeAction.BUY, "fixture inversion")
+                else -> AdaptiveDecision.Allow(action)
+            }
+            val ctx = baseContext().copy(
+                action = action,
+                tickAgeMs = listOf(null, 100L, 5000L)[random.nextInt(3)],
+                isFeedFresh = random.nextBoolean(),
+                rangoRelativo = if (random.nextInt(4) == 0) 0.0 else 0.05,
+                isPriceFrozen = random.nextInt(5) == 0,
+                observedAsset = if (random.nextInt(5) == 0) "Aave (OTC)" else "Crypto IDX",
+                isCandleAlreadyExecuted = random.nextInt(5) == 0,
+                autonomousSubMode = AutonomousSubMode.values()[random.nextInt(AutonomousSubMode.values().size)],
+                strategy = AutoTradeStrategy.values()[random.nextInt(AutoTradeStrategy.values().size)],
+                sec = if (random.nextBoolean()) 2 else 30,
+                isChoppinessDetected = random.nextBoolean(),
+                reasonDescription = if (random.nextBoolean()) "MT_REJECTION soporte" else "continuacion",
+                lastTradeResolutionTime = if (random.nextInt(5) == 0) 99_000L else 0L,
+                callPower = if (random.nextBoolean()) 50 else 80,
+                adaptiveDecision = adaptive,
+                capitalPolicyCanExecute = if (random.nextBoolean()) true to "" else false to "Límite alcanzado",
+                srFilterStatus = "Toque Directo en Resistencia [PUT Óptimo]",
+                actionPlan = if (random.nextBoolean()) "CALL Fuerte" else "PUT Fuerte"
+            )
+            val expected = oracle.evaluate(ctx)
+            val calls = mutableListOf<String>()
+            val actual = policy.evaluate(ctx,
+                adaptiveDecisionSupplier = { calls.add("adaptive"); ctx.adaptiveDecision },
+                capitalDecisionSupplier = { confidence ->
+                    calls.add("capital")
+                    val modifier = when (adaptive) {
+                        is AdaptiveDecision.Invert -> 1.15f
+                        is AdaptiveDecision.Allow -> adaptive.confidenceModifier
+                        else -> error("capital cannot run after an adaptive block")
+                    }
+                    assertEquals((0.85f * modifier).coerceIn(0.1f, 1f), confidence, 0f)
+                    ctx.capitalPolicyCanExecute
+                },
+                srPlanSupplier = {
+                    calls.add("sr")
+                    ctx.srFilterStatus to ctx.actionPlan
+                },
+                buyExhaustionSupplier = {
+                    calls.add("exhaustion")
+                    motivoVetoPorAgotamientoDeCompra(ctx.action, ctx.trend, ctx.callPower)
+                })
+            assertEquals(expected, actual)
+            val veto = (actual as? ExecutionPolicyResult.Vetoed)?.vetoIndex ?: 14
+            val stages = when {
+                veto <= 9 -> emptyList()
+                veto == 10 -> listOf("exhaustion")
+                veto == 11 -> listOf("exhaustion", "adaptive")
+                veto == 12 -> listOf("exhaustion", "adaptive", "capital")
+                else -> listOf("exhaustion", "adaptive", "capital", "sr")
+            }
+            assertEquals(stages, calls)
+        }
+    }
+
 }
