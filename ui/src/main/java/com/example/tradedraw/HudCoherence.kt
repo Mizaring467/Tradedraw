@@ -1,5 +1,7 @@
 package com.example.tradedraw
 
+import com.example.tradedraw.core.*
+
 /**
  * Invariantes de coherencia del HUD (Ronda 11, T7).
  *

@@ -1,10 +1,12 @@
 package com.example.tradedraw
 
+import com.example.tradedraw.core.*
+
 import android.graphics.Color
 import android.graphics.PointF
 import com.example.tradedraw.core.AutoTradeStrategy
 
-class AutoDrawEngine(private val drawingView: CustomDrawingView) {
+class AutoDrawEngine(private val drawingView: CustomDrawingView, private val priceBoundsProvider: () -> Pair<Double, Double>? = { null }) {
 
     // Líneas bloqueadas manualmente por el usuario (no se sobreescriben con cada frame)
     private val manuallyLockedLines = mutableSetOf<String>()
@@ -121,9 +123,9 @@ class AutoDrawEngine(private val drawingView: CustomDrawingView) {
         // Ronda 11 (T3): el rango solo es válido si el precio de entrada pertenece a SU escala.
         // Si el activo cambió, comparar el strike con un rango de otro activo produce una Y
         // arbitraria (la línea se anclaba al borde con flecha, ver t8_landscape_03.png).
-        val synthetic = OverlayService.instance?.tradingEngine?.syntheticCandleEngine
-        if (synthetic != null) {
-            val (lo, hi) = synthetic.recentPriceBounds()
+        val bounds = priceBoundsProvider()
+        if (bounds != null) {
+            val (lo, hi) = bounds
             val sameScale = hi > lo &&
                 currentEntryPrice in (lo * 0.5)..(hi * 2.0)
             if (sameScale) {

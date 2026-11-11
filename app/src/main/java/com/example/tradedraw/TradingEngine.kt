@@ -212,7 +212,7 @@ class TradingEngine(
     var debugModeEnabled: Boolean = false
 
     val visionAnalyzer = VisionAnalyzer()
-    private val autoDrawEngine = AutoDrawEngine(drawingView)
+    private val autoDrawEngine = AutoDrawEngine(drawingView) { syntheticCandleEngine.recentPriceBounds() }
     private val handler = Handler(Looper.getMainLooper())
 
     private var lastProcessTime = 0L

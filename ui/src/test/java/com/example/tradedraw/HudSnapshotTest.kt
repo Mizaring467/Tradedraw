@@ -1,5 +1,7 @@
 package com.example.tradedraw
 
+import com.example.tradedraw.core.*
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

@@ -1,5 +1,7 @@
 package com.example.tradedraw
 
+import com.example.tradedraw.core.*
+
 /**
  * Instantánea inmutable de todo lo que el HUD necesita pintar.
  *

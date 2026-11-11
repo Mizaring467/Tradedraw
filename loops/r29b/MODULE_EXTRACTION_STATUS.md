@@ -37,3 +37,9 @@ Suite raíz: app=410, core=6, simulation=8, market=40, strategy=91, observabilit
 :execution contiene ExecutionPolicy, CandleRateLimiter, DefaultOrderGateway y los tres transportes sobre puertos. No depende de app ni busca servicios estáticos. Los predicados congelados se inyectan mediante ExecutionPolicyHooks obligatorios; la fábrica de composición llama a las implementaciones anteriores sin duplicarlas. AndroidOrderComposition conecta el guard positivo, root y el driver de gestos. El motor recibe HudPort de OverlayService y deja de buscar el servicio estático para actualizar HUD/fallback.
 
 Se conservan orden de cascada, textos y efectos con el oráculo completo. Nuevas pruebas verifican bypass HUD350ms, resultado único ante callback repetido, ausencia de fallback tras transporte incierto, guarda REAL y desconexión de driver. Suite/replay/build PASS (td-execution-final.log): {'app': 402, 'core': 6, 'market': 40, 'persistence': 0, 'simulation': 8, 'strategy': 91, 'observability': 29, 'risk': 71, 'execution': 10}, total 657. CI e instalación de este corte pendientes. UI/adapters/research y estáticos restantes siguen abiertos.
+
+## Quinto corte — ui
+
+:ui contiene lienzo, figuras, herramientas, plantillas, selector de color, temas Compose, snapshot/coherencia HUD y proyección/strike/auto-dibujo. Depende de core; el rango de precios se recibe por proveedor desde el motor, sin lookup del servicio. OverlayService permanece por ahora como composición Android en app; no se da por completada su extracción ni todo T-5.4.
+
+Suite raíz/replay/APK PASS (td-ui-online.log): {'app': 369, 'core': 6, 'market': 40, 'persistence': 0, 'simulation': 8, 'strategy': 91, 'observability': 29, 'risk': 71, 'execution': 10, 'ui': 33}, total 657. La dependencia stdlib-jdk8 inicialmente ausente se resolvió con Gradle normal; no se cambiaron versiones para ocultar el fallo de caché. La CI e instalación de este corte permanecen pendientes.

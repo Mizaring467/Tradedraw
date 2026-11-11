@@ -1,3 +1,7 @@
+## Actualización vigente — 2026-11-11 · UI validada localmente
+
+HEAD base e462398, CI push43003171505 y PR43003179958 success. UI real extraída; suite raíz/replay/APK PASS, sin fallos/errores/skips. Próxima acción: commit/push/CI de UI; extraer research y adapters, concluir F6 y verificar APK final. OverlayService sigue como composición en app y su alcance se registra explícitamente. Dispositivo: foreground medido com.boogy.combat/GodotAppLauncher, batería67%, sin carga; no se interfiere con su pantalla mientras se coordina. Sin nuevas órdenes. R29-B abierta.
+
 ## Actualización vigente — 2026-11-11 · Execution validado localmente
 
 HEAD base: 64d7d94 (risk publicado); corte execution en working tree validado con suite raíz, replay y APK PASS, sin fallos/errores/skips. Matriz y conteos en MODULE_EXTRACTION_STATUS.md. Próxima acción: publicar execution, extraer UI y research, terminar adapters/F6, esperar CI y verificar APK con reserva confirmada hasta liquidación. Dispositivo con uso concurrente detectado; coordinación de pantalla pendiente, sin nuevas órdenes. R29-B abierta.
