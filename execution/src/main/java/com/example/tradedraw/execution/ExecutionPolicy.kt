@@ -1,12 +1,8 @@
 package com.example.tradedraw.execution
 
 import com.example.tradedraw.AdaptiveDecision
-import com.example.tradedraw.HudCoherence
-import com.example.tradedraw.TradingEngine
 import com.example.tradedraw.TrendDirection
-import com.example.tradedraw.buildAdaptiveBlockDetail
 import com.example.tradedraw.core.*
-import com.example.tradedraw.motivoVetoPorAgotamientoDeCompra
 import java.util.Locale
 
 /**
@@ -61,7 +57,15 @@ sealed class ExecutionPolicyResult {
     ) : ExecutionPolicyResult()
 }
 
-class ExecutionPolicy {
+interface ExecutionPolicyHooks {
+    fun rangeThreshold(asset: String): Double
+    fun assetMismatch(activoPantallaVisible: String, activoFeed: String): String?
+    fun adaptiveDetail(reason: String, signal: String): String
+    fun buyExhaustion(action: TradeAction, trend: TrendDirection, power: Int): String?
+    fun actionConflict(srStatus: String, actionPlan: String): Boolean
+}
+
+class ExecutionPolicy(private val hooks: ExecutionPolicyHooks) {
 
     /**
      * Evalúa los 13 vetos congelados en estricto orden secuencial con mensajes byte-a-byte idénticos.
@@ -75,7 +79,7 @@ class ExecutionPolicy {
         capitalDecisionSupplier: (Float) -> Pair<Boolean, String> = { ctx.capitalPolicyCanExecute },
         srPlanSupplier: () -> Pair<String, String> = { ctx.srFilterStatus to ctx.actionPlan },
         buyExhaustionSupplier: () -> String? = {
-            motivoVetoPorAgotamientoDeCompra(ctx.action, ctx.trend, ctx.callPower)
+            hooks.buyExhaustion(ctx.action, ctx.trend, ctx.callPower)
         }
     ): ExecutionPolicyResult {
         // 1. FEED RANCIO (:2210) + FEED_MUDO (:2216)
@@ -93,7 +97,7 @@ class ExecutionPolicy {
 
         // 2. PRECIO CONGELADO V2 (:2251)
         val currentObservedAsset = ctx.observedAsset.ifBlank { "Crypto IDX" }
-        val umbralMinimo = TradingEngine.rangoRelativoMinimoParaActivo(currentObservedAsset)
+        val umbralMinimo = hooks.rangeThreshold(currentObservedAsset)
         if (ctx.rangoRelativo >= 0.0 && ctx.rangoRelativo < umbralMinimo) {
             val msg = "V2 rango=%.3e umbral=%.0e activo=%s".format(
                 Locale.US, ctx.rangoRelativo, umbralMinimo, currentObservedAsset
@@ -110,7 +114,7 @@ class ExecutionPolicy {
         }
 
         // 4. DESAJUSTE PANTALLA <-> FEED (:2300)
-        val motivoDesajuste = TradingEngine.motivoVetoPorDesajusteDeActivo(
+        val motivoDesajuste = hooks.assetMismatch(
             activoPantallaVisible = ctx.observedAsset,
             activoFeed = ctx.feedAsset
         )
@@ -203,7 +207,7 @@ class ExecutionPolicy {
         val adaptiveModifier: Float
         when (val decision = adaptiveDecisionSupplier()) {
             is AdaptiveDecision.Block -> {
-                val detail = buildAdaptiveBlockDetail(decision.reason, ctx.reasonDescription)
+                val detail = hooks.adaptiveDetail(decision.reason, ctx.reasonDescription)
                 return ExecutionPolicyResult.Vetoed(
                     vetoIndex = 11,
                     message = detail,
@@ -242,7 +246,7 @@ class ExecutionPolicy {
 
         // 13. CONFLICTO S/R <-> PLAN V1 (:2455)
         val (srFilterStatus, actionPlan) = srPlanSupplier()
-        if (HudCoherence.actionConflict(srFilterStatus, actionPlan)) {
+        if (hooks.actionConflict(srFilterStatus, actionPlan)) {
             val msg = "V1 SR=\"$srFilterStatus\" PLAN=\"$actionPlan\""
             return ExecutionPolicyResult.Vetoed(vetoIndex = 13, message = msg)
         }

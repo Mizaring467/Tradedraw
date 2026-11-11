@@ -292,7 +292,7 @@ class OverlayService : Service(), com.example.tradedraw.core.HudPort {
 
         riskManager = RiskManager(this, balanceSource = AccessibilityBalanceSource(), hudPort = this, brokerSensor = AutoTradeAccessibilityService)
         calibrationManager = CalibrationManager(this)
-        tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager)
+        tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager, hudPort = this)
         tradingEngine.adaptiveLearningEngine.loadState(this)
 
         // R15-A: el modo arranca en DISABLED sin pasar por el setter (es el inicializador de la

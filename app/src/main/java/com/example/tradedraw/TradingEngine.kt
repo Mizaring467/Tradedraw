@@ -45,11 +45,12 @@ class TradingEngine(
     val capitalPolicy: CapitalPolicy = riskManager,
     var tapCoordinateResolver: TapCoordinateResolver = CalibrationTapCoordinateResolver { calibrationManager },
     val candleRateLimiter: CandleRateLimiter = CandleRateLimiter(),
+    var hudPort: com.example.tradedraw.core.HudPort? = null,
     val orderGateway: OrderGateway = com.example.tradedraw.core.SingleFlightOrderGateway(
-        DefaultOrderGateway(demoAccountGuard = AutoTradeAccessibilityService.demoAccountGuard),
+        createAndroidOrderGateway(hudPort = hudPort),
         PersistentPendingDispatchStore(context))
 ) {
-    val executionPolicy: ExecutionPolicy = ExecutionPolicy()
+    val executionPolicy: ExecutionPolicy = createExecutionPolicy()
     val shadowSimulation = com.example.tradedraw.simulation.ShadowSimulationRuntime(context, eventSink)
     var shadowSimulationEnabled: Boolean
         get() = shadowSimulation.enabled
@@ -195,7 +196,7 @@ class TradingEngine(
                 sniperShutdownReason = reason
                 handler.post {
                     Toast.makeText(context, "🛑 $reason", Toast.LENGTH_LONG).show()
-                    OverlayService.instance?.updateHUDView()
+                    hudPort?.updateHUDView()
                 }
             }
         }
@@ -693,7 +694,7 @@ class TradingEngine(
                             riskManager.recordTradeVoid()
                             autoDrawEngine.clearTradeEntry()
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
-                            OverlayService.instance?.updateHUDView()
+                            hudPort?.updateHUDView()
                         } else if (finalWin) {
                             val resolved = riskManager.resolvePendingTradeWin()
                             if (!resolved) {
@@ -1996,7 +1997,7 @@ class TradingEngine(
                     sniperShutdownReason = reason
                     handler.post {
                         Toast.makeText(context, "🛑 $reason", Toast.LENGTH_LONG).show()
-                        OverlayService.instance?.updateHUDView()
+                        hudPort?.updateHUDView()
                     }
                 }
                 return
@@ -2130,7 +2131,7 @@ class TradingEngine(
     fun triggerManualFallback(action: TradeAction, reason: String) {
         Log.w("TradingEngine", "🚨 Activando MODO HÍBRIDO Fallback: $reason. Alerta manual para $action")
         emitHapticWarning()
-        OverlayService.instance?.showManualFallbackAlert(action, 2500L)
+        hudPort?.showManualFallbackAlert(action, 2500L)
         handler.post {
             val dir = if (action == TradeAction.BUY) "CALL ▲ (SUBE)" else "PUT ▼ (BAJA)"
             Toast.makeText(context, "🚨 ¡PULSA MANUAL: $dir!\n$reason", Toast.LENGTH_SHORT).show()
@@ -2322,7 +2323,7 @@ class TradingEngine(
             policyResult.toastMessage?.let { message ->
                 handler.post {
                     Toast.makeText(context, message, if (policyResult.isLongToast) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
-                    if (policyResult.disableModeReason != null) OverlayService.instance?.updateHUDView()
+                    if (policyResult.disableModeReason != null) hudPort?.updateHUDView()
                 }
             }
             return
@@ -2440,7 +2441,7 @@ class TradingEngine(
                 "TradingEngine",
                 "✅ ORDEN CONFIRMADA por movimiento de saldo | $action | base=$baseBalance ahora=$currentBal (${elapsedSec}s)"
             )
-            handler.post { OverlayService.instance?.updateHUDView() }
+            handler.post { hudPort?.updateHUDView() }
             return
         }
 
@@ -2609,7 +2610,7 @@ class TradingEngine(
                     recordTieVoidIfFresh(riskManager, saldoFresco)
                     val mensaje = if (saldoFresco) "[HEADLESS] ⚪ Empate / Orden cancelada" else "[HEADLESS] ⚪ Empate incierto / saldo no fresco"
                     Toast.makeText(context, mensaje, Toast.LENGTH_SHORT).show()
-                    OverlayService.instance?.updateHUDView()
+                    hudPort?.updateHUDView()
                 } else if (finalWin) {
                     if (riskManager.resolvePendingTradeWin()) {
                         adaptiveLearningEngine.recordTradeOutcome(true, context)

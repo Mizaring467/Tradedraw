@@ -31,3 +31,9 @@ Responsabilidades trasladadas: SyntheticCandleEngine, MarketRegimeClassifier, Ad
 RiskManager reside en :risk (Android → core/observability), sin referencias a estáticos de accesibilidad ni OverlayService. La app inyecta BalanceSource, BrokerSensor y HudPort. Los tests de detalles internal viven con el módulo; sus observaciones son fixtures locales, con los mismos valores y expectativas anteriores. La app conserva pruebas de paridad del adaptador real. Riesgo sin adaptadores usa lectura no disponible; no accede por detrás a la app.
 
 Suite raíz: app=410, core=6, simulation=8, market=40, strategy=91, observability=29, risk=71, total 655, cero fallos/errores/skips; replay y APK PASS (td-risk-pass.log). Se compararon también los cuatro cuerpos estratégicos con 20bd936: igualdad exacta salvo package/import/líneas vacías. CI e instalación del corte pendientes.
+
+## Cuarto corte — execution
+
+:execution contiene ExecutionPolicy, CandleRateLimiter, DefaultOrderGateway y los tres transportes sobre puertos. No depende de app ni busca servicios estáticos. Los predicados congelados se inyectan mediante ExecutionPolicyHooks obligatorios; la fábrica de composición llama a las implementaciones anteriores sin duplicarlas. AndroidOrderComposition conecta el guard positivo, root y el driver de gestos. El motor recibe HudPort de OverlayService y deja de buscar el servicio estático para actualizar HUD/fallback.
+
+Se conservan orden de cascada, textos y efectos con el oráculo completo. Nuevas pruebas verifican bypass HUD350ms, resultado único ante callback repetido, ausencia de fallback tras transporte incierto, guarda REAL y desconexión de driver. Suite/replay/build PASS (td-execution-final.log): {'app': 402, 'core': 6, 'market': 40, 'persistence': 0, 'simulation': 8, 'strategy': 91, 'observability': 29, 'risk': 71, 'execution': 10}, total 657. CI e instalación de este corte pendientes. UI/adapters/research y estáticos restantes siguen abiertos.

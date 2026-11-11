@@ -18,7 +18,7 @@ import java.util.Locale
  */
 class VetoCascadeEquivalenceTest {
 
-    private val policy = ExecutionPolicy()
+    private val policy = createExecutionPolicy()
 
     private fun baseContext(): ExecutionContext = ExecutionContext(
         action = TradeAction.BUY,

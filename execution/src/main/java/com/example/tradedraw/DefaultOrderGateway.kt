@@ -71,9 +71,9 @@ class DefaultOrderGateway(
 class RootTapTransport(
     private val eventSink: EventSink = RingBufferEventSink(),
     var hudPort: HudPort? = null,
-    private val rootCheck: () -> Boolean = { AutoTradeAccessibilityService.hasRootAccess() },
+    private val rootCheck: () -> Boolean = { false },
     private val rootTapExecutor: (Float, Float, String?, String?, ((Boolean, String?) -> Unit)?, Boolean) -> Unit = { x, y, did, tid, cb, bypass ->
-        AutoTradeAccessibilityService.executeRootTap(x, y, did, tid, cb, bypass, orderAuthorized = true)
+        cb?.invoke(false, "Root executor not configured")
     }
 ) : TapTransport {
     override val name: String = "ROOT"
@@ -81,7 +81,7 @@ class RootTapTransport(
     override fun isAvailable(): Boolean = rootCheck()
 
     override fun dispatch(request: OrderRequest, onResult: (OrderReceipt) -> Unit) {
-        val overlay = hudPort ?: OverlayService.instance
+        val overlay = hudPort
         val bypassNeeded = overlay != null && overlay.isPointInsideHUD(request.x, request.y)
         val startTime = System.currentTimeMillis()
 
@@ -107,12 +107,16 @@ class RootTapTransport(
     }
 }
 
+interface OrderGestureDriver {
+    fun performOrderClickAt(x: Float, y: Float, callback: (Boolean, String?) -> Unit)
+}
+
 /**
  * Transporte vía Accesibilidad de Android (`dispatchGesture`).
  */
 class GestureTapTransport(
     private val eventSink: EventSink = RingBufferEventSink(),
-    private val instanceSupplier: () -> AutoTradeAccessibilityService? = { AutoTradeAccessibilityService.instance }
+    private val instanceSupplier: () -> OrderGestureDriver? = { null }
 ) : TapTransport {
     override val name: String = "GESTURE"
 
