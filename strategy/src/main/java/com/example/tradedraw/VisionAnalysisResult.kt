@@ -108,4 +108,3 @@ data class VisionAnalysisResult(
     val isBearishImpulse: Boolean = false,
     val isSniperZeroSecondWindow: Boolean = true
 )
-

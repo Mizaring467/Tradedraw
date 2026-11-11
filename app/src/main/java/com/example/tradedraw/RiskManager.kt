@@ -1104,6 +1104,7 @@ class RiskManager(
 
     @Synchronized
     fun clearPendingTrade() {
+        if (requiresBrokerReconciliation) return
         hasPendingTrade = false
         // Ronda 12 (B1): sin operacion en curso no hay estado de envio que mostrar. El HUD
         // solo debe pintar "Trade Activo" mientras haya una orden viva.
@@ -1130,18 +1131,28 @@ class RiskManager(
         pendingTradePriceAtTapEnd = 0.0
     }
 
+    /** Lifecycle notification; clearing a marker or resetting the HUD is not a settlement. */
+    var onPendingTradeSettled: ((String) -> Unit)? = null
+    private fun clearSettledPendingTrade() {
+        val id = if (hasPendingTrade) pendingTradeTradeId else ""
+        clearPendingTrade()
+        if (id.isNotBlank()) onPendingTradeSettled?.invoke(id)
+    }
+
     @Synchronized
     fun recordTradeVoid(count: Int = 1) {
+        if (requiresBrokerReconciliation) return
         val safeCount = count.coerceAtLeast(1)
         consecutiveVoids += safeCount
         totalVoids += safeCount
         lastTradeTime = System.currentTimeMillis()
-        clearPendingTrade()
+        clearSettledPendingTrade()
         notifyHud()
     }
 
     @Synchronized
     fun recordTradeWins(count: Int = 1, force: Boolean = false) {
+        if (requiresBrokerReconciliation) return
         if (!force && !hasPendingTrade) {
             android.util.Log.w("RiskManager", "recordTradeWins ignorado: No hay trade pendiente (llamada duplicada bloqueada)")
             return
@@ -1172,12 +1183,13 @@ class RiskManager(
             }
         }
         lastTradeTime = System.currentTimeMillis()
-        clearPendingTrade()
+        clearSettledPendingTrade()
         notifyHud()
     }
 
     @Synchronized
     fun recordTradeLosses(count: Int = 1, force: Boolean = false) {
+        if (requiresBrokerReconciliation) return
         if (!force && !hasPendingTrade) {
             android.util.Log.w("RiskManager", "recordTradeLosses ignorado: No hay trade pendiente (llamada duplicada bloqueada)")
             return
@@ -1203,7 +1215,7 @@ class RiskManager(
             currentSorosStep = 0
         }
         lastTradeTime = System.currentTimeMillis()
-        clearPendingTrade()
+        clearSettledPendingTrade()
         notifyHud()
     }
 

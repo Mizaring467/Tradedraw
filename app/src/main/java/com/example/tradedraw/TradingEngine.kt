@@ -793,6 +793,18 @@ class TradingEngine(
     }
 
     init {
+        riskManager.onPendingTradeSettled = { tradeId ->
+            handler.post {
+                val flight = orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
+                if (flight?.pendingRequestId() == tradeId && !flight.isRecovered() && !flight.requiresReview()) {
+                    try {
+                        check(flight.reconcile(tradeId)) { "BROKER_RESERVATION_RELEASE_FAILED" }
+                    } catch (e: Exception) {
+                        eventSink.add("DISPATCH_RECOVERY", "SETTLED_RESERVATION_REQUIRES_REVIEW ${e.message}", tradeId = tradeId)
+                    }
+                }
+            }
+        }
         handler.post {
             val flight = orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
             if (flight?.isRecovered() == true) flight.reservation()?.let {
@@ -2408,7 +2420,7 @@ class TradingEngine(
      */
     private fun checkOrderConfirmation() {
         val coordinator = orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
-        if (coordinator?.isRecovered() == true) return
+        if (coordinator?.isRecovered() == true || riskManager.requiresBrokerReconciliation) return
         val snapshot = synchronized(riskManager) {
             if (!riskManager.hasPendingTrade || riskManager.orderState != OrderState.ENVIADA) null
             else Triple(riskManager.pendingTradeStartTime, riskManager.pendingTradeBaseBalance, riskManager.pendingTradeAction)
@@ -2424,8 +2436,6 @@ class TradingEngine(
         if (!AutoTradeAccessibilityService.demoAccountGuard.isDemoConfirmedFresh(10_000L)) return
         if (riskManager.isOrderConfirmed(baseBalance, currentBal, elapsedSec)) {
             riskManager.markOrderConfirmed()
-            (orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway)
-                ?.reconcile(riskManager.pendingTradeTradeId)
             Log.i(
                 "TradingEngine",
                 "✅ ORDEN CONFIRMADA por movimiento de saldo | $action | base=$baseBalance ahora=$currentBal (${elapsedSec}s)"

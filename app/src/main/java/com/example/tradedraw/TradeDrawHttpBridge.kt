@@ -274,7 +274,7 @@ class TradeDrawHttpBridge(
                             .put("createdAtMs", pending?.context?.createdAtMs ?: 0L).put("baseBalance", pending?.context?.baseBalance)
                             .put("recovered", flight?.isRecovered() == true).put("requiresReview", flight?.requiresReview() == true)
                             .put("riskHold", overlayService.riskManager.requiresBrokerReconciliation)
-                            .put("state", if (pending == null) "CLEAR" else if (flight?.requiresReview() == true) "UNCERTAIN" else "AWAITING_BROKER_CONFIRMATION")
+                            .put("state", if (pending == null) "CLEAR" else if (flight?.requiresReview() == true) "UNCERTAIN" else if (overlayService.riskManager.orderState == OrderState.CONFIRMADA) "CONFIRMED_AWAITING_SETTLEMENT" else "AWAITING_BROKER_CONFIRMATION")
                             .put("lastOutcome", last?.outcome?.name ?: "").put("lastBrokerReference", last?.brokerReference ?: "")
                             .put("requiredAction", if (pending == null) "NONE" else "Inspect broker history; POST exact requestId, brokerReference, observedAtMs, closed outcome and confirmation=BROKER_HISTORY_REVIEWED; fresh DEMO required. No automatic resend.").toString())
                     }

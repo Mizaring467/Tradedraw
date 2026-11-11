@@ -242,4 +242,3 @@ class AssetRicMappingTest {
         assertEquals("Z-EUR/USD2", ric("EUR/USD OTC"))
     }
 }
-

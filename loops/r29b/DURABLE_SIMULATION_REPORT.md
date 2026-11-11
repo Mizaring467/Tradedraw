@@ -1,3 +1,9 @@
+## Adenda vigente — 2026-11-11 · Reserva hasta liquidación
+
+El recorrido DEMO anterior mostró una reserva liberada al confirmar. Se corrigió el intervalo confirmación→liquidación: confirmar ya no borra la reserva durable; solo el resultado de RiskManager notifica su liberación. Reiniciar con orden confirmada conserva el ID y restaura la retención, sin reenvío. El bridge distingue CONFIRMED_AWAITING_SETTLEMENT de incertidumbre. Limpiar el marcador o forzar contadores sin evidencia no elimina una retención de recuperación.
+
+Pruebas: suite raíz/replay/build PASS en td-recovery2.log; después, 2 casos de BrokerRecoveryRiskIntegrationTest PASS con guardas adicionales (td-recovery-hold.log). Incluyen reserva confirmada conservada, reinicio y bloqueo de otro despacho, liberación tras resultado único y rechazo de clear/force-WIN/force-LOSS/VOID durante retención. CI y recorrido del nuevo intervalo en APK pendientes; las comprobaciones anteriores permanecen históricas.
+
 # Estado vigente — 2026-11-11
 
 Integración simulada y recuperación aprobadas sobre b9d948f: pruebas locales, CI e instalación verificadas; recorrido sintético con reinicios y orden DEMO con liquidación comprobados. Modularización en curso. Base: 20bd936. Estrategias y parámetros congelados.
