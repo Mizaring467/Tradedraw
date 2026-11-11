@@ -36,11 +36,10 @@ class CooldownSubmodeSyncTest {
 
     @Before
     fun setUp() {
-        riskManager = RiskManager(null, balanceSource = AccessibilityBalanceSource(), brokerSensor = AutoTradeAccessibilityService)
+        riskManager = RiskManager(null)
         riskManager.resetSession()
         riskManager.yoloLossCooldownSeconds = RiskManager.DEFAULT_YOLO_LOSS_COOLDOWN_SECONDS
         riskManager.lossCooldownSeconds = RiskManager.DEFAULT_LOSS_COOLDOWN_SECONDS
-        AutoTradeAccessibilityService.latestObservedBalance = 0.0
     }
 
     /**

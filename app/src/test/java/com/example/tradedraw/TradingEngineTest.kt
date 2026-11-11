@@ -4,10 +4,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TradingEngineTest {
+    private var brokerObservation = com.example.tradedraw.core.BrokerStateView(observedAsset = "", isDemoAccount = false)
 
     @Test
     fun tieJournalResult_countsOnlyFreshBalanceAsVoid() {
-        val riskManager = RiskManager(balanceSource = AccessibilityBalanceSource(), brokerSensor = AutoTradeAccessibilityService).apply { resetStats() }
+        val riskManager = RiskManager().apply { resetStats() }
         val now = System.currentTimeMillis()
         assertTrue(TradingEngine.isBalanceFresh(instanceAvailable = true, lastReadMs = now - 1000L, nowMs = now))
         assertFalse(TradingEngine.isBalanceFresh(instanceAvailable = false, lastReadMs = now - 1000L, nowMs = now))
@@ -37,7 +38,7 @@ class TradingEngineTest {
         val actionCall = TradingEngine.evaluateStrategySignal(
             AutoTradeStrategy.MT_MASTER_COMBO,
             analysisCall
-        )
+        , brokerState = brokerObservation)
         assertEquals("MT_MASTER_COMBO debe priorizar Falso Rompimiento CALL", TradeAction.BUY, actionCall)
 
         val analysisPut = VisionAnalysisResult(
@@ -52,7 +53,7 @@ class TradingEngineTest {
         val actionPut = TradingEngine.evaluateStrategySignal(
             AutoTradeStrategy.MT_MASTER_COMBO,
             analysisPut
-        )
+        , brokerState = brokerObservation)
         assertEquals("MT_MASTER_COMBO debe priorizar Falso Rompimiento PUT", TradeAction.SELL, actionPut)
     }
 
@@ -68,7 +69,7 @@ class TradingEngineTest {
         val actionCall = TradingEngine.evaluateStrategySignal(
             AutoTradeStrategy.MT_MASTER_COMBO,
             analysisCall
-        )
+        , brokerState = brokerObservation)
         assertEquals("MT_MASTER_COMBO debe priorizar Mecha de Rechazo CALL sobre patrones inferiores", TradeAction.BUY, actionCall)
 
         val analysisPut = VisionAnalysisResult(
@@ -81,7 +82,7 @@ class TradingEngineTest {
         val actionPut = TradingEngine.evaluateStrategySignal(
             AutoTradeStrategy.MT_MASTER_COMBO,
             analysisPut
-        )
+        , brokerState = brokerObservation)
         assertEquals("MT_MASTER_COMBO debe priorizar Mecha de Rechazo PUT sobre patrones inferiores", TradeAction.SELL, actionPut)
     }
 
@@ -96,7 +97,7 @@ class TradingEngineTest {
         val action = TradingEngine.evaluateStrategySignal(
             AutoTradeStrategy.MT_MASTER_COMBO,
             analysisCall
-        )
+        , brokerState = brokerObservation)
         assertEquals("MT_MASTER_COMBO debe priorizar Vela Envolvente CALL sobre Choque/3Velas", TradeAction.BUY, action)
     }
 
@@ -110,7 +111,7 @@ class TradingEngineTest {
         val action = TradingEngine.evaluateStrategySignal(
             AutoTradeStrategy.MT_MASTER_COMBO,
             analysisCall
-        )
+        , brokerState = brokerObservation)
         assertEquals("MT_MASTER_COMBO debe priorizar Choque CALL sobre 3 Velas", TradeAction.BUY, action)
     }
 
@@ -124,7 +125,7 @@ class TradingEngineTest {
         val action = TradingEngine.evaluateStrategySignal(
             AutoTradeStrategy.MT_MASTER_COMBO,
             analysisCall
-        )
+        , brokerState = brokerObservation)
         assertEquals("MT_MASTER_COMBO debe priorizar Agotamiento 3 Velas CALL sobre termómetro", TradeAction.BUY, action)
     }
 
@@ -132,55 +133,55 @@ class TradingEngineTest {
     fun testMasterComboSignalThermometerThreshold() {
         // Termómetro con timing sniper >= 80% dispara señal si no hay patrones previos
         val analysisCallHigh = VisionAnalysisResult(signalPowerCall = 80, isSniperTimingWindow = true)
-        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisCallHigh))
+        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisCallHigh, brokerState = brokerObservation))
 
         val analysisPutHigh = VisionAnalysisResult(signalPowerPut = 85, isSniperTimingWindow = true)
-        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisPutHigh))
+        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisPutHigh, brokerState = brokerObservation))
 
         val analysisBelow80 = VisionAnalysisResult(signalPowerCall = 75, isSniperTimingWindow = true)
-        assertNull("75% debe ser filtrado ahora que el umbral A+ es 80%", TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisBelow80))
+        assertNull("75% debe ser filtrado ahora que el umbral A+ es 80%", TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisBelow80, brokerState = brokerObservation))
 
         val analysisWeak = VisionAnalysisResult(signalPowerCall = 65, signalPowerPut = 60)
-        assertNull(TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisWeak))
+        assertNull(TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_MASTER_COMBO, analysisWeak, brokerState = brokerObservation))
     }
 
     @Test
     fun testIndividualStrategiesDirectEvaluation() {
         // MT_FALSE_BREAKOUT
         val fbCall = VisionAnalysisResult(isFalseBreakoutCall = true)
-        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_FALSE_BREAKOUT, fbCall))
+        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_FALSE_BREAKOUT, fbCall, brokerState = brokerObservation))
         val fbPut = VisionAnalysisResult(isFalseBreakoutPut = true)
-        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_FALSE_BREAKOUT, fbPut))
+        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_FALSE_BREAKOUT, fbPut, brokerState = brokerObservation))
 
         // MT_ENGULFING_SR
         val engCall = VisionAnalysisResult(isEngulfingCall = true)
-        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_ENGULFING_SR, engCall))
+        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_ENGULFING_SR, engCall, brokerState = brokerObservation))
         val engPut = VisionAnalysisResult(isEngulfingPut = true)
-        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_ENGULFING_SR, engPut))
+        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_ENGULFING_SR, engPut, brokerState = brokerObservation))
 
         // MT_REJECTION
         val rejCall = VisionAnalysisResult(isRejectionCall = true)
-        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_REJECTION, rejCall))
+        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_REJECTION, rejCall, brokerState = brokerObservation))
         val rejPut = VisionAnalysisResult(isRejectionPut = true)
-        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_REJECTION, rejPut))
+        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_REJECTION, rejPut, brokerState = brokerObservation))
 
         // MT_CHOQUE_PULLBACK
         val choCall = VisionAnalysisResult(isChoqueCall = true)
-        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_CHOQUE_PULLBACK, choCall))
+        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_CHOQUE_PULLBACK, choCall, brokerState = brokerObservation))
         val choPut = VisionAnalysisResult(isChoquePut = true)
-        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_CHOQUE_PULLBACK, choPut))
+        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_CHOQUE_PULLBACK, choPut, brokerState = brokerObservation))
 
         // MT_3_VELAS_AGOTAMIENTO
         val v3Call = VisionAnalysisResult(is3VelasCall = true)
-        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO, v3Call))
+        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO, v3Call, brokerState = brokerObservation))
         val v3Put = VisionAnalysisResult(is3VelasPut = true)
-        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO, v3Put))
+        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO, v3Put, brokerState = brokerObservation))
 
         // COLOR_TREND
         val trendUp = VisionAnalysisResult(trend = TrendDirection.UPTREND, lastCandles = listOf(CandleType.GREEN))
-        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.COLOR_TREND, trendUp))
+        assertEquals(TradeAction.BUY, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.COLOR_TREND, trendUp, brokerState = brokerObservation))
         val trendDown = VisionAnalysisResult(trend = TrendDirection.DOWNTREND, lastCandles = listOf(CandleType.RED))
-        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.COLOR_TREND, trendDown))
+        assertEquals(TradeAction.SELL, TradingEngine.evaluateStrategySignal(AutoTradeStrategy.COLOR_TREND, trendDown, brokerState = brokerObservation))
     }
 
     @Test
@@ -197,7 +198,7 @@ class TradingEngineTest {
         )
 
         AutoTradeStrategy.values().forEach { strat ->
-            val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(strat, sidewaysAnalysis)
+            val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(strat, sidewaysAnalysis, brokerState = brokerObservation)
             assertNull("Estrategia $strat debe retornar null en mercado lateral", action)
             assertEquals("⚠️ Mercado Lateral / Dojis detectados: Esperando volatilidad", reason)
         }
@@ -206,7 +207,7 @@ class TradingEngineTest {
     @Test
     fun testSignalReasonFormatting() {
         val fbCall = VisionAnalysisResult(isFalseBreakoutCall = true)
-        val (_, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_MASTER_COMBO, fbCall)
+        val (_, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_MASTER_COMBO, fbCall, brokerState = brokerObservation)
         assertTrue("La razón debe describir el patrón", reason.contains("Trampa / Falso Rompimiento de Soporte"))
     }
 
@@ -214,31 +215,31 @@ class TradingEngineTest {
     fun testAutoAdaptiveMultiStrategySelection() {
         // 1. Trampa institucional -> Prioridad máxima
         val trampaCall = VisionAnalysisResult(isFalseBreakoutCall = true)
-        val (action1, reason1) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, trampaCall)
+        val (action1, reason1) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, trampaCall, brokerState = brokerObservation)
         assertEquals(TradeAction.BUY, action1)
         assertTrue(reason1.contains("Auto [Trampa en Soporte"))
 
         // 2. Mecha de rechazo en resistencia -> PUT
         val mechaPut = VisionAnalysisResult(isRejectionPut = true, isPullbackSniperPut = true)
-        val (action2, reason2) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, mechaPut)
+        val (action2, reason2) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, mechaPut, brokerState = brokerObservation)
         assertEquals(TradeAction.SELL, action2)
         assertTrue(reason2.contains("Auto [Mecha Rechazo Resistencia"))
 
         // 3. Vela envolvente en soporte -> CALL (requiere ventana sniper)
         val envolventeCall = VisionAnalysisResult(isEngulfingCall = true, isSniperTimingWindow = true)
-        val (action3, reason3) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, envolventeCall)
+        val (action3, reason3) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, envolventeCall, brokerState = brokerObservation)
         assertEquals(TradeAction.BUY, action3)
         assertTrue(reason3.contains("Auto [Vela Envolvente Soporte"))
 
         // 4. Choque / Retest -> PUT
         val choquePut = VisionAnalysisResult(isChoquePut = true)
-        val (action4, reason4) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, choquePut)
+        val (action4, reason4) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, choquePut, brokerState = brokerObservation)
         assertEquals(TradeAction.SELL, action4)
         assertTrue(reason4.contains("Auto [Choque / Pullback"))
 
         // 5. Agotamiento 3 velas rojas -> CALL
         val agotamientoCall = VisionAnalysisResult(is3VelasCall = true)
-        val (action5, reason5) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, agotamientoCall)
+        val (action5, reason5) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, agotamientoCall, brokerState = brokerObservation)
         assertEquals(TradeAction.BUY, action5)
         assertTrue(reason5.contains("Auto [Agotamiento 3 Rojas"))
     }
@@ -251,7 +252,7 @@ class TradingEngineTest {
             isPullbackSniperCall = false,
             isSniperTimingWindow = false
         )
-        val (actionNoPullback, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, mechaWithoutPullback)
+        val (actionNoPullback, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, mechaWithoutPullback, brokerState = brokerObservation)
         assertNull("Mecha sin pullback ni timing window debe esperar mejor precio", actionNoPullback)
 
         val mechaWithPullback = VisionAnalysisResult(
@@ -259,7 +260,7 @@ class TradingEngineTest {
             isPullbackSniperCall = true,
             candleSecond = 2
         )
-        val (actionWithPullback, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, mechaWithPullback)
+        val (actionWithPullback, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, mechaWithPullback, brokerState = brokerObservation)
         assertEquals("Mecha con pullback sniper debe gatillar CALL", TradeAction.BUY, actionWithPullback)
         assertTrue("La razón debe incluir el segundo 2s", reason.contains("2s"))
     }
@@ -271,7 +272,7 @@ class TradingEngineTest {
             isFalseBreakoutCall = true,
             signalPowerCall = 90
         )
-        val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, tightAnalysis)
+        val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, tightAnalysis, brokerState = brokerObservation)
         assertNull("Debe bloquear operaciones ante consolidación estrecha", action)
         assertEquals("⏳ Rango estrecho / Sin volatilidad: Esperando expansión", reason)
     }
@@ -285,7 +286,7 @@ class TradingEngineTest {
             isRejectionCall = true,
             isPullbackSniperCall = true
         )
-        val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, lateAnalysis)
+        val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, lateAnalysis, brokerState = brokerObservation)
         assertNull("Entrada tardía debe bloquearse", action)
         assertTrue("Razón debe advertir entrada tardía", reason.contains("Entrada tardía"))
 
@@ -295,7 +296,7 @@ class TradingEngineTest {
             isLateTimingForbidden = true,
             isFalseBreakoutCall = true
         )
-        val (actionTrap, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, lateTrapAnalysis)
+        val (actionTrap, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, lateTrapAnalysis, brokerState = brokerObservation)
         assertEquals("Trampa institucional permite entrada", TradeAction.BUY, actionTrap)
     }
 
@@ -306,7 +307,7 @@ class TradingEngineTest {
             isRejectionCall = true,
             isPullbackSniperCall = true
         )
-        val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, sidewaysAnalysis)
+        val (action, reason) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, sidewaysAnalysis, brokerState = brokerObservation)
         assertNull("Mercado lateral debe vetar trade", action)
         assertTrue("Debe informar mercado lateral / dojis", reason.contains("Mercado Lateral"))
     }
@@ -319,7 +320,7 @@ class TradingEngineTest {
             isChoquePut = true,
             touchesSupport = true
         )
-        val (actionSell, reasonSell) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, sellAtSupport)
+        val (actionSell, reasonSell) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, sellAtSupport, brokerState = brokerObservation)
         assertNull("Venta sobre soporte debe ser bloqueada para evitar rebotes", actionSell)
         assertTrue("Razón debe advertir veto sobre soporte", reasonSell.contains("Prohibido vender sobre Soporte"))
 
@@ -329,7 +330,7 @@ class TradingEngineTest {
             isChoqueCall = true,
             touchesResistance = true
         )
-        val (actionBuy, reasonBuy) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, buyAtResistance)
+        val (actionBuy, reasonBuy) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, buyAtResistance, brokerState = brokerObservation)
         assertNull("Compra bajo resistencia debe ser bloqueada para evitar rebotes", actionBuy)
         assertTrue("Razón debe advertir veto sobre resistencia", reasonBuy.contains("Prohibido comprar sobre Resistencia"))
     }
@@ -347,7 +348,7 @@ class TradingEngineTest {
             dynamicResistanceY = 100f,
             dynamicSupportY = 500f
         )
-        val (actionPut, reasonPut) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, putNearSupport)
+        val (actionPut, reasonPut) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, putNearSupport, brokerState = brokerObservation)
         assertNull("PUT cerca de soporte debe ser vetado", actionPut)
         assertEquals("⚠️ Veto: Prohibido vender sobre Soporte (Riesgo de Rebote)", reasonPut)
 
@@ -359,7 +360,7 @@ class TradingEngineTest {
             dynamicResistanceY = 100f,
             dynamicSupportY = 500f
         )
-        val (actionCall, reasonCall) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, callNearResistance)
+        val (actionCall, reasonCall) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.AUTO_ADAPTIVE, callNearResistance, brokerState = brokerObservation)
         assertNull("CALL cerca de resistencia debe ser vetado", actionCall)
         assertEquals("⚠️ Veto: Prohibido comprar sobre Resistencia (Riesgo de Rechazo)", reasonCall)
     }
@@ -373,7 +374,7 @@ class TradingEngineTest {
             lastCandles = listOf(CandleType.GREEN, CandleType.GREEN, CandleType.GREEN, CandleType.GREEN),
             streakBadge = "4V 🟢"
         )
-        val (actionBuy, reasonBuy) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.COLOR_TREND, greenStreak4)
+        val (actionBuy, reasonBuy) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.COLOR_TREND, greenStreak4, brokerState = brokerObservation)
         assertNull("Continuación alcista tras 4 velas verdes debe ser vetada", actionBuy)
         assertEquals("⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso", reasonBuy)
 
@@ -384,7 +385,7 @@ class TradingEngineTest {
             lastCandles = listOf(CandleType.RED, CandleType.RED, CandleType.RED, CandleType.RED),
             streakBadge = "4R 🔴"
         )
-        val (actionSell, reasonSell) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.COLOR_TREND, redStreak4)
+        val (actionSell, reasonSell) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.COLOR_TREND, redStreak4, brokerState = brokerObservation)
         assertNull("Continuación bajista tras 4 velas rojas debe ser vetada", actionSell)
         assertEquals("⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso", reasonSell)
 
@@ -395,7 +396,7 @@ class TradingEngineTest {
             streakBadge = "4R 🔴",
             is3VelasCall = true
         )
-        val (actionRev, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO, exhaustionCall)
+        val (actionRev, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO, exhaustionCall, brokerState = brokerObservation)
         assertEquals("Reversión contra racha no debe ser vetada", TradeAction.BUY, actionRev)
     }
 
@@ -407,7 +408,7 @@ class TradingEngineTest {
             lastCandles = listOf(CandleType.GREEN),
             isPriceNearTop = true
         )
-        val (actionUp, reasonUp) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.TREND_FOLLOWING, upNearTop)
+        val (actionUp, reasonUp) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.TREND_FOLLOWING, upNearTop, brokerState = brokerObservation)
         assertNull("Continuación sin pullback en extremo superior debe ser vetada", actionUp)
         assertTrue("Razón debe advertir falta de retroceso", reasonUp.contains("sin retroceso"))
 
@@ -417,7 +418,7 @@ class TradingEngineTest {
             lastCandles = listOf(CandleType.RED),
             isPriceNearBottom = true
         )
-        val (actionDown, reasonDown) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.TREND_FOLLOWING, downNearBottom)
+        val (actionDown, reasonDown) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.TREND_FOLLOWING, downNearBottom, brokerState = brokerObservation)
         assertNull("Continuación sin pullback en extremo inferior debe ser vetada", actionDown)
         assertTrue("Razón debe advertir falta de retroceso", reasonDown.contains("sin retroceso"))
     }
@@ -430,7 +431,7 @@ class TradingEngineTest {
             isRejectionCall = false,
             isPullbackSniperCall = true
         )
-        val (act40, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_REJECTION, analysis40)
+        val (act40, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_REJECTION, analysis40, brokerState = brokerObservation)
         assertNull("Mecha sin alcanzar umbral 45% debe ser ignorada", act40)
 
         // Mecha del 45%+ confirmada en soporte
@@ -439,7 +440,7 @@ class TradingEngineTest {
             isRejectionCall = true,
             touchesSupport = true
         )
-        val (act45, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_REJECTION, analysis45)
+        val (act45, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_REJECTION, analysis45, brokerState = brokerObservation)
         assertEquals("Mecha >=45% en Soporte debe disparar CALL de reversión", TradeAction.BUY, act45)
     }
 
@@ -451,7 +452,7 @@ class TradingEngineTest {
             isExhaustion3CandlesCall = true,
             touchesSupport = true
         )
-        val (actCall, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO, exhaustCall)
+        val (actCall, _) = TradingEngine.evaluateStrategySignalWithReason(AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO, exhaustCall, brokerState = brokerObservation)
         assertEquals("Agotamiento en soporte debe disparar CALL en la 4ta vela", TradeAction.BUY, actCall)
 
         // Intentar continuacion bajista (SELL) ante agotamiento 3 velas rojas debe ser vetado
@@ -462,7 +463,7 @@ class TradingEngineTest {
                 lastCandles = listOf(CandleType.RED),
                 is3VelasCall = true
             )
-        )
+        , brokerState = brokerObservation)
         assertNull("Continuacion bajista ante agotamiento en soporte debe ser vetada", vetoSell)
         assertTrue("Razon debe advertir veto por agotamiento", reasonVeto.contains("Agotamiento 3 Velas Rojas"))
     }
@@ -493,7 +494,7 @@ class TradingEngineTest {
             AutoTradeStrategy.TREND_FOLLOWING,
             trendUpResult,
             syntheticEngine = engine
-        )
+        , brokerState = brokerObservation)
 
         assertNull("La continuación alcista sobreextendida debe ser vetada", action)
         assertTrue("Razón debe advertir sobreextensión", reason.contains("sin retroceso") || reason.contains("sobreextendida"))
@@ -524,7 +525,7 @@ class TradingEngineTest {
             AutoTradeStrategy.AUTO_ADAPTIVE,
             resAnalysis,
             syntheticEngine = engine
-        )
+        , brokerState = brokerObservation)
 
         assertEquals("Debe gatillar reversión PUT contra sobreextensión en Resistencia", TradeAction.SELL, actionPut)
         assertTrue("Razón debe describir reversión por sobreextensión", reasonPut.contains("Reversión por Sobreextensión en Resistencia"))
@@ -572,7 +573,7 @@ class TradingEngineTest {
         val (actionVeto, reasonVeto) = TradingEngine.evaluateStrategySignalWithReason(
             AutoTradeStrategy.AUTO_ADAPTIVE,
             vetoAnalysis
-        )
+        , brokerState = brokerObservation)
         assertNull("Operación en segundo :30 debe ser vetada", actionVeto)
         assertTrue("Razón debe indicar veto de timing :15-:55", reasonVeto.contains("Veto Timing Estricto") || reasonVeto.contains("Entrada tardía"))
 
@@ -585,7 +586,7 @@ class TradingEngineTest {
         val (actionValid, _) = TradingEngine.evaluateStrategySignalWithReason(
             AutoTradeStrategy.AUTO_ADAPTIVE,
             validAnalysis
-        )
+        , brokerState = brokerObservation)
         assertEquals("Operación en segundo :02 debe ser permitida", TradeAction.BUY, actionValid)
     }
 
@@ -623,7 +624,7 @@ class TradingEngineTest {
             AutoTradeStrategy.AUTO_ADAPTIVE,
             analysis,
             syntheticEngine = engine
-        )
+        , brokerState = brokerObservation)
 
         assertNull("Señal debe ser suprimida por el Filtro Anti-Choppy", action)
         assertTrue("Razón debe advertir veto por micro-rango / choppiness", reason.contains("Anti-Choppy"))
@@ -666,8 +667,8 @@ class TradingEngineTest {
 
     @Test
     fun testSniperConfluences_AssetVeto() {
-        AutoTradeAccessibilityService.latestObservedAsset = "Crypto IDX"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = true
+        brokerObservation = brokerObservation.copy(observedAsset = "Crypto IDX", rawObservedAsset = "Crypto IDX")
+        brokerObservation = brokerObservation.copy(isSyntheticOrOTC = true)
 
         val analysis = VisionAnalysisResult(
             candleSecond = 2,
@@ -675,15 +676,15 @@ class TradingEngineTest {
             hasBottomRejectionWick = true
         )
 
-        val (action, reason) = TradingEngine.evaluateSniperConfluences(analysis, null, null)
+        val (action, reason) = TradingEngine.evaluateSniperConfluences(analysis, null, null, brokerState = brokerObservation)
         assertNull("No debe disparar en activo sintético", action)
         assertTrue("Razón debe mencionar Veto Francotirador", reason.contains("Veto Francotirador"))
     }
 
     @Test
     fun testSniperConfluences_TimingWindow() {
-        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        brokerObservation = brokerObservation.copy(observedAsset = "EUR/USD", rawObservedAsset = "EUR/USD")
+        brokerObservation = brokerObservation.copy(isSyntheticOrOTC = false)
 
         val analysisOutside = VisionAnalysisResult(
             candleSecond = 35,
@@ -691,7 +692,7 @@ class TradingEngineTest {
             hasBottomRejectionWick = true
         )
 
-        val (actionOutside, reasonOutside) = TradingEngine.evaluateSniperConfluences(analysisOutside, null, null)
+        val (actionOutside, reasonOutside) = TradingEngine.evaluateSniperConfluences(analysisOutside, null, null, brokerState = brokerObservation)
         assertNull("Fuera de :01-:03s no debe disparar", actionOutside)
         assertTrue("Razón debe mencionar timing estricto", reasonOutside.contains("timing estricto"))
 
@@ -701,15 +702,15 @@ class TradingEngineTest {
             hasBottomRejectionWick = true,
             tickVelocityNormalized = 0.05f
         )
-        val (actionInside, reasonInside) = TradingEngine.evaluateSniperConfluences(analysisInside, null, null)
+        val (actionInside, reasonInside) = TradingEngine.evaluateSniperConfluences(analysisInside, null, null, brokerState = brokerObservation)
         assertEquals("En :02s con soporte y mecha debe emitir BUY", TradeAction.BUY, actionInside)
         assertTrue("Razón debe ser FRANCOTIRADOR CALL", reasonInside.contains("FRANCOTIRADOR [CALL"))
     }
 
     @Test
     fun testSniperConfluences_FullConfluenceCallAndPut() {
-        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        brokerObservation = brokerObservation.copy(observedAsset = "EUR/USD", rawObservedAsset = "EUR/USD")
+        brokerObservation = brokerObservation.copy(isSyntheticOrOTC = false)
 
         // CALL Confluence
         val analysisCall = VisionAnalysisResult(
@@ -718,7 +719,7 @@ class TradingEngineTest {
             hasBottomRejectionWick = true,
             tickVelocityNormalized = 0.02f
         )
-        val (actionCall, reasonCall) = TradingEngine.evaluateSniperConfluences(analysisCall, null, null)
+        val (actionCall, reasonCall) = TradingEngine.evaluateSniperConfluences(analysisCall, null, null, brokerState = brokerObservation)
         assertEquals("Debe disparar BUY ante confluencia de soporte", TradeAction.BUY, actionCall)
         assertTrue("Razón debe mencionar FRANCOTIRADOR CALL", reasonCall.contains("FRANCOTIRADOR [CALL"))
 
@@ -729,7 +730,7 @@ class TradingEngineTest {
             hasTopRejectionWick = true,
             tickVelocityNormalized = -0.02f
         )
-        val (actionPut, reasonPut) = TradingEngine.evaluateSniperConfluences(analysisPut, null, null)
+        val (actionPut, reasonPut) = TradingEngine.evaluateSniperConfluences(analysisPut, null, null, brokerState = brokerObservation)
         assertEquals("Debe disparar SELL ante confluencia de resistencia", TradeAction.SELL, actionPut)
         assertTrue("Razón debe mencionar FRANCOTIRADOR PUT", reasonPut.contains("FRANCOTIRADOR [PUT"))
     }
@@ -747,8 +748,8 @@ class TradingEngineTest {
 
     @Test
     fun testSniperConfluences_AdverseVelocityBlocked() {
-        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        brokerObservation = brokerObservation.copy(observedAsset = "EUR/USD", rawObservedAsset = "EUR/USD")
+        brokerObservation = brokerObservation.copy(isSyntheticOrOTC = false)
 
         // S/R y mecha presentes, pero micro-velocidad adversa (bajista en soporte CALL)
         val analysisAdverse = VisionAnalysisResult(
@@ -758,15 +759,15 @@ class TradingEngineTest {
             tickVelocityNormalized = -0.05f,
             isBearishImpulse = true
         )
-        val (action, reason) = TradingEngine.evaluateSniperConfluences(analysisAdverse, null, null)
+        val (action, reason) = TradingEngine.evaluateSniperConfluences(analysisAdverse, null, null, brokerState = brokerObservation)
         assertNull("Velocidad adversa bajista no debe disparar CALL en Francotirador", action)
         assertTrue("Razón debe mencionar confluencias incompletas", reason.contains("Confluencias incompletas"))
     }
 
     @Test
     fun testSniperConfluences_HeadlessSyntheticCandleWick() {
-        AutoTradeAccessibilityService.latestObservedAsset = "EUR/USD"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        brokerObservation = brokerObservation.copy(observedAsset = "EUR/USD", rawObservedAsset = "EUR/USD")
+        brokerObservation = brokerObservation.copy(isSyntheticOrOTC = false)
 
         val syntheticEngine = SyntheticCandleEngine()
         // Crear un tick para abrir la vela
@@ -787,15 +788,15 @@ class TradingEngineTest {
             candleList = emptyList(),
             tickVelocityNormalized = 0.03f
         )
-        val (action, reason) = TradingEngine.evaluateSniperConfluences(analysisHeadless, syntheticEngine, null)
+        val (action, reason) = TradingEngine.evaluateSniperConfluences(analysisHeadless, syntheticEngine, null, brokerState = brokerObservation)
         assertEquals("Debe disparar BUY usando mecha de vela sintética", TradeAction.BUY, action)
         assertTrue("Razón debe mencionar FRANCOTIRADOR CALL", reason.contains("FRANCOTIRADOR [CALL"))
     }
 
     @Test
     fun testSniperConfluences_NonForexAssetBlocked() {
-        AutoTradeAccessibilityService.latestObservedAsset = "COMMODITY_GOLD"
-        AutoTradeAccessibilityService.isSyntheticOrOTC = false
+        brokerObservation = brokerObservation.copy(observedAsset = "COMMODITY_GOLD", rawObservedAsset = "COMMODITY_GOLD")
+        brokerObservation = brokerObservation.copy(isSyntheticOrOTC = false)
 
         val analysis = VisionAnalysisResult(
             candleSecond = 2,
@@ -803,7 +804,7 @@ class TradingEngineTest {
             hasBottomRejectionWick = true,
             tickVelocityNormalized = 0.04f
         )
-        val (action, reason) = TradingEngine.evaluateSniperConfluences(analysis, null, null)
+        val (action, reason) = TradingEngine.evaluateSniperConfluences(analysis, null, null, brokerState = brokerObservation)
         assertNull("Activo no-forex debe ser bloqueado en Francotirador", action)
         assertTrue("Razón debe indicar que no es par Forex real", reason.contains("no es un par Forex real"))
     }

@@ -1,5 +1,7 @@
 package com.example.tradedraw
 
+import com.example.tradedraw.core.*
+
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
@@ -12,6 +14,15 @@ typealias AssetClassification = com.example.tradedraw.core.AssetClassification
 class AutoTradeAccessibilityService : AccessibilityService() {
 
     companion object : com.example.tradedraw.core.BrokerSensor {
+        @Volatile private var boundHudPort: HudPort? = null
+        @Volatile private var boundAssetSink: ((String) -> Unit)? = null
+        @Synchronized internal fun bindUi(hud: HudPort, assetSink: (String) -> Unit) {
+            boundHudPort = hud; boundAssetSink = assetSink
+        }
+        @Synchronized internal fun unbindUi(hud: HudPort) {
+            if (boundHudPort === hud) { boundHudPort = null; boundAssetSink = null }
+        }
+
         /**
          * R27-H / Loop 1: la referencia vive en un [ActiveInstance], no en un `var` suelto.
          *
@@ -143,7 +154,8 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                 observedAsset = latestObservedAsset.ifBlank { "Crypto IDX" },
                 observedPayout = PayoutReader.effectivePayout(observedPayout, 82.0).first,
                 observedOrderAmount = observedOrderAmount,
-                isSyntheticOrOTC = isSyntheticOrOTC
+                isSyntheticOrOTC = isSyntheticOrOTC,
+                rawObservedAsset = latestObservedAsset
             )
 
         fun extractAssetCandidate(rawText: String): String? {
@@ -233,7 +245,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                 // H8: el HUD flotante cubre los botones de Binomo; `input tap` a nivel sistema
                 // aterrizaría en el overlay. Hay que volver el HUD NO-TÁCTIL igual que hace la
                 // ruta de accesibilidad, o la orden no se registra (VOID).
-                val overlay = OverlayService.instance
+                val overlay = boundHudPort
                 if (overlay != null && overlay.isPointInsideHUD(x, y)) {
                     overlay.temporarilyBypassHUD(350L) {
                         executeRootTap(x, y, decisionId, tradeId, onResult, bypassHud = true)
@@ -385,7 +397,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                     // (141-327 ms medidos, sin cota con carga alta) rebasaba, dejando el HUD
                     // tactil sobre el boton: el overlay se comia el toque y la orden no se
                     // registraba. Este `finally` es lo que cierra la causa raiz.
-                    try { OverlayService.instance?.restoreHudTouchable() } catch (e: Exception) {}
+                    try { boundHudPort?.restoreHudTouchable() } catch (e: Exception) {}
                 }
             }.start()
         }
@@ -446,7 +458,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         attach(this)
         Log.i("TradeDraw", "AutoTradeAccessibilityService connected")
         try {
-            OverlayService.instance?.updateHUDView(true)
+            boundHudPort?.updateHUDView(true)
         } catch (e: Exception) {}
 
         // Ronda 16 (A): este receptor estaba registrado RECEIVER_EXPORTED y sus acciones
@@ -483,7 +495,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         attach(this)
         Log.i("TradeDraw", "AutoTradeAccessibilityService rebinded exitosamente")
         try {
-            OverlayService.instance?.updateHUDView(true)
+            boundHudPort?.updateHUDView(true)
         } catch (e: Exception) {}
     }
 
@@ -529,7 +541,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         // identidad, así que si otra instancia ya se promovió ésta no la borra.
         detach(this)
         try {
-            OverlayService.instance?.updateHUDView(true)
+            boundHudPort?.updateHUDView(true)
         } catch (e: Exception) {}
         return true
     }
@@ -565,7 +577,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             onResult?.invoke(false, "BLOQUEO_SEGURIDAD_NO_DEMO")
             return
         }
-        val overlay = OverlayService.instance
+        val overlay = boundHudPort
         val send = {
             if (isAccountDispatchAllowed()) dispatchClickGesture(x, y, onResult)
             else onResult?.invoke(false, "ACCOUNT_CHANGED_BEFORE_DISPATCH")
@@ -575,7 +587,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
     }
 
     private fun dispatchClickWithHud(x: Float, y: Float, onResult: ((Boolean, String?) -> Unit)?) {
-        val overlay = OverlayService.instance
+        val overlay = boundHudPort
         if (overlay != null && overlay.isPointInsideHUD(x, y)) {
             overlay.temporarilyBypassHUD(250L) {
                 dispatchClickGesture(x, y, onResult)
@@ -815,12 +827,12 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                     isSyntheticOrOTC = isSyn
                     onAssetUpdatedListener?.invoke(assetCandidate, isSyn)
                     try {
-                        OverlayService.instance?.binomoWebSocketClient?.let { ws ->
+                        boundAssetSink?.let { assetSink ->
                             // Ronda 20: el mapeo se extrajo a `AssetRicMapper` porque el guard de
                             // desajuste pantalla<->feed del motor necesita el MISMO mapeo, y
                             // alguna clase tiene que ser la unica fuente de verdad.
                             val formattedRic = AssetRicMapper.ricParaActivoVisible(assetCandidate)
-                            ws.updateActiveAsset(formattedRic)
+                            assetSink(formattedRic)
                             // R13 (adenda 3): los cambios de activo deben quedar en `/events`.
                             // Sin esto no habia forma de ver QUE RIC se estaba suscribiendo, que
                             // es justo lo que hacia falta para diagnosticar el activo sin ticks.

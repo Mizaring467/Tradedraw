@@ -7,7 +7,8 @@ data class BrokerStateView(
     val observedAsset: String = "Crypto IDX",
     val observedPayout: Double? = null,
     val observedOrderAmount: Double = 0.0,
-    val isSyntheticOrOTC: Boolean = false
+    val isSyntheticOrOTC: Boolean = false,
+    val rawObservedAsset: String = observedAsset
 )
 
 interface BrokerSensor {

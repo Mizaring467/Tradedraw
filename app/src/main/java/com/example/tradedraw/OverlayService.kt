@@ -98,6 +98,8 @@ class OverlayService : Service(), com.example.tradedraw.core.HudPort {
         private set
     lateinit var tradingEngine: TradingEngine
         private set
+    val brokerRuntime by lazy { AndroidBrokerRuntime(this) }
+
     var binomoWebSocketClient: BinomoWebSocketClient? = null
         private set
 
@@ -290,9 +292,9 @@ class OverlayService : Service(), com.example.tradedraw.core.HudPort {
         startTradeDrawForeground()
         setupCanvasWindow()
 
-        riskManager = RiskManager(this, balanceSource = AccessibilityBalanceSource(), hudPort = this, brokerSensor = AutoTradeAccessibilityService)
+        riskManager = RiskManager(this, balanceSource = brokerRuntime, hudPort = this, brokerSensor = brokerRuntime)
         calibrationManager = CalibrationManager(this)
-        tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager, hudPort = this)
+        tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager, hudPort = this, brokerRuntime = brokerRuntime)
         tradingEngine.adaptiveLearningEngine.loadState(this)
 
         // R15-A: el modo arranca en DISABLED sin pasar por el setter (es el inicializador de la
@@ -339,6 +341,7 @@ class OverlayService : Service(), com.example.tradedraw.core.HudPort {
         // Iniciar Cliente WebSocket nativo para recepción de micro-ticks
         val wsClient = BinomoWebSocketClient(this, eventSink = RingBufferEventSink())
         binomoWebSocketClient = wsClient
+        bindBrokerUi(this) { ric -> wsClient.updateActiveAsset(ric) }
         wsClient.onAssetChangedListener = { tradingEngine.onAssetChanged() }
         wsClient.onTickListener = { tick ->
             tradingEngine.onMarketTick(tick)
@@ -2439,6 +2442,7 @@ class OverlayService : Service(), com.example.tradedraw.core.HudPort {
 
     override fun onDestroy() {
         super.onDestroy()
+        unbindBrokerUi(this)
         if (instance == this) instance = null
         httpBridge?.stop()
         httpBridge = null

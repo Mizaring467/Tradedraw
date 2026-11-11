@@ -128,29 +128,6 @@ class AutonomousSafetyAndAssetScaleTest {
     }
 
     @Test
-    fun elDespachoDeTapLeeElEstadoRealDeLaCuenta() {
-        // Integracion con el estado que consulta el guard en produccion: si el servicio marca cuenta
-        // real, el guard de tap debe rechazar. Se restaura el valor al terminar para no contaminar
-        // las otras suites que comparten este singleton (ver RiskManagerTest).
-        val original = AutoTradeAccessibilityService.isDemoAccount
-        try {
-            AutoTradeAccessibilityService.isDemoAccount = false
-            assertFalse(
-                "con isDemoAccount=false ningun tap puede despacharse",
-                AutoTradeAccessibilityService.puedeDespacharTap(AutoTradeAccessibilityService.isDemoAccount)
-            )
-
-            AutoTradeAccessibilityService.isDemoAccount = true
-            assertTrue(
-                "con isDemoAccount=true el flujo normal queda permitido",
-                AutoTradeAccessibilityService.puedeDespacharTap(AutoTradeAccessibilityService.isDemoAccount)
-            )
-        } finally {
-            AutoTradeAccessibilityService.isDemoAccount = original
-        }
-    }
-
-    @Test
     fun elUmbralDelIndiceNoCoincideConElDeLaCuentaReal() {
         // Prueba de no-confusion: son dos decisiones independientes. El hecho de estar en demo no
         // cambia el umbral elegido, y el umbral elegido no relaja el guard de seguridad.

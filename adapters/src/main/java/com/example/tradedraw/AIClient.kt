@@ -1,5 +1,8 @@
 package com.example.tradedraw
 
+import com.example.tradedraw.core.*
+import com.example.tradedraw.execution.AIAdvisor
+
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Bitmap
@@ -15,32 +18,23 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
-data class AIAnalysisResult(
-    val action: TradeAction?,
-    val confidence: Float,
-    val reason: String,
-    val isSuccess: Boolean,
-    val rawResponse: String? = null,
-    val errorMessage: String? = null
-)
-
-class AIClient(private val context: Context) {
+class AIClient(private val context: Context) : AIAdvisor {
 
     private val prefs: SharedPreferences = context.getSharedPreferences("TradeDraw_AIConfig", Context.MODE_PRIVATE)
 
-    var isEnabled: Boolean
+    override var isEnabled: Boolean
         get() = prefs.getBoolean("ai_enabled", true) // Activado por defecto
         set(value) = prefs.edit().putBoolean("ai_enabled", value).apply()
 
-    var baseUrl: String
+    override var baseUrl: String
         get() = prefs.getString("ai_base_url", "http://localhost:20128/v1") ?: "http://localhost:20128/v1"
         set(value) = prefs.edit().putString("ai_base_url", value.trim().trimEnd('/')).apply()
 
-    var apiKey: String
+    override var apiKey: String
         get() = prefs.getString("ai_api_key", "") ?: ""
         set(value) = prefs.edit().putString("ai_api_key", value.trim()).apply()
 
-    var model: String
+    override var model: String
         get() {
             val m = prefs.getString("ai_model", "antigravity/gemini-3.7-flash-low") ?: "antigravity/gemini-3.7-flash-low"
             // Fallback preventivo si el usuario seleccionó 3.8 antes de que OmniRoute lo registre en el router
@@ -48,7 +42,7 @@ class AIClient(private val context: Context) {
         }
         set(value) = prefs.edit().putString("ai_model", value.trim()).apply()
 
-    var confidenceThreshold: Float
+    override var confidenceThreshold: Float
         get() = prefs.getFloat("ai_confidence", 0.80f)
         set(value) = prefs.edit().putFloat("ai_confidence", value).apply()
 
@@ -59,7 +53,7 @@ class AIClient(private val context: Context) {
     @Volatile
     private var isRequestInProgress = false
 
-    fun analyzeFrame(bitmap: Bitmap, onResult: (AIAnalysisResult) -> Unit) {
+    override fun analyzeFrame(bitmap: Bitmap, onResult: (AIAnalysisResult) -> Unit) {
         if (!isEnabled || apiKey.isBlank()) {
             onResult(AIAnalysisResult(null, 0f, "IA no configurada", false, errorMessage = "Sin API Key"))
             return
@@ -120,7 +114,7 @@ class AIClient(private val context: Context) {
         }
     }
 
-    fun testConnection(onResult: (Boolean, String) -> Unit) {
+    override fun testConnection(onResult: (Boolean, String) -> Unit) {
         if (apiKey.isBlank()) {
             onResult(false, "La API Key está vacía")
             return
@@ -267,7 +261,7 @@ class AIClient(private val context: Context) {
         }
     }
 
-    fun sendChatMessage(
+    override fun sendChatMessage(
         userMessage: String,
         marketContext: String,
         onResponse: (replyText: String, commandTag: String?) -> Unit
@@ -355,7 +349,7 @@ class AIClient(private val context: Context) {
         }
     }
 
-    fun destroy() {
+    override fun destroy() {
         try {
             workerThread.quitSafely()
         } catch (e: Exception) {}

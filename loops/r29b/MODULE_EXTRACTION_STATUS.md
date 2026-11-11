@@ -1,5 +1,21 @@
 # Estado vigente — 2026-11-11 · Extracción incremental en curso
 
+## Séptimo corte — adapters y cierre F6 (working tree recuperado)
+
+HEAD base 5be6418. El corte `:adapters` existía sin commit y sin compilar; se terminó sin resetear ni reescribir el motor. `adapters/` reúne los adaptadores Android/broker: `AIClient` (implementando `AIAdvisor` de `:execution`), `AccessibilityBalanceSource`, `AndroidBrokerRuntime` (implementa `BrokerRuntimePort`), `AndroidOrderComposition`, `AutoTradeAccessibilityService` y `BrokerDetector`.
+
+Grafo comprobado en `build.gradle.kts`, no supuesto por compilación: `adapters → core/observability/market/ui/execution` (test: `risk`); `app → adapters` y todos los demás. Ningún módulo depende de `:app` ni la tiene en classpath. `AccessibilityBalanceSource` y `BrokerDetector` son movimientos byte-idénticos; `CalibrationManager` también (`:ui`); `AIClient` sólo añade `: AIAdvisor` y `override`; `AndroidOrderComposition` perdió `createExecutionPolicy`, que permanece en app porque cita `TradingEngine`.
+
+F6: `BrokerRuntimePort` (`:core`) = `BrokerSensor + BalanceSource` + guard/refresh/permiso. `TradingEngine` lo recibe por constructor y no consulta estáticos de accesibilidad. `AutoTradeAccessibilityService` dejó `OverlayService.instance`: 17 líneas pasaron a `boundHudPort`/`boundAssetSink`, enlazados por `OverlayService` con `bindBrokerUi`/`unbindBrokerUi`. `BrokerStateView` ganó `rawObservedAsset` para preservar el `.ifBlank` exacto del sniper.
+
+Los tres errores de recuperación fueron de migración, no de conducta: import `java.util.Locale` perdido, `String>=` tokenizado como `>=`, y un setter `internal` ejercido desde otro módulo (prueba trasladada al módulo dueño, sin ampliar API y sin dejar test hueco).
+
+Equivalencia verificada por tokens contra 5be6418: `evaluateStrategySignalWithReason` idéntico salvo el parámetro `brokerState`; `evaluateSniperConfluences` idéntico salvo tres sustituciones equivalentes. Estrategias congeladas intactas.
+
+Suite/agregador: 658 pruebas, 84 clases, 0F/0E/0skips (app357, core6, simulation8, persistence0, market40, strategy92, observability29, risk71, execution10, ui33, research2, adapters10). Delta 657→658 explicado: +1 `LiveStrategyBrokerPortTest`, −1 test hueco retirado. Python 47 PASS; replay ejecutado con CSV versionado; APK PASS. CI y dispositivo del corte pendientes.
+
+## Historial conservado — no sustituye el estado vigente
+
 No se declara G5 ni F6 completos. Los cierres históricos se conservan; esta tabla exige módulos con consumidores y dependencias reales.
 
 | Tarea | Implementación actual | Integración | Criterio restante |

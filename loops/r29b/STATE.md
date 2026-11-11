@@ -1,3 +1,23 @@
+## Actualización vigente — 2026-11-11 · :adapters + F6 recuperados y validados localmente
+
+HEAD base 5be6418. El working tree contenía el corte `:adapters` sin commit y sin compilar; se recuperó sin reset, sin descartar cambios y sin reescribir el motor. Se publicaron incrementalmente persistence/market/simulation, strategy/observability, risk, execution, ui y research; este cierre es el de adapters y el desacoplamiento estático F6.
+
+Errores de recuperación (los tres de migración, ninguno de lógica):
+
+1. `strategy/.../FrozenStrategySignals.kt:51` `Unresolved reference: Locale`. La extracción desde `TradingEngine` no arrastró `import java.util.Locale` (existía en 5be6418:21). Corrección de un import; cuerpo intacto.
+2. `TradingEngine.kt:1025/1035` `Expecting a '>'` con 32 errores en cascada. `): Pair<TradeAction?, String>=` se tokeniza como `>=`. Sólo espaciado: `> =`.
+3. `AutonomousSafetyAndAssetScaleTest` no compilaba: el setter de `AutoTradeAccessibilityService.isDemoAccount` es `internal` y el servicio pasó a `:adapters`. Prueba trasladada al módulo dueño (`adapters/.../AutoTradeAccessibilityServiceAccountStateTest.kt`) sin ampliar API de producción; el stub vacío que quedó en app se eliminó en lugar de dejarlo como test hueco.
+
+Corte cerrado: `adapters/` contiene AIClient, AccessibilityBalanceSource, AndroidBrokerRuntime, AndroidOrderComposition, AutoTradeAccessibilityService y BrokerDetector. Grafo real verificado: `adapters → core/observability/market/ui/execution`, `app → adapters`; ningún módulo depende de `:app` y `adapters` no la tiene en classpath. Sin duplicados: cada tipo existe una sola vez.
+
+F6: `TradingEngine` recibe `BrokerRuntimePort` (por defecto `AndroidBrokerRuntime`) y ya no consulta `AutoTradeAccessibilityService.instance/latestObservedBalance/latestObservedAsset/demoAccountGuard`. El servicio dejó de usar `OverlayService.instance`: 17 líneas sustituidas por `boundHudPort`/`boundAssetSink` enlazados por `OverlayService`. Auditoría de estáticos de negocio en core/strategy/risk/execution/research/simulation/market/persistence/observability/ui: sólo puertos core, fixtures de test locales y comentarios. Quedan lecturas de servicio en `app` (bridge, health, controllers, MainActivity) que son composición/adaptación, no dominio.
+
+Equivalencia de estrategias: comparación por tokens contra 5be6418. `evaluateStrategySignalWithReason` idéntico salvo el parámetro inyectado `brokerState`; `evaluateSniperConfluences` idéntico salvo 3 sustituciones (`latestObservedAsset`→`rawObservedAsset`, `isSyntheticOrOTC` directo, `classifyAsset`→`AssetClassifier`). Sin cambios de umbrales, reglas, ventanas, vetos ni mensajes.
+
+Suite multimódulo (agregador real `parse_gradle_test_results(multi_module=True)`): 658 pruebas, 84 clases, 0 fallos/errores/skips. app357 · core6 · simulation8 · persistence0 · market40 · strategy92 · observability29 · risk71 · execution10 · ui33 · research2 · adapters10. El total pasa de 657 a 658: +1 `LiveStrategyBrokerPortTest` (nuevo) y −1 test hueco retirado en app cuyas 9 aserciones ya viven en adapters. Python 47 PASS; replay ejecutado (no omitido) con `BACKTEST_CSV` versionado y 6 filas en `build/ci-replay.csv`; `:app:assembleDebug` PASS.
+
+Evidencia: td-r29b-final-suite.log, td-r29b-apk-final.log. Queda pendiente CI del push y verificación de dispositivo; no se declara R29-B cerrada.
+
 ## Actualización vigente — 2026-11-11 · Research validado localmente
 
 HEAD base e3769a5 (UI publicada). Research extraído y consumidores actualizados: 657 JVM,82 clases,0F/0E/0skips; replay y APK PASS. Python47 PASS. CI ahora ejecutará también Python y replay con datos versionados; esperar resultado del nuevo workflow antes de aprobar. Próxima acción: publicar corte; adapters/F6 y verificación final de dispositivo. No se declara R29-B cerrada.

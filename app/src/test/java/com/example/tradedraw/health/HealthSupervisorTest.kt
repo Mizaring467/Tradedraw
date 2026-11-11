@@ -1,6 +1,5 @@
 package com.example.tradedraw.health
 
-import com.example.tradedraw.AutoTradeAccessibilityService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -34,9 +33,6 @@ class HealthSupervisorTest {
     @Before
     fun setUp() {
         supervisor = HealthSupervisor()
-        AutoTradeAccessibilityService.latestObservedAsset = ""
-        AutoTradeAccessibilityService.latestObservedBalance = 0.0
-        AutoTradeAccessibilityService.lastBalanceReadMs = 0L
     }
 
     // ---------- 1. Accesibilidad ----------
