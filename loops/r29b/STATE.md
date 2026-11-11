@@ -6,7 +6,7 @@
 
 HEAD de código validado/instalado: `82afad5` (CI push 42957780132 y PR 42957785838 success). APK SHA256 `31a7d25bff2eae4832db667ffb25be347ee78a54b2d53b3c0a7f3e9721efef2b`, coincidencia instalada verificada. Runtime: /trade DISABLED y SHADOW403, SEMI+cuenta desconocida403, /click zona de órdenes403, acción inválida400; estado restaurado DISABLED. Accesibilidad TradeDraw enlazada; overlay allow. Feed desconectado/saldo ausente, sin prueba positiva DEMO.
 
-Tarea actual: conectar ExecutionPolicy al motor preservando suppliers perezosos y retirar cascada duplicada después del gate. Snapshot histórico exacto en LEGACY_HEADLESS_CASCADE_82afad5.txt. Gate local ronda2: 639 app + 4 core, cero fallos/errores/skips, replay y assembleDebug PASS. Comparación diferencial de 3.000 contextos frente a oráculo congelado y comprobación de orden de suppliers. Instalación/CI de ronda2 pendientes; no se declara validación Android de todos los efectos.
+Tarea actual: conectar ExecutionPolicy al motor preservando suppliers perezosos y retirar cascada duplicada después del gate. Snapshot histórico exacto en LEGACY_HEADLESS_CASCADE_82afad5.txt. Gate local ronda2: 639 app + 4 core, cero fallos/errores/skips, replay y assembleDebug PASS. Comparación diferencial de 3.000 contextos frente a oráculo congelado y comprobación de orden de suppliers. Política publicada en `735f420`; CI push42959102967 success. Compatibilidad API24 corregida después: 641 app + 4 core, cero fallos/errores/skips; replay/build PASS. Falta instalar/medir este último candidato y su CI. No se declara validación Android de todos los efectos.
 
 ## Checkpoint correctivo 1 (2026-11-10)
 

@@ -279,7 +279,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             rootAccessKnown?.let { return it }
             val result = try {
                 val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
-                if (!p.waitFor(1, java.util.concurrent.TimeUnit.SECONDS)) {
+                if (!awaitProcessExit(p, 1_000L)) {
                     p.destroy()
                     false
                 } else {
@@ -342,7 +342,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
                         return@Thread
                     }
                     val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "input tap ${x.toInt()} ${y.toInt()}"))
-                    if (!p.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                    if (!awaitProcessExit(p, 2_000L)) {
                         p.destroy()
                         onResult?.invoke(false, "ROOT_TIMEOUT_RECONCILIATION_REQUIRED")
                         return@Thread
@@ -992,5 +992,15 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             null
         }
+    }
+}
+
+/** API 24 compatible bounded wait; Process.waitFor(timeout, unit) requires API 26. */
+internal fun awaitProcessExit(process: Process, timeoutMs: Long): Boolean {
+    val deadline = System.nanoTime() + timeoutMs * 1_000_000L
+    while (true) {
+        try { process.exitValue(); return true } catch (_: IllegalThreadStateException) { }
+        if (System.nanoTime() >= deadline) return false
+        Thread.sleep(10L)
     }
 }

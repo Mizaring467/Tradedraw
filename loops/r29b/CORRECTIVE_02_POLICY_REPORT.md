@@ -19,3 +19,10 @@ Se preservan las etapas con efectos: análisis/agotamiento en etapa10, adaptativ
 El oráculo congela el evaluador previo y la revisión lo contrasta con el snapshot inline; no es una reproducción instrumentada del motor Android histórico. Los metadatos de efectos se comparan automáticamente; su aplicación Android todavía requiere trazas de integración de señal completa en dispositivo/dobles. No se usa esta suite para declarar cerrado el recorrido señal→riesgo ni todos los gates R29-B.
 
 Pendiente de esta ronda al crear el reporte: commit/push, CI, APK con SHA del commit e instalación/arranque. La simulación durable y T-5.2..4/F6 continúan pendientes.
+
+
+## Actualización de verificación
+
+Commit de política `735f420` publicado. CI push 42959102967: success (https://github.com/Mizaring467/Tradedraw/actions/runs/42959102967).
+
+Antes de la instalación se detectó en el SDK local que Process.waitFor(timeout, TimeUnit) requiere API26, frente a minSdk24. Corrección adicional: espera acotada con exitValue/nanoTime/sleep (API1), sin cambiar los límites de 1 s/2 s. Dos pruebas con procesos reales comprueban salida normal y timeout. Suite posterior: **641 app + 4 core**, 0 fallos/errores/skipped, replay y assembleDebug PASS (1m8s). Se instala el candidato que incluye esta corrección, no el intermedio.
