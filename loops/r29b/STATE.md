@@ -1,5 +1,33 @@
 # TradeDraw · R29-B — STATE
 
+## Checkpoint verificado — 2026-11-10 (America/Bogota)
+
+**R29-B ABIERTA.** Código publicado e instalado: `8571128` en `r10-night`; commits previos de esta ejecución: `82afad5`, `735f420`. Las tablas originales se conservan como historia y no acreditan el cierre integral.
+
+- Local: **641 JVM app + 4 core**, cero fallos/errores/skipped; replay con fixture absoluto; **43 Python OK**; build e instalación PASS. Mutación de guarda detectada y restaurada. 3.000 contextos diferenciales de política más casos dirigidos de los 13 vetos.
+- CI código: https://github.com/Mizaring467/Tradedraw/actions/runs/42959482811 — success. Política: run42959102967 success. Primer gateway: run42957780132 success.
+- Dispositivo medido: modelo `2311DRK48G`, API36, proceso `25704`, bridge gitSha=8571128. SHA256 instalado igual al candidato: `ebe1a0e1846d74fec4ca653983d8d39f991eabe5a9fe286c09ba4efc7cf83b07`. Batería: AC powered: true, level: 76, Capacity level: 3.
+- Runtime final: /trade DISABLED403, SHADOW403, SEMI+cuenta desconocida403; /click zona órdenes403. Sin eventos TAP de órdenes. **Modo final DISABLED**. Accesibilidad enlazada y overlay allow (permisos de la app restaurados tras instalar, preservando las otras entradas).
+- Limitación medida: WS_DISCONNECTED y BALANCE_UNREADABLE/AUSENTE. No se demuestra despacho positivo DEMO, rentabilidad, simulación completa ni todos los efectos Android de política. SHADOW simulado sigue off por defecto.
+
+### Matriz vigente
+
+| Requisito | Implementación | Integración | Evidencia | Estado |
+|---|---|---|---|---|
+| Gateway/guarda | Guarda reciente, reset por servicio y transporte sin retry incierto | Motor, bridge, manual CALL/PUT | Cadena productiva con dobles + HTTP real cuenta desconocida | Integración inicial verificada; positivo DEMO y prueba Android de desconexión pendientes |
+| Idempotencia/riesgo | SingleFlight durable, terminal único, reserva previa | Entrada común y confirmación por saldo | Timeout/callback tardío/reinicio/persistencia fallida en JVM | Falta recuperar operativamente reserva tras reinicio y validar riesgo completo |
+| ExecutionPolicy | Suppliers perezosos por etapa | evaluate en executeHeadlessTrade; duplicación productiva retirada | 3.000 contextos vs oráculo congelado + 13 casos dirigidos | Local/CI PASS; traza Android de todos los efectos pendiente |
+| SHADOW | Componentes previos conservados | Sin integración nueva de ticks/journal durable | Pruebas aisladas previas | PENDIENTE |
+| Journal v2 | Escritor/parser previos conservados | Sin transición de cabeceras/lectores nuevos | Sin evidencia nueva de ciclo real | PENDIENTE |
+| T-5.2..4 | Solo app/core | Once dominios no extraídos | settings.gradle.kts | PENDIENTE |
+| F6 | Puertos parciales previos | Quedan estáticos/consumidores por migrar | Revisión de base | PENDIENTE |
+| Integridad documental | Adenda, snapshots y reportes correctivos | STATE y Agent Nexus corregidos aditivamente | Historial conservado | VERIFICADA |
+
+### Próxima acción concreta
+
+Completar la simulación como siguiente ronda aprobada: ledger transaccional con deduplicación por decisionId/tradeId, recuperación de abiertos y outbox de liquidaciones; conectar ticks por activo incluso al cambiar de modo; persistir WIN/LOSS/TIE una vez; resolver esquema/cabeceras v1/v2 en escritores y lectores reales. Añadir pruebas de ausencia de ticks, reinicio y desconexión controlada del wiring. Después continuar T-5.2..4 y F6 según el DAG; no avanzar a una etapa posterior a R29-B hasta cerrar estos criterios.
+
+
 > **2026-11-10 · R29-B REABIERTA (Codex).** Prevalece esta actualización sobre los cierres históricos de abajo. Base `be275f5`, rama `r10-night`. Tarea: integrar guarda/gateway en motor, bridge y órdenes manuales. Ver [adenda](INTEGRATION_ADDENDUM_2026-11-10.md) para matriz requisito/implementación/integración/prueba/estado. JVM base ejecutada con éxito; cambios en curso aún no aprobados. Criterio: recorridos completos, recuperación, modularización, dispositivo y CI demostrados. Limitación actual: adb nativo falla por ABI; RISH disponible. Siguiente acción: compilar y probar cableado, completar política y simulación. Las siguientes tablas se conservan como historial, no como estado vigente.
 
 ## Ronda correctiva 2 — en curso

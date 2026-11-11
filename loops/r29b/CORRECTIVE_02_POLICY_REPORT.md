@@ -26,3 +26,8 @@ Pendiente de esta ronda al crear el reporte: commit/push, CI, APK con SHA del co
 Commit de política `735f420` publicado. CI push 42959102967: success (https://github.com/Mizaring467/Tradedraw/actions/runs/42959102967).
 
 Antes de la instalación se detectó en el SDK local que Process.waitFor(timeout, TimeUnit) requiere API26, frente a minSdk24. Corrección adicional: espera acotada con exitValue/nanoTime/sleep (API1), sin cambiar los límites de 1 s/2 s. Dos pruebas con procesos reales comprueban salida normal y timeout. Suite posterior: **641 app + 4 core**, 0 fallos/errores/skipped, replay y assembleDebug PASS (1m8s). Se instala el candidato que incluye esta corrección, no el intermedio.
+
+
+## Artefacto y CI finales
+
+Código `8571128` (incluye compatibilidad API24), CI push [42959482811](https://github.com/Mizaring467/Tradedraw/actions/runs/42959482811): success. Build estampado PASS (49s), adb install -r SUCCESS. SHA256 candidato=instalado `ebe1a0e1846d74fec4ca653983d8d39f991eabe5a9fe286c09ba4efc7cf83b07`. Proceso 25704, /status.gitSha=8571128. Repetidos HTTP403 de modo DISABLED/SHADOW, cuenta desconocida SEMIAUTOMATIC y click crudo sobre órdenes; sin eventos TAP; modo final DISABLED. Feed desconectado/saldo ausente. El cierre integral de R29-B permanece pendiente como detalla STATE.md.

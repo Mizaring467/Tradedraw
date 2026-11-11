@@ -132,3 +132,8 @@ Se conserva este reporte histórico. La inspección en `be275f5` confirma compon
 ### Avance correctivo — 2026-11-10
 
 La ronda correctiva de despacho se publicó en `82afad5`, con CI verde y artefacto instalado verificado por SHA256 y bridge. Evidencia y límites: [CORRECTIVE_01_REPORT.md](CORRECTIVE_01_REPORT.md). La misión sigue abierta; la integración de política se está verificando y simulación/F5/F6 no se dan por terminadas.
+
+
+### Checkpoint correctivo final de esta ejecución
+
+Código `8571128` publicado e instalado con coincidencia SHA256 y CI verde (run42959482811). 645 JVM locales sin fallos/omitidos, replay, 43 Python y build. Ver reportes CORRECTIVE_01_REPORT.md y CORRECTIVE_02_POLICY_REPORT.md y matriz vigente en STATE.md. **R29-B permanece abierta** por simulación durable/lectores v2, once dominios/F6, recuperación de reserva y recorridos Android completos/positivo DEMO. Agent Nexus actualizado; estrategias y parámetros congelados.
