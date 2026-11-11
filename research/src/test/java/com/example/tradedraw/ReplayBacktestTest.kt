@@ -1,5 +1,7 @@
 package com.example.tradedraw
 
+import com.example.tradedraw.core.*
+
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -67,7 +69,7 @@ class ReplayBacktestTest {
         val reason: String,
         /**
          * R23 Iter 3: id determinista de la decision. Se calcula con
-         * [TradingEngine.generateDeterministicDecisionId] sobre el RIC del tick de entrada y el
+         * [DecisionIds.generateDeterministicDecisionId] sobre el RIC del tick de entrada y el
          * MILISEGUNDO de la senal — la misma formula y las mismas unidades que el motor vivo, que
          * es lo que permite al comparador emparejar ambos lados.
          */
@@ -297,7 +299,7 @@ class ReplayBacktestTest {
                     // simulaba compras en techo que en vivo nunca se ejecutaron, y el comparador las
                     // contaba como faltantes del lado live. El `callPower` NO se recalcula a mano: sale
                     // de `calcularPoderesDeMercado`, la misma funcion pura que alimenta al motor real.
-                    val (callPowerEnSenal, _) = calcularPoderesDeMercado(
+                    val (callPowerEnSenal, _) = StrategyReplayPort.calcularPoderesDeMercado(
                         trend = eng.detectedTrend,
                         distSupportRatio = eng.distanceToSupportRatio,
                         distResistanceRatio = eng.distanceToResistanceRatio,
@@ -305,7 +307,7 @@ class ReplayBacktestTest {
                         isBullishImpulse = tickImpulseBullish,
                         isBearishImpulse = tickImpulseBearish
                     )
-                    if (motivoVetoPorAgotamientoDeCompra(action, eng.detectedTrend, callPowerEnSenal) != null) {
+                    if (StrategyReplayPort.motivoVetoPorAgotamientoDeCompra(action, eng.detectedTrend, callPowerEnSenal) != null) {
                         // Vetada por politica: NO se simula trade y NO se marca la vela como operada,
                         // de modo que un tick posterior de la misma vela sigue siendo evaluable.
                         return@senal
@@ -463,7 +465,7 @@ class ReplayBacktestTest {
                     candleSecond = candleSec,
                     adaptiveStatus = result,
                     reason = reason,
-                    decisionId = TradingEngine.generateDeterministicDecisionId(sig.assetRic, entryTick.ts, action.name),
+                    decisionId = DecisionIds.generateDeterministicDecisionId(sig.assetRic, entryTick.ts, action.name),
                     assetRic = sig.assetRic
                 )
             )

@@ -842,7 +842,7 @@ class TradingEngine(
          * perdidas/ganancias). El umbral se congela en 70 y NO se recalibra dentro de esta fase: es
          * la hipotesis a medir en vivo, no una optimizacion cerrada.
          */
-        const val VETO_BUY_UPTREND_MAX_CALL_POWER = 70
+        const val VETO_BUY_UPTREND_MAX_CALL_POWER = StrategyReplayPort.VETO_BUY_UPTREND_MAX_CALL_POWER
 
         /**
          * R26: silencio maximo tolerado con `AUTONOMOUS` armado desde el bridge antes de
@@ -2712,41 +2712,9 @@ internal fun buildAdaptiveBlockDetail(reason: String, signalReason: String): Str
  * estrategia y queda fuera del alcance de una correccion de infraestructura.
  */
 internal fun calcularPoderesDeMercado(
-    trend: TrendDirection,
-    distSupportRatio: Float,
-    distResistanceRatio: Float,
-    rsi: Double,
-    isBullishImpulse: Boolean,
-    isBearishImpulse: Boolean
-): Pair<Int, Int> {
-    var callPower = 50
-    var putPower = 50
-    when (trend) {
-        TrendDirection.UPTREND -> {
-            callPower = 68
-            putPower = 32
-            if (distSupportRatio <= 0.25f) callPower += 10
-            if (rsi in 40.0..68.0) callPower += 8
-            if (isBullishImpulse) callPower += 6
-        }
-        TrendDirection.DOWNTREND -> {
-            callPower = 32
-            putPower = 68
-            if (distResistanceRatio <= 0.25f) putPower += 10
-            if (rsi in 32.0..60.0) putPower += 8
-            if (isBearishImpulse) putPower += 6
-        }
-        TrendDirection.SIDEWAYS -> {
-            if (distSupportRatio <= 0.20f) { callPower = 62; putPower = 38 }
-            else if (distResistanceRatio <= 0.20f) { callPower = 38; putPower = 62 }
-        }
-    }
-    callPower = callPower.coerceIn(15, 95)
-    putPower = putPower.coerceIn(15, 95)
-    // Termometro coherente: CALL + PUT = 100. El lado dominante manda; el otro es su complemento.
-    if (callPower >= putPower) putPower = 100 - callPower else callPower = 100 - putPower
-    return callPower to putPower
-}
+    trend: TrendDirection, distSupportRatio: Float, distResistanceRatio: Float,
+    rsi: Double, isBullishImpulse: Boolean, isBearishImpulse: Boolean
+): Pair<Int, Int> = StrategyReplayPort.calcularPoderesDeMercado(trend, distSupportRatio, distResistanceRatio, rsi, isBullishImpulse, isBearishImpulse)
 
 /**
  * R23H Fase 1: decide si una compra debe vetarse por AGOTAMIENTO DE CLIMAX en techo.
@@ -2769,13 +2737,5 @@ internal fun calcularPoderesDeMercado(
  *
  * @return el `detail` del evento de veto si procede vetar, o `null` si la orden sigue adelante.
  */
-internal fun motivoVetoPorAgotamientoDeCompra(
-    action: TradeAction,
-    trend: TrendDirection,
-    callPower: Int
-): String? {
-    if (action != TradeAction.BUY) return null
-    if (trend != TrendDirection.UPTREND) return null
-    if (callPower < TradingEngine.VETO_BUY_UPTREND_MAX_CALL_POWER) return null
-    return "VETO_BUY_EXHAUSTION_CLIMAX UPTREND con callPower >= 70% (callPower=$callPower)"
-}
+internal fun motivoVetoPorAgotamientoDeCompra(action: TradeAction, trend: TrendDirection, callPower: Int): String? =
+    StrategyReplayPort.motivoVetoPorAgotamientoDeCompra(action, trend, callPower)

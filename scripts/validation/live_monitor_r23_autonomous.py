@@ -1536,7 +1536,7 @@ def main():
         env["BACKTEST_SUBMODE"] = active_submode
         gradle_bin = ".\\gradlew.bat" if os.name == "nt" else "./gradlew"
         if os.path.exists(gradle_bin):
-            subprocess.run([gradle_bin, "testDebugUnitTest", "--tests", "*ReplayBacktestTest*"], env=env, capture_output=True, text=True)
+            subprocess.run([gradle_bin, ":research:testDebugUnitTest", "--tests", "*ReplayBacktestTest*", "--no-daemon", "--no-configuration-cache"], env=env, capture_output=True, text=True)
 
     replay_summary = {"status": "NO_PAIRED_DECISIONS", "paired": 0, "exact_matches": 0, "match_rate": 0.0}
     replay_report_text = "NO CONCLUYENTE"

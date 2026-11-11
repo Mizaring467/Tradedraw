@@ -74,9 +74,10 @@ def safe_rmtree(path: str) -> None:
         subprocess.run(f'cmd.exe /c "rd /s /q \\"{path}\\""', shell=True, capture_output=True)
 
 
-def parse_gradle_test_results(test_results_dir: str) -> Dict[str, Any]:
-    """Parsea los archivos XML de resultados de testDebugUnitTest."""
-    xml_pattern = os.path.join(test_results_dir, "TEST-*.xml")
+def parse_gradle_test_results(test_results_dir: str, *, multi_module: bool = False) -> Dict[str, Any]:
+    """Read Android/JVM tasks; retain the legacy single-directory API."""
+    xml_pattern = (os.path.join(test_results_dir, "*", "build", "test-results", "*", "TEST-*.xml")
+                   if multi_module else os.path.join(test_results_dir, "TEST-*.xml"))
     xml_files = glob.glob(xml_pattern)
 
     total_tests = 0
@@ -352,8 +353,7 @@ def run_worktree_verification(
             print(f"[FRENTE G] Gradle finalizado en {duration_gradle}s (código de salida: {gradle_exit}).")
 
             # Parsear resultados XML
-            results_dir = os.path.join(worktree_dir, "app", "build", "test-results", "testDebugUnitTest")
-            gradle_results = parse_gradle_test_results(results_dir)
+            gradle_results = parse_gradle_test_results(worktree_dir, multi_module=True)
 
     finally:
         # 4. Desmantelar y limpiar worktree garantizado

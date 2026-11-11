@@ -291,7 +291,7 @@ def main():
         env["BACKTEST_OUT"] = os.path.abspath(out_replay_journal)
         gradle_bin = ".\\gradlew.bat" if os.name == "nt" else "./gradlew"
         if os.path.exists(gradle_bin):
-            r_res = subprocess.run([gradle_bin, "testDebugUnitTest", "--tests", "*ReplayBacktestTest*"], env=env, capture_output=True, text=True)
+            r_res = subprocess.run([gradle_bin, ":research:testDebugUnitTest", "--tests", "*ReplayBacktestTest*", "--no-daemon", "--no-configuration-cache"], env=env, capture_output=True, text=True)
             print(f"ReplayBacktestTest finalizado (exit code {r_res.returncode})")
 
     # Ejecutar compare_live_replay.py si hay decisiones

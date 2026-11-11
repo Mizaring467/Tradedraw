@@ -43,3 +43,9 @@ Se conservan orden de cascada, textos y efectos con el oráculo completo. Nuevas
 :ui contiene lienzo, figuras, herramientas, plantillas, selector de color, temas Compose, snapshot/coherencia HUD y proyección/strike/auto-dibujo. Depende de core; el rango de precios se recibe por proveedor desde el motor, sin lookup del servicio. OverlayService permanece por ahora como composición Android en app; no se da por completada su extracción ni todo T-5.4.
 
 Suite raíz/replay/APK PASS (td-ui-online.log): {'app': 369, 'core': 6, 'market': 40, 'persistence': 0, 'simulation': 8, 'strategy': 91, 'observability': 29, 'risk': 71, 'execution': 10, 'ui': 33}, total 657. La dependencia stdlib-jdk8 inicialmente ausente se resolvió con Gradle normal; no se cambiaron versiones para ocultar el fallo de caché. La CI e instalación de este corte permanecen pendientes.
+
+## Sexto corte — research y consumidores de evidencia
+
+:research contiene el harness JVM ReplayBacktestTest, ejecutado como prueba local Android sin dispositivo, con dependencias core/strategy. Las fórmulas de poderes y agotamiento permanecen únicas en strategy y se comparten por puerto con producción; tests de equivalencia exhaustiva y trazabilidad siguen aprobados.
+
+Suite raíz/replay/build: 657/0F/0E/0skips, 82 clases, confirmado mediante el agregador multimódulo real. Python47 PASS. Los dos monitores invocan :research:testDebugUnitTest; el verificador de worktree suma Android y JVM de todos los módulos, con compatibilidad para su API anterior y pruebas contra omisión de core/research. CI incorpora Python con NumPy2.4.4 (versión local validada), replay con CSV versionado y artefactos XML/replay. CI e instalación del corte pendientes del push.

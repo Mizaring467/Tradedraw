@@ -1,3 +1,7 @@
+## Actualización vigente — 2026-11-11 · Research validado localmente
+
+HEAD base e3769a5 (UI publicada). Research extraído y consumidores actualizados: 657 JVM,82 clases,0F/0E/0skips; replay y APK PASS. Python47 PASS. CI ahora ejecutará también Python y replay con datos versionados; esperar resultado del nuevo workflow antes de aprobar. Próxima acción: publicar corte; adapters/F6 y verificación final de dispositivo. No se declara R29-B cerrada.
+
 ## Actualización vigente — 2026-11-11 · UI validada localmente
 
 HEAD base e462398, CI push43003171505 y PR43003179958 success. UI real extraída; suite raíz/replay/APK PASS, sin fallos/errores/skips. Próxima acción: commit/push/CI de UI; extraer research y adapters, concluir F6 y verificar APK final. OverlayService sigue como composición en app y su alcance se registra explícitamente. Dispositivo: foreground medido com.boogy.combat/GodotAppLauncher, batería67%, sin carga; no se interfiere con su pantalla mientras se coordina. Sin nuevas órdenes. R29-B abierta.

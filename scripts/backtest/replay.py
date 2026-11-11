@@ -50,10 +50,10 @@ POR QUÉ EL MOTOR KOTLIN NO SE EJECUTA AQUÍ
   ronda porque exigiría añadir un test de replay en app/src/test/, y la ronda 8
   restringe los archivos nuevos a scripts/backtest/ y data/ticks/.
   Opción más fiel (una sola pieza a añadir):
-    app/src/test/java/com/example/tradedraw/ReplayBacktestTest.kt que lea un CSV
+    research/src/test/java/com/example/tradedraw/ReplayBacktestTest.kt que lea un CSV
     de ticks por variable de entorno, llame a SyntheticCandleEngine.onNewTick y
     escriba el journal de trades simulados; se ejecutaría con
-    `gradlew testDebugUnitTest --tests '*ReplayBacktestTest*'`.
+    `gradlew :research:testDebugUnitTest --tests '*ReplayBacktestTest*'`.
   Esa ruta usa el motor real con sus 11 estrategias y la confluencia real, y es
   la única que permite atribuir edge a la estrategia en vez de al veredicto.
 
