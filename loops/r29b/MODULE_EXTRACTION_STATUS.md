@@ -10,6 +10,8 @@ F6: `BrokerRuntimePort` (`:core`) = `BrokerSensor + BalanceSource` + guard/refre
 
 Los tres errores de recuperación fueron de migración, no de conducta: import `java.util.Locale` perdido, `String>=` tokenizado como `>=`, y un setter `internal` ejercido desde otro módulo (prueba trasladada al módulo dueño, sin ampliar API y sin dejar test hueco).
 
+Un cuarto caso lo detectó CI, no el build local: `ProcessDeadlineTest` usaba `awaitProcessExit`, `internal` de `:adapters`. El verde local era falso por reutilización de clases de la ruta antigua. Se trasladó la prueba y desde entonces la verificación se ejecuta sobre `clean`, que es la única forma fiable aquí de detectar este tipo de fallo.
+
 Equivalencia verificada por tokens contra 5be6418: `evaluateStrategySignalWithReason` idéntico salvo el parámetro `brokerState`; `evaluateSniperConfluences` idéntico salvo tres sustituciones equivalentes. Estrategias congeladas intactas.
 
 Suite/agregador: 658 pruebas, 84 clases, 0F/0E/0skips (app357, core6, simulation8, persistence0, market40, strategy92, observability29, risk71, execution10, ui33, research2, adapters10). Delta 657→658 explicado: +1 `LiveStrategyBrokerPortTest`, −1 test hueco retirado. Python 47 PASS; replay ejecutado con CSV versionado; APK PASS. CI y dispositivo del corte pendientes.

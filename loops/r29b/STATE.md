@@ -18,6 +18,12 @@ Suite multimódulo (agregador real `parse_gradle_test_results(multi_module=True)
 
 Evidencia: td-r29b-final-suite.log, td-r29b-apk-final.log. Queda pendiente CI del push y verificación de dispositivo; no se declara R29-B cerrada.
 
+### Corrección tras el primer CI (43013076895, failure)
+
+El primer push d00c3f9 falló CI en `:app:compileDebugUnitTestKotlin`: `ProcessDeadlineTest` llamaba `awaitProcessExit`, que es `internal` de `:adapters`. **La suite local había dado verde falso**: el build incremental reutilizó la clase compilada de la ruta antigua en `app`. Mismo patrón que `isDemoAccount`, segunda ocurrencia. Se trasladó la prueba al módulo dueño (`adapters/.../ProcessDeadlineTest.kt`) sin ampliar API.
+
+Lección registrada y aplicada: la verificación de este corte se rehizo con `./gradlew clean` + `testDebugUnitTest assembleDebug` (evidencia nueva en td-r29b-clean-verify.log), no con builds incrementales. Conteo tras el traslado: 658 pruebas, 84 clases, 0F/0E/0skips (app355 · adapters12). Barrido sistemático de `internal` cruzados entre módulos: sólo colisiones de nombre homónimo entre módulos, y los accesos a fórmula congelada van por la fachada pública `StrategyReplayPort`; `TradingEngine` sólo delega, no duplica.
+
 ## Actualización vigente — 2026-11-11 · Research validado localmente
 
 HEAD base e3769a5 (UI publicada). Research extraído y consumidores actualizados: 657 JVM,82 clases,0F/0E/0skips; replay y APK PASS. Python47 PASS. CI ahora ejecutará también Python y replay con datos versionados; esperar resultado del nuevo workflow antes de aprobar. Próxima acción: publicar corte; adapters/F6 y verificación final de dispositivo. No se declara R29-B cerrada.
