@@ -1,5 +1,7 @@
 package com.example.tradedraw
 
+import com.example.tradedraw.core.*
+
 /**
  * Regímenes de mercado detectados para la toma de decisiones determinista.
  * Clasifica el contexto macro del gráfico antes de autorizar cualquier estrategia.

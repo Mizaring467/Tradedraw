@@ -19,3 +19,9 @@ El orden adelanta el corte de simulation de T-5.3 para ubicar el contrato que ne
 ## Evidencia del corte
 
 Suite raíz y replay: 599 app + 6 core + 8 simulation + 40 market = 653, cero fallos/errores/skips. :app:assembleDebug PASS. Log td-market-pass.log. Se mantuvieron los 653 casos previos al moverlos a su dominio; la prueba de acceso internal vive ahora en market. No hubo cambios de estrategia. CI e instalación pendientes del commit del corte.
+
+## Segundo corte — strategy y observability
+
+Responsabilidades trasladadas: SyntheticCandleEngine, MarketRegimeClassifier, AdaptiveLearningEngine, MarketInoperabilityDetector, DTO de análisis, TradeEventLog/RingBufferEventSink, ModeEventJournal y CrashLogger. Ambos módulos Android → core; sin dependencia hacia app. AdaptiveReplayPort expone una fachada de lectura para el harness externo, delegando literalmente a las funciones internal congeladas. Pruebas de setters internal se ubican en strategy; el caso de reposo de RiskManager permanece como integración en app.
+
+479 app + 6 core + 8 simulation + 40 market + 91 strategy + 29 observability = 653 pruebas, cero fallos/errores/skips; replay y build PASS (td-strategy-pass.log). Comparación de cuerpos conservados en STRATEGY_MOVE_HASHES.md. CI e instalación pendientes del commit de este corte. La extracción de risk/execution/ui/adapters/research y F6 sigue abierta.

@@ -401,8 +401,8 @@ class ReplayBacktestTest {
                 strategy = strategy,
                 candleSecond = ((entryTick.ts / 1000L) % 60L).toInt()
             )
-            val (simMax, coincidencia) = mejorCoincidenciaEnMemoria(firmaCandidata, memoriaPerdidas)
-            if (motivoBloqueoPorAntiPatron(firmaCandidata, coincidencia, simMax) != null) {
+            val (simMax, coincidencia) = AdaptiveReplayPort.mejorCoincidenciaEnMemoria(firmaCandidata, memoriaPerdidas)
+            if (AdaptiveReplayPort.motivoBloqueoPorAntiPatron(firmaCandidata, coincidencia, simMax) != null) {
                 bloqueosAdaptativos++
                 synchronized(bloqueosRegistrados) {
                     bloqueosRegistrados.add(

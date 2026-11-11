@@ -1,5 +1,7 @@
 package com.example.tradedraw
 
+import com.example.tradedraw.core.*
+
 /**
  * Ronda 14 (B1): detector de "mercado inoperable" sobre el activo activo.
  *

@@ -28,3 +28,4 @@ include(":app")
 
 include(":simulation", ":persistence")
 include(":market")
+include(":strategy", ":observability")

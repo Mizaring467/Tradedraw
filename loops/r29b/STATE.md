@@ -1,3 +1,9 @@
+## Actualización vigente — 2026-11-11 · Recuperación confirmada pendiente de endurecer
+
+8b3973f publicado, CI 42998393139 success. APK instalada hash 4d042e37875b5f8418e86ef90fe345284acb7f16b504213348a4ccb0ad0abc64 coincidente; /status 8b3973f, READY, DEMO, saldo36790056.96, DISABLED. Ledger conserva WIN/saldo1008.2 tras actualización. Strategy/observability en working tree, pruebas en curso; cuerpos congelados preservados y hashes registrados.
+
+Hallazgo adicional: checkOrderConfirmation libera SingleFlight al confirmar, antes de liquidar RiskManager. Un reinicio posterior pierde la operación confirmada en memoria. Acción obligatoria antes de cerrar recuperación: conservar reserva hasta resultado y probar reinicio en intervalo confirmación→liquidación. Los PASS previos de simulación/DEMO permanecen como evidencia histórica, pero no cierran ese intervalo.
+
 ## Estado vigente — 2026-11-11 · Integración aprobada; modularización EN CURSO
 
 HEAD de integración: b9d948f (push r10-night). 647 app + 6 core, 45 Python; replay y APK correctos. CI 42996460043 verde. APK instalada con SHA-256 coincidente; simulación completa con dos reinicios, tick repetido y journal v2 comprobados. DEMO Col$4.000 vía gateway: confirmación y WIN por saldo acreditado, journal con decisionId/tradeId; modo final DISABLED. Evidencia detallada: DURABLE_SIMULATION_REPORT.md.
