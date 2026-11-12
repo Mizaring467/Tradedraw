@@ -313,7 +313,15 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             bypassHud: Boolean = false,
             orderAuthorized: Boolean = false
         ) {
-            executeRootTap(x, y, decisionId = null, tradeId = null, onResult = onResult, bypassHud = bypassHud)
+            executeRootTap(
+                x,
+                y,
+                decisionId = null,
+                tradeId = null,
+                onResult = onResult,
+                bypassHud = bypassHud,
+                orderAuthorized = orderAuthorized
+            )
         }
 
         fun executeRootTap(
@@ -466,11 +474,9 @@ class AutoTradeAccessibilityService : AccessibilityService() {
         // contra el broker. Cualquier app del dispositivo podia provocarlos, esquivando el modo,
         // los vetos y RiskManager: un bot en DISABLED no estaba protegido frente a esto.
         //
-        // Correcto de la ronda: RECEIVER_NOT_EXPORTED existe SOLO desde API 33 y el dispositivo
-        // de pruebas es API 31, asi que la rama `else` de 2 argumentos habria dejado el receptor
-        // EXPORTADO: el parche habria sido un no-op justo en el telefono a proteger. Se usa la
-        // sobrecarga de 4 argumentos con un permiso de firma (existe desde API 1), que restringe
-        // la emision a las apps firmadas con esta misma clave en TODAS las versiones.
+        // La politica combina permiso signature en todas las versiones con RECEIVER_NOT_EXPORTED
+        // desde API 33, porque Android moderno exige el flag explicito para broadcasts no-sistema.
+        // En API <=32 el permiso signature sigue cerrando el receptor a apps no firmadas.
         // La app NO emite estos broadcasts en ningun punto (no hay sendBroadcast), asi que esto no
         // rompe ninguna funcionalidad interna.
         val filter = android.content.IntentFilter().apply {
@@ -479,12 +485,7 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             addAction("com.example.tradedraw.BACK")
         }
         try {
-            registerReceiver(
-                commandReceiver,
-                filter,
-                "com.example.tradedraw.permission.INTERNAL_COMMAND",
-                null
-            )
+            InternalReceiverRegistrar.register(this, commandReceiver, filter)
         } catch (e: Exception) {
             Log.e("TradeDraw", "Error registrando commandReceiver", e)
         }
