@@ -105,8 +105,10 @@ def load_trades(path: str, result_col: str, time_col: str) -> list:
             )
         for i, row in enumerate(reader):
             result = (row.get(result_col) or "").strip().upper()
+            if result == "TRUE_TIE":
+                result = "TIE"
             if result not in ("WIN", "LOSS", "TIE"):
-                continue
+                raise ValueError(f"UNSCORABLE_RESULT row={i + 2} result={result!r}; NO_DATA/unknown rows require an explicit missingness audit, never silent deletion")
             rows.append((row.get(time_col) or "", i, result))
 
     def sort_key(item):

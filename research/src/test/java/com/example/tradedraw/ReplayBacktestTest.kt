@@ -94,43 +94,32 @@ class ReplayBacktestTest {
                     val ts = parts[0].toLongOrNull()
                     val ric = parts[1].trim()
                     val price = parts[2].toDoubleOrNull()
-                    if (ts != null && price != null && price > 0.0) {
+                    if (ts != null && price != null && price.isFinite() && price > 0.0 && ts >= 0 && ric.isNotBlank()) {
                         rawTicks.add(RawTick(ts, ric, price))
                     }
                 }
             }
         }
-        val sorted = rawTicks.sortedBy { it.ts }
-        // Deduplicar timestamps conservando solo el primer tick de cada ts
-        val deduplicated = mutableListOf<RawTick>()
-        var lastTs = Long.MIN_VALUE
-        for (t in sorted) {
-            if (t.ts != lastTs) {
-                deduplicated.add(t)
-                lastTs = t.ts
-            }
-        }
-        return deduplicated
+        // First observation per exact broker RIC + timestamp; no source sequence is available.
+        // Equal timestamps on DIFFERENT assets are independent events.
+        val watermarks = mutableMapOf<String, Long>()
+        return rawTicks.distinctBy { it.ric to it.ts }.filter { tick ->
+            val accepted = tick.ts > (watermarks[tick.ric] ?: -1L)
+            if (accepted) watermarks[tick.ric] = tick.ts
+            accepted
+        }.sortedBy { it.ts }
     }
 
-    /**
-     * Búsqueda binaria del último precio registrado en o antes de targetMs (espejo de replay.py).
-     */
+    /** First same-asset eligible event at/after expiry. Caller supplies one asset only. */
     private fun priceAt(ticks: List<RawTick>, targetMs: Long): Double? {
-        if (ticks.isEmpty() || targetMs < ticks.first().ts) return null
+        require(ticks.map { it.ric }.distinct().size <= 1) { "MIXED_ASSET_SETTLEMENT" }
         var lo = 0
-        var hi = ticks.size - 1
-        var found: Double? = null
-        while (lo <= hi) {
+        var hi = ticks.size
+        while (lo < hi) {
             val mid = (lo + hi) / 2
-            if (ticks[mid].ts <= targetMs) {
-                found = ticks[mid].price
-                lo = mid + 1
-            } else {
-                hi = mid - 1
-            }
+            if (ticks[mid].ts < targetMs) lo = mid + 1 else hi = mid
         }
-        return found
+        return ticks.getOrNull(lo)?.price
     }
 
     /**
@@ -138,7 +127,7 @@ class ReplayBacktestTest {
      */
     private fun resolveTrade(entryPrice: Double, exitPrice: Double?, action: TradeAction): Pair<String, String> {
         if (exitPrice == null) {
-            return Pair("TIE", "TIMEOUT: sin tick posterior a la expiración")
+            return Pair("NO_DATA", "NO_SETTLEMENT_DATA: no eligible same-asset future tick")
         }
         if (exitPrice == entryPrice) {
             return Pair("TIE", String.format(Locale.US, "PRECIO (=) Empate técnico: Entry=%.4f vs Close=%.4f", entryPrice, exitPrice))
@@ -205,6 +194,10 @@ class ReplayBacktestTest {
         strategy: AutoTradeStrategy,
         subMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE
     ): List<SimulatedTrade> {
+        // Independent per-asset diagnostic portfolios; never feed another asset into candle/adaptive state.
+        val groups = ticks.groupBy { it.ric }
+        if (groups.size > 1) return groups.values.flatMap { runBacktestOnStrategy(it, strategy, subMode) }.sortedBy { it.timestamp }
+        if (ticks.isEmpty()) return emptyList()
         val pendingSignals = mutableListOf<SignalSnapshot>()
         var lastExecutedCandleMinute = -1L
         var cooldownUntilTs = 0L
@@ -236,6 +229,7 @@ class ReplayBacktestTest {
             runCatching {
                 val texto = java.io.File(ruta).readText(Charsets.UTF_8)
                 val raiz = org.json.JSONObject(texto)
+                validateAdaptiveState(raiz, ticks.first().ts, ticks.first().ric)
                 val arr = raiz.optJSONArray("lossSignatures")
                 if (arr != null) {
                     for (i in 0 until arr.length()) {
@@ -264,7 +258,7 @@ class ReplayBacktestTest {
                     }
                 }
                 println("Memoria de anti-patrones precargada desde $ruta: ${memoriaPerdidas.size} firmas")
-            }.onFailure { println("AVISO: no se pudo precargar ADAPTIVE_STATE_JSON ($it)") }
+            }.getOrElse { throw IllegalArgumentException("ADAPTIVE_STATE_REJECTED: ${it.message}", it) }
         }
 
         fun createEngine(): SyntheticCandleEngine {
@@ -433,7 +427,9 @@ class ReplayBacktestTest {
                 else -> balance
             }
 
-            val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(entryTick.ts))
+            val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }.format(Date(entryTick.ts))
             val candleSec = ((entryTick.ts / 1000L) % 60L).toInt()
 
             trades.add(
@@ -490,7 +486,7 @@ class ReplayBacktestTest {
                 val cleanReason = t.reason.replace(",", ";").replace("\n", " ").take(140)
                 val line = String.format(
                     Locale.US,
-                    "%d,%s,%s,%s,%s,%s,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\",%s,%s\n",
+                    "%d,%s,%s,%s,%s,%s,%.2f,%.17g,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\",%s,%s\n",
                     t.timestamp, t.assetRic, t.isoDate, t.strategy, t.submode, t.action.name, t.confidence,
                     t.entryPrice, t.stake, t.baseBalance, t.result, t.settledBalance, t.durationSec,
                     t.trend, t.distSupportRatio, t.distResistanceRatio, t.tickVelocity, t.impulse,
@@ -538,14 +534,17 @@ class ReplayBacktestTest {
         val outEnv = System.getenv("BACKTEST_OUT") ?: System.getProperty("BACKTEST_OUT") ?: "build/backtest_out.csv"
         val outFile = resolveFile(outEnv)
 
-        println("=== INICIANDO BACKTEST REPLAY FIEL (AUTO_ADAPTIVE) ===")
+        println("=== DIAGNOSTIC_REPLAY_ONLY: full execution-policy/adaptive scheduling parity NOT established; no edge inference ===")
         println("Archivos a procesar: ${filesToProcess.size}")
 
         val allTrades = mutableListOf<SimulatedTrade>()
         for ((idx, f) in filesToProcess.withIndex()) {
             val allTicks = loadTicks(f)
             val ticks = if (t0Val != null && t0Val > 0L) allTicks.filter { it.ts <= t0Val } else allTicks
-            if (ticks.size < 10) continue
+            if (ticks.size < 10) {
+                println("DATASET_TOO_SHORT ${f.absolutePath}: ${ticks.size} ticks; no performance inference")
+                continue
+            }
 
             val trades = runBacktestOnStrategy(ticks, AutoTradeStrategy.AUTO_ADAPTIVE, submodoDeEntorno())
             val labeledTrades = trades.map { it.copy(source = f.name) }
@@ -561,6 +560,8 @@ class ReplayBacktestTest {
         val wins = allTrades.count { it.result == "WIN" }
         val losses = allTrades.count { it.result == "LOSS" }
         val ties = allTrades.count { it.result == "TIE" }
+        val noData = allTrades.count { it.result == "NO_DATA" }
+        println("NO_SETTLEMENT_DATA=$noData; excluded from WIN/LOSS, never counted as TIE")
         val nonTies = wins + losses
         val wr = if (nonTies > 0) (wins.toDouble() / nonTies * 100.0) else 0.0
 
@@ -606,6 +607,54 @@ class ReplayBacktestTest {
             val wr = if (wins + losses > 0) (wins.toDouble() / (wins + losses) * 100.0) else 0.0
             println(String.format(Locale.US, "%-28s -> Señales: %2d | W: %2d, L: %2d | WR: %5.1f%%", strategy.name, trades.size, wins, losses, wr))
         }
+    }
+
+    /** Open-time ts alone cannot establish when the loss became known. Reject unknown snapshots. */
+    private fun validateAdaptiveState(root: org.json.JSONObject, windowStart: Long, asset: String) {
+        val captured = root.optLong("captured_at_ms", -1L)
+        require(captured in 0 until windowStart) { "SNAPSHOT_NOT_PRE_WINDOW" }
+        val signatures = root.getJSONArray("lossSignatures")
+        for (i in 0 until signatures.length()) {
+            val loss = signatures.getJSONObject(i)
+            val settled = loss.optLong("settled_at_ms", -1L)
+            val opened = loss.optLong("ts", -1L)
+            require(opened >= 0L && settled >= opened + 60_000L && settled <= captured) { "LOSS_NOT_KNOWN_PRE_WINDOW" }
+            require(loss.optString("asset") == asset) { "ADAPTIVE_ASSET_MISMATCH" }
+        }
+    }
+
+    @Test fun r29cFutureAdaptiveSnapshotMustFail() {
+        val contaminated = org.json.JSONObject("{\"captured_at_ms\":200000,\"lossSignatures\":[]}")
+        try {
+            validateAdaptiveState(contaminated, 100000, "A")
+            org.junit.Assert.fail("Future adaptive state was accepted")
+        } catch (_: IllegalArgumentException) { }
+    }
+
+    @Test fun r29cLossKnownAfterStartMustFail() {
+        val contaminated = org.json.JSONObject("{\"captured_at_ms\":90000,\"lossSignatures\":[{\"ts\":0,\"settled_at_ms\":110000,\"asset\":\"A\"}]}")
+        try {
+            validateAdaptiveState(contaminated, 100000, "A")
+            org.junit.Assert.fail("Future loss was accepted")
+        } catch (_: IllegalArgumentException) { }
+    }
+
+    // R29-C adversarial regressions. Fixtures diagnose infrastructure, never edge.
+    @Test fun r29cTimestampCollisionPreservesBothAssets() {
+        val file = File.createTempFile("r29c-assets", ".csv")
+        try {
+            file.writeText("ts,ric,price\n1000,A,100.0\n1000,B,200.0\n1000,A,100.0\n")
+            org.junit.Assert.assertEquals(2, loadTicks(file).size)
+        } finally { file.delete() }
+    }
+
+    @Test fun r29cExpiryUsesFirstFutureTick() {
+        val ticks = listOf(RawTick(59_999, "A", 99.0), RawTick(60_001, "A", 101.0))
+        org.junit.Assert.assertEquals(101.0, priceAt(ticks, 60_000)!!, 0.0)
+    }
+
+    @Test fun r29cMissingSettlementIsNotTie() {
+        org.junit.Assert.assertEquals("NO_DATA", resolveTrade(100.0, null, TradeAction.BUY).first)
     }
 
     private companion object {

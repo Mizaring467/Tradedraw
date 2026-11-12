@@ -16,6 +16,7 @@ android {
 dependencies {
     implementation(project(":core"))
     testImplementation(project(":strategy"))
+    testImplementation(project(":simulation"))
     testImplementation("org.json:json:20240303")
     testImplementation(libs.junit)
 }

@@ -1,0 +1,192 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.5.0/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Configure project :adapters
+WARNING: The option setting 'android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2' is experimental.
+
+> Task :adapters:clean
+> Task :app:clean
+> Task :core:clean
+> Task :execution:clean
+> Task :market:clean
+> Task :observability:clean
+> Task :persistence:clean
+> Task :research:clean
+> Task :risk:clean
+> Task :simulation:clean
+> Task :strategy:clean
+> Task :ui:clean
+> Task :core:checkKotlinGradlePluginConfigurationErrors
+> Task :core:processResources NO-SOURCE
+> Task :simulation:checkKotlinGradlePluginConfigurationErrors
+> Task :simulation:processResources NO-SOURCE
+> Task :adapters:checkKotlinGradlePluginConfigurationErrors
+> Task :adapters:preBuild UP-TO-DATE
+> Task :adapters:preDebugBuild UP-TO-DATE
+> Task :adapters:generateDebugResValues
+> Task :adapters:generateDebugResources
+> Task :adapters:packageDebugResources
+> Task :execution:checkKotlinGradlePluginConfigurationErrors
+> Task :execution:preBuild UP-TO-DATE
+> Task :execution:preDebugBuild UP-TO-DATE
+> Task :execution:generateDebugResValues
+> Task :execution:generateDebugResources
+> Task :execution:packageDebugResources
+> Task :observability:checkKotlinGradlePluginConfigurationErrors
+> Task :observability:preBuild UP-TO-DATE
+> Task :observability:preDebugBuild UP-TO-DATE
+> Task :observability:generateDebugResValues
+> Task :observability:generateDebugResources
+> Task :observability:packageDebugResources
+> Task :adapters:parseDebugLocalResources
+> Task :execution:parseDebugLocalResources
+> Task :observability:parseDebugLocalResources
+> Task :observability:javaPreCompileDebug
+> Task :strategy:checkKotlinGradlePluginConfigurationErrors
+> Task :strategy:preBuild UP-TO-DATE
+> Task :strategy:preDebugBuild UP-TO-DATE
+> Task :strategy:generateDebugResValues
+> Task :strategy:generateDebugResources
+> Task :strategy:packageDebugResources
+> Task :strategy:parseDebugLocalResources
+> Task :market:checkKotlinGradlePluginConfigurationErrors
+> Task :market:preBuild UP-TO-DATE
+> Task :market:preDebugBuild UP-TO-DATE
+> Task :strategy:javaPreCompileDebug
+> Task :execution:javaPreCompileDebug
+> Task :market:generateDebugResValues
+> Task :market:generateDebugResources
+> Task :market:packageDebugResources
+> Task :market:parseDebugLocalResources
+> Task :observability:generateDebugRFile
+> Task :persistence:checkKotlinGradlePluginConfigurationErrors
+> Task :persistence:preBuild UP-TO-DATE
+> Task :persistence:preDebugBuild UP-TO-DATE
+> Task :execution:generateDebugRFile
+> Task :persistence:generateDebugResValues
+> Task :strategy:generateDebugRFile
+> Task :persistence:generateDebugResources
+> Task :persistence:packageDebugResources
+> Task :adapters:generateDebugRFile
+> Task :market:generateDebugRFile
+> Task :persistence:parseDebugLocalResources
+> Task :market:javaPreCompileDebug
+> Task :persistence:javaPreCompileDebug
+> Task :ui:checkKotlinGradlePluginConfigurationErrors
+> Task :ui:preBuild UP-TO-DATE
+> Task :ui:preDebugBuild UP-TO-DATE
+> Task :ui:generateDebugResValues
+> Task :persistence:generateDebugRFile
+> Task :ui:generateDebugResources
+> Task :ui:packageDebugResources
+> Task :adapters:preDebugUnitTestBuild UP-TO-DATE
+> Task :risk:preBuild UP-TO-DATE
+> Task :risk:preDebugBuild UP-TO-DATE
+> Task :ui:javaPreCompileDebug
+> Task :ui:parseDebugLocalResources
+> Task :adapters:javaPreCompileDebug
+> Task :risk:generateDebugResValues
+> Task :risk:generateDebugResources
+> Task :ui:generateDebugRFile
+> Task :risk:packageDebugResources
+> Task :risk:checkKotlinGradlePluginConfigurationErrors
+> Task :risk:parseDebugLocalResources
+> Task :risk:javaPreCompileDebug
+> Task :risk:generateDebugRFile
+> Task :adapters:javaPreCompileDebugUnitTest
+> Task :app:checkKotlinGradlePluginConfigurationErrors
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:generateDebugBuildConfig
+> Task :adapters:compileDebugLibraryResources
+> Task :execution:writeDebugAarMetadata
+> Task :adapters:writeDebugAarMetadata
+> Task :market:writeDebugAarMetadata
+> Task :observability:writeDebugAarMetadata
+> Task :persistence:writeDebugAarMetadata
+> Task :risk:writeDebugAarMetadata
+> Task :strategy:writeDebugAarMetadata
+> Task :ui:writeDebugAarMetadata
+> Task :app:generateDebugResValues
+> Task :adapters:generateDebugUnitTestStubRFile
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :core:compileKotlin
+> Task :core:compileJava NO-SOURCE
+> Task :core:classes UP-TO-DATE
+> Task :core:jar
+> Task :app:packageDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :adapters:extractDeepLinksDebug
+> Task :app:parseDebugLocalResources
+> Task :app:extractDeepLinksDebug
+> Task :execution:extractDeepLinksDebug
+> Task :execution:processDebugManifest
+> Task :market:extractDeepLinksDebug
+> Task :market:processDebugManifest
+> Task :observability:extractDeepLinksDebug
+> Task :observability:processDebugManifest
+> Task :adapters:processDebugManifest
+> Task :persistence:extractDeepLinksDebug
+> Task :persistence:processDebugManifest
+> Task :risk:extractDeepLinksDebug
+> Task :strategy:extractDeepLinksDebug
+> Task :risk:processDebugManifest
+> Task :ui:extractDeepLinksDebug
+> Task :strategy:processDebugManifest
+> Task :ui:processDebugManifest
+> Task :execution:compileDebugLibraryResources
+> Task :app:mergeDebugResources
+> Task :app:processDebugMainManifest
+> Task :observability:compileDebugKotlin
+> Task :app:processDebugManifest
+> Task :observability:compileDebugJavaWithJavac NO-SOURCE
+> Task :observability:processDebugJavaRes
+> Task :observability:bundleLibRuntimeToJarDebug
+> Task :app:processDebugManifestForPackage
+> Task :market:compileDebugLibraryResources
+> Task :observability:compileDebugLibraryResources
+> Task :observability:bundleLibCompileToJarDebug
+> Task :persistence:compileDebugLibraryResources
+> Task :risk:compileDebugLibraryResources
+> Task :strategy:compileDebugLibraryResources
+> Task :ui:compileDebugLibraryResources
+> Task :app:javaPreCompileDebug
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest
+AAPT2 bin Daemon #0: Unexpected error output: CANNOT LINK EXECUTABLE "/data/data/com.termux/files/usr/bin/aapt2": cannot locate symbol "_ZNSt6__ndk113__hash_memoryEPKvm" referenced by "/data/data/com.termux/files/usr/bin/aapt2"...
+> Task :app:processDebugResources FAILED
+> Task :simulation:compileKotlin
+> Task :core:compileTestKotlin
+> Task :risk:compileDebugKotlin
+
+> Task :ui:compileDebugKotlin
+w: file:///data/data/com.termux/files/home/Tradedraw/ui/src/main/java/com/example/tradedraw/AutoDrawEngine.kt:85:9 Parameter 'screenWidth' is never used
+
+> Task :strategy:compileDebugKotlin
+
+[Incubating] Problems report is available at: file:///data/data/com.termux/files/home/Tradedraw/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:processDebugResources' (registered by plugin 'com.android.internal.application').
+> A failure occurred while executing com.android.build.gradle.internal.res.LinkApplicationAndroidResourcesTask$TaskAction
+   > AAPT2 bin Daemon #0: Daemon startup failed
+     This should not happen under normal circumstances, please file an issue if it does.
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.5.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 1m 3s
+132 actionable tasks: 132 executed

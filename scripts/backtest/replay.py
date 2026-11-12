@@ -66,6 +66,7 @@ Uso:
 import argparse
 import csv
 import glob
+import math
 import sys
 from datetime import datetime, timezone
 
@@ -137,6 +138,7 @@ class Candle:
 def load_ticks(path):
     """Devuelve ([(ts_ms, price)], dup_count) ordenado por tiempo y deduplicado."""
     ticks = []
+    assets = set()
     bad = 0
     with open(path, newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
@@ -149,16 +151,32 @@ def load_ticks(path):
             except (TypeError, ValueError):
                 bad += 1
                 continue
-            if price <= 0:
+            if not math.isfinite(price) or price <= 0 or ts < 0:
                 bad += 1
                 continue
+            asset = (row.get("ric") or "").strip()
+            if not asset:
+                raise ValueError(f"{path}: missing asset identity")
+            assets.add(asset)
             ticks.append((ts, price))
-    ticks.sort(key=lambda t: t[0])
+    if len(assets) > 1:
+        raise ValueError(f"{path}: MIXED_ASSETS: split by exact RIC before replay; state is single-asset")
+    # Arrival-order watermark matches SimLedger. Never resurrect late old ticks by sorting.
+    accepted = []
+    watermark = -1
+    stale = 0
+    for tick in ticks:
+        if tick[0] <= watermark:
+            stale += 1
+            continue
+        watermark = tick[0]
+        accepted.append(tick)
+    ticks = accepted
 
     # Deduplicar timestamps: conservar solo el primer tick por ts
     dedup = []
     seen = set()
-    dup_count = 0
+    dup_count = stale
     for ts, price in ticks:
         if ts in seen:
             dup_count += 1
@@ -215,17 +233,15 @@ def build_candles(ticks):
 
 
 def price_at(ticks, target_ms):
-    """Precio del último tick con ts <= target_ms (búsqueda binaria). None si no hay."""
-    lo, hi = 0, len(ticks) - 1
-    found = None
-    while lo <= hi:
+    """First accepted same-asset tick at/after expiry; load_ticks rejects mixed assets."""
+    lo, hi = 0, len(ticks)
+    while lo < hi:
         mid = (lo + hi) // 2
-        if ticks[mid][0] <= target_ms:
-            found = ticks[mid]
+        if ticks[mid][0] < target_ms:
             lo = mid + 1
         else:
-            hi = mid - 1
-    return found[1] if found else None
+            hi = mid
+    return ticks[lo][1] if lo < len(ticks) else None
 
 
 def resolve(entry_price, exit_price, action):
@@ -235,7 +251,7 @@ def resolve(entry_price, exit_price, action):
     broker, así que todo veredicto se resuelve por precio. Un empate exacto es TIE.
     """
     if exit_price is None:
-        return "TIE", "TIMEOUT: sin tick posterior a la expiración"
+        return "NO_DATA", "NO_SETTLEMENT_DATA: no eligible same-asset future tick"
     if exit_price == entry_price:
         return "TIE", f"PRECIO (=) Empate técnico: Entry={entry_price} vs Close={exit_price}"
     won = (exit_price > entry_price) if action == "BUY" else (exit_price < entry_price)
@@ -304,7 +320,7 @@ def run(ticks, signals):
             "submode": "BACKTEST",
             "action": action,
             "confidence": "1.00",
-            "price_y": f"{entry_price:.2f}",
+            "price_y": format(entry_price, ".17g"),
             "stake": "1.00",
             "base_balance": "0.00",
             "result": result,
@@ -365,8 +381,8 @@ def self_test():
 
     # price_at
     assert price_at(ticks, base) == 100.0
-    assert price_at(ticks, base + 500) == 100.0
-    assert price_at(ticks, base - 1) is None
+    assert price_at(ticks, base + 500) == ticks[1][1]
+    assert price_at(ticks, base - 1) == ticks[0][1]
     assert price_at(ticks, base + 19_000) == ticks[-1][1]
 
     # resolve: BUY gana si el cierre sube, SELL si baja, empate exacto es TIE
@@ -375,7 +391,7 @@ def self_test():
     assert resolve(100.0, 99.0, "SELL")[0] == "WIN"
     assert resolve(100.0, 101.0, "SELL")[0] == "LOSS"
     assert resolve(100.0, 100.0, "BUY")[0] == "TIE"
-    assert resolve(100.0, None, "BUY")[0] == "TIE"
+    assert resolve(100.0, None, "BUY")[0] == "NO_DATA"
 
     # Ventana sniper
     assert (base // 1000) % 60 == 20  # base cae fuera de :01-:05
@@ -385,7 +401,7 @@ def self_test():
     signals = [(base, "BUY", 641.8672875)]
     rows = run(flat, signals)
     assert rows[0]["result"] == "TIE", rows[0]
-    assert rows[0]["price_y"] == "641.87"
+    assert float(rows[0]["price_y"]) == 641.8672875
 
     # Verificación de robustez ante huecos (> 10s -> reinicio de velas y cooldown de 120s)
     gap_ticks = [(base, 100.0), (base + 15_000, 102.0)]
@@ -446,7 +462,9 @@ def main():
                 if is_in_cooldown(ts, cooldown_windows):
                     total_discarded_by_gap += 1
                     continue
-                signals.append((ts, act, price_by_ts.get(ts, ticks[0][1])))
+                if ts not in price_by_ts:
+                    raise ValueError(f"NO_EXACT_ENTRY_TICK: {ts}; refusing invented entry price")
+                signals.append((ts, act, price_by_ts[ts]))
         else:
             signals = simulate_price_mode(ticks, candles, cooldown_windows)
 
@@ -470,11 +488,12 @@ def main():
     write_csv(args.out, all_rows)
 
     wins = sum(1 for r in all_rows if r["result"] == "WIN")
-    decided = sum(1 for r in all_rows if r["result"] != "TIE")
-    ties = len(all_rows) - decided
+    decided = sum(1 for r in all_rows if r["result"] in ("WIN", "LOSS"))
+    ties = sum(1 for r in all_rows if r["result"] == "TIE")
+    missing = sum(1 for r in all_rows if r["result"] == "NO_DATA")
     wr = (wins / decided * 100) if decided else 0.0
     print(f"\nEscrito {args.out}: {len(all_rows)} trades "
-          f"(WIN={wins} LOSS={decided - wins} TIE={ties}, WR sin TIE={wr:.2f}%)")
+          f"(WIN={wins} LOSS={decided - wins} TIE={ties} NO_DATA={missing}, WR sin TIE={wr:.2f}%)")
     if args.mode == "price":
         print("AVISO: --mode price no simula la estrategia, solo el veredicto. "
               "No usar su WR para decidir edge.")

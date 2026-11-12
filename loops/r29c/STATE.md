@@ -11,3 +11,10 @@ C0 inventory completed for enumerated extensions:945 files/42,960,299bytes. C1 d
 HEAD remains4fdb646. Base CI independently verified:43025318940/43025307877 SUCCESS. Completed rounds:C0,C1(initial conservative lineage),C2. Failed gates:DATA_PASS=false; REPLAY_PARITY_PASS=false on uncorrected harness.
 C3 diagnostic expiry audit executed for all37 tick sources, not a strategy experiment. Three red regressions observed (3/3 fail) before correction. Recorded exact-entry replay:5 WIN→LOSS,1 LOSS→WIN,1 TRUE_TIE→WIN,7 NO_DATA changes. All affected legacy claims INVALID_UNDER_RUNTIME_SEMANTICS.
 Approved datasets:none. Edge experiments:none. Exact next action:commit inventory cut separately; correct research-only timestamp/expiry/missing-data paths and fail closed adaptive preload; add parity tests and re-run clean full gates. Keep production strategies unchanged.
+
+## 2026-11-11 — C3/C4 checkpoint
+Research correction local gate: clean full suite674tests/85classes/0F/0E/0skips;APK built and installed Success. Initial aapt2 environment failure retained; LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib resolves it. Python59PASS includes prospective work not yet in this cut.
+C3 audit complete with unresolved conceptual invalidity explicitly documented. C4 helper settlement parity PASS (11actual replay/ledger/SHADOW boundary tests); full replay execution parity FAIL, statistical claims STOPPED.
+C5 source registry authoritative version2:14modes/44production files, all byte-identical to4fdb646. Version1 missed COMBINED and is preserved as superseded failed extraction, never used for experiments.
+Current HEAD b6b6e8b (inventory cut). Last approved CI remains base4fdb646 runs43025318940/43025307877. No new CI approval inherited.
+Exact next action:commit backtest corrections independently; finish read-only open-SHADOW prediction export and hash-chained prospective collector, then clean full gates/install/runtime verification; prospective live cohort must be preregistered and source-qualified. Approved research datasets0;edge experiments0.

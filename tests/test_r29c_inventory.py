@@ -23,3 +23,12 @@ class ResearchInventoryTest(unittest.TestCase):
     def test_malformed_csv_is_counted_without_crashing(self):
         result,_=profile(Path('bad.csv'),b'ts,ric,price\n1,A,2,unexpected\n')
         self.assertEqual(1,result['invalid_rows'])
+
+    def test_all_frozen_production_sources_match_registered_bytes(self):
+        import hashlib
+        import json
+        registry=json.loads(Path('loops/r29c/evidence/strategy_registry_v2.json').read_text())
+        self.assertIn('COMBINED',{r['strategy_id'] for r in registry})
+        for path,expected in registry[0]['supporting_sources'].items():
+            with self.subTest(path=path):
+                self.assertEqual(expected,hashlib.sha256(Path(path).read_bytes()).hexdigest())
