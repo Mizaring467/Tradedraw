@@ -31,7 +31,7 @@ GLOBAL_FILES = {
     "gradle.properties",
     "gradle/libs.versions.toml",
 }
-SCOPED_ROOTS = {"scripts", "loops", "data", "datasets", "experiments", ".github"}
+SCOPED_ROOTS = {"scripts", "loops", "data", "datasets", "experiments", ".github", "tests"}
 
 
 @dataclass(frozen=True)

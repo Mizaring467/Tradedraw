@@ -38,6 +38,17 @@ detached
         self.assertEqual("strategy", worktree_overlap.scope_for("strategy/src/Foo.kt", modules))
         self.assertEqual("app", worktree_overlap.scope_for("app/src/Main.kt", modules))
 
+    def test_test_files_are_scoped_per_file_for_parallel_agents(self):
+        modules = {"app"}
+        self.assertEqual(
+            "tests/test_alpha.py",
+            worktree_overlap.scope_for("tests/test_alpha.py", modules),
+        )
+        self.assertNotEqual(
+            worktree_overlap.scope_for("tests/test_alpha.py", modules),
+            worktree_overlap.scope_for("tests/test_beta.py", modules),
+        )
+
     def test_scope_for_shared_roots_uses_two_components(self):
         modules = {"app"}
         self.assertEqual("scripts/ci", worktree_overlap.scope_for("scripts/ci/x.py", modules))
