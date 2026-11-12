@@ -114,5 +114,21 @@ class ActiveAssetTimelineTest(unittest.TestCase):
             )
 
 
+    def test_shared_golden_contract_matches_python_lookup(self):
+        import json
+        from pathlib import Path
+        root=Path(__file__).resolve().parents[1]
+        manifest=json.loads((root/'data/fixtures/research/active_asset_timeline_v1.json').read_text())
+        cases=json.loads((root/'data/fixtures/research/active_asset_timeline_v1_cases.json').read_text())
+        observations=manifest["observations"]
+        max_age=manifest["max_age_ms"]
+        for case in cases:
+            actual=active_asset_at(observations,case["timestamp_ms"],max_age_ms=max_age)
+            self.assertEqual(case["status"],actual["status"],case)
+            self.assertEqual(case["ric"],actual["ric"],case)
+            self.assertEqual(case["observation_at_ms"],actual["observation_at_ms"],case)
+            self.assertEqual(case["age_ms"],actual["age_ms"],case)
+
+
 if __name__ == "__main__":
     unittest.main()

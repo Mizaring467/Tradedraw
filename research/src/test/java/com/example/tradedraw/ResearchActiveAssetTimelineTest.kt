@@ -98,4 +98,25 @@ class ResearchActiveAssetTimelineTest {
             scheduler.evaluate(c(61_000, "B", "b")),
         )
     }
+
+    @Test
+    fun sharedGoldenContractMatchesKotlinLookup() {
+        val start = File(System.getProperty("user.dir"))
+        val root = generateSequence(start) { it.parentFile }
+            .firstOrNull { File(it, "data/fixtures/research/active_asset_timeline_v1.json").isFile }
+            ?: error("RESEARCH_FIXTURE_ROOT_NOT_FOUND")
+        val manifestFile = File(root, "data/fixtures/research/active_asset_timeline_v1.json")
+        val casesFile = File(root, "data/fixtures/research/active_asset_timeline_v1_cases.json")
+        val timeline = ResearchActiveAssetTimeline.fromManifest(manifestFile)
+        val cases = org.json.JSONArray(casesFile.readText(Charsets.UTF_8))
+        for (i in 0 until cases.length()) {
+            val expected = cases.getJSONObject(i)
+            val actual = timeline.lookup(expected.getLong("timestamp_ms"))
+            assertEquals(expected.getString("status"), actual.status.name)
+            if (expected.isNull("ric")) assertEquals(null, actual.ric) else assertEquals(expected.getString("ric"), actual.ric)
+            if (expected.isNull("observation_at_ms")) assertEquals(null, actual.observationAtMs) else assertEquals(expected.getLong("observation_at_ms"), actual.observationAtMs)
+            if (expected.isNull("age_ms")) assertEquals(null, actual.ageMs) else assertEquals(expected.getLong("age_ms"), actual.ageMs)
+        }
+    }
+
 }
