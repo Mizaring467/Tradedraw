@@ -57,17 +57,23 @@ jobs:
           assert result['total_tests'] >= 712
           PY
 
+      - name: Generate artifact identity manifest
+        run: python scripts/research/instrumented_artifact_manifest.py
+
       - name: Verify Android runtime code identity source
         run: |
           test -f app/build/outputs/apk/debug/app-debug.apk
           sha256sum app/build/outputs/apk/debug/app-debug.apk
           grep -R 'GIT_SHA' app/build/generated/source/buildConfig/debug
+          cat build/instrumented-artifact-manifest.json
 
       - name: Upload instrumented APK
         uses: actions/upload-artifact@v4
         with:
           name: TradeDraw-instrumented-policy-v1
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            build/instrumented-artifact-manifest.json
           if-no-files-found: error
 
       - name: Upload validation evidence
@@ -80,4 +86,5 @@ jobs:
             build/ci-replay.csv
             loops/r29c/evidence/strategy_registry_instrumented_policy_v1.json
             loops/r29c/INSTRUMENTED_POLICY_V1.md
+            build/instrumented-artifact-manifest.json
           if-no-files-found: warn

@@ -154,3 +154,27 @@ The probe fails closed on wrong SHA, non-SHADOW mode, disabled simulation,
 stale feed when requested, wrong StrategyVersion, wrong base version, wrong
 policy-context quality/version, or any missing field from the 27-field exact
 contract.
+
+
+## Artifact identity clarification
+
+The Android instrumentation logic was introduced in commit `3917945`. Artifact
+identity is separate: later documentation or CI-only commits can rebuild the same
+Android sources while changing `BuildConfig.GIT_SHA`.
+
+Every distributable instrumented APK must therefore be paired with
+`build/instrumented-artifact-manifest.json`. The authoritative value for the
+runtime preflight is `runtime_probe_expected_git_sha` from that manifest, not a
+hard-coded commit from this document.
+
+Example:
+
+```bash
+EXPECTED_SHA=$(python -c 'import json; print(json.load(open("build/instrumented-artifact-manifest.json"))["runtime_probe_expected_git_sha"])')
+python scripts/research/instrumentation_runtime_probe.py \
+  --expected-git-sha "$EXPECTED_SHA" \
+  --require-fresh-feed
+```
+
+When a new pending prospective SHADOW decision exists, add
+`--require-prediction` to require the complete exact 27-field policy context.
