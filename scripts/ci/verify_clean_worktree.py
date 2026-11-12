@@ -145,6 +145,24 @@ def discover_gradle_module_prefixes(repo_root: str) -> Tuple[str, ...]:
     return tuple(sorted(f"{name}/" for name in names))
 
 
+def discover_gradle_test_tasks(repo_root: str) -> List[str]:
+    """Build an explicit test task list so JVM modules cannot be skipped."""
+    tasks: List[str] = []
+    for prefix in discover_gradle_module_prefixes(repo_root):
+        module = prefix.rstrip("/")
+        build_file = os.path.join(repo_root, module, "build.gradle.kts")
+        if not os.path.isfile(build_file):
+            continue
+        with open(build_file, "r", encoding="utf-8") as fh:
+            text = fh.read()
+        if "libs.plugins.kotlin.jvm" in text:
+            tasks.append(f":{module}:test")
+        elif ("libs.plugins.android.library" in text or
+              "libs.plugins.android.application" in text):
+            tasks.append(f":{module}:testDebugUnitTest")
+    return sorted(tasks)
+
+
 def should_copy_untracked(rel_path: str, module_prefixes: Tuple[str, ...]) -> bool:
     """Whether an untracked path can affect build/test/research reproducibility."""
     normalized = rel_path.replace("\\", "/").lstrip("./")
@@ -364,16 +382,19 @@ def run_worktree_verification(
             if untracked_copied > 0:
                 print(f"[FRENTE G] {untracked_copied} inputs no trackeados propagados al worktree de prueba.")
 
-        # 3. Ejecutar Gradle testDebugUnitTest dentro del worktree
+        # 3. Ejecutar todas las suites Android + JVM y compilar el APK.
+        # testDebugUnitTest no cubre modulos Kotlin/JVM puros como core/simulation.
+        test_tasks = discover_gradle_test_tasks(worktree_dir)
+        verification_tasks = test_tasks + [":app:assembleDebug"]
         if os.name == "nt":
             gradle_bin = os.path.join(worktree_dir, "gradlew.bat")
             if not os.path.exists(gradle_bin):
                 gradle_bin = "gradlew.bat"
-            cmd_gradle = ["cmd.exe", "/c", gradle_bin, "testDebugUnitTest", "--no-daemon"]
-            gradle_cmd_str = f"cmd.exe /c {gradle_bin} testDebugUnitTest --no-daemon"
+            cmd_gradle = ["cmd.exe", "/c", gradle_bin, *verification_tasks, "--no-daemon", "--no-configuration-cache"]
+            gradle_cmd_str = " ".join(cmd_gradle)
         else:
-            cmd_gradle = ["./gradlew", "testDebugUnitTest", "--no-daemon"]
-            gradle_cmd_str = "./gradlew testDebugUnitTest --no-daemon"
+            cmd_gradle = ["./gradlew", *verification_tasks, "--no-daemon", "--no-configuration-cache"]
+            gradle_cmd_str = " ".join(cmd_gradle)
 
         if skip_gradle:
             print("[FRENTE G] Flag --skip-gradle activo. Omitiendo compilación de Gradle.")
