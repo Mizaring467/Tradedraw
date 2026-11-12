@@ -1,12 +1,16 @@
 import unittest
 
 from scripts.research.policy_context_coverage import (
+    EXACT_POLICY_CONTEXT_QUALITY,
+    EXACT_POLICY_CONTEXT_VERSION,
     POLICY_CONTEXT_REQUIRED,
+    TOP_LEVEL_EQUIVALENTS,
     coverage_summary,
     missing_policy_context,
     observed_context_from_status,
     observation_summary,
     policy_context_complete,
+    policy_context_exact,
 )
 
 
@@ -30,7 +34,10 @@ class PolicyContextCoverageTest(unittest.TestCase):
     def test_current_prospective_schema_is_not_mistaken_for_policy_parity(self):
         prediction = base_prediction()
         missing = missing_policy_context(prediction)
-        self.assertEqual(set(POLICY_CONTEXT_REQUIRED), set(missing))
+        self.assertEqual(
+            set(POLICY_CONTEXT_REQUIRED) - set(TOP_LEVEL_EQUIVALENTS),
+            set(missing),
+        )
         self.assertFalse(policy_context_complete(prediction))
 
     def test_complete_precommitted_context_is_recognized_without_defaults(self):
@@ -39,6 +46,42 @@ class PolicyContextCoverageTest(unittest.TestCase):
         prediction["policy_context"]["tickAgeMs"] = None
         self.assertEqual([], missing_policy_context(prediction))
         self.assertTrue(policy_context_complete(prediction))
+        self.assertFalse(policy_context_exact(prediction))
+
+    def test_exact_nested_context_is_distinct_from_final_prediction(self):
+        prediction = base_prediction()
+        prediction["action"] = "SELL"
+        prediction["reason"] = "final inverted reason"
+        context = {field: 1 for field in POLICY_CONTEXT_REQUIRED}
+        context.update({
+            "action": "BUY",
+            "currentDecisionId": prediction["decisionId"],
+            "reasonDescription": "original policy reason",
+            "tickAgeMs": None,
+        })
+        prediction["policy_context"] = context
+        prediction["policy_context_quality"] = EXACT_POLICY_CONTEXT_QUALITY
+        prediction["policy_context_version"] = EXACT_POLICY_CONTEXT_VERSION
+
+        self.assertTrue(policy_context_complete(prediction))
+        self.assertTrue(policy_context_exact(prediction))
+        self.assertEqual("BUY", prediction["policy_context"]["action"])
+        self.assertEqual("SELL", prediction["action"])
+        summary = coverage_summary([prediction])
+        self.assertEqual(1, summary["exact_predictions"])
+        self.assertEqual(1.0, summary["exact_coverage_ratio"])
+        self.assertEqual("POLICY_CONTEXT_EXACT", summary["status"])
+
+    def test_unsealed_nested_context_is_complete_but_not_exact(self):
+        prediction = base_prediction()
+        prediction["policy_context"] = {
+            field: (None if field == "tickAgeMs" else 1)
+            for field in POLICY_CONTEXT_REQUIRED
+        }
+        self.assertTrue(policy_context_complete(prediction))
+        self.assertFalse(policy_context_exact(prediction))
+        summary = coverage_summary([prediction])
+        self.assertEqual("POLICY_CONTEXT_COMPLETE_LEGACY_OR_UNSEALED", summary["status"])
 
     def test_missing_single_field_is_reported_exactly(self):
         prediction = base_prediction()
@@ -56,6 +99,7 @@ class PolicyContextCoverageTest(unittest.TestCase):
         self.assertEqual(1, summary["complete_predictions"])
         self.assertEqual(0.5, summary["coverage_ratio"])
         self.assertEqual(1, summary["missing_field_counts"]["feedAsset"])
+        self.assertEqual(0, summary["exact_predictions"])
         self.assertEqual("POLICY_CONTEXT_INCOMPLETE", summary["status"])
 
     def test_empty_cohort_is_not_claimed_complete(self):

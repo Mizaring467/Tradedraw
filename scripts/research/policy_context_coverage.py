@@ -16,9 +16,11 @@ from typing import Any, Iterable
 # the existing prospective prediction payload; everything else must be persisted
 # inside policy_context before the outcome is known.
 POLICY_CONTEXT_REQUIRED = (
+    "action",
     "mode",
     "autonomousSubMode",
     "strategy",
+    "currentDecisionId",
     "tickAgeMs",
     "isFeedFresh",
     "feedMaxAgeMs",
@@ -29,6 +31,7 @@ POLICY_CONTEXT_REQUIRED = (
     "isSyntheticOrOtc",
     "sec",
     "isChoppinessDetected",
+    "reasonDescription",
     "lastTradeResolutionTime",
     "currentLossStreak",
     "currentTimeMs",
@@ -42,6 +45,10 @@ POLICY_CONTEXT_REQUIRED = (
     "isCandleAlreadyExecuted",
 )
 
+EXACT_POLICY_CONTEXT_QUALITY = "EXACT_PRE_OUTCOME_EXECUTION_POLICY_INPUTS"
+EXACT_POLICY_CONTEXT_VERSION = 1
+
+
 TOP_LEVEL_EQUIVALENTS = {
     "action": "action",
     "currentDecisionId": "decisionId",
@@ -50,22 +57,23 @@ TOP_LEVEL_EQUIVALENTS = {
 
 
 def missing_policy_context(prediction: dict[str, Any]) -> list[str]:
-    """Return fields that were not precommitted; never synthesize defaults."""
-    missing: list[str] = []
-    for context_field, payload_field in TOP_LEVEL_EQUIVALENTS.items():
-        if payload_field not in prediction or prediction[payload_field] in (None, ""):
-            missing.append(context_field)
+    """Return fields that cannot be reconstructed from pre-outcome evidence.
 
+    Exact nested fields take precedence. Top-level action/decisionId/reason remain
+    a legacy fallback only; they may describe the final prediction after adaptive
+    inversion rather than the original ExecutionContext inputs.
+    """
     context = prediction.get("policy_context")
-    if not isinstance(context, dict):
-        missing.extend(POLICY_CONTEXT_REQUIRED)
-        return missing
-
+    context = context if isinstance(context, dict) else {}
+    missing: list[str] = []
     for field in POLICY_CONTEXT_REQUIRED:
-        # None is a valid observed value for tickAgeMs (FEED_MUDO), so presence
-        # matters rather than truthiness.
-        if field not in context:
-            missing.append(field)
+        # Presence matters: None is a valid exact tickAgeMs when feed is silent.
+        if field in context:
+            continue
+        payload_field = TOP_LEVEL_EQUIVALENTS.get(field)
+        if payload_field and prediction.get(payload_field) not in (None, ""):
+            continue
+        missing.append(field)
     return missing
 
 
@@ -73,23 +81,46 @@ def policy_context_complete(prediction: dict[str, Any]) -> bool:
     return not missing_policy_context(prediction)
 
 
+def policy_context_exact(prediction: dict[str, Any]) -> bool:
+    """True only for a sealed exact pre-outcome ExecutionPolicy snapshot."""
+    context = prediction.get("policy_context")
+    if not isinstance(context, dict):
+        return False
+    if prediction.get("policy_context_quality") != EXACT_POLICY_CONTEXT_QUALITY:
+        return False
+    if prediction.get("policy_context_version") != EXACT_POLICY_CONTEXT_VERSION:
+        return False
+    return all(field in context for field in POLICY_CONTEXT_REQUIRED)
+
+
 def coverage_summary(predictions: Iterable[dict[str, Any]]) -> dict[str, Any]:
     rows = list(predictions)
     missing_counts: Counter[str] = Counter()
     complete = 0
+    exact = 0
     for prediction in rows:
         missing = missing_policy_context(prediction)
         if missing:
             missing_counts.update(missing)
         else:
             complete += 1
+        if policy_context_exact(prediction):
+            exact += 1
     total = len(rows)
+    if total and exact == total:
+        status = "POLICY_CONTEXT_EXACT"
+    elif total and complete == total:
+        status = "POLICY_CONTEXT_COMPLETE_LEGACY_OR_UNSEALED"
+    else:
+        status = "POLICY_CONTEXT_INCOMPLETE"
     return {
         "total_predictions": total,
         "complete_predictions": complete,
+        "exact_predictions": exact,
         "coverage_ratio": (complete / total) if total else None,
+        "exact_coverage_ratio": (exact / total) if total else None,
         "missing_field_counts": dict(sorted(missing_counts.items())),
-        "status": "POLICY_CONTEXT_COMPLETE" if total and complete == total else "POLICY_CONTEXT_INCOMPLETE",
+        "status": status,
     }
 
 
@@ -143,7 +174,7 @@ def observed_context_from_status(prediction: dict[str, Any], status: dict[str, A
     quality["action"] = "PRECOMMITTED_PREDICTION"
     quality["reasonDescription"] = "PRECOMMITTED_PREDICTION"
 
-    all_required = set(POLICY_CONTEXT_REQUIRED) | set(TOP_LEVEL_EQUIVALENTS)
+    all_required = set(POLICY_CONTEXT_REQUIRED)
     unresolved = sorted(all_required - set(fields))
 
     return {

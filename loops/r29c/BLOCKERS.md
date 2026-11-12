@@ -14,3 +14,16 @@ R29-B external runtime reservation settlement debt remains OPEN independently.
 ## 2026-11-12T01:39:28.720826+00:00 — final runtime adjudication
 
 Exact b5378fc APK installedSuccess; both code CI green. Runtime collector attempt failed with12transport errors,not a data sample. Restore app-side foreground startup/device interaction and obtain live feed with pinned build/continuous epoch before another separately preregistered cohort. No financial inference can proceed without resolving data provenance and full replay parity independently. Final battery unavailable; no further device testing attempted.
+
+## 2026-11-11 — exact pre-outcome policy context is version-gated
+
+The exact ExecutionContext plus the four lazy supplier results consumed by an Allowed decision exist only inside frozen production sources.
+The registry correctly failed when a telemetry attempt modified TradingEngine.kt.
+
+Decision: do not refresh frozen hashes and do not ship a durable-format migration without a producer.
+The current version stays byte-frozen.
+
+The research auditor now distinguishes a sealed exact nested policy snapshot from a merely complete/reconstructable context.
+A future exact capture requires an explicitly NEW version and the design in EXACT_POLICY_CONTEXT_DESIGN.md.
+
+This remains a blocker for FULL_REPLAY_EXECUTION_PARITY_PASS and is not a reason to invent context retrospectively.

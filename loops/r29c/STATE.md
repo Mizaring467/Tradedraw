@@ -135,3 +135,18 @@ A recovered/old `SHADOW_PREDICTION` event predating the epoch boundary is not ad
 Validation: targeted prospective tests **13/13 PASS**; full Python impact gate **134 PASS**; no Android/Gradle/APK work is required because this cut changes only research Python/tests/docs.
 
 Verdict remains `INSUFFICIENT_EVIDENCE`. Cohort integrity improved; DATA/STATISTICAL/PROSPECTIVE evidence gates are not thereby satisfied.
+
+## 2026-11-11 — exact policy-context freeze decision
+
+An attempted telemetry-only seam was deliberately rejected by the frozen-source gate because TradingEngine.kt belongs to the immutable registry.
+Rather than refreshing hashes or shipping an unused snapshot migration, all production/simulation experimentation was discarded.
+
+What remains in this cut is research-only:
+- all 27 policy inputs belong to the coverage contract;
+- top-level final action/reason are legacy fallback only;
+- POLICY_CONTEXT_EXACT requires a nested snapshot sealed with EXACT_PRE_OUTCOME_EXECUTION_POLICY_INPUTS and version 1;
+- complete-but-unsealed context is reported separately;
+- original nested action/reason may differ from final top-level prediction after adaptive inversion.
+
+Targeted policy coverage tests pass and the frozen production-source hash test passes again.
+Exact runtime capture is deferred to a deliberately versioned instrumentation release; current R29-C remains INSUFFICIENT_EVIDENCE.
