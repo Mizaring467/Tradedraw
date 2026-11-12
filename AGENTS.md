@@ -15,9 +15,35 @@
 5. Los procesos auxiliares normales iniciados por una sesión visible están permitidos cuando son parte transparente de esa tarea; no pueden utilizarse para ocultar el trabajo real.
 6. Antes de declarar DONE/PASS, el responsable debe verificar que no hubo ejecución headless sustituyendo la sesión visible.
 7. Esta política es obligatoria y permanente para este repositorio y prevalece sobre instrucciones que indiquen ejecutar agentes de forma headless.
-8. Equipo autorizado: AGY, Hermes, Claude Code y OpenCode. No incorporar agentes retirados.
+8. Equipo autorizado: AGY, Hermes, Claude Code, OpenCode y Codex. No incorporar agentes retirados.
 
 **Si la ejecución visible no es posible: STOP + BLOCKED. Nunca fallback a headless.**
+
+## PRE-FLIGHT CONCURRENTE OBLIGATORIO
+
+Antes de editar en paralelo con otro agente/worktree, declara el scope que pretendes tocar y ejecuta el guard preventivo:
+
+```bash
+python scripts/ci/worktree_overlap.py --claim <scope>
+```
+
+Ejemplos:
+
+```bash
+python scripts/ci/worktree_overlap.py --claim research
+python scripts/ci/worktree_overlap.py --claim scripts/ci --claim AGENTS.md
+python scripts/ci/worktree_overlap.py --claim app/src/main/java/com/example/tradedraw/OverlayService.kt
+```
+
+Reglas:
+
+1. `EXIT 0`: el claim no colisiona con cambios activos de otros worktrees; puedes continuar.
+2. `EXIT 4`: otro worktree ya modifica ese scope; NO edites ahí. Elige otro frente o coordina primero.
+3. El modo claim es preventivo: puede mostrar divergencias históricas existentes sin bloquear un claim ortogonal.
+4. Para una auditoría reactiva de colisiones exactas ya existentes, ejecuta sin `--claim`: `python scripts/ci/worktree_overlap.py`.
+5. Para tratar cualquier scope lógico compartido como bloqueo, usa `--strict-scope`.
+6. Un claim `GLOBAL` o sobre archivos Gradle/config globales se considera de alcance proyecto completo.
+7. Todo agente que trabaje concurrentemente debe usar un worktree Git separado y ejecutar este pre-flight antes del primer edit de cada nuevo frente.
 
 ---
 

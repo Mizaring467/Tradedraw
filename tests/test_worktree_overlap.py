@@ -49,6 +49,72 @@ detached
         self.assertEqual("GLOBAL", worktree_overlap.scope_for("settings.gradle.kts", modules))
         self.assertEqual("GLOBAL", worktree_overlap.scope_for("gradle/libs.versions.toml", modules))
 
+    def test_normalize_claims_accepts_module_scope_and_path(self):
+        modules = {"app", "research"}
+        claims = worktree_overlap.normalize_claims(
+            ["research", "loops/r29c/STATE.md", "scripts/ci"],
+            modules,
+        )
+        self.assertEqual({"research", "loops/r29c", "scripts/ci"}, claims)
+
+    def test_claim_conflict_matches_other_scope(self):
+        modules = {"app", "research"}
+        conflicts = worktree_overlap.claimed_conflicts_for(
+            {"research", "scripts/ci"},
+            {"research/src/Test.kt", "app/src/Main.kt"},
+            modules,
+        )
+        self.assertEqual({"research"}, conflicts)
+
+    def test_global_claim_conflicts_with_any_other_change(self):
+        modules = {"app"}
+        conflicts = worktree_overlap.claimed_conflicts_for(
+            {"GLOBAL"},
+            {"app/src/Main.kt"},
+            modules,
+        )
+        self.assertEqual({"GLOBAL"}, conflicts)
+
+    def test_claim_mode_ignores_unrelated_existing_overlap_for_exit(self):
+        result = worktree_overlap.OverlapResult(
+            current="/current",
+            other="/other",
+            other_branch="agent",
+            exact_paths=("research/Foo.kt",),
+            shared_scopes=("research",),
+            claimed_conflicts=(),
+            current_changes=("research/Foo.kt",),
+            other_changes=("research/Foo.kt",),
+        )
+        self.assertEqual(
+            0,
+            worktree_overlap.exit_code(
+                [result],
+                strict_scope=False,
+                claims_present=True,
+            ),
+        )
+
+    def test_claim_mode_fails_on_claim_conflict(self):
+        result = worktree_overlap.OverlapResult(
+            current="/current",
+            other="/other",
+            other_branch="agent",
+            exact_paths=(),
+            shared_scopes=(),
+            claimed_conflicts=("scripts/ci",),
+            current_changes=(),
+            other_changes=("scripts/ci/x.py",),
+        )
+        self.assertEqual(
+            4,
+            worktree_overlap.exit_code(
+                [result],
+                strict_scope=False,
+                claims_present=True,
+            ),
+        )
+
     def test_global_scope_is_project_wide_risk(self):
         modules = {"app"}
         current = {"settings.gradle.kts"}

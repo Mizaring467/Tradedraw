@@ -4,10 +4,14 @@
 Examples:
   python scripts/ci/worktree_overlap.py
   python scripts/ci/worktree_overlap.py --strict-scope
+  python scripts/ci/worktree_overlap.py --claim research --claim loops/r29c
   python scripts/ci/worktree_overlap.py --json
 
 The tool compares both committed divergence (from the merge-base) and current
-working-tree/untracked changes across every registered git worktree.
+working-tree/untracked changes across every registered git worktree. Optional
+claims make the guard preventive: an agent can declare the module/scope/path it
+plans to edit before touching files and fail fast if another worktree already
+owns that logical area.
 """
 
 from __future__ import annotations
@@ -44,6 +48,7 @@ class OverlapResult:
     other_branch: str | None
     exact_paths: tuple[str, ...]
     shared_scopes: tuple[str, ...]
+    claimed_conflicts: tuple[str, ...]
     current_changes: tuple[str, ...]
     other_changes: tuple[str, ...]
 
@@ -156,7 +161,44 @@ def scopes(paths: Iterable[str], modules: set[str]) -> set[str]:
     return {scope_for(path, modules) for path in paths}
 
 
-def analyze(repo: Path) -> list[OverlapResult]:
+
+
+def normalize_claims(claims: Iterable[str], modules: set[str]) -> set[str]:
+    """Translate module/scope/path claims into the same logical scopes used by analysis."""
+    normalized: set[str] = set()
+    known_scoped = {
+        f"{root}/{child}"
+        for root in SCOPED_ROOTS
+        for child in ("ci", "research", "validation", "backtest", "r29c")
+    }
+    for raw in claims:
+        token = raw.strip().replace("\\", "/").strip("/")
+        if not token:
+            continue
+        if token == "GLOBAL" or token in modules or token in known_scoped:
+            normalized.add(token)
+            continue
+        normalized.add(scope_for(token, modules))
+    return normalized
+
+
+def claimed_conflicts_for(
+    claimed_scopes: set[str],
+    other_changes: set[str],
+    modules: set[str],
+) -> set[str]:
+    if not claimed_scopes or not other_changes:
+        return set()
+    other_scopes = scopes(other_changes, modules)
+    conflicts = claimed_scopes & other_scopes
+    if "GLOBAL" in claimed_scopes:
+        conflicts.add("GLOBAL")
+    if "GLOBAL" in other_scopes:
+        conflicts.add("GLOBAL")
+    return conflicts
+
+
+def analyze(repo: Path, claims: Iterable[str] = ()) -> list[OverlapResult]:
     repo = repo.resolve()
     worktrees = list_worktrees(repo)
     current = next(
@@ -167,6 +209,7 @@ def analyze(repo: Path) -> list[OverlapResult]:
         raise RuntimeError(f"current path is not a registered worktree: {repo}")
 
     modules = module_roots(repo)
+    claimed_scopes = normalize_claims(claims, modules)
     results: list[OverlapResult] = []
     for other in worktrees:
         if other.path == current.path:
@@ -182,6 +225,9 @@ def analyze(repo: Path) -> list[OverlapResult]:
                 ("GLOBAL" in other_scopes and current_changes)):
             shared_set.add("GLOBAL")
         shared = tuple(sorted(shared_set))
+        claimed_conflicts = tuple(sorted(
+            claimed_conflicts_for(claimed_scopes, other_changes, modules)
+        ))
         results.append(
             OverlapResult(
                 current=current.path,
@@ -189,6 +235,7 @@ def analyze(repo: Path) -> list[OverlapResult]:
                 other_branch=other.branch,
                 exact_paths=exact,
                 shared_scopes=shared,
+                claimed_conflicts=claimed_conflicts,
                 current_changes=tuple(sorted(current_changes)),
                 other_changes=tuple(sorted(other_changes)),
             )
@@ -221,6 +268,10 @@ def print_human(results: list[OverlapResult]) -> None:
             print("  shared logical scopes:", ", ".join(non_global_scopes))
         elif "GLOBAL" not in result.shared_scopes:
             print("  shared logical scopes: none")
+        if result.claimed_conflicts:
+            print("  CLAIM CONFLICTS:", ", ".join(result.claimed_conflicts))
+        else:
+            print("  claim conflicts: none")
 
 
 def parse_args() -> argparse.Namespace:
@@ -233,25 +284,53 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exit non-zero on logical-scope overlap, not only exact files.",
     )
+    parser.add_argument(
+        "--claim",
+        action="append",
+        default=[],
+        metavar="SCOPE_OR_PATH",
+        help=(
+            "Declare an intended module/scope/path before editing. Repeatable. "
+            "Examples: --claim research --claim loops/r29c --claim app/src/Main.kt"
+        ),
+    )
     parser.add_argument("--json", action="store_true", help="Emit JSON.")
     return parser.parse_args()
+
+
+
+
+def exit_code(
+    results: list[OverlapResult],
+    *,
+    strict_scope: bool,
+    claims_present: bool,
+) -> int:
+    """Claims are prospective: unrelated historical divergence must not block them."""
+    if claims_present:
+        return 4 if any(r.claimed_conflicts for r in results) else 0
+    if any(r.exact_paths for r in results):
+        return 2
+    if strict_scope and any(r.shared_scopes for r in results):
+        return 3
+    return 0
 
 
 def main() -> int:
     args = parse_args()
     repo = Path(args.repo).resolve()
-    results = analyze(repo)
+    results = analyze(repo, args.claim)
 
     if args.json:
         print(json.dumps([asdict(r) for r in results], indent=2))
     else:
         print_human(results)
 
-    if any(r.exact_paths for r in results):
-        return 2
-    if args.strict_scope and any(r.shared_scopes for r in results):
-        return 3
-    return 0
+    return exit_code(
+        results,
+        strict_scope=args.strict_scope,
+        claims_present=bool(args.claim),
+    )
 
 
 if __name__ == "__main__":
