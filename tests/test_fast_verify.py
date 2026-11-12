@@ -105,11 +105,36 @@ class FastVerifyTest(unittest.TestCase):
         self.assertIn(":app:assembleDebug", command)
         self.assertNotIn("--no-daemon", command)
 
-    def test_full_gradle_command_is_cold(self):
+    def test_full_gradle_command_is_clean_and_cold(self):
         plan = fast_verify.build_plan(self.repo, [], full=True)
         command = fast_verify.gradle_command(plan)
+        self.assertIn("clean", command)
+        self.assertLess(command.index("clean"), command.index(":app:testDebugUnitTest"))
         self.assertIn("--no-daemon", command)
         self.assertEqual(1, command.count(":app:assembleDebug"))
+
+    def test_full_summary_rejects_skips(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            result_dir = Path(tmp) / "app/build/test-results/testDebugUnitTest"
+            result_dir.mkdir(parents=True)
+            (result_dir / "TEST-sample.xml").write_text(
+                '<testsuite tests="2" failures="0" errors="0" skipped="1"></testsuite>'
+            )
+            with self.assertRaises(SystemExit):
+                fast_verify.enforce_full_test_summary(Path(tmp))
+
+    def test_full_summary_accepts_zero_skip_green_results(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            result_dir = Path(tmp) / "core/build/test-results/test"
+            result_dir.mkdir(parents=True)
+            (result_dir / "TEST-sample.xml").write_text(
+                '<testsuite tests="3" failures="0" errors="0" skipped="0"></testsuite>'
+            )
+            fast_verify.enforce_full_test_summary(Path(tmp))
 
 
 if __name__ == "__main__":

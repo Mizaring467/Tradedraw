@@ -24,6 +24,7 @@ import re
 import shlex
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
@@ -303,12 +304,40 @@ def gradle_command(plan: VerificationPlan, *, cold: bool = False) -> list[str]:
     if not tasks:
         return []
 
-    command = ["./gradlew", *tasks, "--no-configuration-cache"]
+    command = ["./gradlew"]
+    # Full certification must invalidate stale outputs before running the graph.
+    if plan.full:
+        command.append("clean")
+    command.extend(tasks)
+    command.append("--no-configuration-cache")
     # Fast iteration intentionally reuses the Gradle daemon. Full/cold gates
     # use a fresh daemon for reproducibility and parity with CI expectations.
     if cold or plan.full:
         command.append("--no-daemon")
     return command
+
+
+def collect_gradle_test_summary(repo: Path) -> dict[str, int]:
+    summary = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0, "classes": 0}
+    for xml_file in repo.glob("*/build/test-results/*/TEST-*.xml"):
+        root = ET.parse(xml_file).getroot()
+        summary["classes"] += 1
+        for key in ("tests", "failures", "errors", "skipped"):
+            summary[key] += int(root.attrib.get(key, 0))
+    return summary
+
+
+def enforce_full_test_summary(repo: Path) -> None:
+    summary = collect_gradle_test_summary(repo)
+    print(
+        "\n=== Gradle test summary ===\n"
+        f"tests={summary['tests']} classes={summary['classes']} "
+        f"failures={summary['failures']} errors={summary['errors']} skipped={summary['skipped']}"
+    )
+    if summary["tests"] <= 0 or summary["classes"] <= 0:
+        raise SystemExit("full gate produced no Gradle test XML results")
+    if summary["failures"] or summary["errors"] or summary["skipped"]:
+        raise SystemExit("full gate requires 0 failures, 0 errors and 0 skipped tests")
 
 
 def execute_plan(
@@ -328,6 +357,8 @@ def execute_plan(
     gradle = gradle_command(plan, cold=cold)
     if gradle:
         run_command(repo, gradle, "gradle")
+        if plan.full:
+            enforce_full_test_summary(repo)
 
     if plan.run_replay:
         command = replay_command(repo)
