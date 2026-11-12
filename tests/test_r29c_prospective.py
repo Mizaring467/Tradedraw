@@ -81,6 +81,80 @@ class ProspectiveJournalTest(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 export_active_asset_timeline(j,out,2500)
 
+    def test_asset_observation_dedup_is_scoped_by_epoch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            j=Journal(Path(tmp)/"journal.jsonl")
+            event={"atMs":1500,"kind":"ASSET","detail":'visible="Crypto IDX" ric="Z-CRY/IDX"'}
+            a=ingest_asset_observation(j,event,epoch_start_ms=1000,epoch_id="epoch-a")
+            b=ingest_asset_observation(j,event,epoch_start_ms=1000,epoch_id="epoch-b")
+            self.assertNotEqual(a["sha256"],b["sha256"])
+            observations=[r for r in j.records() if r["kind"]=="ACTIVE_ASSET_OBSERVATION"]
+            self.assertEqual(["epoch-a","epoch-b"],[r["payload"]["epoch_id"] for r in observations])
+
+    def test_timeline_export_requires_one_complete_epoch_and_never_mixes_sessions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            j=Journal(Path(tmp)/"journal.jsonl")
+
+            def append_epoch(epoch_id,start_ms,code_sha,ric):
+                j.append(
+                    "CAPTURE_EPOCH_START",
+                    {"epoch_id":epoch_id,"started_at_ms":start_ms,"collector_sha256":"fixture"},
+                    start_ms,
+                )
+                j.append(
+                    "TRANSPORT",
+                    {"epoch_id":epoch_id,"endpoint":"/status","response":{"gitSha":code_sha}},
+                    start_ms+1,
+                )
+                ingest_asset_observation(
+                    j,
+                    {"atMs":start_ms+2,"kind":"ASSET","detail":f'visible="{ric}" ric="{ric}"'},
+                    epoch_start_ms=start_ms,
+                    epoch_id=epoch_id,
+                )
+                j.append(
+                    "CAPTURE_EPOCH_END",
+                    {"epoch_id":epoch_id,"status":"COMPLETE","ended_at_ms":start_ms+3},
+                    start_ms+3,
+                )
+
+            append_epoch("epoch-a",1000,"sha-a","A")
+            append_epoch("epoch-b",2000,"sha-b","B")
+
+            with self.assertRaisesRegex(ValueError,"NO_UNIQUE_COMPLETE_CAPTURE_EPOCH"):
+                export_active_asset_timeline(j,Path(tmp)/"ambiguous.json",2500)
+
+            first=export_active_asset_timeline(
+                j,Path(tmp)/"a.json",2500,epoch_id="epoch-a"
+            )
+            second=export_active_asset_timeline(
+                j,Path(tmp)/"b.json",2500,epoch_id="epoch-b"
+            )
+            self.assertEqual("epoch-a",first["capture_epoch_id"])
+            self.assertEqual("sha-a",first["code_sha"])
+            self.assertEqual(["A"],[row["ric"] for row in first["observations"]])
+            self.assertEqual("epoch-b",second["capture_epoch_id"])
+            self.assertEqual("sha-b",second["code_sha"])
+            self.assertEqual(["B"],[row["ric"] for row in second["observations"]])
+
+    def test_timeline_export_rejects_incomplete_explicit_epoch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            j=Journal(Path(tmp)/"journal.jsonl")
+            j.append(
+                "CAPTURE_EPOCH_START",
+                {"epoch_id":"epoch-a","started_at_ms":1000,"collector_sha256":"fixture"},
+                1000,
+            )
+            j.append(
+                "TRANSPORT",
+                {"epoch_id":"epoch-a","endpoint":"/status","response":{"gitSha":"sha-a"}},
+                1001,
+            )
+            with self.assertRaisesRegex(ValueError,"CAPTURE_EPOCH_NOT_COMPLETE"):
+                export_active_asset_timeline(
+                    j,Path(tmp)/"incomplete.json",2500,epoch_id="epoch-a"
+                )
+
     def test_timeline_export_rejects_mixed_build_epoch(self):
         with tempfile.TemporaryDirectory() as tmp:
             j=Journal(Path(tmp)/"journal.jsonl")

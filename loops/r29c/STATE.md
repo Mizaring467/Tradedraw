@@ -61,3 +61,66 @@ Final adversarial metadata review found5standalone status snapshots classified t
 Current main945-object totals:395VALID_FOR_DIAGNOSTICS_ONLY,548INSUFFICIENT_METADATA,2FIXTURE_ONLY;classifications111BROKER_DEVICE_CAPTURE,237REPORT_DERIVED,47REPLAY_DERIVED,548UNKNOWN,2FIXTURE. Supplemental27text logs remain non-research. Research-approved datasets still0;statistical/verdict gates unchanged. Earlier400/543/116 totals describe superseded v1 only. This metadata correction introduces no source-code/strategy change and no new experiment.
 
 HEAD at review17e9eae921da2d390468dee72536b8c5181b5b1c;HEAD_ref refs/heads/r10-night resolves the subsequent documentation-only revision. Validated implementation and last approved code CI remainb5378fc/43135219044/43135228011. Next action:publish conservative provenance overlay,verify both final documentation CI,then resume only after data/full-parity/runtime blockers above are resolved.
+
+
+## 2026-11-11 — parity hardening continuation (authoritative next-action update)
+
+R29-C remains **INSUFFICIENT_EVIDENCE**. This continuation does not change frozen production strategy/risk logic and does not promote any historical dataset to research-approved status.
+
+Research parity hardening completed after the causal scheduler checkpoint:
+- The research module now invokes the actual frozen ExecutionPolicy through ResearchExecutionPolicyAdapter for controlled/causal fixtures. Historical evaluation fails closed when required context is UNKNOWN or CONTROLLED_FIXTURE instead of fabricating device state.
+- Prospective scorecards now audit exact ExecutionContext coverage. Existing predictions are correctly POLICY_CONTEXT_INCOMPLETE; no default values are synthesized to claim parity.
+- Read-only /status snapshots can be sealed as PARTIAL_PRE_OUTCOME_OBSERVATION linked to a decision. They remain explicitly exact_decision_context=false; missing adaptive/capital/SR/candle-limiter inputs stay unresolved.
+- Kotlin replay now fails closed on mixed-asset tick files without a causal active-asset timeline (MIXED_ASSETS_REQUIRES_ACTIVE_ASSET_TIMELINE) instead of summing independent per-asset portfolios that would bypass production's global single-flight semantics. Python replay already rejected mixed assets.
+- Prospective capture now records causal ASSET screen observations from /events as an append-only active-asset timeline. These points are not interpolated and do not yet authorize mixed-asset replay.
+
+Validation evidence:
+- ExecutionPolicy adapter cut: clean full gate 686 tests / 88 classes / 0 failures / 0 errors / 0 skips, Python87, replay smoke PASS, APK PASS; main CI push/PR green.
+- Mixed-asset fail-closed cut: clean full gate 688 / 89 / 0F / 0E / 0 skips, Python94, replay smoke PASS, APK PASS; main CI push/PR green.
+- Active-asset timeline cut: Python99 PASS locally; main CI pending at the moment this checkpoint is prepared and must be green before this documentation is approved.
+
+FULL_REPLAY_EXECUTION_PARITY_PASS=false remains authoritative. The remaining technical gap is narrower but still material: prove exact decision-time policy context, define causal active-asset intervals without future interpolation, then implement a global single-flight multi-asset replay scheduler only for datasets that contain that evidence. DATA/STATISTICAL/ROBUSTNESS/PROSPECTIVE edge gates remain false or unevaluated. No real-money inference is authorized.
+
+Exact next action: wait for active-asset timeline CI; then specify and test a causal interval join (decision/tick -> active asset) that returns UNKNOWN on uncovered gaps. Only after that join is proven may a multi-asset global single-flight replay be implemented. Do not fall back to independent per-asset portfolios.
+
+
+## 2026-11-11 — parity hardening validation update
+
+This section supersedes the pending-CI sentence in the previous parity-hardening checkpoint.
+
+Validated mainline evidence:
+- causal screen-asset timeline: main dd22bb2; push CI 43146260301 SUCCESS; PR CI 43146267260 SUCCESS; Python99 PASS before integration;
+- causal active-asset join: main 8e55001; push CI 43146578870 SUCCESS; PR CI 43146586495 SUCCESS; Python104 PASS before integration;
+- mixed-asset replay remains fail-closed unless a causal active-asset timeline exists;
+- research global portfolio scheduler now reuses production SingleFlightOrderGateway. Local clean gate for this cut: 692 tests / 90 classes / 0 failures / 0 errors / 0 skips, Python104 PASS, replay smoke PASS, APK PASS. Main commit 5ec34fe is published; CI is pending at this checkpoint and must be green before approval.
+
+The scheduler proves the global reservation invariant independently of strategy generation: a second asset cannot occupy another slot while a trade is open, and a trade expiring exactly at an event timestamp releases the slot before that timestamp's next candidate. UNKNOWN or mismatched active-asset evidence never consumes the slot.
+
+This still does not make full multi-asset replay valid. The current remaining seam is data/interface parity: Kotlin replay needs a versioned active-asset timeline input with an explicit preregistered max-age, UNKNOWN on gaps/conflicts, and no future interpolation. Only then should per-asset strategy state feed candidates into the already-proven global SingleFlight scheduler.
+
+FULL_REPLAY_EXECUTION_PARITY_PASS=false remains authoritative. No edge/statistical gate changes.
+
+
+## 2026-11-11 — mixed-asset replay wiring checkpoint
+
+The orphaned parity worktree was resumed without modifying frozen production strategy/risk/execution code. Kotlin research replay now consumes the versioned causal active-asset timeline when explicitly supplied, routes only causally active ticks, resets per-active-stream velocity state at asset switches, and sends accepted candidates through the already-tested global production SingleFlight-backed research scheduler. Settlement is same-asset and causal; foreign ticks cannot release the reservation. Mixed-asset adaptive preload remains rejected because its legacy provenance is not asset-scoped.
+
+Prospective collection was hardened at the same boundary: capture records carry `epoch_id`; timeline export selects exactly one COMPLETE epoch, requires `--epoch-id` when multiple completed epochs exist, rejects incomplete epochs, scopes asset deduplication by epoch and writes `capture_epoch_id` into the manifest. This prevents two capture sessions from being silently merged.
+
+Validation so far for this resumed cut: Python 112 PASS; forced `:research:testDebugUnitTest --rerun-tasks` PASS (53 tasks executed, proving the modified Kotlin was actually recompiled); impact-aware gate PASS for Python + research + replay smoke (23 diagnostic replay trades, 0 gaps, 0 duplicate timestamps). Full clean multimodule gate is still pending before publication.
+
+Verdict remains unchanged: `DATA_PASS=false`, `FULL_REPLAY_EXECUTION_PARITY_PASS=false`, `STATISTICAL_PASS=false/not evaluated`, and overall `INSUFFICIENT_EVIDENCE`. This cut removes a structural replay seam; it does not authorize edge, profitability or real-money claims.
+
+
+### Full gate del corte
+
+Certificación final local ejecutada con `python scripts/ci/fast_verify.py --full` sobre working tree limpio de outputs:
+
+- Python: **112 PASS**.
+- Gradle clean multimódulo: **704 tests / 92 clases / 0 failures / 0 errors / 0 skipped**.
+- `:app:assembleDebug`: PASS dentro del mismo clean gate.
+- Replay smoke versionado: **23 trades diagnósticos / 0 gaps >10s / 0 timestamps duplicados**.
+- El Gradle full ejecutó 276 tasks (275 ejecutadas, 1 up-to-date); no se reutilizó el falso verde incremental del primer intento.
+- Estrategias productivas y parámetros permanecieron sin cambios.
+
+El gate técnico de este corte es PASS. El gate cuantitativo permanece **INSUFFICIENT_EVIDENCE**: estos resultados certifican infraestructura causal/reproducibilidad, no edge.

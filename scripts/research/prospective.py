@@ -88,15 +88,20 @@ def ingest_prediction(journal,prediction,received_ms=None):
     return journal.append('PREDICTION',prediction,received_ms)
 
 
-def ingest_asset_observation(journal,event,epoch_start_ms):
+def ingest_asset_observation(journal,event,epoch_start_ms,epoch_id=None):
     parsed=parse_asset_event(event)
     if parsed is None or parsed["atMs"] < epoch_start_ms:
         return None
+    if epoch_id is not None:
+        parsed=dict(parsed,epoch_id=epoch_id)
     records=journal.records()
     for row in records:
         if row["kind"]=="ACTIVE_ASSET_OBSERVATION":
             payload=row["payload"]
-            if payload.get("atMs")==parsed["atMs"] and payload.get("ric")==parsed["ric"] and payload.get("visibleAsset")==parsed["visibleAsset"]:
+            if (payload.get("epoch_id")==parsed.get("epoch_id") and
+                    payload.get("atMs")==parsed["atMs"] and
+                    payload.get("ric")==parsed["ric"] and
+                    payload.get("visibleAsset")==parsed["visibleAsset"]):
                 return row
     return journal.append("ACTIVE_ASSET_OBSERVATION",parsed,parsed["atMs"])
 
@@ -152,6 +157,61 @@ def scorecard(journal):
                 limitation='No automatic performance approval: reconcile raw ticks, lineage, registry, payout, full ExecutionPolicy context and runtime settlement first. Status snapshots are partial pre-outcome observations, never exact decision context. Missing settlements remain pending, never ties.')
 
 
+def _payload_epoch_id(row):
+    payload=row.get("payload")
+    if not isinstance(payload,dict):
+        return None
+    value=payload.get("epoch_id")
+    return value.strip() if isinstance(value,str) and value.strip() else None
+
+
+def select_export_epoch(records,epoch_id=None):
+    """Select exactly one completed capture epoch without mixing sessions.
+
+    Legacy journals created before CAPTURE_EPOCH_* markers remain valid when no
+    explicit epoch_id is requested.
+    """
+    records=list(records)
+    starts={}
+    completed=set()
+    for row in records:
+        kind=row.get("kind")
+        current=_payload_epoch_id(row)
+        if kind=="CAPTURE_EPOCH_START" and current:
+            if current in starts:
+                raise ValueError("DUPLICATE_CAPTURE_EPOCH_START")
+            starts[current]=row
+        elif kind=="CAPTURE_EPOCH_END" and current:
+            payload=row.get("payload",{})
+            if payload.get("status")=="COMPLETE":
+                completed.add(current)
+
+    if not starts:
+        if epoch_id is not None:
+            raise ValueError("CAPTURE_EPOCH_NOT_FOUND")
+        return records,None
+
+    if epoch_id is None:
+        candidates=sorted(set(starts)&completed)
+        if len(candidates)!=1:
+            raise ValueError("NO_UNIQUE_COMPLETE_CAPTURE_EPOCH")
+        epoch_id=candidates[0]
+    else:
+        epoch_id=str(epoch_id).strip()
+        if epoch_id not in starts:
+            raise ValueError("CAPTURE_EPOCH_NOT_FOUND")
+        if epoch_id not in completed:
+            raise ValueError("CAPTURE_EPOCH_NOT_COMPLETE")
+
+    selected=[
+        row for row in records
+        if _payload_epoch_id(row)==epoch_id
+    ]
+    if not selected:
+        raise ValueError("CAPTURE_EPOCH_EMPTY")
+    return selected,epoch_id
+
+
 def unique_epoch_code_sha(records):
     shas=set()
     for row in records:
@@ -185,14 +245,17 @@ def collector_bundle_sha256():
     return digest.hexdigest()
 
 
-def export_active_asset_timeline(journal,out_path,max_age_ms):
+def export_active_asset_timeline(journal,out_path,max_age_ms,epoch_id=None):
     records=journal.records()
+    selected_records,selected_epoch_id=select_export_epoch(records,epoch_id=epoch_id)
     manifest=build_timeline_manifest(
-        records,
+        selected_records,
         max_age_ms=max_age_ms,
-        code_sha=unique_epoch_code_sha(records),
+        code_sha=unique_epoch_code_sha(selected_records),
         collector_sha256=collector_bundle_sha256(),
     )
+    if selected_epoch_id is not None:
+        manifest["capture_epoch_id"]=selected_epoch_id
     out=Path(out_path)
     out.parent.mkdir(parents=True,exist_ok=True)
     with out.open("x",encoding="utf-8") as handle:
@@ -210,6 +273,12 @@ def capture(journal,samples,interval):
     opener=urllib.request.build_opener(NoRedirect())
     seen=set()
     epoch_start_ms=time.time_ns()//1_000_000
+    epoch_id=str(epoch_start_ms)+"-"+collector_bundle_sha256()[:12]
+    journal.append(
+        "CAPTURE_EPOCH_START",
+        dict(epoch_id=epoch_id,started_at_ms=epoch_start_ms,collector_sha256=collector_bundle_sha256()),
+        epoch_start_ms,
+    )
     initial_status=None
     latest_status=None
     for i in range(samples):
@@ -217,23 +286,27 @@ def capture(journal,samples,interval):
             try:
                 with opener.open('http://127.0.0.1:8080'+endpoint,timeout=5) as response:
                     value=json.loads(response.read())
-                journal.append('TRANSPORT',dict(endpoint=endpoint,response=value))
+                journal.append('TRANSPORT',dict(epoch_id=epoch_id,endpoint=endpoint,response=value))
                 if endpoint=='/status':
                     latest_status=value
                     if initial_status is None:
                         initial_status=value
                     elif value.get('gitSha')!=initial_status.get('gitSha'):
-                        journal.append('CAPTURE_ERROR',dict(reason='BUILD_CHANGED_DURING_EPOCH'))
+                        journal.append('CAPTURE_ERROR',dict(epoch_id=epoch_id,reason='BUILD_CHANGED_DURING_EPOCH'))
+                        journal.append(
+                            'CAPTURE_EPOCH_END',
+                            dict(epoch_id=epoch_id,status='ABORTED_BUILD_CHANGE',ended_at_ms=time.time_ns()//1_000_000),
+                        )
                         return
                 if endpoint=='/simulation':
                     for prediction in value.get('pendingDecisions',[]):
                         if prediction.get('timestamp',-1)<epoch_start_ms:
                             continue  # never relabel previously open/recovered orders as a new cohort
                         if not initial_status or initial_status.get('mode')!='SHADOW' or not value.get('enabled'):
-                            journal.append('CAPTURE_ERROR',dict(reason='NOT_ACTIVE_SHADOW',prediction=prediction))
+                            journal.append('CAPTURE_ERROR',dict(epoch_id=epoch_id,reason='NOT_ACTIVE_SHADOW',prediction=prediction))
                             continue
                         if prediction.get('git_sha')!=initial_status.get('gitSha'):
-                            journal.append('CAPTURE_ERROR',dict(reason='BUILD_IDENTITY_MISMATCH',prediction=prediction))
+                            journal.append('CAPTURE_ERROR',dict(epoch_id=epoch_id,reason='BUILD_IDENTITY_MISMATCH',prediction=prediction))
                             continue
                         accepted=ingest_prediction(journal,prediction)
                         if accepted.get('kind')=='PREDICTION' and latest_status is not None:
@@ -245,15 +318,19 @@ def capture(journal,samples,interval):
                         seen.add(key)
                         if event.get('kind')=='ASSET':
                             if initial_status and initial_status.get('mode')=='SHADOW':
-                                ingest_asset_observation(journal,event,epoch_start_ms)
+                                ingest_asset_observation(journal,event,epoch_start_ms,epoch_id=epoch_id)
                         elif event.get('kind')=='SHADOW_PREDICTION':
                             try:ingest_prediction(journal,json.loads(event['detail']))
-                            except (ValueError,TypeError):journal.append('CAPTURE_ERROR',dict(reason='INVALID_PREDICTION_EVENT',event=event))
+                            except (ValueError,TypeError):journal.append('CAPTURE_ERROR',dict(epoch_id=epoch_id,reason='INVALID_PREDICTION_EVENT',event=event))
                         elif event.get('kind')=='SHADOW_DECISION':
                             journal.append('UNSCORABLE_LEGACY_DECISION',dict(event=event,reason='No canonical pre-outcome metadata; do not infer after settlement'))
             except Exception as error:
-                journal.append('CAPTURE_ERROR',dict(endpoint=endpoint,error=type(error).__name__,detail=str(error)))
+                journal.append('CAPTURE_ERROR',dict(epoch_id=epoch_id,endpoint=endpoint,error=type(error).__name__,detail=str(error)))
         if i+1<samples:time.sleep(interval)
+    journal.append(
+        'CAPTURE_EPOCH_END',
+        dict(epoch_id=epoch_id,status='COMPLETE',ended_at_ms=time.time_ns()//1_000_000),
+    )
 
 
 def main():
@@ -264,6 +341,7 @@ def main():
     p.add_argument('--interval',type=float,default=2.0)
     p.add_argument('--timeline-out')
     p.add_argument('--max-age-ms',type=int)
+    p.add_argument('--epoch-id',help='Capture epoch to export when the journal contains multiple completed epochs')
     args=p.parse_args()
     if args.samples<1 or not 0<args.interval<=60:p.error('samples >=1, interval in (0,60]')
     j=Journal(args.journal)
@@ -275,7 +353,7 @@ def main():
     else:
         if not args.timeline_out or args.max_age_ms is None or args.max_age_ms<0:
             p.error('export-timeline requires --timeline-out and --max-age-ms >= 0')
-        manifest=export_active_asset_timeline(j,args.timeline_out,args.max_age_ms)
+        manifest=export_active_asset_timeline(j,args.timeline_out,args.max_age_ms,epoch_id=args.epoch_id)
         print(json.dumps(manifest,indent=2))
 
 if __name__=='__main__':main()

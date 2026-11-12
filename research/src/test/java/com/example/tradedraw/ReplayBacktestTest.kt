@@ -195,14 +195,26 @@ class ReplayBacktestTest {
     private fun runBacktestOnStrategy(
         ticks: List<RawTick>,
         strategy: AutoTradeStrategy,
-        subMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE
+        subMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE,
+        activeAssetTimeline: ResearchActiveAssetTimeline? = null
     ): List<SimulatedTrade> {
-        // Mixed-asset files do not encode which broker tab was active at each timestamp.
-        // Treating each asset as an independent portfolio bypasses production's global
-        // single-flight semantics and can over-count trades. Fail closed until a causal
-        // active-asset timeline is part of the research dataset.
-        ReplayResearchGuards.requireSingleActiveAsset(ticks.map { it.ric })
+        // Default mode remains strict single-asset replay. Mixed-asset replay is opt-in and
+        // requires a versioned causal active-asset timeline; raw file composition alone is not
+        // enough to reconstruct which broker tab production was actually observing.
+        if (activeAssetTimeline == null) {
+            ReplayResearchGuards.requireSingleActiveAsset(ticks.map { it.ric })
+        }
         if (ticks.isEmpty()) return emptyList()
+        val activeTickRouter = activeAssetTimeline?.let { ResearchActiveTickRouter(it) }
+        val globalScheduler = activeAssetTimeline?.let { timeline ->
+            ResearchMultiAssetScheduler(
+                activeAssetAt = { ts ->
+                    timeline.lookup(ts).takeIf {
+                        it.status == ResearchActiveAssetTimeline.Status.KNOWN_CAUSAL_OBSERVATION
+                    }?.ric
+                }
+            )
+        }
         var cooldownUntilTs = 0L
         val cooldownMs = if (subMode == AutonomousSubMode.YOLO) YOLO_COOLDOWN_MS else CONSERVATIVE_COOLDOWN_MS
         val causalGate = CausalReplayGate(TRADE_DURATION_MS, cooldownMs)
@@ -230,6 +242,9 @@ class ReplayBacktestTest {
         // dias anteriores. Si el operador exporta ese JSON y pasa su ruta en ADAPTIVE_STATE_JSON,
         // el arnes arranca con la MISMA memoria que tenia el telefono.
         System.getenv("ADAPTIVE_STATE_JSON")?.takeIf { it.isNotBlank() }?.let { ruta ->
+            require(activeAssetTimeline == null) {
+                "ADAPTIVE_STATE_REJECTED: mixed-asset replay requires asset-scoped/causal adaptive provenance"
+            }
             runCatching {
                 val texto = java.io.File(ruta).readText(Charsets.UTF_8)
                 val raiz = org.json.JSONObject(texto)
@@ -314,6 +329,8 @@ class ReplayBacktestTest {
             openSignal = null
         }
 
+        var currentAcceptedRawTick: RawTick? = null
+
         fun createEngine(): SyntheticCandleEngine {
             val eng = SyntheticCandleEngine()
             eng.currentStrategy = strategy
@@ -327,9 +344,14 @@ class ReplayBacktestTest {
                 // contaminaba `candle_second`, `candleSecond` y el id determinista con un instante
                 // arbitrario. Ahora se cae al tick de la MISMA vela (el mas cercano hacia atras),
                 // que es el unico fallback que no inventa un instante.
-                val lastTick = ticks.lastOrNull { it.ts == eng.lastSignalTimestampMs }
-                    ?: ticks.lastOrNull { it.ts <= eng.lastSignalTimestampMs }
-                    ?: ticks.first()
+                val lastTick = if (activeAssetTimeline != null) {
+                    currentAcceptedRawTick?.takeIf { it.ts == eng.lastSignalTimestampMs }
+                        ?: return@senal
+                } else {
+                    ticks.lastOrNull { it.ts == eng.lastSignalTimestampMs }
+                        ?: ticks.lastOrNull { it.ts <= eng.lastSignalTimestampMs }
+                        ?: ticks.first()
+                }
                 val candleMinute = lastTick.ts / 60_000L
                 // R23C Fase 2 (REQ 2.1): ventana sniper. En vivo `executeHeadlessTrade` veta toda
                 // senal fuera de :00-:05 y :58-:59, asi que el replay debe hacer lo mismo o genera
@@ -390,6 +412,24 @@ class ReplayBacktestTest {
                         return@senal
                     }
 
+                    if (globalScheduler != null) {
+                        val decisionId = DecisionIds.generateDeterministicDecisionId(
+                            lastTick.ric, lastTick.ts, action.name
+                        )
+                        val slot = globalScheduler.evaluate(
+                            ResearchMultiAssetScheduler.Candidate(
+                                timestampMs = lastTick.ts,
+                                asset = lastTick.ric,
+                                action = action,
+                                decisionId = decisionId,
+                                tradeId = "replay-" + decisionId,
+                            )
+                        )
+                        if (slot !is ResearchMultiAssetScheduler.Decision.Accepted) {
+                            return@senal
+                        }
+                    }
+
                     causalGate.accept(lastTick.ts, candleMinute, cooldownUntilTs)
                     openSignal = SignalSnapshot(
                         tick = lastTick,
@@ -413,15 +453,45 @@ class ReplayBacktestTest {
         var prevTs = 0L
         var prevPrice = 0.0
 
-        for (raw in ticks) {
-            // Igual que TradingEngine.onMarketTick: SHADOW liquida primero y solo despues el
-            // mismo tick entra a SyntheticCandleEngine. No hay escaneo de ticks futuros.
-            if (openSignal != null && causalGate.isSettlementDue(raw.ts)) {
+        for (inputRaw in ticks) {
+            val routed = activeTickRouter?.route(
+                ResearchActiveTickRouter.Tick(
+                    timestampMs = inputRaw.ts,
+                    asset = inputRaw.ric,
+                    price = inputRaw.price,
+                )
+            )
+            val raw = when (routed) {
+                null -> inputRaw
+                is ResearchActiveTickRouter.Routed.Accepted -> inputRaw
+                is ResearchActiveTickRouter.Routed.Rejected -> continue
+            }
+
+            val assetChanged = (routed as? ResearchActiveTickRouter.Routed.Accepted)?.assetChanged == true
+            if (assetChanged) {
+                // Production resets synthetic market state on asset switch. Replay velocity/gap
+                // state must reset as well so the first B tick cannot inherit A's price/timebase.
+                prevTs = 0L
+                prevPrice = 0.0
+            }
+
+            // Igual que TradingEngine.onMarketTick/SimLedger: settlement happens before the same
+            // accepted tick enters SyntheticCandleEngine, and ONLY a tick from the entry asset may
+            // settle the global pending trade.
+            if (openSignal != null &&
+                raw.ric.equals(openSignal?.assetRic, ignoreCase = true) &&
+                causalGate.isSettlementDue(raw.ts)
+            ) {
+                if (globalScheduler != null) {
+                    check(globalScheduler.onMarketTick(raw.ts, raw.ric) != null) {
+                        "RESEARCH_GLOBAL_SINGLE_FLIGHT_SETTLEMENT_MISMATCH"
+                    }
+                }
                 causalGate.settle(raw.ts)
                 settleOpen(raw.price)
             }
 
-            // Detectar hueco > 10 s entre el tick previo y el actual
+            // Detectar hueco > 10 s entre ticks aceptados del mismo flujo activo.
             if (prevTs > 0L && (raw.ts - prevTs) > 10_000L) {
                 // Reiniciar el motor y aplicar veto de entrada en los 120s posteriores al final del hueco
                 cooldownUntilTs = raw.ts + 120_000L
@@ -449,7 +519,8 @@ class ReplayBacktestTest {
             )
 
             // Asignar ANTES de onNewTick: el callback de senal se dispara dentro de esa llamada y
-            // necesita los flags del tick actual, no los del anterior.
+            // necesita el tick/flags actuales, no los del anterior.
+            currentAcceptedRawTick = raw
             tickImpulseBullish = isBullish
             tickImpulseBearish = isBearish
             currentTickVelocity = velocity
@@ -652,6 +723,53 @@ class ReplayBacktestTest {
 
     @Test fun r29cMissingSettlementIsNotTie() {
         org.junit.Assert.assertEquals("NO_DATA", resolveTrade(100.0, null, TradeAction.BUY).first)
+    }
+
+    @Test
+    fun r29cMixedAssetReplayRequiresAndAcceptsCausalTimeline() {
+        val ticks = listOf(
+            RawTick(1_000L, "A", 100.0),
+            RawTick(1_500L, "A", 100.1),
+            RawTick(2_000L, "B", 200.0),
+            RawTick(2_500L, "B", 200.1),
+        )
+
+        try {
+            runBacktestOnStrategy(ticks, AutoTradeStrategy.AUTO_ADAPTIVE)
+            org.junit.Assert.fail("Mixed-asset replay without timeline was accepted")
+        } catch (e: IllegalArgumentException) {
+            org.junit.Assert.assertTrue(
+                e.message?.contains("MIXED_ASSETS_REQUIRES_ACTIVE_ASSET_TIMELINE") == true
+            )
+        }
+
+        val manifest = File.createTempFile("r29c-active-asset-", ".json")
+        try {
+            manifest.writeText(
+                """
+                {
+                  "schema_version":1,
+                  "source_journal_final_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "collector_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "code_sha":"fixture",
+                  "max_age_ms":1000,
+                  "observations":[
+                    {"atMs":1000,"ric":"A","quality":"RUNTIME_SCREEN_ASSET_OBSERVED"},
+                    {"atMs":2000,"ric":"B","quality":"RUNTIME_SCREEN_ASSET_OBSERVED"}
+                  ]
+                }
+                """.trimIndent()
+            )
+            val timeline = ResearchActiveAssetTimeline.fromManifest(manifest)
+            val trades = runBacktestOnStrategy(
+                ticks,
+                AutoTradeStrategy.AUTO_ADAPTIVE,
+                activeAssetTimeline = timeline,
+            )
+            org.junit.Assert.assertTrue(trades.isEmpty())
+        } finally {
+            manifest.delete()
+        }
     }
 
     private companion object {
