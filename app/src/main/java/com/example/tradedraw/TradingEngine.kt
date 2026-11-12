@@ -1730,33 +1730,46 @@ class TradingEngine(
         val sec = latestMarketTick?.candleSecond ?: ((now / 1000L) % 60L).toInt()
         // Preserve legacy short-circuiting: no analysis/adaptive/capital work before its veto stage.
         val effectiveAnalysis by lazy { buildAnalysisFromSyntheticEngine(requireNotNull(latestMarketTick)) }
+        val executionContext = ExecutionContext(
+            action = action, mode = mode, autonomousSubMode = autonomousSubMode,
+            strategy = strategy, currentDecisionId = currentDecisionId,
+            tickAgeMs = latestMarketTick?.let { now - it.timestampMs },
+            isFeedFresh = isFeedFresh(), feedMaxAgeMs = FEED_MAX_AGE_MS,
+            observedAsset = brokerRuntime.getBrokerState().rawObservedAsset,
+            feedAsset = feedAsset(), rangoRelativo = recentPriceRangeRatio(),
+            isPriceFrozen = isPriceFrozen(), isSyntheticOrOtc = brokerRuntime.getBrokerState().isSyntheticOrOTC,
+            sec = sec, isChoppinessDetected = syntheticCandleEngine.isChoppinessDetected(),
+            reasonDescription = reasonDescription, lastTradeResolutionTime = lastTradeResolutionTime,
+            currentLossStreak = riskManager.currentLossStreak, currentTimeMs = now,
+            currentCandleEpochMinute = currentCandleEpochMinute,
+            isCandleAlreadyExecuted = synchronized(this) {
+                candleRateLimiter.isCandleAlreadyExecuted(currentCandleEpochMinute, mode)
+            }
+        )
+        val evidenceCapture = ExecutionPolicyEvidenceCapture()
         val policyResult = executionPolicy.evaluate(
-            ExecutionContext(
-                action = action, mode = mode, autonomousSubMode = autonomousSubMode,
-                strategy = strategy, currentDecisionId = currentDecisionId,
-                tickAgeMs = latestMarketTick?.let { now - it.timestampMs },
-                isFeedFresh = isFeedFresh(), feedMaxAgeMs = FEED_MAX_AGE_MS,
-                observedAsset = brokerRuntime.getBrokerState().rawObservedAsset,
-                feedAsset = feedAsset(), rangoRelativo = recentPriceRangeRatio(),
-                isPriceFrozen = isPriceFrozen(), isSyntheticOrOtc = brokerRuntime.getBrokerState().isSyntheticOrOTC,
-                sec = sec, isChoppinessDetected = syntheticCandleEngine.isChoppinessDetected(),
-                reasonDescription = reasonDescription, lastTradeResolutionTime = lastTradeResolutionTime,
-                currentLossStreak = riskManager.currentLossStreak, currentTimeMs = now,
-                currentCandleEpochMinute = currentCandleEpochMinute,
-                isCandleAlreadyExecuted = synchronized(this) {
-                    candleRateLimiter.isCandleAlreadyExecuted(currentCandleEpochMinute, mode)
-                }
-            ),
+            executionContext,
             adaptiveDecisionSupplier = {
-                adaptiveLearningEngine.evaluateSignalSuitability(action, effectiveAnalysis, latestMarketTick, strategy.name)
+                evidenceCapture.recordAdaptive(
+                    adaptiveLearningEngine.evaluateSignalSuitability(
+                        action, effectiveAnalysis, latestMarketTick, strategy.name
+                    )
+                )
             },
-            capitalDecisionSupplier = { confidence -> capitalPolicy.canExecuteTrade(autonomousSubMode, confidence) },
+            capitalDecisionSupplier = { confidence ->
+                evidenceCapture.recordCapital(
+                    capitalPolicy.canExecuteTrade(autonomousSubMode, confidence)
+                )
+            },
             srPlanSupplier = {
                 val reasoning = getEngineReasoning()
-                reasoning.srFilterStatus to reasoning.actionPlan
+                evidenceCapture.recordSrPlan(reasoning.srFilterStatus to reasoning.actionPlan)
             },
             buyExhaustionSupplier = {
-                motivoVetoPorAgotamientoDeCompra(action, effectiveAnalysis.trend, effectiveAnalysis.signalPowerCall)
+                evidenceCapture.recordBuyInputs(effectiveAnalysis.trend, effectiveAnalysis.signalPowerCall)
+                motivoVetoPorAgotamientoDeCompra(
+                    action, effectiveAnalysis.trend, effectiveAnalysis.signalPowerCall
+                )
             }
         )
         if (policyResult is ExecutionPolicyResult.Vetoed) {
@@ -1781,6 +1794,9 @@ class TradingEngine(
         val finalAction = allowed.finalAction
         val finalReason = allowed.finalReason
         val headlessConfidence = allowed.headlessConfidence
+        val exactPolicyContextJson = if (mode == AutoTradeMode.SHADOW) {
+            evidenceCapture.exactJsonOrNull(executionContext)
+        } else null
 
         val (screenW, screenH) = CalibrationManager.getRealScreenDimensions(context)
         val isLand = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || screenW > screenH
@@ -1794,8 +1810,15 @@ class TradingEngine(
             if (shadowSimulationEnabled) {
                 val tick = latestMarketTick ?: return
                 shadowSimulation.open(OrderRequest(finalAction, x, y, currentDecisionId, "sim-$currentDecisionId", mode = mode),
-                    tick, com.example.tradedraw.simulation.SimMetadata(strategy.name, autonomousSubMode.name,
-                        headlessConfidence, syntheticCandleEngine.detectedTrend.name, finalReason)) { receipt ->
+                    tick, com.example.tradedraw.simulation.SimMetadata(
+                        strategy = strategy.name,
+                        submode = autonomousSubMode.name,
+                        confidence = headlessConfidence,
+                        trend = syntheticCandleEngine.detectedTrend.name,
+                        reason = finalReason,
+                        strategyVersion = "r29c-instrumented-policy-v1",
+                        policyContextJson = exactPolicyContextJson
+                    )) { receipt ->
                     if (receipt is OrderReceipt.Success) {
                         shadowOrdersGenerated++
                         synchronized(this) { candleRateLimiter.recordExecution(currentCandleEpochMinute, mode) }

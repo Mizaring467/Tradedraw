@@ -3,8 +3,15 @@ package com.example.tradedraw.simulation
 import com.example.tradedraw.core.TradeAction
 import java.util.concurrent.atomic.AtomicInteger
 
-data class SimMetadata(val strategy: String = "SIMULATION", val submode: String = "", val confidence: Float = 0f,
-    val trend: String = "SIDEWAYS", val reason: String = "")
+data class SimMetadata(
+    val strategy: String = "SIMULATION",
+    val submode: String = "",
+    val confidence: Float = 0f,
+    val trend: String = "SIDEWAYS",
+    val reason: String = "",
+    val strategyVersion: String = "r29c-frozen-4fdb646",
+    val policyContextJson: String? = null
+)
 data class OpenSimulatedTrade(val tradeId: String, val decisionId: String, val action: TradeAction,
     val entryPrice: Double, val stake: Double, val entryTimestampMs: Long,
     val asset: String = "", val metadata: SimMetadata = SimMetadata())

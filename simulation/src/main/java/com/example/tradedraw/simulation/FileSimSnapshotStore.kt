@@ -6,16 +6,46 @@ import java.util.zip.CRC32
 
 /** A checksummed snapshot is fsynced, then replaced by a same-directory rename (API24 compatible). */
 class FileSimSnapshotStore(private val file: File) : SimSnapshotStore {
+    companion object {
+        internal const val HEADER_V1 = 0x54445331
+        internal const val HEADER_V2 = 0x54445332
+        private const val MAX_POLICY_CONTEXT_BYTES = 1_000_000
+    }
+
     @Synchronized override fun load(): SimSnapshot? {
         if (!file.exists()) return null
         DataInputStream(FileInputStream(file)).use { input ->
-            check(input.readInt() == 0x54445331) { "SIM_STATE_HEADER" }
+            val header = input.readInt()
+            check(header == HEADER_V1 || header == HEADER_V2) { "SIM_STATE_HEADER" }
             val size = input.readInt(); require(size in 1..64_000_000)
             val bytes = ByteArray(size); input.readFully(bytes)
             check(input.readLong() == CRC32().apply { update(bytes) }.value && input.read() == -1) { "SIM_STATE_CHECKSUM" }
             DataInputStream(ByteArrayInputStream(bytes)).use { r ->
                 fun count() = r.readInt().also { require(it in 0..1_000_000) }
-                fun meta() = SimMetadata(r.readUTF(), r.readUTF(), r.readFloat(), r.readUTF(), r.readUTF())
+                fun policyContext(): String? {
+                    if (header == HEADER_V1) return null
+                    val length = r.readInt()
+                    if (length == -1) return null
+                    require(length in 0..MAX_POLICY_CONTEXT_BYTES) { "SIM_POLICY_CONTEXT_SIZE" }
+                    val contextBytes = ByteArray(length)
+                    r.readFully(contextBytes)
+                    return contextBytes.toString(Charsets.UTF_8)
+                }
+                fun meta(): SimMetadata {
+                    val strategy = r.readUTF()
+                    val submode = r.readUTF()
+                    val confidence = r.readFloat()
+                    val trend = r.readUTF()
+                    val reason = r.readUTF()
+                    if (header == HEADER_V1) {
+                        return SimMetadata(strategy, submode, confidence, trend, reason)
+                    }
+                    val strategyVersion = r.readUTF()
+                    return SimMetadata(
+                        strategy, submode, confidence, trend, reason,
+                        strategyVersion, policyContext()
+                    )
+                }
                 val initial = r.readDouble(); val payout = r.readDouble(); val balance = r.readDouble()
                 val open = List(count()) { OpenSimulatedTrade(r.readUTF(), r.readUTF(), TradeAction.valueOf(r.readUTF()),
                     r.readDouble(), r.readDouble(), r.readLong(), r.readUTF(), meta()) }
@@ -32,7 +62,20 @@ class FileSimSnapshotStore(private val file: File) : SimSnapshotStore {
     @Synchronized override fun save(snapshot: SimSnapshot) {
         val bytes = ByteArrayOutputStream().also { buffer ->
             DataOutputStream(buffer).use { w ->
-                fun meta(m: SimMetadata) { w.writeUTF(m.strategy); w.writeUTF(m.submode); w.writeFloat(m.confidence); w.writeUTF(m.trend); w.writeUTF(m.reason) }
+                fun meta(m: SimMetadata) {
+                    w.writeUTF(m.strategy); w.writeUTF(m.submode); w.writeFloat(m.confidence)
+                    w.writeUTF(m.trend); w.writeUTF(m.reason)
+                    w.writeUTF(m.strategyVersion)
+                    val context = m.policyContextJson
+                    if (context == null) {
+                        w.writeInt(-1)
+                    } else {
+                        val contextBytes = context.toByteArray(Charsets.UTF_8)
+                        require(contextBytes.size <= MAX_POLICY_CONTEXT_BYTES) { "SIM_POLICY_CONTEXT_SIZE" }
+                        w.writeInt(contextBytes.size)
+                        w.write(contextBytes)
+                    }
+                }
                 w.writeDouble(snapshot.initialBalance); w.writeDouble(snapshot.payoutRate); w.writeDouble(snapshot.balance)
                 w.writeInt(snapshot.open.size)
                 snapshot.open.forEach { o -> w.writeUTF(o.tradeId); w.writeUTF(o.decisionId); w.writeUTF(o.action.name); w.writeDouble(o.entryPrice); w.writeDouble(o.stake); w.writeLong(o.entryTimestampMs); w.writeUTF(o.asset); meta(o.metadata) }
@@ -45,7 +88,7 @@ class FileSimSnapshotStore(private val file: File) : SimSnapshotStore {
         check(file.parentFile?.let { it.isDirectory || it.mkdirs() } != false)
         val tmp = File(file.path + ".new")
         FileOutputStream(tmp).use { stream ->
-            val w = DataOutputStream(stream); w.writeInt(0x54445331); w.writeInt(bytes.size); w.write(bytes)
+            val w = DataOutputStream(stream); w.writeInt(HEADER_V2); w.writeInt(bytes.size); w.write(bytes)
             w.writeLong(CRC32().apply { update(bytes) }.value); w.flush(); stream.fd.sync()
         }
         check(tmp.renameTo(file)) { "SIM_STATE_RENAME_FAILED" }
