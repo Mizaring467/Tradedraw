@@ -15,7 +15,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from scripts.research.policy_context_coverage import coverage_summary
+from scripts.research.policy_context_coverage import coverage_summary, observed_context_from_status, observation_summary
 
 REQUIRED = {'decisionId','timestamp','asset','strategyVersion','action','confidence','reason','regime','observed_payout','git_sha','entry_price'}
 ZERO='0'*64
@@ -87,6 +87,17 @@ def ingest_prediction(journal,prediction,received_ms=None):
     return journal.append('PREDICTION',prediction,received_ms)
 
 
+def ingest_policy_observation(journal,prediction,status,received_ms=None):
+    received_ms=time.time_ns()//1_000_000 if received_ms is None else received_ms
+    decision_id=prediction.get('decisionId')
+    if not decision_id:return None
+    records=journal.records()
+    existing=[r for r in records if r['kind']=='POLICY_CONTEXT_OBSERVATION' and r['payload'].get('decisionId')==decision_id]
+    if existing:return existing[0]
+    payload=observed_context_from_status(prediction,status,received_ms)
+    return journal.append('POLICY_CONTEXT_OBSERVATION',payload,received_ms)
+
+
 def ingest_settlement(journal,settlement,received_ms=None):
     received_ms=time.time_ns()//1_000_000 if received_ms is None else received_ms
     records=journal.records()
@@ -111,14 +122,17 @@ def ingest_settlement(journal,settlement,received_ms=None):
 def scorecard(journal):
     records=journal.records();counts=collections.Counter(r['kind'] for r in records)
     predictions=[r['payload'] for r in records if r['kind']=='PREDICTION']
+    observations=[r['payload'] for r in records if r['kind']=='POLICY_CONTEXT_OBSERVATION']
     n=len(predictions)
     policy_coverage=coverage_summary(predictions)
+    observed_coverage=observation_summary(observations)
     return dict(evidence_class='PROSPECTIVE_SHADOW',records=len(records),precommitted_decisions=n,
                 settlement_candidates=counts['SETTLEMENT_CANDIDATE'],rejected_predictions=counts['PREDICTION_REJECTED'],
                 data_quality_failures=counts['CAPTURE_ERROR'],verified_settlements=0,WIN=None,LOSS=None,TRUE_TIE=None,
                 NO_DATA=None,WR=None,EV=None,max_drawdown=None,longest_loss_streak=None,rejection_rate=None,
-                runtime_discrepancies=None,execution_policy_context=policy_coverage,status='INSUFFICIENT_EVIDENCE',
-                limitation='No automatic performance approval: reconcile raw ticks, lineage, registry, payout, full ExecutionPolicy context and runtime settlement first. Missing settlements remain pending, never ties.')
+                runtime_discrepancies=None,execution_policy_context=policy_coverage,
+                policy_context_observations=observed_coverage,status='INSUFFICIENT_EVIDENCE',
+                limitation='No automatic performance approval: reconcile raw ticks, lineage, registry, payout, full ExecutionPolicy context and runtime settlement first. Status snapshots are partial pre-outcome observations, never exact decision context. Missing settlements remain pending, never ties.')
 
 
 def capture(journal,samples,interval):
@@ -129,6 +143,7 @@ def capture(journal,samples,interval):
     seen=set()
     epoch_start_ms=time.time_ns()//1_000_000
     initial_status=None
+    latest_status=None
     for i in range(samples):
         for endpoint in ('/status','/simulation','/events','/ticks?max=2000'):
             try:
@@ -136,6 +151,7 @@ def capture(journal,samples,interval):
                     value=json.loads(response.read())
                 journal.append('TRANSPORT',dict(endpoint=endpoint,response=value))
                 if endpoint=='/status':
+                    latest_status=value
                     if initial_status is None:
                         initial_status=value
                     elif value.get('gitSha')!=initial_status.get('gitSha'):
@@ -151,7 +167,9 @@ def capture(journal,samples,interval):
                         if prediction.get('git_sha')!=initial_status.get('gitSha'):
                             journal.append('CAPTURE_ERROR',dict(reason='BUILD_IDENTITY_MISMATCH',prediction=prediction))
                             continue
-                        ingest_prediction(journal,prediction)
+                        accepted=ingest_prediction(journal,prediction)
+                        if accepted.get('kind')=='PREDICTION' and latest_status is not None:
+                            ingest_policy_observation(journal,prediction,latest_status)
                 if endpoint=='/events':
                     for event in value.get('events',[]):
                         key=hashlib.sha256(canonical(event)).hexdigest()

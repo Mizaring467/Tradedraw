@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from scripts.research.prospective import Journal,ingest_prediction,ingest_settlement,scorecard
+from scripts.research.prospective import Journal,ingest_policy_observation,ingest_prediction,ingest_settlement,scorecard
 
 
 class ProspectiveJournalTest(unittest.TestCase):

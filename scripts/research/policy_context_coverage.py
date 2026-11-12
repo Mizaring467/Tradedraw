@@ -91,3 +91,88 @@ def coverage_summary(predictions: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "missing_field_counts": dict(sorted(missing_counts.items())),
         "status": "POLICY_CONTEXT_COMPLETE" if total and complete == total else "POLICY_CONTEXT_INCOMPLETE",
     }
+
+
+def observed_context_from_status(prediction: dict[str, Any], status: dict[str, Any], captured_at_ms: int) -> dict[str, Any]:
+    """Extract only fields observable from the read-only status snapshot.
+
+    This is deliberately not returned as exact policy_context because the status
+    snapshot is observed after the decision was created (though before settlement)
+    and several volatile policy inputs are not exposed by /status.
+    """
+    feed = status.get("feed") if isinstance(status.get("feed"), dict) else {}
+    analysis = status.get("analysis") if isinstance(status.get("analysis"), dict) else {}
+    risk = status.get("risk") if isinstance(status.get("risk"), dict) else {}
+
+    fields: dict[str, Any] = {}
+    quality: dict[str, str] = {}
+
+    def observed(name: str, value: Any) -> None:
+        if value is not None:
+            fields[name] = value
+            quality[name] = "POST_DECISION_PRE_OUTCOME_OBSERVED"
+
+    observed("mode", status.get("mode"))
+    observed("autonomousSubMode", status.get("submode"))
+    observed("strategy", status.get("strategy"))
+
+    if "lastTickAgeMs" in feed:
+        age = feed.get("lastTickAgeMs")
+        fields["tickAgeMs"] = None if age == -1 else age
+        quality["tickAgeMs"] = "POST_DECISION_PRE_OUTCOME_OBSERVED"
+    observed("isFeedFresh", feed.get("isFresh"))
+    observed("feedAsset", feed.get("activeAsset"))
+    observed("rangoRelativo", feed.get("rangoRelativoActual"))
+    observed("isPriceFrozen", feed.get("priceFrozen"))
+    observed("isChoppinessDetected", analysis.get("isMarketSideways"))
+    observed("currentLossStreak", risk.get("currentLossStreak"))
+    observed("trend", analysis.get("trend"))
+    observed("callPower", analysis.get("callPower"))
+
+    ts = prediction.get("timestamp")
+    if isinstance(ts, int) and ts >= 0:
+        fields["sec"] = (ts // 1000) % 60
+        fields["currentCandleEpochMinute"] = ts // 60_000
+        quality["sec"] = "CAUSALLY_DERIVED_FROM_DECISION_TIMESTAMP"
+        quality["currentCandleEpochMinute"] = "CAUSALLY_DERIVED_FROM_DECISION_TIMESTAMP"
+
+    fields["currentDecisionId"] = prediction.get("decisionId")
+    fields["action"] = prediction.get("action")
+    fields["reasonDescription"] = prediction.get("reason")
+    quality["currentDecisionId"] = "PRECOMMITTED_PREDICTION"
+    quality["action"] = "PRECOMMITTED_PREDICTION"
+    quality["reasonDescription"] = "PRECOMMITTED_PREDICTION"
+
+    all_required = set(POLICY_CONTEXT_REQUIRED) | set(TOP_LEVEL_EQUIVALENTS)
+    unresolved = sorted(all_required - set(fields))
+
+    return {
+        "decisionId": prediction.get("decisionId"),
+        "captured_at_ms": captured_at_ms,
+        "fields": fields,
+        "quality": quality,
+        "unresolved_fields": unresolved,
+        "exact_decision_context": False,
+        "status": "PARTIAL_PRE_OUTCOME_OBSERVATION",
+    }
+
+
+def observation_summary(observations: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    rows = list(observations)
+    field_counts: Counter[str] = Counter()
+    unresolved_counts: Counter[str] = Counter()
+    for row in rows:
+        fields = row.get("fields")
+        if isinstance(fields, dict):
+            field_counts.update(fields.keys())
+        unresolved = row.get("unresolved_fields")
+        if isinstance(unresolved, list):
+            unresolved_counts.update(str(field) for field in unresolved)
+    return {
+        "observations": len(rows),
+        "observed_field_counts": dict(sorted(field_counts.items())),
+        "unresolved_field_counts": dict(sorted(unresolved_counts.items())),
+        "exact_decision_context_observations": sum(
+            1 for row in rows if row.get("exact_decision_context") is True
+        ),
+    }
