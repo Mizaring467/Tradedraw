@@ -93,6 +93,24 @@ class FastVerifyTest(unittest.TestCase):
         self.assertTrue(fast_verify.is_ignored("graft/.cache/file.json"))
         self.assertFalse(fast_verify.is_ignored("app/src/main/Foo.kt"))
 
+    def test_fast_gradle_command_reuses_daemon_and_combines_apk(self):
+        plan = fast_verify.build_plan(
+            self.repo,
+            ["ui/src/main/java/com/example/tradedraw/CustomDrawingView.kt"],
+        )
+        command = fast_verify.gradle_command(plan)
+        self.assertIn(":ui:testDebugUnitTest", command)
+        self.assertIn(":adapters:testDebugUnitTest", command)
+        self.assertIn(":app:testDebugUnitTest", command)
+        self.assertIn(":app:assembleDebug", command)
+        self.assertNotIn("--no-daemon", command)
+
+    def test_full_gradle_command_is_cold(self):
+        plan = fast_verify.build_plan(self.repo, [], full=True)
+        command = fast_verify.gradle_command(plan)
+        self.assertIn("--no-daemon", command)
+        self.assertEqual(1, command.count(":app:assembleDebug"))
+
 
 if __name__ == "__main__":
     unittest.main()

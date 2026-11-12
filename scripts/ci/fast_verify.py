@@ -296,7 +296,24 @@ def replay_command(repo: Path) -> list[str] | None:
     ]
 
 
-def execute_plan(repo: Path, plan: VerificationPlan) -> None:
+def gradle_command(plan: VerificationPlan, *, cold: bool = False) -> list[str]:
+    tasks = list(plan.gradle_tasks)
+    if plan.build_apk and ":app:assembleDebug" not in tasks:
+        tasks.append(":app:assembleDebug")
+    if not tasks:
+        return []
+
+    command = ["./gradlew", *tasks, "--no-configuration-cache"]
+    # Fast iteration intentionally reuses the Gradle daemon. Full/cold gates
+    # use a fresh daemon for reproducibility and parity with CI expectations.
+    if cold or plan.full:
+        command.append("--no-daemon")
+    return command
+
+
+def execute_plan(
+    repo: Path, plan: VerificationPlan, *, cold: bool = False
+) -> None:
     if plan.empty:
         print("\nNo verification tasks selected for these changes.")
         return
@@ -308,34 +325,14 @@ def execute_plan(repo: Path, plan: VerificationPlan) -> None:
             "python",
         )
 
-    if plan.gradle_tasks:
-        run_command(
-            repo,
-            [
-                "./gradlew",
-                *plan.gradle_tasks,
-                "--no-daemon",
-                "--no-configuration-cache",
-            ],
-            "gradle-tests",
-        )
+    gradle = gradle_command(plan, cold=cold)
+    if gradle:
+        run_command(repo, gradle, "gradle")
 
     if plan.run_replay:
         command = replay_command(repo)
         if command:
             run_command(repo, command, "replay-smoke")
-
-    if plan.build_apk:
-        run_command(
-            repo,
-            [
-                "./gradlew",
-                ":app:assembleDebug",
-                "--no-daemon",
-                "--no-configuration-cache",
-            ],
-            "apk",
-        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -362,6 +359,11 @@ def parse_args() -> argparse.Namespace:
         help="Force APK build even when app is not downstream of the change.",
     )
     parser.add_argument(
+        "--cold",
+        action="store_true",
+        help="Disable the Gradle daemon for a cold/reproducible verification run.",
+    )
+    parser.add_argument(
         "--repo",
         default=".",
         help="Repository root (default: current directory).",
@@ -377,7 +379,7 @@ def main() -> int:
     print_plan(plan)
 
     if not args.plan:
-        execute_plan(repo, plan)
+        execute_plan(repo, plan, cold=args.cold)
     return 0
 
 
