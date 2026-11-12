@@ -18,3 +18,9 @@ C3 audit complete with unresolved conceptual invalidity explicitly documented. C
 C5 source registry authoritative version2:14modes/44production files, all byte-identical to4fdb646. Version1 missed COMBINED and is preserved as superseded failed extraction, never used for experiments.
 Current HEAD b6b6e8b (inventory cut). Last approved CI remains base4fdb646 runs43025318940/43025307877. No new CI approval inherited.
 Exact next action:commit backtest corrections independently; finish read-only open-SHADOW prediction export and hash-chained prospective collector, then clean full gates/install/runtime verification; prospective live cohort must be preregistered and source-qualified. Approved research datasets0;edge experiments0.
+
+## 2026-11-11 — C17 instrumentation checkpoint
+HEAD563a269 (research correction committed). Local gate for prospective read-only endpoint+collector:676tests/86classes/0F/0E/0skips,clean APK PASS;Python59PASS. No production strategies/guards changed. C5 frozen44file hash verification still PASS.
+C6/C7–C16 historical statistics NOT_RUN_GATED (DATA=false,fullREPLAY_PARITY=false);reports contain hypotheses/protocols only. C17 pending decision projection and append-only capture implemented;C18 fail-closed scorecard implemented,0approvedsettlements.
+Runtime installation of prior research cut succeeded, but current session device evidence differs from historic root device assumptions:emulator-5554 reports2311DRK48G;display Dozing,black captures;bridgeunavailable;private service start denied;su unavailable. Do not declare runtimePASS or trade.
+Exact next action:commit prospective instrumentation independently,clean build/install exact source commit,attempt safe in-app startup and read-only capture under preregistered diagnostic manifest;push onlyr10-night and verify push/PR CI. Finish C19 with honest failed/unevaluated gates.

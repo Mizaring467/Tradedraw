@@ -322,6 +322,9 @@ class TradeDrawHttpBridge(
                         sendJsonResponse(output, 200, org.json.JSONObject().put("success", sim != null)
                             .put("enabled", runtime.enabled).put("balance", ledger?.currentBalance)
                             .put("openOrders", ledger?.getOpenTrades()?.size).put("settlements", ledger?.totalTrades)
+                            .put("pendingDecisions", org.json.JSONArray(ledger?.getOpenTrades()?.map {
+                                ProspectivePredictionExport.json(it, BuildConfig.GIT_SHA)
+                            } ?: emptyList<org.json.JSONObject>()))
                             .put("pendingResults", ledger?.pendingJournal()?.size).put("error", runtime.errorMessage ?: "")
                             .put("expiryRule", "FIRST_ACCEPTED_SAME_ASSET_TICK_AT_OR_AFTER_ENTRY_PLUS_60000_MS")
                             .put("retryAction", "POST /simulation?operation=retry").toString())

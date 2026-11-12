@@ -1,0 +1,18 @@
+...........................................................
+----------------------------------------------------------------------
+Ran 59 tests in 0.348s
+
+OK
+
+[EVIDENCIA JOURNAL] Total leídos: 212
+                   Registros limpios: 205
+                   Registros excluidos: 7
+                     - Saldo corrupto 1.00 COP: 5
+                     - Pérdida sin cambio de saldo: 2
+
+[EVIDENCIA 1] Proporción de ticks bajistas forzados en resistencia: 100.00%
+
+[EVIDENCIA 3] Win Rate OOS reportado (promedio simple): 80.32%
+               Win Rate OOS real (ponderado por trades): 70.37%
+
+[EVIDENCIA 2] Folds OOS con N < 30: 5/5. Total trades OOS: 27

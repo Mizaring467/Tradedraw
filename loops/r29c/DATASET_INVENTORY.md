@@ -51,3 +51,7 @@ Classification requires content plus producer evidence. Initial mechanical snaps
 37 tick-bearing files contain 142,586 rows before independence correction. They contain only Z-CRY/IDX. Observed cross-asset timestamp collisions: 0; absence in this sample does not validate timestamp-only deduplication. The multi-asset regression is necessary.
 
 Dataset acceptance is NOT implied by a matching schema. Current capture producer keyed accumulated_ticks by timestamp and pruned pre-window history; upstream losses cannot be recovered. Historical windows were already examined in R23–R25 and cannot become virgin holdouts.
+
+## 2026-11-11 — supplemental text-log sweep
+
+C0 additionally enumerated27 .txt files (357,002bytes), including heartbeat/status/build/replay outputs that do not use .log extension. Machine snapshot evidence/c0-text/inventory_v1.json records hashes/line counts; none has verified market provenance or research eligibility. Total enumerated source files972; original945-file snapshot remains unchanged. These text records do not add independent samples.

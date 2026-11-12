@@ -1,0 +1,3 @@
+# Prospective scorecard — 2026-11-12T01:27:40.975463+00:00
+
+No approved prospective cohort collected yet. Historical backtest, historical replay, synthetic/fixture and prospective SHADOW cohorts remain separate. N=0 approved prospective settlements; WIN/LOSS/TRUE_TIE/NO_DATA,WR,EV,drawdown,loss streak,rejection rate,data-quality-failure rate and runtime discrepancies are UNESTIMATED. No_data is not0 merely because nothing was observed. Raw monitor attempts and failed transport remain separate diagnostic evidence. Scorecard tool reports null metrics until raw tick/runtime verification is complete.

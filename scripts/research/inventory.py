@@ -96,7 +96,7 @@ def profile(path, raw):
         result.update(parse_status=type(e).__name__, quality_status='REJECTED')
         return result, []
     result.update(encoding=encoding, rows=len(rows), invalid_rows=errors, parse_status='PARSED')
-    if path.suffix == '.log':
+    if path.suffix in {'.log', '.txt'}:
         result.update(rows=len(raw.splitlines()), parse_status='UNSTRUCTURED_LOG', schema=['text_line'])
         return result, []
     schema = sorted({str(k) for row in rows if isinstance(row, dict) for k in row if k is not None})
@@ -155,7 +155,7 @@ def profile(path, raw):
     return result, signatures
 
 
-def inventory(root):
+def inventory(root, extensions=EXTENSIONS):
     records, rowsets = [], {}
     for directory, dirs, files in os.walk(root):
         dirs[:] = sorted(d for d in dirs if d not in EXCLUDED and not (Path(directory)/d).is_symlink())
@@ -164,7 +164,7 @@ def inventory(root):
             rel = full.relative_to(root)
             if full.is_symlink() or rel.parts[:2] in {('loops','r29c'), ('datasets','manifests')} or rel.parts[0] == 'experiments':
                 continue
-            if full.suffix.lower() not in EXTENSIONS:
+            if full.suffix.lower() not in extensions:
                 continue
             record, signatures = profile(rel, full.read_bytes())
             records.append(record)
@@ -192,9 +192,10 @@ def inventory(root):
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--out', required=True)
+    parser.add_argument('--text-only', action='store_true', help='Supplemental inventory of text logs including non-dataset text; never promotes provenance')
     args=parser.parse_args()
     root=Path.cwd()
-    records, duplicates, overlaps=inventory(root)
+    records, duplicates, overlaps=inventory(root, {'.txt'} if args.text_only else EXTENSIONS)
     out=Path(args.out)
     out.mkdir(parents=True,exist_ok=True)
     for name,obj in [('inventory_v1.json',records),('exact_duplicates_v1.json',duplicates),('record_overlaps_v1.json',overlaps)]:
