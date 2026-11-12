@@ -54,28 +54,28 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
 
       - name: Configurar JDK 17
-        if: steps.changes.outputs.heavy == 'true'
+        if: steps.changes.outputs.needs_android == 'true'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Configurar Python
-        if: steps.changes.outputs.heavy == 'true'
+        if: steps.changes.outputs.needs_python == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
       - name: Instalar dependencias de pruebas Python
-        if: steps.changes.outputs.heavy == 'true'
+        if: steps.changes.outputs.needs_python == 'true'
         run: python -m pip install -r scripts/ci/requirements-tests.txt
 
       - name: Ejecutar pruebas Python
-        if: steps.changes.outputs.heavy == 'true'
+        if: steps.changes.outputs.needs_python == 'true'
         run: python -m unittest discover -s tests
 
       - name: Cache de Gradle
-        if: steps.changes.outputs.heavy == 'true'
+        if: steps.changes.outputs.needs_android == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -86,19 +86,23 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Otorgar permisos al wrapper
-        if: steps.changes.outputs.heavy == 'true'
+        if: steps.changes.outputs.needs_android == 'true'
         run: chmod +x gradlew
 
       - name: Validar módulos y compilar APK Debug
-        if: steps.changes.outputs.heavy == 'true'
+        if: steps.changes.outputs.needs_android == 'true'
         run: ./gradlew testDebugUnitTest :core:test :simulation:test assembleDebug --no-daemon --no-configuration-cache
 
       - name: Confirmar fast-path documental
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "Cambio exclusivamente Markdown; se omite build Android/Python sin relajar CI de código."
 
+      - name: Confirmar fast-path Python
+        if: steps.changes.outputs.python_only == 'true'
+        run: echo "Cambio limitado a tooling Python aprobado; tests Python ejecutados y build Android omitido."
+
       - name: Subir APK como artefacto
-        if: steps.changes.outputs.heavy == 'true'
+        if: steps.changes.outputs.needs_android == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: TradeDraw-debug
@@ -106,7 +110,7 @@ jobs:
           if-no-files-found: error
 
       - name: Subir evidencia de pruebas y replay
-        if: ${{ always() && steps.changes.outputs.heavy == 'true' }}
+        if: ${{ always() && steps.changes.outputs.needs_android == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: TradeDraw-validation
