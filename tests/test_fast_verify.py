@@ -137,5 +137,18 @@ class FastVerifyTest(unittest.TestCase):
             fast_verify.enforce_full_test_summary(Path(tmp))
 
 
+    def test_verification_environment_pins_canonical_replay_fixture(self):
+        env = fast_verify.verification_environment(self.repo)
+        self.assertEqual(
+            str(self.repo / "loops/r23c_phase3_validation/window_01/ticks_live.csv"),
+            env["BACKTEST_CSV"],
+        )
+        self.assertEqual(
+            str(self.repo / "build/fast-verify-replay.csv"),
+            env["BACKTEST_OUT"],
+        )
+        self.assertIn(str(self.repo / "validation_engine"), env["PYTHONPATH"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -276,16 +276,39 @@ def print_plan(plan: VerificationPlan) -> None:
     print("APK build:", "YES" if plan.build_apk else "no")
 
 
-def run_command(repo: Path, command: Sequence[str], label: str) -> None:
+def canonical_replay_fixture(repo: Path) -> Path:
+    return repo / "loops/r23c_phase3_validation/window_01/ticks_live.csv"
+
+
+def verification_environment(repo: Path) -> dict[str, str]:
+    """Use the same deterministic replay inputs locally that CI uses."""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(repo), str(repo / "validation_engine")]
+    )
+    fixture = canonical_replay_fixture(repo)
+    if fixture.exists():
+        env["BACKTEST_CSV"] = str(fixture)
+        env["BACKTEST_OUT"] = str(repo / "build" / "fast-verify-replay.csv")
+    return env
+
+
+def run_command(
+    repo: Path,
+    command: Sequence[str],
+    label: str,
+    *,
+    env: dict[str, str] | None = None,
+) -> None:
     printable = " ".join(shlex.quote(part) for part in command)
     print(f"\n>>> [{label}] {printable}", flush=True)
-    proc = subprocess.run(command, cwd=repo)
+    proc = subprocess.run(command, cwd=repo, env=env)
     if proc.returncode != 0:
         raise SystemExit(f"{label} failed with exit code {proc.returncode}")
 
 
 def replay_command(repo: Path) -> list[str] | None:
-    fixture = repo / "loops/r23c_phase3_validation/window_01/ticks_live.csv"
+    fixture = canonical_replay_fixture(repo)
     if not fixture.exists():
         print("[replay] canonical versioned fixture is missing; skipping replay smoke")
         return None
@@ -295,7 +318,6 @@ def replay_command(repo: Path) -> list[str] | None:
         str(fixture),
         "--solo-conteo",
     ]
-
 
 def gradle_command(plan: VerificationPlan, *, cold: bool = False) -> list[str]:
     tasks = list(plan.gradle_tasks)
@@ -347,23 +369,26 @@ def execute_plan(
         print("\nNo verification tasks selected for these changes.")
         return
 
+    env = verification_environment(repo)
+
     if plan.run_python:
         run_command(
             repo,
             [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
             "python",
+            env=env,
         )
 
     gradle = gradle_command(plan, cold=cold)
     if gradle:
-        run_command(repo, gradle, "gradle")
+        run_command(repo, gradle, "gradle", env=env)
         if plan.full:
             enforce_full_test_summary(repo)
 
     if plan.run_replay:
         command = replay_command(repo)
         if command:
-            run_command(repo, command, "replay-smoke")
+            run_command(repo, command, "replay-smoke", env=env)
 
 
 def parse_args() -> argparse.Namespace:
