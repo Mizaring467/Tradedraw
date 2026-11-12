@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from scripts.research.prospective import Journal,ingest_policy_observation,ingest_prediction,ingest_settlement,scorecard
+from scripts.research.prospective import Journal,ingest_asset_observation,ingest_policy_observation,ingest_prediction,ingest_settlement,scorecard
 
 
 class ProspectiveJournalTest(unittest.TestCase):
@@ -45,3 +45,17 @@ class ProspectiveJournalTest(unittest.TestCase):
             obj=json.loads(path.read_text());obj['payload']['action']='SELL'
             path.write_text(json.dumps(obj)+'\n')
             with self.assertRaisesRegex(ValueError,'JOURNAL_INTEGRITY_FAILURE'):j.records()
+
+
+    def test_asset_observation_is_causal_deduplicated_and_not_replay_ready(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            j=Journal(Path(tmp)/"j.jsonl")
+            event={"atMs":1500,"kind":"ASSET","detail":'visible="Crypto IDX" ric="Z-CRY/IDX"'}
+            first=ingest_asset_observation(j,event,epoch_start_ms=1000)
+            second=ingest_asset_observation(j,event,epoch_start_ms=1000)
+            self.assertEqual(first["sha256"],second["sha256"])
+            self.assertIsNone(ingest_asset_observation(j,{**event,"atMs":900},epoch_start_ms=1000))
+            card=scorecard(j)
+            self.assertEqual(1,card["active_asset_timeline"]["observations"])
+            self.assertEqual(["Z-CRY/IDX"],card["active_asset_timeline"]["assets"])
+            self.assertFalse(card["active_asset_timeline"]["supports_mixed_asset_replay"])

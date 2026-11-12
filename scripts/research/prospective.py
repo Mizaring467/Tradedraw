@@ -15,6 +15,7 @@ import time
 import urllib.request
 from pathlib import Path
 
+from scripts.research.active_asset_timeline import parse_asset_event, timeline_summary
 from scripts.research.policy_context_coverage import coverage_summary, observed_context_from_status, observation_summary
 
 REQUIRED = {'decisionId','timestamp','asset','strategyVersion','action','confidence','reason','regime','observed_payout','git_sha','entry_price'}
@@ -87,6 +88,19 @@ def ingest_prediction(journal,prediction,received_ms=None):
     return journal.append('PREDICTION',prediction,received_ms)
 
 
+def ingest_asset_observation(journal,event,epoch_start_ms):
+    parsed=parse_asset_event(event)
+    if parsed is None or parsed["atMs"] < epoch_start_ms:
+        return None
+    records=journal.records()
+    for row in records:
+        if row["kind"]=="ACTIVE_ASSET_OBSERVATION":
+            payload=row["payload"]
+            if payload.get("atMs")==parsed["atMs"] and payload.get("ric")==parsed["ric"] and payload.get("visibleAsset")==parsed["visibleAsset"]:
+                return row
+    return journal.append("ACTIVE_ASSET_OBSERVATION",parsed,parsed["atMs"])
+
+
 def ingest_policy_observation(journal,prediction,status,received_ms=None):
     received_ms=time.time_ns()//1_000_000 if received_ms is None else received_ms
     decision_id=prediction.get('decisionId')
@@ -123,15 +137,18 @@ def scorecard(journal):
     records=journal.records();counts=collections.Counter(r['kind'] for r in records)
     predictions=[r['payload'] for r in records if r['kind']=='PREDICTION']
     observations=[r['payload'] for r in records if r['kind']=='POLICY_CONTEXT_OBSERVATION']
+    asset_observations=[r['payload'] for r in records if r['kind']=='ACTIVE_ASSET_OBSERVATION']
     n=len(predictions)
     policy_coverage=coverage_summary(predictions)
     observed_coverage=observation_summary(observations)
+    asset_timeline=timeline_summary(asset_observations)
     return dict(evidence_class='PROSPECTIVE_SHADOW',records=len(records),precommitted_decisions=n,
                 settlement_candidates=counts['SETTLEMENT_CANDIDATE'],rejected_predictions=counts['PREDICTION_REJECTED'],
                 data_quality_failures=counts['CAPTURE_ERROR'],verified_settlements=0,WIN=None,LOSS=None,TRUE_TIE=None,
                 NO_DATA=None,WR=None,EV=None,max_drawdown=None,longest_loss_streak=None,rejection_rate=None,
                 runtime_discrepancies=None,execution_policy_context=policy_coverage,
-                policy_context_observations=observed_coverage,status='INSUFFICIENT_EVIDENCE',
+                policy_context_observations=observed_coverage,active_asset_timeline=asset_timeline,
+                status='INSUFFICIENT_EVIDENCE',
                 limitation='No automatic performance approval: reconcile raw ticks, lineage, registry, payout, full ExecutionPolicy context and runtime settlement first. Status snapshots are partial pre-outcome observations, never exact decision context. Missing settlements remain pending, never ties.')
 
 
@@ -175,7 +192,10 @@ def capture(journal,samples,interval):
                         key=hashlib.sha256(canonical(event)).hexdigest()
                         if key in seen:continue
                         seen.add(key)
-                        if event.get('kind')=='SHADOW_PREDICTION':
+                        if event.get('kind')=='ASSET':
+                            if initial_status and initial_status.get('mode')=='SHADOW':
+                                ingest_asset_observation(journal,event,epoch_start_ms)
+                        elif event.get('kind')=='SHADOW_PREDICTION':
                             try:ingest_prediction(journal,json.loads(event['detail']))
                             except (ValueError,TypeError):journal.append('CAPTURE_ERROR',dict(reason='INVALID_PREDICTION_EVENT',event=event))
                         elif event.get('kind')=='SHADOW_DECISION':
