@@ -64,10 +64,6 @@ internal class ResearchMultiAssetScheduler(
         require(candidate.decisionId.isNotBlank()) { "DECISION_ID_REQUIRED" }
         require(candidate.tradeId.isNotBlank()) { "TRADE_ID_REQUIRED" }
 
-        // Production-equivalent causal order: a trade that expires at this event
-        // timestamp releases the global slot before this timestamp's candidate.
-        settleDueBeforeCandidate(candidate.timestampMs)
-
         val observed = activeAssetAt(candidate.timestampMs)
             ?: return Decision.Vetoed("ACTIVE_ASSET_UNKNOWN")
         if (!observed.equals(candidate.asset, ignoreCase = true)) {
@@ -96,8 +92,16 @@ internal class ResearchMultiAssetScheduler(
         }
     }
 
-    fun settleDueBeforeCandidate(timestampMs: Long): Candidate? {
+    /**
+     * Mirror durable SHADOW settlement eligibility: only a tick from the SAME
+     * asset at/after expiry may release the global slot. A tick from another
+     * active asset must leave the pending trade reserved.
+     */
+    fun onMarketTick(timestampMs: Long, asset: String): Candidate? {
+        require(timestampMs >= 0L) { "INVALID_TIMESTAMP" }
+        require(asset.isNotBlank()) { "ASSET_REQUIRED" }
         val current = open ?: return null
+        if (!current.candidate.asset.equals(asset, ignoreCase = true)) return null
         if (timestampMs < current.expiresAtMs) return null
         check(flight.reconcile(current.candidate.tradeId)) {
             "RESEARCH_SINGLE_FLIGHT_RECONCILE_FAILED"

@@ -38,13 +38,30 @@ class ResearchMultiAssetSchedulerTest {
     }
 
     @Test
-    fun expiryAtSameTimestampReleasesSlotBeforeNextCandidate() {
+    fun foreignAssetTickAtExpiryDoesNotReleaseOriginalReservation() {
         val scheduler = ResearchMultiAssetScheduler(
             activeAssetAt = { ts -> if (ts < 60_000) "A" else "B" }
         )
 
         assertTrue(scheduler.evaluate(candidate(0, "A", "a")) is ResearchMultiAssetScheduler.Decision.Accepted)
+        assertNull(scheduler.onMarketTick(60_000, "B"))
         val next = scheduler.evaluate(candidate(60_000, "B", "b"))
+
+        assertEquals(
+            ResearchMultiAssetScheduler.Decision.Vetoed("ORDER_PENDING_RECONCILIATION"),
+            next,
+        )
+        assertEquals("trade-a", scheduler.pendingTradeId())
+        assertEquals(1, scheduler.transportDispatchCount())
+    }
+
+    @Test
+    fun sameAssetTickAtExpiryReleasesSlotBeforeNextSameAssetCandidate() {
+        val scheduler = ResearchMultiAssetScheduler(activeAssetAt = { "A" })
+
+        assertTrue(scheduler.evaluate(candidate(0, "A", "a")) is ResearchMultiAssetScheduler.Decision.Accepted)
+        assertEquals(candidate(0, "A", "a"), scheduler.onMarketTick(60_000, "A"))
+        val next = scheduler.evaluate(candidate(60_000, "A", "b"))
 
         assertTrue(next is ResearchMultiAssetScheduler.Decision.Accepted)
         assertEquals("trade-b", scheduler.pendingTradeId())
@@ -71,15 +88,15 @@ class ResearchMultiAssetSchedulerTest {
     }
 
     @Test
-    fun candidateBeforeExpiryDoesNotReleaseReservation() {
+    fun sameAssetTickBeforeExpiryDoesNotReleaseReservation() {
         val scheduler = ResearchMultiAssetScheduler(activeAssetAt = { "A" })
         scheduler.evaluate(candidate(0, "A", "a"))
 
-        assertNull(scheduler.settleDueBeforeCandidate(59_999))
+        assertNull(scheduler.onMarketTick(59_999, "A"))
         assertEquals("trade-a", scheduler.pendingTradeId())
         assertEquals(
             candidate(0, "A", "a"),
-            scheduler.settleDueBeforeCandidate(60_000),
+            scheduler.onMarketTick(60_000, "A"),
         )
         assertNull(scheduler.pendingTradeId())
     }
