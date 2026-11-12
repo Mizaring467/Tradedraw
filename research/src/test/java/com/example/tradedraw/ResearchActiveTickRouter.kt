@@ -32,7 +32,7 @@ internal class ResearchActiveTickRouter(
         ) : Routed()
     }
 
-    private var lastAcceptedTimestampMs: Long = -1L
+    private var lastSeenTimestampMs: Long = -1L
     private var lastActiveAsset: String? = null
 
     fun route(tick: Tick): Routed {
@@ -40,9 +40,10 @@ internal class ResearchActiveTickRouter(
         require(tick.asset.isNotBlank()) { "TICK_ASSET_REQUIRED" }
         require(tick.price.isFinite() && tick.price > 0.0) { "INVALID_TICK_PRICE" }
 
-        if (lastAcceptedTimestampMs >= 0L && tick.timestampMs < lastAcceptedTimestampMs) {
+        if (lastSeenTimestampMs >= 0L && tick.timestampMs < lastSeenTimestampMs) {
             return Routed.Rejected(tick, RejectReason.OUT_OF_ORDER_TICK)
         }
+        lastSeenTimestampMs = tick.timestampMs
 
         val lookup = timeline.lookup(tick.timestampMs)
         val active = lookup.ric
@@ -53,7 +54,6 @@ internal class ResearchActiveTickRouter(
 
         val changed = lastActiveAsset?.equals(active, ignoreCase = true) == false
         lastActiveAsset = active
-        lastAcceptedTimestampMs = tick.timestampMs
         return Routed.Accepted(tick, active, changed)
     }
 }

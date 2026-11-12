@@ -62,4 +62,19 @@ class ResearchActiveTickRouterTest {
             (router.route(ResearchActiveTickRouter.Tick(1_400, "A", 1.0)) as ResearchActiveTickRouter.Routed.Rejected).reason,
         )
     }
+
+    @Test
+    fun rejectedFutureTickStillPreventsLaterOutOfOrderAcceptance() {
+        val router = ResearchActiveTickRouter(fixtureTimeline())
+        router.route(ResearchActiveTickRouter.Tick(1_500, "A", 1.0))
+        assertEquals(
+            ResearchActiveTickRouter.RejectReason.ACTIVE_ASSET_MISMATCH,
+            (router.route(ResearchActiveTickRouter.Tick(2_100, "A", 1.0)) as ResearchActiveTickRouter.Routed.Rejected).reason,
+        )
+        assertEquals(
+            ResearchActiveTickRouter.RejectReason.OUT_OF_ORDER_TICK,
+            (router.route(ResearchActiveTickRouter.Tick(1_600, "A", 1.0)) as ResearchActiveTickRouter.Routed.Rejected).reason,
+        )
+    }
+
 }
