@@ -118,3 +118,39 @@ R29-C remains:
 This build may be used only for a separately identified prospective SHADOW
 capture epoch after runtime identity is verified. Historical observations must
 not be retroactively upgraded to exact policy-context evidence.
+
+## GET-only runtime preflight
+
+A separate runtime probe was added after the Android instrumentation commit:
+
+`scripts/research/instrumentation_runtime_probe.py`
+
+It performs GET requests only against the fixed ADB-loopback bridge and refuses
+capture unless the runtime satisfies the requested identity and research state.
+It never invokes `/trade`, order dispatch, accessibility taps, or broker actions.
+
+For the current instrumented APK, the Android code identity is:
+
+`3917945`
+
+Example preflight after installation and ADB forwarding:
+
+```bash
+python scripts/research/instrumentation_runtime_probe.py \\
+  --expected-git-sha 3917945 \\
+  --require-fresh-feed
+```
+
+Once a new pending prospective SHADOW decision exists, require exact evidence:
+
+```bash
+python scripts/research/instrumentation_runtime_probe.py \\
+  --expected-git-sha 3917945 \\
+  --require-fresh-feed \\
+  --require-prediction
+```
+
+The probe fails closed on wrong SHA, non-SHADOW mode, disabled simulation,
+stale feed when requested, wrong StrategyVersion, wrong base version, wrong
+policy-context quality/version, or any missing field from the 27-field exact
+contract.
