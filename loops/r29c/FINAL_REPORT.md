@@ -39,3 +39,9 @@ Exact code candidate b5378fc:clean676/86/0F/0E/0skips,Python59PASS;pushCI4313521
 Overall status remains **INSUFFICIENT_EVIDENCE**. All six final booleans remainfalse for the reasons above; local test success and helper parity are recorded separately. No synthetic probe or failed capture has been promoted into market evidence.
 
 APK artifact: https://github.com/Mizaring467/Tradedraw/actions/runs/43135219044 (TradeDraw-debug). PR CI: https://github.com/Mizaring467/Tradedraw/actions/runs/43135228011.
+
+## 2026-11-12T01:44:08.775852+00:00 — authoritative provenance revision v2
+
+Final adversarial metadata review found5standalone status snapshots classified too broadly by payload schema,including a test status payload and4R26snapshot files. Their exact paths/hashes/overrides are sealed in evidence/provenance_review_v2.json. Schema alone does not establish device-capture origin. Classification is now UNKNOWN/INSUFFICIENT_METADATA for those5;raw bytes unchanged. Prior manifests/catalog remain immutable as superseded history. Authoritative catalog:datasets/manifests/catalog.v2.json (with five per-dataset v2 manifests);remaining rows retain v1 metadata.
+
+Current main945-object totals:395VALID_FOR_DIAGNOSTICS_ONLY,548INSUFFICIENT_METADATA,2FIXTURE_ONLY;classifications111BROKER_DEVICE_CAPTURE,237REPORT_DERIVED,47REPLAY_DERIVED,548UNKNOWN,2FIXTURE. Supplemental27text logs remain non-research. Research-approved datasets still0;statistical/verdict gates unchanged. Earlier400/543/116 totals describe superseded v1 only. This metadata correction introduces no source-code/strategy change and no new experiment.

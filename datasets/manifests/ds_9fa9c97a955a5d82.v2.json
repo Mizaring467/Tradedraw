@@ -1,0 +1,19 @@
+{
+  "assets": [],
+  "audit_git_sha": "4fdb6466d5005499789d801d64916ea9c15421a3",
+  "byte_identical_paths": [],
+  "classification": "UNKNOWN",
+  "dataset_id": "ds_9fa9c97a955a5d82",
+  "derived_from": [],
+  "end": null,
+  "provenance_evidence": [
+    "Schema matches TradeDraw status but standalone content is not proof of capture origin. No linked timestamped session source established in this audit."
+  ],
+  "quality_status": "INSUFFICIENT_METADATA",
+  "rows": 1,
+  "sha256": "14952bc3bca131210baa73241c88a55978e6a9fd1a25cd53cc94f65a8920a399",
+  "source": "loops/r26_validation/P1_status_final.json",
+  "start": null,
+  "supersedes_manifest": "ds_9fa9c97a955a5d82.v1.json",
+  "version": 2
+}
