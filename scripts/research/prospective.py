@@ -15,6 +15,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from scripts.research.policy_context_coverage import coverage_summary
+
 REQUIRED = {'decisionId','timestamp','asset','strategyVersion','action','confidence','reason','regime','observed_payout','git_sha','entry_price'}
 ZERO='0'*64
 
@@ -108,13 +110,15 @@ def ingest_settlement(journal,settlement,received_ms=None):
 
 def scorecard(journal):
     records=journal.records();counts=collections.Counter(r['kind'] for r in records)
-    n=counts['PREDICTION']
+    predictions=[r['payload'] for r in records if r['kind']=='PREDICTION']
+    n=len(predictions)
+    policy_coverage=coverage_summary(predictions)
     return dict(evidence_class='PROSPECTIVE_SHADOW',records=len(records),precommitted_decisions=n,
                 settlement_candidates=counts['SETTLEMENT_CANDIDATE'],rejected_predictions=counts['PREDICTION_REJECTED'],
                 data_quality_failures=counts['CAPTURE_ERROR'],verified_settlements=0,WIN=None,LOSS=None,TRUE_TIE=None,
                 NO_DATA=None,WR=None,EV=None,max_drawdown=None,longest_loss_streak=None,rejection_rate=None,
-                runtime_discrepancies=None,status='INSUFFICIENT_EVIDENCE',
-                limitation='No automatic performance approval: reconcile raw ticks, lineage, registry, payout and runtime settlement first. Missing settlements remain pending, never ties.')
+                runtime_discrepancies=None,execution_policy_context=policy_coverage,status='INSUFFICIENT_EVIDENCE',
+                limitation='No automatic performance approval: reconcile raw ticks, lineage, registry, payout, full ExecutionPolicy context and runtime settlement first. Missing settlements remain pending, never ties.')
 
 
 def capture(journal,samples,interval):
