@@ -62,3 +62,94 @@ def timeline_summary(observations: Iterable[dict[str, Any]]) -> dict[str, Any]:
             "until decisions/ticks can be joined to a proven active-asset interval."
         ),
     }
+
+
+def active_asset_at(
+    observations: Iterable[dict[str, Any]],
+    timestamp_ms: int,
+    *,
+    max_age_ms: int,
+) -> dict[str, Any]:
+    """Causally join a timestamp to the latest prior screen-asset observation.
+
+    Future observations are never used. The caller must preregister max_age_ms;
+    there is intentionally no default because acceptable staleness depends on the
+    capture protocol rather than this helper.
+    """
+    if not isinstance(timestamp_ms, int) or timestamp_ms < 0:
+        raise ValueError("INVALID_QUERY_TIMESTAMP")
+    if not isinstance(max_age_ms, int) or max_age_ms < 0:
+        raise ValueError("INVALID_MAX_AGE")
+
+    by_timestamp: dict[int, set[str]] = {}
+    for row in observations:
+        at_ms = row.get("atMs")
+        ric = row.get("ric")
+        if not isinstance(at_ms, int) or at_ms < 0 or not isinstance(ric, str) or not ric.strip():
+            continue
+        if at_ms > timestamp_ms:
+            continue
+        by_timestamp.setdefault(at_ms, set()).add(ric.strip())
+
+    if not by_timestamp:
+        return {
+            "status": "UNKNOWN_NO_PRIOR_OBSERVATION",
+            "timestamp_ms": timestamp_ms,
+            "ric": None,
+            "observation_at_ms": None,
+            "age_ms": None,
+        }
+
+    at_ms = max(by_timestamp)
+    rics = by_timestamp[at_ms]
+    age_ms = timestamp_ms - at_ms
+    if len(rics) != 1:
+        return {
+            "status": "UNKNOWN_CONFLICT_AT_TIMESTAMP",
+            "timestamp_ms": timestamp_ms,
+            "ric": None,
+            "observation_at_ms": at_ms,
+            "age_ms": age_ms,
+        }
+    ric = next(iter(rics))
+    if age_ms > max_age_ms:
+        return {
+            "status": "UNKNOWN_STALE_OBSERVATION",
+            "timestamp_ms": timestamp_ms,
+            "ric": None,
+            "observation_at_ms": at_ms,
+            "age_ms": age_ms,
+        }
+    return {
+        "status": "KNOWN_CAUSAL_OBSERVATION",
+        "timestamp_ms": timestamp_ms,
+        "ric": ric,
+        "observation_at_ms": at_ms,
+        "age_ms": age_ms,
+    }
+
+
+def join_records_to_active_asset(
+    records: Iterable[dict[str, Any]],
+    observations: Iterable[dict[str, Any]],
+    *,
+    timestamp_field: str,
+    max_age_ms: int,
+) -> list[dict[str, Any]]:
+    """Attach causal asset-join evidence without dropping unknown records."""
+    obs = list(observations)
+    joined: list[dict[str, Any]] = []
+    for record in records:
+        ts = record.get(timestamp_field)
+        if not isinstance(ts, int):
+            evidence = {
+                "status": "UNKNOWN_INVALID_RECORD_TIMESTAMP",
+                "timestamp_ms": ts,
+                "ric": None,
+                "observation_at_ms": None,
+                "age_ms": None,
+            }
+        else:
+            evidence = active_asset_at(obs, ts, max_age_ms=max_age_ms)
+        joined.append({**record, "active_asset_evidence": evidence})
+    return joined

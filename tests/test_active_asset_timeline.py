@@ -1,6 +1,6 @@
 import unittest
 
-from scripts.research.active_asset_timeline import parse_asset_event, timeline_summary
+from scripts.research.active_asset_timeline import active_asset_at, join_records_to_active_asset, parse_asset_event, timeline_summary
 
 
 class ActiveAssetTimelineTest(unittest.TestCase):
@@ -37,6 +37,50 @@ class ActiveAssetTimelineTest(unittest.TestCase):
         self.assertEqual(1, summary["timestamp_regressions"])
         self.assertEqual(10, summary["first_at_ms"])
         self.assertEqual(20, summary["last_at_ms"])
+
+
+    def test_causal_join_never_uses_future_observation(self):
+        observations=[
+            {"atMs": 2000, "ric": "B"},
+        ]
+        result=active_asset_at(observations, 1500, max_age_ms=5000)
+        self.assertEqual("UNKNOWN_NO_PRIOR_OBSERVATION", result["status"])
+        self.assertIsNone(result["ric"])
+
+    def test_causal_join_uses_latest_prior_observation_with_explicit_age_bound(self):
+        observations=[
+            {"atMs": 1000, "ric": "A"},
+            {"atMs": 2000, "ric": "B"},
+        ]
+        before_switch=active_asset_at(observations, 1900, max_age_ms=1000)
+        after_switch=active_asset_at(observations, 2100, max_age_ms=1000)
+        self.assertEqual(("KNOWN_CAUSAL_OBSERVATION","A",900), (before_switch["status"],before_switch["ric"],before_switch["age_ms"]))
+        self.assertEqual(("KNOWN_CAUSAL_OBSERVATION","B",100), (after_switch["status"],after_switch["ric"],after_switch["age_ms"]))
+
+    def test_causal_join_marks_stale_observation_unknown(self):
+        result=active_asset_at([{"atMs":1000,"ric":"A"}], 2501, max_age_ms=1500)
+        self.assertEqual("UNKNOWN_STALE_OBSERVATION", result["status"])
+        self.assertIsNone(result["ric"])
+        self.assertEqual(1501, result["age_ms"])
+
+    def test_conflicting_same_timestamp_assets_are_unknown(self):
+        result=active_asset_at([
+            {"atMs":1000,"ric":"A"},
+            {"atMs":1000,"ric":"B"},
+        ], 1000, max_age_ms=0)
+        self.assertEqual("UNKNOWN_CONFLICT_AT_TIMESTAMP", result["status"])
+        self.assertIsNone(result["ric"])
+
+    def test_join_keeps_unknown_records_instead_of_dropping_them(self):
+        joined=join_records_to_active_asset(
+            [{"ts":500},{"ts":1500},{"bad":"x"}],
+            [{"atMs":1000,"ric":"A"}],
+            timestamp_field="ts",
+            max_age_ms=1000,
+        )
+        self.assertEqual("UNKNOWN_NO_PRIOR_OBSERVATION",joined[0]["active_asset_evidence"]["status"])
+        self.assertEqual("KNOWN_CAUSAL_OBSERVATION",joined[1]["active_asset_evidence"]["status"])
+        self.assertEqual("UNKNOWN_INVALID_RECORD_TIMESTAMP",joined[2]["active_asset_evidence"]["status"])
 
 
 if __name__ == "__main__":
