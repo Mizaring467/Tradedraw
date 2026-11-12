@@ -1,0 +1,28 @@
+{
+  "assets": [
+    "Z-CRY/IDX"
+  ],
+  "audit_git_sha": "4fdb6466d5005499789d801d64916ea9c15421a3",
+  "byte_identical_paths": [],
+  "classification": "BROKER_DEVICE_CAPTURE",
+  "dataset_id": "ds_13d56e36a12c3a0e",
+  "derived_from": [
+    {
+      "path": "loops/r23e_adaptive_audit/window_01/live_samples.jsonl",
+      "relationship": "CANDIDATE_COMPANION_OR_INPUT_NOT_PROVEN_CAUSAL",
+      "sha256": "b5bd2e2f160a23d2f18d7381183b87e12c1ba1509efdf8de9fb38b60e3e8d08d"
+    }
+  ],
+  "end": 1792189556299,
+  "provenance_evidence": [
+    "ts/ric/price content; companion timestamped TradeDraw status with observed APK SHA/account state.",
+    "Producer scripts/validation/live_monitor_r23_autonomous.py:953-963,1465-1495 (timestamp-keyed, buffer-limited, prunes warmup).",
+    "No source-clock contract, complete warmup, or verified historical invocation; not research-approved."
+  ],
+  "quality_status": "VALID_FOR_DIAGNOSTICS_ONLY",
+  "rows": 4324,
+  "sha256": "7ece0d48078e26ea67fea8e2aa048cfe37079752e8d00650535d9463569317e2",
+  "source": "loops/r23e_adaptive_audit/window_01/ticks_live.csv",
+  "start": 1792187873120,
+  "version": 1
+}
