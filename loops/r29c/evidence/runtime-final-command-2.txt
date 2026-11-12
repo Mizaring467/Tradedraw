@@ -1,0 +1,2 @@
+adb -s emulator-5554 forward tcp:8080 tcp:8080
+8080

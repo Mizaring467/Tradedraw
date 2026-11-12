@@ -1,0 +1,218 @@
+--------- beginning of main
+11-11 20:28:11.968  1045  1045 D android.hardware.bluetooth@aidl-impl: BtHostDebugInfo
+11-11 20:28:11.968  1045  1045 D [BT]    : mtk_bt_op: BT_VND_OP_SET_BTHOST
+11-11 20:28:11.971  1617  2220 E HfManager: HfManager::configCalibration sensor = 108 err = 0
+--------- beginning of system
+11-11 20:28:11.971  1786  2969 I ActivityManager: note: ProcessRecord{545bc70 24035:com.milink.service/u0a190} died, saving the exit info
+11-11 20:28:11.972  2837  2837 D DateFormatUtils: clearUserIdCache user id 0
+11-11 20:28:11.972  2837 15713 W MiuiClockController Aod: execute: mRemoveListenerTask
+11-11 20:28:11.972  2837 15713 I MiuiClockController Aod: removeTimeListener, this = com.miui.clock.MiuiClockController@aabc979
+11-11 20:28:11.972  2837  2837 D DozeHost: mWindowAdded = false
+11-11 20:28:11.973  2837  2837 W EventBus: Subscriber to unregister was not registered before: class com.miui.aod.AODUpdatePositionController
+11-11 20:28:11.973  2837  2837 D AODWakeLock: longWakeLock : release from:DozeHost#removeAodView hold:false
+11-11 20:28:11.973  2837  2837 D AODWakeLock: longWakeLock : release after:DozeHost#removeAodView hold:false
+11-11 20:28:11.973  1786  1940 I ActivityManager: Update process exit info for com.milink.service(24035/u10190)
+11-11 20:28:11.973  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:11.974 30763 30763 W libc    : Access denied finding property "persist.vendor.track.malloc.enable"
+11-11 20:28:11.974 30763 30763 W libc    : Access denied finding property "persist.vendor.fd.monitor.enable"
+11-11 20:28:11.976  1162  1712 W libc    : Access denied finding property "ro.vendor.display.max_hdr_luminance"
+11-11 20:28:11.976  1786  1786 W Looper  : Slow dispatch took 107ms main app=system_server main=true group=FOREGROUND h=com.android.server.notification.NotificationManagerService$WorkerHandler c=com.android.server.notification.NotificationManagerService$$ExternalSyntheticLambda14@4718705 m=0
+11-11 20:28:11.976  6320 30765 I HiH_HiDataReadOp: 1600105310|R|I|AppTp:0,AppId=1,id=2,readOpt=HiDataReadOption{sTm=1794373200000,eTm=1794459599999,fltSTm=null,fltETm=null,mdfStm=0,mdfEtm=0,tp=[901],ct=0,sortOdr=1,rTp=0,aliTp=0},extOpt=HiDataReadOp{sequenceDataType=0 needCheckAppAuth=true}
+11-11 20:28:11.977  1786  2853 I ActivityManager: note: ProcessRecord{fe25276 2843:com.android.providers.calendar/u0a89} died, saving the exit info
+11-11 20:28:11.977  6320 10808 I HiH_HiDataBaseManagerChooseUtil: 1600105310|R|I|end,isSensitive:false unlock
+11-11 20:28:11.981  6320 10808 W HiH_HiHlhDtIns: 1600105310|R|W|PrepareRelTmHlhDtStat List=null 
+11-11 20:28:11.981  1786  2309 D ExternalInterface: setUidState, uid = 10089 allow = true
+11-11 20:28:11.981  1786  2309 D MiSensorServiceImpl: PowerKeeperSensor resume iUid:10089 but app has not in Controlled
+11-11 20:28:11.981  6320 10808 I HiH_ListenerManager: 1600105310|R|I|startLChg subList=[1]
+11-11 20:28:11.982  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:11.982  1786  2240 I MiuiNetworkPolicy: removeUidState uid = 10089
+11-11 20:28:11.983  4820  4916 D ForegroundUtils: onUidImportance: UID: 10089 deleted
+11-11 20:28:11.983 23323 23323 D HidDeviceService: handleMessage(): msg.what=8
+11-11 20:28:11.983 23323 23323 D HidDeviceService: unregisterAppUid(): uid=10089
+11-11 20:28:11.983 23323 23323 D HidDeviceService: unregisterAppUid(): caller UID doesn't match user UID
+11-11 20:28:11.983  1786  1889 I NetworkBoostStatusManager: onUidGone uid: 10089
+11-11 20:28:11.983  1786  3108 I SLM-SRV-SLSAppLib: SLM_Ai_Mode EVENT_CHECK_GMAE_AI_MODE_STATUS
+11-11 20:28:11.984  1786  3108 I SLM-SRV-SLSAppLib: SLM_Ai_Mode checkGameAiModeStatus mGameAiModeCloudControl:false mLinkTurboAiModeSwitch:false mGameAiModeInterfaceReady:true mGameStartBattle:false powerMgrGameUid:0
+11-11 20:28:11.984 19540 20062 V ShizukuPlus:BinderSender: Uid 10089 dead
+11-11 20:28:11.985  1786  2310 D ActionExecute: setPkgData uid = 10177 time=3000
+11-11 20:28:11.986  6320 30764 I HiH_HiHlhDataRds: 1600105310|R|I|readAggregateData types = [40011, 40012, 40013, 40002, 40003, 40005, 40004, 47101, 200005921, 40008] ret hiHealthDatas size = 1
+11-11 20:28:11.986  6320 30764 I R_HiH_HiHealthNatApi: 1600105310|R|I|aggregateHiHealthData errorCode=0,HiAggregateOption{sTm=1794373200000,eTm=1794459599999,fltSTm=null,fltETm=null,mdfStm=0,mdfEtm=0,tp=[40011, 40012, 40013, 40002, 40003, 40005, 40004, 47101, 200005921, 40008],aliTp=0,aggTp=1,grpUntTp=3,ct=0},tlTm=52,waitTm=4, executedTm=48,onResultTm=0
+11-11 20:28:11.986  1786  2310 D ActionExecute: thaw uid = 10177 reason=screen on
+11-11 20:28:11.987  6320 10808 I HiH_HiDataInsOp: 1600105310|R|I|execEndTtlTm=472
+11-11 20:28:11.987  1786  1940 I ActivityManager: Update process exit info for com.android.providers.calendar(2843/u10089)
+11-11 20:28:11.988  6320 11568 I HiH_HiSyncControl: 1600105310|R|I|initSptDtPcy sptDtPcyState=true
+11-11 20:28:11.989  1786  2309 D GreezeManager: THAW uid = 10465 pid = [ 5880 7902 ]  reason : adj caller : 1000
+11-11 20:28:11.989  1786  2309 D ExternalInterface: setUidState, uid = 10465 allow = true
+11-11 20:28:11.989  6320 30738 I HiH_HiSyncControl: 1600105310|R|I|startSync hiSyncOption=HiSyncOption{sAct=6,sMtd=2,sScp=0,sDtTp=10004,sMod=2,pushAct=0,sStart=0,sEnd=0,sTp=0,sMnl=0,sDtArea=0,sDtTps=null,IfSync=false,sId=0,sLv=-1},app=1,who=2
+11-11 20:28:11.989  6320 30738 W HiH_HiSyncControl: 1600105310|R|W|ifCanAutoSync basicSyncCondition is false , auto sync action is 6
+11-11 20:28:11.990  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:11.991  6320 10584 I HiH_HiHealthNatApi: 1600105310|R|I|insertHiHealthData code = 0,totalTime = 476,message = true
+11-11 20:28:11.991  6320 10584 I HiH_HiHealthNatApi: 1600105310|R|I|insertHiHealthData end
+11-11 20:28:11.991  6320 11568 W HiH_HiSyncControl: 1600105310|R|W|startInsSptSync CkSyncItvalTm=false
+11-11 20:28:11.991  6320 30765 I HiH_HiHlhDataRds: 1600105310|R|I|rDataByTp sTp=901 rDtSize=2
+11-11 20:28:11.993 10641 11787 I HiH_HiHealthSubscribeManager: 1600105310|R|I|clientOnChg,tp=1,lsz=1
+11-11 20:28:11.995  1786  2333 E HyperSentinel: ->pid:23755,processName:"com.google.android.partnersetup",Rss Memory Size Change 32448kb -> 21076kb
+11-11 20:28:11.998  1786  2973 I PowerHalWrapper: amsBoostStop AMS_BOOST_PACK_SWITCH:true, AMS_BOOST_ACT_SWITCH:false, AMS_BOOST_PROCESS_CREATE:false, AMS_BOOST_PROCESS_CREATE_FOR_GAME:false, AMS_BOOST_HOT_LAUNCH:false 
+11-11 20:28:11.998  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:11.998  1092  1140 I libPowerHal: [mtkPowerHint] hint:22, hold:500, ext:30, ext_hold:1500
+11-11 20:28:11.999  1092  1192 I libPowerHal: [perfLockAcq] idx:3 hdl:191529 hint:22 pid:1092 tid:1092 duration:500 lock_user:vendor.mediatek => ret_hdl:191529
+11-11 20:28:11.999  1092  1192 I libPowerHal: [setClusterFreq] MTKPOWER_HINT_PACK_SWITCH set cpufreq[0] min:1600000 max:-1 cpufreq[1] min:2200000 max:-1 cpufreq[2] min:2200000 max:-1 
+11-11 20:28:12.000  1092  1192 I libPowerHal: [setGPUFreq] MTKPOWER_HINT_PACK_SWITCH user set gpu freq min:62, max:-1
+11-11 20:28:12.000  1092  1192 I libPowerHal: MTKPOWER_HINT_PACK_SWITCH: set gpu opp level max: 0
+11-11 20:28:12.000  1092  1192 I libPowerHal: [setGPUFreq] Soft min/max = (62, 0); Hard min/max = (64, 0)
+11-11 20:28:12.000  1092  1192 I libPowerHal: [setGPUFreq] final min/max = (62, 0)
+11-11 20:28:12.000  1092  1192 I libPowerHal: MTKPOWER_HINT_PACK_SWITCH: set gpu opp level: 62
+11-11 20:28:12.000  1786  2376 D DouyinContentPagePolicy:  setRefreshRate:-1
+11-11 20:28:12.000  1092  1192 I libPowerHal: MTKPOWER_HINT_PACK_SWITCH: set gpu opp level max: 0
+11-11 20:28:12.000  1786  2309 D GreezeManager:  triggerGMSLimitAction allow = falsemGmsMultiUid = -1
+11-11 20:28:12.000  1786  2309 D GreezeCallback: thawedByOther uid=10465 pid=5880
+11-11 20:28:12.001  1092  1192 I libPowerHal: [perfLockRel] hdl:191528, idx:1
+11-11 20:28:12.001  1092  1192 I libPowerHal: [unsetGPUFreq] current min:62, max:0; scn_gpu_min:62, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+11-11 20:28:12.001  1092  1192 I libPowerHal: [setGPUFreq] Soft min/max = (62, 0); Hard min/max = (64, 0)
+11-11 20:28:12.001  1092  1192 I libPowerHal: [setGPUFreq] final min/max = (62, 0)
+11-11 20:28:12.001  1092  1192 I libPowerHal: MTKPOWER_HINT_PACK_SWITCH: set gpu opp level: 62
+11-11 20:28:12.001  1092  1192 I libPowerHal: MTKPOWER_HINT_PACK_SWITCH: set gpu opp level max: 0
+11-11 20:28:12.001  1786  2310 D ActionExecute: setPkgData uid = 10465 time=3000
+11-11 20:28:12.002  1786  2973 I PowerHalWrapper: amsBoostStop AMS_BOOST_PACK_SWITCH:false, AMS_BOOST_ACT_SWITCH:false, AMS_BOOST_PROCESS_CREATE:false, AMS_BOOST_PROCESS_CREATE_FOR_GAME:false, AMS_BOOST_HOT_LAUNCH:false 
+11-11 20:28:12.002  1509  1600 D PQ      : [CRTC_103] [PQ_SERVICE] setRefreshDisplay: event:1, 1 -> 0
+11-11 20:28:12.003  1092  1192 I libPowerHal: [perfLockAcq] idx:6 hdl:191530 hint:30 pid:1092 tid:1092 duration:1500 lock_user:vendor.mediatek => ret_hdl:191530
+11-11 20:28:12.003  1092  1192 I libPowerHal: [PE] MTKPOWER_HINT_EXT_LAUNCH update cmd:2020000, param:31
+11-11 20:28:12.006  6320 10306 I SCUI_ActiveGoalUtil: 1600105310|R|I|get<S5><C1>s configIdList [900200006]
+11-11 20:28:12.006  6320 10306 I HiH_HiHealthNatApi: 1600105310|R|I|taskCt=0 TaskInfo{cTm:2026-11-11 20:28:12:006,method:getSampleConfig,param:HiSplCfgProcOp{splCfgKeyList=[HiSampleConfigKey{tp=9002,cfgId=900200006,scApp=0,scDevTp=0}],ProcTp=0,devUid=null,pkgNm=null}}
+11-11 20:28:12.007  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:12.009  1786  2131 D BroadcastQueue: Logging broadcast for com.android.phone, stopped=false, firstLaunch=false
+11-11 20:28:12.010  1786  2999 W ContextImpl: Calling a method in the system process without a qualified user: android.app.ContextImpl.sendBroadcastMultiplePermissions:1363 com.android.server.TelephonyRegistry.broadcastServiceStateChanged:4305 com.android.server.TelephonyRegistry.notifyServiceStateForPhoneId:1928 com.android.internal.telephony.ITelephonyRegistry$Stub.onTransact:613 android.os.Binder.execTransactInternal:1428 
+11-11 20:28:12.011  1786  2131 D BroadcastQueue: Logging broadcast for com.google.android.googlequicksearchbox, stopped=false, firstLaunch=false
+11-11 20:28:12.011  1786  2131 D BroadcastQueue: Logging broadcast for com.google.android.googlequicksearchbox, stopped=false, firstLaunch=false
+11-11 20:28:12.013  1786  2999 W ContextImpl: Calling a method in the system process without a qualified user: android.app.ContextImpl.sendBroadcastMultiplePermissions:1363 com.android.server.TelephonyRegistry.broadcastServiceStateChanged:4314 com.android.server.TelephonyRegistry.notifyServiceStateForPhoneId:1928 com.android.internal.telephony.ITelephonyRegistry$Stub.onTransact:613 android.os.Binder.execTransactInternal:1428 
+11-11 20:28:12.015  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:12.015  6320 30770 I SCUI_ActiveGoalUtil: 1600105310|R|I|onResult errorCode: 0, data: [HiSampleConfig {id=2,tp=9002,cfgId=900200006,scApp=0,scDevTp=0,cfgDt={"<C1>":10000,"modifiedTime":1},cfgDesp=null,mtDt=null,clntId=5,sStatus=1,mTm=1,devUId=null,pkgNm=null}]
+11-11 20:28:12.020  1786  1786 D BroadcastQueue: Logging broadcast for android, stopped=false, firstLaunch=false
+11-11 20:28:12.021  1786  2969 D MiuiEmbeddingWindow: blacklistedAppRunningOnPhone: package=com.google.android.googlequicksearchboxisNotProjeciton=true isHavingJeppackDisabledConfig=false isRunningOnPhone=true isAppleConnection=false
+11-11 20:28:12.021  1786  2969 D MiuiEmbeddingWindow: MiuiEmbeddingWindowService: updateApplicationInfo for com.google.android.googlequicksearchbox, blacklistedAppRunningOnPhone updated: clear
+11-11 20:28:12.021  2808  2808 D SatelliteController: Satellite for carrier is not supported.
+11-11 20:28:12.021  1786  2969 V GrammaticalInflectionUtils: AttributionSource: android.content.AttributionSource@cec4b1af does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+11-11 20:28:12.021  1045  1045 D android.hardware.bluetooth@aidl-impl: BtHostDebugInfo
+11-11 20:28:12.021  1045  1045 D [BT]    : mtk_bt_op: BT_VND_OP_SET_BTHOST
+11-11 20:28:12.022  1786  2969 I ActivityManager: Posting procStart msg for 0:com.google.android.googlequicksearchbox:search/u0a164
+11-11 20:28:12.022  1786  2969 D ActivityManager: Logging bindService for com.google.android.googlequicksearchbox, stopped=false, firstLaunch=false
+11-11 20:28:12.022  1786  1936 W ActivityManager: Unknown package:com.xiaomi.aiservice
+11-11 20:28:12.023  1032  1032 W zygote64: Waiting for a thread to finish unregistering
+11-11 20:28:12.023  1032  1032 W zygote64: Waiting for a thread to finish unregistering
+11-11 20:28:12.023  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:12.024  1032  1032 I zygote64: PreZygoteFork(): stray_non_movable_objects_.size() = 8
+11-11 20:28:12.025  2808  2808 D SatelliteController: Satellite for carrier is not supported.
+11-11 20:28:12.025 19450 19450 I adbd    : adbd service requested 'shell,v2,TERM=xterm-256color,raw:logcat -d -t 200'
+11-11 20:28:12.025  2808  2808 D SatelliteController: registerForSatelliteModemStateChanged: add Listeners for ModemState
+11-11 20:28:12.025  2808  2808 E SatelliteController: registerForSatelliteModemStateChanged: mSatelliteSessionController is not initialized yet
+11-11 20:28:12.025  2808  2808 E SatelliteController: unregisterForModemStateChanged: mSatelliteSessionController is not initialized yet
+11-11 20:28:12.025  2808  2808 D SatelliteController: unregisterForModemStateChanged: remove Listeners for ModemState
+11-11 20:28:12.026  1102 30766 D RHYEYECARE: timerCallback enter caseId 13, value 255, generation 8415, mGeneration 8415
+11-11 20:28:12.026  1102 30766 D RHYEYECARE: setPCCConfigRhyEyeC rhythmic eye cct 5387 mRhyEyeCoeff:R[r 1.000000, g 0.000000, b 0.000000], G[r 0.000000, g 0.909255, b 0.000000], B[r -0.000000, g 0.000000, b 0.753354]
+11-11 20:28:12.027  1509  1509 D PQ      : [CRTC_103] [PQ_SERVICE] PQService : setColorMatrix3x3[0][0-2](1847    0    0)
+11-11 20:28:12.027  1509  1509 D PQ      : [CRTC_103] [PQ_SERVICE] PQService : setColorMatrix3x3[1][0-2](   0 1701    0)
+11-11 20:28:12.027  1509  1509 D PQ      : [CRTC_103] [PQ_SERVICE] PQService : setColorMatrix3x3[2][0-2](   0    0 1543)
+11-11 20:28:12.027  1509  1509 D PQ      : [CRTC_103] [PQ_SERVICE] Set transition step to 8
+11-11 20:28:12.027  1509  1509 D PQ      : [CRTC_103] [PQ_SERVICE] setRefreshDisplay: event:1, 0 -> 1
+11-11 20:28:12.030  2808  2808 W Settings: Setting airplane_mode_on has moved from android.provider.Settings.System to android.provider.Settings.Global, returning read-only value.
+11-11 20:28:12.031  1786  2333 E HyperSentinel: ->pid:23755,processName:"com.google.android.partnersetup",Rss Memory Size Change 21076kb -> 13892kb
+11-11 20:28:12.031  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:12.032  2808  2808 W Settings: Setting airplane_mode_on has moved from android.provider.Settings.System to android.provider.Settings.Global, returning read-only value.
+11-11 20:28:12.033  1786  1951 I ActivityManager: Killing 23872:com.google.android.setupwizard/u0a234 (adj 945): normal_mem_pressure
+11-11 20:28:12.033  1786  1951 I ActivityManager: note: ProcessRecord{4be51c5 23872:com.google.android.setupwizard/u0a234} is being killed, reason: OTHER KILLS BY SYSTEM, sub-reason: UNKNOWN, message: normal_mem_pressure
+11-11 20:28:12.033  6320 30770 I HiH_HiSampCfgGetOp: 1600105310|R|I|exec eTm=1794446892010,ttlTm=23
+11-11 20:28:12.034  1786  1951 I libc    : kill: send 9 to pid 23872
+11-11 20:28:12.034  1786  1951 I libc    : debug pid reuse, real pid 23872
+11-11 20:28:12.034  2808  2808 W Settings: Setting airplane_mode_on has moved from android.provider.Settings.System to android.provider.Settings.Global, returning read-only value.
+11-11 20:28:12.035  1786  1951 I ActivityManager: Killing 27989:com.google.android.rkpdapp/u0a417 (adj 945): normal_mem_pressure
+11-11 20:28:12.035  1786  1951 I ActivityManager: note: ProcessRecord{1f58da1 27989:com.google.android.rkpdapp/u0a417} is being killed, reason: OTHER KILLS BY SYSTEM, sub-reason: UNKNOWN, message: normal_mem_pressure
+11-11 20:28:12.037  6444  6499 I fkbi    : (REDACTED) Operational mode passed in HotwordConfig is %s
+11-11 20:28:12.038  1076  1153 I libPerfCtl: xgfGetFPS pid:2837 fps:120
+11-11 20:28:12.038  1076  1153 I libPerfCtl: xgfGetFPS pid:24826 fps:-1
+11-11 20:28:12.038  7509  9327 D JavaheapMonitor: Java heap used=3M max=256M, proc: com.lbe.security.miui
+11-11 20:28:12.038  7509  9327 V JavaheapMonitor: Check java heap usage finished! Next check delay: 300000
+11-11 20:28:12.039  6444  6499 I fjyc    : (REDACTED) HDM. Hotword enrollment state : %s.
+11-11 20:28:12.039  6444  6499 I fkba    : (REDACTED) HDM. DefaultPersonalDecisionMaker#getNextAction. Voice match enabled: %b. incomplete enrollment state: %b, screen on: %b, screen locked: %b dsp available: %b
+11-11 20:28:12.039  6444  6499 I fkbk    : (REDACTED) HDM. SharedDecisionMaker#getNextAction for requester %s, mode %s 
+11-11 20:28:12.039  6444  6499 I fkbk    : HDM. #SharedDecisionMaker. NextAction.START
+11-11 20:28:12.040  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:12.046  1393  1393 I MBrainServer: [INFO] MStaticInfoCenter.cpp:870 IsMBrainOff: disable MBrain, dynamic close
+11-11 20:28:12.046  1786  2900 W ActivityManager: pid 1786 system sent binder code 5 with flags 0 to frozen apps and got error -74
+11-11 20:28:12.046  1786  2900 E MBrainServiceWrapperAidl: Cannot call update on mbrain AIDL
+11-11 20:28:12.046  1786  2900 E MBrainServiceWrapperAidl: android.os.RemoteException: Method NotifyExt is unimplemented.
+11-11 20:28:12.046  1786  2900 E MBrainServiceWrapperAidl: 	at vendor.mediatek.hardware.mbrain.IMBrain$Stub$Proxy.NotifyExt(IMBrain.java:329)
+11-11 20:28:12.046  1786  2900 E MBrainServiceWrapperAidl: 	at com.mediatek.mbrainlocalservice.MBrainServiceWrapperAidl$2.run(MBrainServiceWrapperAidl.java:231)
+11-11 20:28:12.046  1786  2900 E MBrainServiceWrapperAidl: 	at android.os.Handler.handleCallback(Handler.java:995)
+11-11 20:28:12.046  1786  2900 E MBrainServiceWrapperAidl: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+11-11 20:28:12.046  1786  2900 E MBrainServiceWrapperAidl: 	at android.os.Looper.loopOnce(Looper.java:267)
+11-11 20:28:12.046  1786  2900 E MBrainServiceWrapperAidl: 	at android.os.Looper.loop(Looper.java:360)
+11-11 20:28:12.046  1786  2900 E MBrainServiceWrapperAidl: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-11 20:28:12.046  1786  2900 D MBrainServiceWrapperAidl: MBrainServiceWrapper notifyEventToNativeService end
+11-11 20:28:12.046  1393  1393 I MBrainServer: [INFO] MStaticInfoCenter.cpp:870 IsMBrainOff: disable MBrain, dynamic close
+11-11 20:28:12.047  1786  2900 W ActivityManager: pid 1786 system sent binder code 5 with flags 0 to frozen apps and got error -74
+11-11 20:28:12.047  1786  2900 E MBrainServiceWrapperAidl: Cannot call update on mbrain AIDL
+11-11 20:28:12.047  1786  2900 E MBrainServiceWrapperAidl: android.os.RemoteException: Method NotifyExt is unimplemented.
+11-11 20:28:12.047  1786  2900 E MBrainServiceWrapperAidl: 	at vendor.mediatek.hardware.mbrain.IMBrain$Stub$Proxy.NotifyExt(IMBrain.java:329)
+11-11 20:28:12.047  1786  2900 E MBrainServiceWrapperAidl: 	at com.mediatek.mbrainlocalservice.MBrainServiceWrapperAidl$2.run(MBrainServiceWrapperAidl.java:231)
+11-11 20:28:12.047  1786  2900 E MBrainServiceWrapperAidl: 	at android.os.Handler.handleCallback(Handler.java:995)
+11-11 20:28:12.047  1786  2900 E MBrainServiceWrapperAidl: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+11-11 20:28:12.047  1786  2900 E MBrainServiceWrapperAidl: 	at android.os.Looper.loopOnce(Looper.java:267)
+11-11 20:28:12.047  1786  2900 E MBrainServiceWrapperAidl: 	at android.os.Looper.loop(Looper.java:360)
+11-11 20:28:12.047  1786  2900 E MBrainServiceWrapperAidl: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-11 20:28:12.047  1786  2900 D MBrainServiceWrapperAidl: MBrainServiceWrapper notifyEventToNativeService end
+11-11 20:28:12.048  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:12.050  1786  1951 I libc    : kill: send 9 to pid 27989
+11-11 20:28:12.050  1786  1951 I libc    : debug pid reuse, real pid 27989
+11-11 20:28:12.051  1786  1951 I ActivityManager: Killing 24283:com.google.android.apps.messaging/u0a167 (adj 925): normal_mem_pressure
+11-11 20:28:12.051  1786  1951 I ActivityManager: note: ProcessRecord{a5df2b9 24283:com.google.android.apps.messaging/u0a167} is being killed, reason: OTHER KILLS BY SYSTEM, sub-reason: UNKNOWN, message: normal_mem_pressure
+11-11 20:28:12.051  1786  1951 I libc    : kill: send 9 to pid 24283
+11-11 20:28:12.051  1786  1951 I libc    : debug pid reuse, real pid 24283
+11-11 20:28:12.056  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:12.057  1057  1423 I HfLooper: sensor light = 3.000000
+11-11 20:28:12.058  1509  2398 D AALService: [CRTC_103] onALIChanged: 0 -> 3
+11-11 20:28:12.058  1032  1032 D Zygote  : Forked child process 30775
+11-11 20:28:12.060  1786  1936 D MiuiProcessPolicyManager: promote com.google.android.googlequicksearchbox:search maxAdj to svcb  , maxProcState to + PER 
+11-11 20:28:12.061  1786  1936 I ActivityManager: Start proc 30775:com.google.android.googlequicksearchbox:search/u0a164 for service {com.google.android.googlequicksearchbox/com.google.frameworks.client.data.android.server.tiktok.assistant.SearchProcessEndpointService} caller=com.google.android.googlequicksearchbox
+11-11 20:28:12.061  1786  1936 I ActivityManager: ProcessObserver broadcast disabled
+11-11 20:28:12.064  1786  2999 W ContextImpl: Calling a method in the system process without a qualified user: android.app.ContextImpl.sendBroadcastMultiplePermissions:1363 com.android.server.TelephonyRegistry.broadcastServiceStateChanged:4320 com.android.server.TelephonyRegistry.notifyServiceStateForPhoneId:1928 com.android.internal.telephony.ITelephonyRegistry$Stub.onTransact:613 android.os.Binder.execTransactInternal:1428 
+11-11 20:28:12.065  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:12.073  1786  2309 D GreezeManager: iso uid:10465 p:{8093, 8424} :false
+11-11 20:28:12.073  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:12.073  2837 15713 D MiuiClockController Aod: unRegister package broadcast
+11-11 20:28:12.077  1786  2309 W ContextImpl: Calling a method in the system process without a qualified user: android.app.ContextImpl.sendOrderedBroadcast:1477 android.app.ContextImpl.sendOrderedBroadcast:1451 com.miui.server.greeze.GreezeManagerService$27.run:4168 android.os.Handler.handleCallback:995 android.os.Handler.dispatchMessage:103 
+11-11 20:28:12.077  1509  1600 D PQ      : [CRTC_103] [PQ_SERVICE] setRefreshDisplay: event:1, 1 -> 0
+11-11 20:28:12.079 10132 10147 I StepProvider: uid:10410, packageName:com.huawei.health
+11-11 20:28:12.081  2808  3070 D NetworkSelfRecovery: processServiceStateChangeEvent phoneId=0
+11-11 20:28:12.081  1162  1162 D CompositionEngine: AodOverrideCEHelper 1 setEnabled
+11-11 20:28:12.082  2808  3637 D SelfStudyController: handleMessage msg.what is 1027
+11-11 20:28:12.082  2808  3629 D ModemDFS: processServiceStateChangeEvent phoneId=0
+11-11 20:28:12.082  2808  3629 D ModemDFS: newVoiceReg:0,oldVoiceReg=0
+11-11 20:28:12.082  2808  3627 D MiuiTelephonyDFS: msg.what = 1
+11-11 20:28:12.082  2808  3627 D MiSight::  constructEvent id=915100002
+11-11 20:28:12.082  2808 16120 D NetworkMetricsController: processServiceStateChangeEvent phoneId=0
+11-11 20:28:12.082  2808 16120 D NetworkMetricsController: newRat:13,oldRat:13,mIsFeatureEnable:true
+11-11 20:28:12.082  2808 16129 D NetworkSpeedTracker: processServiceStateChangeEvent phoneId=0
+11-11 20:28:12.083  2808  3627 D MiSight::  sendEvent id=915100002
+11-11 20:28:12.083  2808  3627 D MiSightJni: MiSight: Java_com_miui_misight_MiSight_nativeSendEvent enter called. '{"fromRAT":13,"toRAT":13}'
+11-11 20:28:12.083  2808  3627 D MiEvent : MiEvent: this 0x70f1332df0, paylod=0xb4000073d3765b30
+11-11 20:28:12.083  2808  3627 D MiEvent : flatten EventId 915100002 -t 1794446892 -paraList {"fromRAT":13,"toRAT":13}
+11-11 20:28:12.083  1410  1457 I misight : OnEvent EventPrivacyCompliance event=915100002
+11-11 20:28:12.083  1410  1457 D misight : ProcessEvent devVersion==OS3.0.10.0.WNLMIXM,faultLevel=2,prv=3 region=eea
+11-11 20:28:12.083  1410  1457 I misight : OnEvent EventStorageManager event=915100002,3
+11-11 20:28:12.083  1410  1457 D misight : ProcessNewDayEvent event happen time 1794446892, last=1794446891,start time=1794373200,next day =1794459600, interval=14817
+11-11 20:28:12.083  1410  1457 D misight : Execute start execute sql /data/miuilog/misight/event.db:select id,event_id,daily_cnt,over_cnt,hour_cnt,next_expire_time,last_happen_time,last_log_time from event_daily where event_id = '915100002' limit 1
+11-11 20:28:12.083  1410  1457 D misight : DetectDropByTime event 915100002 parser maxCnt=200 lastTime=1794446614 same=0, overCnt=2285,dailyCnt=84,hourCnt=7
+11-11 20:28:12.083  1410  1457 I misight : DetectDropEvent event 915100002 over hour cnt drop it, hourCnt=8 halfCnt=3, maxCnt=200 punishSecond=547,space=278
+11-11 20:28:12.083  1410  1457 D misight : Execute start execute sql /data/miuilog/misight/event.db:update event_daily set  daily_cnt=84, hour_cnt=7, next_expire_time=1794448383, over_cnt=2286, last_happen_time=1794446614, last_log_time=0  where id = '2'
+11-11 20:28:12.083  1051  1655 I android.hardware.graphics.composer@3.2-service: Sensor: notify citsensorservice to trigger cwb
+11-11 20:28:12.083  1617  2213 I libsensor-frameBufferManager: request dump start
+11-11 20:28:12.084  1617  2213 D libcomposer_ext: ClientImplAidl::getDispDump(), dpy 1, dst (160, 120), dump_point 1, release_fence -1
+11-11 20:28:12.085  1410  1457 I misight : OnEvent EventInfoPack event 915100002
+11-11 20:28:12.086  1051  1051 D libcomposer_ext: DeviceImplAidl::syncPerform(14), client_handle: 1
+11-11 20:28:12.086  1051  1051 D libcomposer_ext: DeviceImplAidl::DeviceClientContextAidl::ParseGetDispDump()
+11-11 20:28:12.086  1051  1051 D libcomposer_ext: DeviceImplAidl::ParseGetDispDump(), dpy 1, dst (160, 120), dump_point 1
+11-11 20:28:12.086  1051  1051 I hwcomposer: [HWC] getDispDump(), dpy 1, (822,7,982,127), (160, 120), (1, 2), (-1), (-1), (0xb400006ea5417290)  
+11-11 20:28:12.086  1051  1051 I hwcomposer: [DRMDEV] isSupportWbParams(), id_crtc 103, id_connector 34, dump_point 1, src(160, 120), dst(160, 120), config 2  
+11-11 20:28:12.086  1051  1051 E hwcomposer: [DRMDEV] isSupportWbParams(), disp(1220, 2712)  
+11-11 20:28:12.086  1051  1051 I hwcomposer: [DISP_DUMP] setDumpBuf(), dpy(0), src(822, 7, 982, 127), dst(160, 120), (1, 2), -1, (-1), (0xb400006ea5417290)  
+11-11 20:28:12.086  1051  1051 I hwcomposer: [HWC] (0)fire a callback of refresh to SF[9]  

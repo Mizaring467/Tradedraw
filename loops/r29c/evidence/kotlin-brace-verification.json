@@ -1,0 +1,62 @@
+[
+  {
+    "path": "research/src/test/java/com/example/tradedraw/ReplayBacktestTest.kt",
+    "literal_counts": [
+      121,
+      121
+    ],
+    "baseline_literal_counts": [
+      93,
+      93
+    ],
+    "verification": "Literal balance and clean compiler PASS"
+  },
+  {
+    "path": "research/src/test/java/com/example/tradedraw/SettlementParityTest.kt",
+    "literal_counts": [
+      16,
+      16
+    ],
+    "baseline_literal_counts": [
+      0,
+      0
+    ],
+    "verification": "Literal balance and clean compiler PASS"
+  },
+  {
+    "path": "app/src/main/java/com/example/tradedraw/ProspectivePredictionExport.kt",
+    "literal_counts": [
+      2,
+      2
+    ],
+    "baseline_literal_counts": [
+      0,
+      0
+    ],
+    "verification": "Literal balance and clean compiler PASS"
+  },
+  {
+    "path": "app/src/main/java/com/example/tradedraw/TradeDrawHttpBridge.kt",
+    "literal_counts": [
+      344,
+      343
+    ],
+    "baseline_literal_counts": [
+      343,
+      342
+    ],
+    "verification": "Clean Kotlin compiler PASS; existing literal imbalance unchanged"
+  },
+  {
+    "path": "app/src/test/java/com/example/tradedraw/ProspectivePredictionExportTest.kt",
+    "literal_counts": [
+      3,
+      3
+    ],
+    "baseline_literal_counts": [
+      0,
+      0
+    ],
+    "verification": "Literal balance and clean compiler PASS"
+  }
+]

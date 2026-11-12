@@ -1,0 +1,2 @@
+
+TIMEOUT: battery unavailable after ADB transport stalled
