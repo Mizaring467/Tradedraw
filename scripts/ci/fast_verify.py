@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -31,6 +32,11 @@ from typing import Iterable, Sequence
 PROJECT_RE = re.compile(r"""project\(\s*["']:([^"']+)["']\s*\)""")
 ANDROID_PLUGIN_RE = re.compile(r"libs\.plugins\.android\.(?:application|library)")
 JVM_PLUGIN_RE = re.compile(r"libs\.plugins\.kotlin\.jvm")
+
+PYTHON_TIMEOUT_SEC = 180
+REPLAY_TIMEOUT_SEC = 120
+GRADLE_FAST_TIMEOUT_SEC = 600
+GRADLE_FULL_TIMEOUT_SEC = 900
 
 IGNORED_PREFIXES = (
     ".git/",
@@ -293,19 +299,55 @@ def verification_environment(repo: Path) -> dict[str, str]:
     return env
 
 
+def _terminate_process_group(proc: subprocess.Popen[bytes] | subprocess.Popen[str]) -> None:
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        return
+
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait(timeout=3)
+
+
 def run_command(
     repo: Path,
     command: Sequence[str],
     label: str,
     *,
     env: dict[str, str] | None = None,
+    timeout_s: float | None = None,
 ) -> None:
     printable = " ".join(shlex.quote(part) for part in command)
-    print(f"\n>>> [{label}] {printable}", flush=True)
-    proc = subprocess.run(command, cwd=repo, env=env)
-    if proc.returncode != 0:
-        raise SystemExit(f"{label} failed with exit code {proc.returncode}")
+    timeout_text = f" timeout={timeout_s:g}s" if timeout_s is not None else ""
+    print(f"\n>>> [{label}] {printable}{timeout_text}", flush=True)
 
+    kwargs: dict[str, object] = {"cwd": repo, "env": env}
+    if os.name != "nt":
+        kwargs["start_new_session"] = True
+    proc = subprocess.Popen(command, **kwargs)
+    try:
+        returncode = proc.wait(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        _terminate_process_group(proc)
+        raise SystemExit(f"{label} timed out after {timeout_s:g}s")
+
+    if returncode != 0:
+        raise SystemExit(f"{label} failed with exit code {returncode}")
 
 def replay_command(repo: Path) -> list[str] | None:
     fixture = canonical_replay_fixture(repo)
@@ -377,18 +419,26 @@ def execute_plan(
             [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
             "python",
             env=env,
+            timeout_s=PYTHON_TIMEOUT_SEC,
         )
 
     gradle = gradle_command(plan, cold=cold)
     if gradle:
-        run_command(repo, gradle, "gradle", env=env)
+        gradle_timeout = GRADLE_FULL_TIMEOUT_SEC if plan.full else GRADLE_FAST_TIMEOUT_SEC
+        run_command(repo, gradle, "gradle", env=env, timeout_s=gradle_timeout)
         if plan.full:
             enforce_full_test_summary(repo)
 
     if plan.run_replay:
         command = replay_command(repo)
         if command:
-            run_command(repo, command, "replay-smoke", env=env)
+            run_command(
+                repo,
+                command,
+                "replay-smoke",
+                env=env,
+                timeout_s=REPLAY_TIMEOUT_SEC,
+            )
 
 
 def parse_args() -> argparse.Namespace:

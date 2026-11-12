@@ -150,5 +150,29 @@ class FastVerifyTest(unittest.TestCase):
         self.assertIn(str(self.repo / "validation_engine"), env["PYTHONPATH"])
 
 
+    def test_run_command_timeout_returns_promptly(self):
+        import time
+        started = time.monotonic()
+        with self.assertRaises(SystemExit) as ctx:
+            fast_verify.run_command(
+                self.repo,
+                [
+                    sys.executable,
+                    "-c",
+                    "import time; time.sleep(5)",
+                ],
+                "timeout-probe",
+                timeout_s=0.1,
+            )
+        self.assertIn("timed out", str(ctx.exception))
+        self.assertLess(time.monotonic() - started, 2.0)
+
+    def test_timeout_constants_bound_long_running_gates(self):
+        self.assertEqual(180, fast_verify.PYTHON_TIMEOUT_SEC)
+        self.assertEqual(120, fast_verify.REPLAY_TIMEOUT_SEC)
+        self.assertEqual(600, fast_verify.GRADLE_FAST_TIMEOUT_SEC)
+        self.assertEqual(900, fast_verify.GRADLE_FULL_TIMEOUT_SEC)
+
+
 if __name__ == "__main__":
     unittest.main()
