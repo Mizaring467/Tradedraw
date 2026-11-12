@@ -197,9 +197,11 @@ class ReplayBacktestTest {
         strategy: AutoTradeStrategy,
         subMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE
     ): List<SimulatedTrade> {
-        // Independent per-asset diagnostic portfolios; never feed another asset into candle/adaptive state.
-        val groups = ticks.groupBy { it.ric }
-        if (groups.size > 1) return groups.values.flatMap { runBacktestOnStrategy(it, strategy, subMode) }.sortedBy { it.timestamp }
+        // Mixed-asset files do not encode which broker tab was active at each timestamp.
+        // Treating each asset as an independent portfolio bypasses production's global
+        // single-flight semantics and can over-count trades. Fail closed until a causal
+        // active-asset timeline is part of the research dataset.
+        ReplayResearchGuards.requireSingleActiveAsset(ticks.map { it.ric })
         if (ticks.isEmpty()) return emptyList()
         var cooldownUntilTs = 0L
         val cooldownMs = if (subMode == AutonomousSubMode.YOLO) YOLO_COOLDOWN_MS else CONSERVATIVE_COOLDOWN_MS
