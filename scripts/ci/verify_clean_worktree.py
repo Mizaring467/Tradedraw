@@ -13,6 +13,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -117,6 +118,40 @@ def parse_gradle_test_results(test_results_dir: str, *, multi_module: bool = Fal
         "time_seconds": round(total_time, 2),
         "failed_tests": failed_test_names,
     }
+
+
+VERIFICATION_INPUT_PREFIXES = (
+    "scripts/",
+    "tests/",
+    "validation_engine/",
+    "data/",
+    "datasets/",
+    "experiments/",
+    ".github/",
+    "gradle/",
+)
+
+
+def discover_gradle_module_prefixes(repo_root: str) -> Tuple[str, ...]:
+    """Return top-level Gradle module prefixes declared in settings.gradle.kts."""
+    settings_path = os.path.join(repo_root, "settings.gradle.kts")
+    if not os.path.isfile(settings_path):
+        return tuple()
+    with open(settings_path, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    names = set()
+    for match in re.finditer(r"include\(([^)]*)\)", text):
+        names.update(re.findall(r'["\']:([^"\']+)["\']', match.group(1)))
+    return tuple(sorted(f"{name}/" for name in names))
+
+
+def should_copy_untracked(rel_path: str, module_prefixes: Tuple[str, ...]) -> bool:
+    """Whether an untracked path can affect build/test/research reproducibility."""
+    normalized = rel_path.replace("\\", "/").lstrip("./")
+    if not normalized or "/build/" in f"/{normalized}/" or "__pycache__" in normalized:
+        return False
+    prefixes = module_prefixes + VERIFICATION_INPUT_PREFIXES
+    return normalized.startswith(prefixes)
 
 
 def verify_repo_cleanliness(repo_root: str) -> Dict[str, Any]:
@@ -301,24 +336,33 @@ def run_worktree_verification(
             shutil.copy2(local_props_src, local_props_dst)
             print(f"[FRENTE G] local.properties copiado al worktree limpio.")
 
-        # Si include_uncommitted está activo, propagar archivos no trackeados de código/tests
+        # Si include_uncommitted está activo, propagar inputs no trackeados de todos los módulos.
+        # git stash create no incluye untracked; omitirlos produjo falsos verdes tras la modularización.
         if include_uncommitted:
-            code, status_out, _ = run_cmd(["git", "status", "--porcelain"], cwd=repo_root)
+            module_prefixes = discover_gradle_module_prefixes(repo_root)
+            code, status_out, _ = run_cmd(
+                ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                cwd=repo_root,
+            )
             untracked_copied = 0
             for line in status_out.splitlines():
-                if line.startswith("?? "):
-                    rel_path = line[3:].strip()
-                    src_full = os.path.join(repo_root, rel_path)
-                    dst_full = os.path.join(worktree_dir, rel_path)
-                    if any(rel_path.startswith(prefix) for prefix in ["app/", "scripts/", "data/"]):
-                        if os.path.isdir(src_full):
-                            shutil.copytree(src_full, dst_full, dirs_exist_ok=True)
-                        elif os.path.isfile(src_full):
-                            os.makedirs(os.path.dirname(dst_full), exist_ok=True)
-                            shutil.copy2(src_full, dst_full)
-                        untracked_copied += 1
+                if not line.startswith("?? "):
+                    continue
+                rel_path = line[3:].strip()
+                if not should_copy_untracked(rel_path, module_prefixes):
+                    continue
+                src_full = os.path.join(repo_root, rel_path)
+                dst_full = os.path.join(worktree_dir, rel_path)
+                if os.path.isdir(src_full):
+                    shutil.copytree(src_full, dst_full, dirs_exist_ok=True)
+                elif os.path.isfile(src_full):
+                    os.makedirs(os.path.dirname(dst_full), exist_ok=True)
+                    shutil.copy2(src_full, dst_full)
+                else:
+                    continue
+                untracked_copied += 1
             if untracked_copied > 0:
-                print(f"[FRENTE G] {untracked_copied} rutas no trackeadas propagadas al worktree de prueba.")
+                print(f"[FRENTE G] {untracked_copied} inputs no trackeados propagados al worktree de prueba.")
 
         # 3. Ejecutar Gradle testDebugUnitTest dentro del worktree
         if os.name == "nt":
