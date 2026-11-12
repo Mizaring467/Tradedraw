@@ -179,4 +179,74 @@ class BinomoWebSocketClientTest {
         assertEquals(0.0275f, tick2.smoothedVelocity, 0.001f)
         assertTrue("La velocidad suavizada debe retener inercia positiva a pesar de tick plano", tick2.smoothedVelocity > 0f)
     }
+
+    @Test
+    fun testPhoenixEndpointCannotBecomeQuoteFeed() {
+        val phoenix = "wss://ws.binomo.com/?v=2&vsn=2.0.0"
+        assertEquals(
+            BinomoWebSocketClient.DEFAULT_QUOTE_SOCKET_URL,
+            BinomoWebSocketClient.resolveQuoteSocketEndpoint(phoenix)
+        )
+        assertFalse(BinomoWebSocketClient.isQuoteSocketEndpoint(phoenix))
+    }
+
+    @Test
+    fun testKnownQuoteEndpointIsAccepted() {
+        val quote = "wss://as.binomo.com/"
+        assertEquals(
+            quote,
+            BinomoWebSocketClient.resolveQuoteSocketEndpoint(quote)
+        )
+        assertTrue(BinomoWebSocketClient.isQuoteSocketEndpoint(quote))
+    }
+
+    @Test
+    fun testQuoteSocketRequestMatchesBinomoWebContract() {
+        val request = BinomoWebSocketClient.buildQuoteSocketRequest(
+            configuredEndpoint = "wss://ws.binomo.com/?v=2&vsn=2.0.0",
+            cookieHeader = "authtoken=fake; device_id=fake-device",
+            userAgent = "Fake-WebView-UA"
+        )
+
+        // OkHttp represents ws/wss Request URLs as http/https internally.
+        assertEquals("https://as.binomo.com/", request.url.toString())
+        assertEquals("https://binomo.com", request.header("Origin"))
+        assertEquals(
+            "authtoken=fake; device_id=fake-device",
+            request.header("Cookie")
+        )
+        assertEquals("Fake-WebView-UA", request.header("User-Agent"))
+
+        // Browser quote socket cannot set these native-app-only headers.
+        assertNull(request.header("Authorization-Version"))
+        assertNull(request.header("Authorization-Token"))
+        assertNull(request.header("Device-Id"))
+        assertNull(request.header("Device-Type"))
+        assertNull(request.header("authtoken"))
+    }
+
+    @Test
+    fun testReconnectRequestMatchesBinomoWebContract() {
+        val payload = JSONObject(BinomoWebSocketClient.buildReconnectRequestPayload())
+        assertEquals("subscribe", payload.getString("action"))
+        assertEquals("reconnect_request", payload.getString("event_type"))
+        assertEquals(2, payload.length())
+    }
+
+    @Test
+    fun testQuoteSubscribePayloadMatchesBinomoWebContract() {
+        val payload = JSONObject(
+            BinomoWebSocketClient.buildQuoteSubscribePayload(
+                listOf("Z-CRY/IDX", "ETHUSD-OTC")
+            )
+        )
+        assertEquals("subscribe", payload.getString("action"))
+        val rics = payload.getJSONArray("rics")
+        assertEquals(2, rics.length())
+        assertEquals("Z-CRY/IDX", rics.getString(0))
+        assertEquals("ETHUSD-OTC", rics.getString(1))
+        assertFalse(payload.has("topic"))
+        assertFalse(payload.has("event"))
+    }
+
 }

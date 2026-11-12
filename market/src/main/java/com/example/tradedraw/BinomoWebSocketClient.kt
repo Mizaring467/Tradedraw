@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
+import android.webkit.WebSettings
 import okhttp3.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -36,7 +37,7 @@ class BinomoWebSocketClient(
     private val prefs = context.getSharedPreferences("TradeDraw_WSConfig", Context.MODE_PRIVATE)
 
     var wsUrl: String
-        get() = credentialProvider.getEndpointUrl().ifBlank { "wss://ws.binomo.com/" }
+        get() = credentialProvider.getEndpointUrl().ifBlank { DEFAULT_QUOTE_SOCKET_URL }
         set(value) = credentialSink.setEndpointUrl(value.trim())
 
     var activeAsset: String
@@ -177,8 +178,6 @@ class BinomoWebSocketClient(
                     put("rics", JSONArray().apply { put(activeAsset); put(clean) })
                 }.toString()
             )
-            ws.send(phoenixJoin("asset:$clean", JSONObject()))
-            ws.send(phoenixJoin("rates", JSONObject().put("ric", clean)))
             Log.i(TAG, "Diagnostico multi-RIC: suscrito $clean junto a $activeAsset")
             return true
         } catch (e: Exception) {
@@ -477,15 +476,6 @@ class BinomoWebSocketClient(
         }
     }
 
-    /** Contador de referencias `ref` de Phoenix Channels (1..N, nunca 0). */
-    private var phoenixRef = 0
-
-    private fun nextRef(): Int {
-        phoenixRef++
-        if (phoenixRef <= 0) phoenixRef = 1
-        return phoenixRef
-    }
-
     private var reconnectAttempts = 0
     private val MAX_RECONNECT_DELAY_MS = 15000L
 
@@ -528,88 +518,47 @@ class BinomoWebSocketClient(
         if (isConnectedFlag.get() || isConnecting.get()) return
 
         isConnecting.set(true)
-        updateState(WebSocketState.CONNECTING, "Conectando a $wsUrl")
+        updateState(WebSocketState.CONNECTING, "Conectando a feed de cotizaciones Binomo")
 
         try {
-            var targetUrl = wsUrl
-            val token = authToken
-            val devId = deviceId
+            val cookies = cookieHeader
 
-            // Phoenix Channels exige los parámetros de handshake v2 en la query.
-            // El WebView de Binomo los usa (wss://ws.binomo.com/?v=2&vsn=2.0.0):
-            // sin ellos el servidor acepta el socket pero no emite ningún canal.
-            if (!targetUrl.contains("vsn=")) {
-                val sep = if (targetUrl.contains("?")) "&" else "?"
-                targetUrl = "$targetUrl${sep}v=2&vsn=2.0.0"
+            if (cookies.isBlank()) {
+                isConnecting.set(false)
+                updateState(WebSocketState.UNAUTHORIZED, "Falta sesión Web de Binomo")
+                Log.w(TAG, "No se inicia quote feed: faltan cookies de sesión Web")
+                return
             }
 
-            if (token.isNotEmpty() && !targetUrl.contains("authtoken=")) {
-                val sep = if (targetUrl.contains("?")) "&" else "?"
-                targetUrl = "$targetUrl${sep}authtoken=$token"
-            }
-
-            val cookies = if (cookieHeader.isNotEmpty()) cookieHeader else if (token.isNotEmpty()) "authtoken=$token" else ""
-            val reqBuilder = Request.Builder()
-                .url(targetUrl)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36")
-                .header("Origin", "https://binomo.com")
-
-            if (cookies.isNotEmpty()) {
-                reqBuilder.header("Cookie", cookies)
-            }
-            if (token.isNotEmpty()) {
-                reqBuilder.header("authtoken", token)
-            }
-            if (devId.isNotEmpty()) {
-                reqBuilder.header("device-id", devId)
-            }
-
-            val request = reqBuilder.build()
+            val request = buildQuoteSocketRequest(
+                configuredEndpoint = wsUrl,
+                cookieHeader = cookies,
+                userAgent = WebSettings.getDefaultUserAgent(context)
+            )
+            val targetUrl = request.url.toString()
 
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     isConnecting.set(false)
                     isConnectedFlag.set(true)
                     reconnectAttempts = 0
-                    updateState(WebSocketState.CONNECTED, "Conexión activa con broker")
-                    Log.d(TAG, "WebSocket conectado exitosamente: $wsUrl")
-
-                    // Suscripción al activo configurado (ej. Z-CRY/IDX)
+                    updateState(WebSocketState.CONNECTED, "Quote feed conectado")
+                    Log.d(TAG, "Quote WebSocket conectado: " + sanitizeEndpointForLog(targetUrl))
+                    subscribeToReconnectRequest(webSocket)
                     subscribeToAsset(webSocket, activeAsset)
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     rawSocketMessages++
                     recordRawFrame(text)
-                    // Traza de los primeros frames crudos: sin esto es imposible distinguir
-                    // "el servidor no emite" de "emite en un formato que no parseamos".
                     if (rawSocketMessages <= 10) {
-                        Log.d(TAG, "Frame WS crudo #$rawSocketMessages: ${text.take(300)}")
-                    }
-                    // Heartbeat de Phoenix v2: `[join_ref, ref, "phoenix", "heartbeat", {}]`.
-                    // El cliente DEBE responder con phx_reply; si no, el servidor cierra el
-                    // canal por timeout y deja de emitir cotizaciones.
-                    if (text.contains("heartbeat")) {
-                        val ref = Regex(""""ref"\s*:\s*"?(\d+)"""")
-                            .find(text)?.groupValues?.getOrNull(1)
-                            ?: Regex("""(?:\[|,)"(\d+)","?phoenix""").find(text)?.groupValues?.getOrNull(1)
-                        if (ref != null) {
-                            webSocket.send(
-                                JSONArray().apply {
-                                    put(JSONObject.NULL)
-                                    put(ref)
-                                    put("phoenix")
-                                    put("phx_reply")
-                                    put(JSONObject().put("status", "ok").put("response", JSONObject()))
-                                }.toString()
-                            )
-                        }
+                        Log.d(TAG, "Frame quote WS crudo #" + rawSocketMessages + ": " + text.take(300))
                     }
                     processIncomingMessage(text, source = "socket")
                 }
 
                 override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                    Log.d(TAG, "WebSocket cerrando: code=$code, reason=$reason")
+                    Log.d(TAG, "Quote WebSocket cerrando: code=" + code + ", reason=" + reason)
                     webSocket.close(1000, null)
                 }
 
@@ -617,7 +566,8 @@ class BinomoWebSocketClient(
                     isConnecting.set(false)
                     isConnectedFlag.set(false)
                     desconexiones++
-                    updateState(WebSocketState.DISCONNECTED, "Cerrado: $reason")
+                    val detail = if (reason.isBlank()) "(sin razón)" else reason
+                    updateState(WebSocketState.DISCONNECTED, "Cerrado: " + code + " " + detail)
                     scheduleReconnect()
                 }
 
@@ -626,13 +576,18 @@ class BinomoWebSocketClient(
                     isConnectedFlag.set(false)
                     desconexiones++
                     val errorMsg = t.message ?: "Fallo de red"
-                    val is401 = response?.code == 401 || errorMsg.contains("401")
-                    if (is401) {
-                        Log.w(TAG, "Fallo WebSocket 401 Unauthorized: Requiere token de sesión de Binomo")
-                        updateState(WebSocketState.UNAUTHORIZED, "401 Unauthorized: Requiere Token/Login de Binomo")
+                    val responseCode = response?.code
+                    val isUnauthorized = responseCode == 401 || responseCode == 403 ||
+                        errorMsg.contains("401") || errorMsg.contains("403")
+                    if (isUnauthorized) {
+                        Log.w(TAG, "Quote feed no autorizado: HTTP=" + (responseCode ?: -1))
+                        updateState(
+                            WebSocketState.UNAUTHORIZED,
+                            "Sesión Binomo no autorizada; vuelve a vincularla"
+                        )
                         return
                     }
-                    Log.w(TAG, "Fallo en conexión WebSocket: $errorMsg")
+                    Log.w(TAG, "Fallo en quote WebSocket: HTTP=" + (responseCode ?: -1) + ", " + errorMsg)
                     updateState(WebSocketState.ERROR, errorMsg)
                     scheduleReconnect()
                 }
@@ -640,65 +595,41 @@ class BinomoWebSocketClient(
         } catch (e: Exception) {
             isConnecting.set(false)
             isConnectedFlag.set(false)
-            Log.e(TAG, "Excepción al iniciar conexión WebSocket", e)
+            Log.e(TAG, "Excepción al iniciar quote WebSocket", e)
             updateState(WebSocketState.ERROR, e.message)
             scheduleReconnect()
         }
     }
 
     /**
-     * Suscripción al activo.
+     * Suscripción al App Socket de cotizaciones.
      *
-     * Hechos verificados sobre el backend de Binomo (as.binomo.com y ws.binomo.com
-     * resuelven a las MISMAS IPs Cloudflare, es el mismo servicio):
-     *
-     * - El socket de cotizaciones espera `{"action":"subscribe","rics":["RIC"]}`:
-     *   clave **`rics` en plural**, array de STRINGS. La forma previa
-     *   `{"action":"subscribe","data":[{"ric":...}]}` no la entiende: el servidor
-     *   acepta la conexión y descarta el mensaje sin cerrarla. Ese es exactamente
-     *   el síntoma "conecta pero nunca llega un tick".
-     * - El socket de trading habla Phoenix Channels v2 (`?v=2&vsn=2.0.0`), cuyo
-     *   serializador JSON v2 usa **arrays posicionales**, no objetos:
-     *   `[join_ref, ref, topic, event, payload]`.
-     *
-     * Se envían ambas variantes: la primera es la que produce ticks, la segunda
-     * cubre el caso de que el despliegue activo sirva el canal Phoenix.
+     * Binomo Web separa el feed de quotes (as.binomo.com) del socket Phoenix (ws.binomo.com).
+     * Esta conexión envía exclusivamente el mensaje de QuoteSuscribeRequest:
+     * action=subscribe con rics como array de strings.
      */
-    private fun subscribeToAsset(ws: WebSocket, asset: String) {
+    private fun subscribeToReconnectRequest(ws: WebSocket) {
         try {
-            // 1. Socket de cotizaciones: clave `rics` plural con array de strings.
-            ws.send(
-                JSONObject().apply {
-                    put("action", "subscribe")
-                    put("rics", JSONArray().apply { put(asset) })
-                }.toString()
-            )
-            // 2. Topic por activo (Phoenix v2, array posicional): sin él algunos
-            //    despliegues no emiten nada aunque el subscribe anterior se acepte.
-            ws.send(phoenixJoin("asset:$asset", JSONObject()))
-            // 3. Topic global de cotizaciones con el ric en el payload.
-            ws.send(phoenixJoin("rates", JSONObject().put("ric", asset)))
-            Log.d(TAG, "Suscripción enviada para activo: $asset (rics + phoenix, ref=$phoenixRef)")
+            val accepted = ws.send(buildReconnectRequestPayload())
+            if (accepted) {
+                Log.d(TAG, "Suscripción quote reconnect_request enviada")
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Error enviando suscripción", e)
+            Log.e(TAG, "Error enviando reconnect_request del quote feed", e)
         }
     }
 
-    /**
-     * Frame de Phoenix Channels con el serializador **v2 JSON**, que usa arrays
-     * posicionales `[join_ref, ref, topic, event, payload]` en lugar de un objeto
-     * con claves. Enviar `{"topic":...,"event":"phx_join"}` a un socket `vsn=2.0.0`
-     * hace que el servidor lo ignore por formato inválido.
-     */
-    private fun phoenixJoin(topic: String, payload: JSONObject): String {
-        val ref = nextRef().toString()
-        return JSONArray().apply {
-            put(ref)      // join_ref
-            put(ref)      // ref
-            put(topic)
-            put("phx_join")
-            put(payload)
-        }.toString()
+    private fun subscribeToAsset(ws: WebSocket, asset: String) {
+        try {
+            val accepted = ws.send(buildQuoteSubscribePayload(listOf(asset)))
+            if (accepted) {
+                Log.d(TAG, "Suscripción quote enviada para activo: " + asset)
+            } else {
+                Log.w(TAG, "OkHttp rechazó encolar suscripción quote para activo: " + asset)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error enviando suscripción quote", e)
+        }
     }
 
     /**
@@ -863,6 +794,57 @@ class BinomoWebSocketClient(
     }
 
     companion object {
+        const val DEFAULT_QUOTE_SOCKET_URL = "wss://as.binomo.com/"
+        const val BINOMO_WEB_ORIGIN = "https://binomo.com"
+
+        internal fun resolveQuoteSocketEndpoint(configured: String): String {
+            val clean = configured.trim()
+            if (clean.isBlank()) return DEFAULT_QUOTE_SOCKET_URL
+            val lower = clean.lowercase()
+            val isPhoenix = lower.contains("vsn=") ||
+                lower.contains("v=2") ||
+                lower.startsWith("wss://ws.binomo.com")
+            val isKnownQuote = lower.startsWith("wss://as.binomo.com")
+            return if (!isPhoenix && isKnownQuote) clean.substringBefore('?') else DEFAULT_QUOTE_SOCKET_URL
+        }
+
+        internal fun buildQuoteSocketUrl(base: String): String =
+            resolveQuoteSocketEndpoint(base).trimEnd('/') + "/"
+
+        internal fun buildQuoteSocketRequest(
+            configuredEndpoint: String,
+            cookieHeader: String,
+            userAgent: String
+        ): Request =
+            Request.Builder()
+                .url(buildQuoteSocketUrl(configuredEndpoint))
+                .header("Origin", BINOMO_WEB_ORIGIN)
+                .header("Cookie", cookieHeader)
+                .header("User-Agent", userAgent)
+                .build()
+
+        internal fun buildQuoteSubscribePayload(rics: List<String>): String =
+            JSONObject().apply {
+                put("action", "subscribe")
+                put("rics", JSONArray().apply { rics.forEach { put(it) } })
+            }.toString()
+
+        internal fun buildReconnectRequestPayload(): String =
+            JSONObject()
+                .put("action", "subscribe")
+                .put("event_type", "reconnect_request")
+                .toString()
+
+        internal fun sanitizeEndpointForLog(url: String): String =
+            url.replace(Regex("([?&](?:authtoken|token)=)[^&#]+"), "$1<REDACTED>")
+
+        fun isQuoteSocketEndpoint(url: String): Boolean {
+            val lower = url.trim().lowercase()
+            return lower.startsWith("wss://as.binomo.com") &&
+                !lower.contains("vsn=") &&
+                !lower.contains("v=2")
+        }
+
         /** Umbral único de frescura del feed WebSocket: 5000 ms. */
         const val DEFAULT_FRESHNESS_MS = 5000L
 
