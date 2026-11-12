@@ -1,5 +1,15 @@
 # FINAL_REPORT — 2026-11-12T01:09:51.187607+00:00
 
+## 2026-11-12 — causal replay scheduling addendum
+
+The diagnostic replay scheduler is no longer two-pass/speculative. It now matches the SHADOW ordering that can be proven from production code: the first eligible same-asset tick settles an open simulation before that same tick is offered to the strategy engine; rejected adaptive/policy candidates do not consume the candle or start a phantom cooldown; an unresolved trade at end-of-stream is recorded as NO_DATA rather than settled by scanning future state. SHADOW-simulated outcomes also no longer mutate replay adaptive-loss memory because production SHADOW does not feed those outcomes into AdaptiveLearningEngine.
+
+On the versioned CI tick fixture, the legacy two-pass harness and the causal harness generated the same six deterministic decision IDs and the same 4 WIN / 2 LOSS outcomes. The change therefore fixes event ordering without improving the canonical sample retrospectively. The replay journal now records actual tick velocity/impulse instead of entry price in tick_velocity.
+
+Validation for this addendum: clean full gate **681 tests / 87 classes / 0 failures / 0 errors / 0 skips**, Python **87 PASS**, replay smoke PASS and APK PASS. Production strategy/risk/execution source was not changed.
+
+Overall status remains **INSUFFICIENT_EVIDENCE**. REPLAY_PARITY_PASS remains false because complete production ExecutionPolicy/context equivalence, global multi-asset portfolio/single-flight semantics, device quote/fill latency and trustworthy runtime/prospective market data remain unresolved. DATA_PASS, STATISTICAL_PASS, ROBUSTNESS_PASS and PROSPECTIVE_PASS remain false. No edge or real-money readiness claim follows.
+
 PENDING. Not executed; no evidence gate approved.
 
 ## 2026-11-12T01:34:32.395072+00:00 — current evidence verdict

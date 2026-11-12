@@ -37,6 +37,9 @@ class ReplayBacktestTest {
         val distSupportRatio: Float,
         val distResistanceRatio: Float,
         val isChop: Boolean,
+        val tickVelocity: Float,
+        val isBullishImpulse: Boolean,
+        val isBearishImpulse: Boolean,
         /**
          * R23 Iter 3: RIC del tick que disparo la senal. Se arrastra hasta la fila del CSV porque
          * de el sale el `decision_id` determinista: el motor vivo usa el mismo RIC normalizado, y
@@ -198,25 +201,24 @@ class ReplayBacktestTest {
         val groups = ticks.groupBy { it.ric }
         if (groups.size > 1) return groups.values.flatMap { runBacktestOnStrategy(it, strategy, subMode) }.sortedBy { it.timestamp }
         if (ticks.isEmpty()) return emptyList()
-        val pendingSignals = mutableListOf<SignalSnapshot>()
-        var lastExecutedCandleMinute = -1L
         var cooldownUntilTs = 0L
-        // R23C Fase 2 (REQ 2.2/2.3): una operacion binaria ocupa 60 s. Mientras este abierta no se
-        // puede emitir otra (`OPERACION_EN_CURSO`), y al expirar corre un cooldown post-trade. Sin
-        // esto el replay disparaba trades superpuestos en minutos distintos que en vivo eran
-        // imposibles: es una de las causas del 0% de paridad.
-        var blockedUntilTs = 0L
         val cooldownMs = if (subMode == AutonomousSubMode.YOLO) YOLO_COOLDOWN_MS else CONSERVATIVE_COOLDOWN_MS
+        val causalGate = CausalReplayGate(TRADE_DURATION_MS, cooldownMs)
+        var openSignal: SignalSnapshot? = null
+        val trades = mutableListOf<SimulatedTrade>()
+        var balance = 1000.0
+        val stake = 1.0
 
         // R23H Fase 2: impulso del tick que esta siendo procesado, expuesto al callback de senal.
         // El callback se dispara DENTRO de `onNewTick`, asi que estas variables ya tienen el valor
         // del tick actual cuando se leen. Se usan para reproducir el `callPower` exacto del motor.
         var tickImpulseBullish = false
         var tickImpulseBearish = false
+        var currentTickVelocity = 0f
 
-        // R23J Fase B: memoria de anti-patrones del replay. Se alimenta con las perdidas ya resueltas
-        // de ESTA corrida, igual que el motor vivo alimenta la suya con `recordTradeResult`. Sin
-        // esto, el replay no podia reproducir `ADAPTIVE_BLOCK` ni por casualidad.
+        // La memoria precargada modela el estado que SHADOW hereda al iniciar. Los resultados
+        // simulados de SHADOW NO alimentan AdaptiveLearningEngine en produccion, por lo que esta
+        // memoria permanece inmutable durante una corrida causal de research.
         val memoriaPerdidas = mutableListOf<TradeContextSignature>()
         var bloqueosAdaptativos = 0
 
@@ -261,6 +263,55 @@ class ReplayBacktestTest {
             }.getOrElse { throw IllegalArgumentException("ADAPTIVE_STATE_REJECTED: ${it.message}", it) }
         }
 
+        fun settleOpen(exitPrice: Double?) {
+            val sig = openSignal ?: return
+            val entryTick = sig.tick
+            val action = sig.action
+            val (result, _) = resolveTrade(entryTick.price, exitPrice, action)
+            val settledBalance = when (result) {
+                "WIN" -> balance + (stake * 0.82)
+                "LOSS" -> balance - stake
+                else -> balance
+            }
+            val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }.format(Date(entryTick.ts))
+            val candleSec = ((entryTick.ts / 1000L) % 60L).toInt()
+            trades.add(
+                SimulatedTrade(
+                    timestamp = entryTick.ts,
+                    isoDate = isoDate,
+                    strategy = strategy.name,
+                    submode = subMode.name,
+                    action = action,
+                    confidence = 0.85f,
+                    entryPrice = entryTick.price,
+                    stake = stake,
+                    baseBalance = balance,
+                    result = result,
+                    settledBalance = settledBalance,
+                    durationSec = 60L,
+                    trend = sig.trend,
+                    distSupportRatio = sig.distSupportRatio,
+                    distResistanceRatio = sig.distResistanceRatio,
+                    tickVelocity = sig.tickVelocity,
+                    impulse = when {
+                        sig.isBullishImpulse -> "BULLISH"
+                        sig.isBearishImpulse -> "BEARISH"
+                        else -> "NEUTRAL"
+                    },
+                    marketRegime = if (sig.isChop) "SIDEWAYS" else "TRENDING",
+                    candleSecond = candleSec,
+                    adaptiveStatus = result,
+                    reason = sig.reason,
+                    decisionId = DecisionIds.generateDeterministicDecisionId(sig.assetRic, entryTick.ts, action.name),
+                    assetRic = sig.assetRic
+                )
+            )
+            balance = settledBalance
+            openSignal = null
+        }
+
         fun createEngine(): SyntheticCandleEngine {
             val eng = SyntheticCandleEngine()
             eng.currentStrategy = strategy
@@ -286,8 +337,7 @@ class ReplayBacktestTest {
                 // Descartar si: la señal cae fuera de la ventana sniper, o estamos dentro de una
                 // operacion abierta / su cooldown, o el tick cae en el enfriamiento de 120s tras un
                 // hueco > 10s, o la vela de este minuto ya fue operada (1 orden por vela máx).
-                if (inSniperWindow && lastTick.ts >= cooldownUntilTs && lastTick.ts >= blockedUntilTs &&
-                    candleMinute != lastExecutedCandleMinute) {
+                if (inSniperWindow && causalGate.canConsider(lastTick.ts, candleMinute, cooldownUntilTs)) {
                     // R23H Fase 2 (paridad live<->replay): el motor vivo aplica
                     // `VETO_BUY_EXHAUSTION_CLIMAX` antes de despachar. Sin replicarlo aqui, el replay
                     // simulaba compras en techo que en vivo nunca se ejecutaron, y el comparador las
@@ -302,29 +352,55 @@ class ReplayBacktestTest {
                         isBearishImpulse = tickImpulseBearish
                     )
                     if (StrategyReplayPort.motivoVetoPorAgotamientoDeCompra(action, eng.detectedTrend, callPowerEnSenal) != null) {
-                        // Vetada por politica: NO se simula trade y NO se marca la vela como operada,
-                        // de modo que un tick posterior de la misma vela sigue siendo evaluable.
                         return@senal
                     }
-                    // R23J Fase B: `ADAPTIVE_BLOCK` NO se evalua aqui. La memoria de anti-patrones
-                    // crece con los trades ya RESUELTOS, y en este punto ninguno lo esta todavia
-                    // (el callback solo acumula senales). Se evalua en el bucle de resolucion, donde
-                    // la memoria si tiene el estado que tendria en vivo. Evaluarlo aqui daria memoria
-                    // vacia siempre y bloquearia el 0%.
-                    lastExecutedCandleMinute = candleMinute
-                    // La operacion ocupa 60 s desde la entrada y luego corre el cooldown del submodo.
-                    blockedUntilTs = lastTick.ts + TRADE_DURATION_MS + cooldownMs
-                    pendingSignals.add(
-                        SignalSnapshot(
-                            tick = lastTick,
-                            action = action,
-                            reason = reason,
-                            trend = eng.detectedTrend.name,
-                            distSupportRatio = eng.distanceToSupportRatio,
-                            distResistanceRatio = eng.distanceToResistanceRatio,
-                            isChop = eng.isChoppinessDetected(),
-                            assetRic = lastTick.ric
-                        )
+
+                    // SHADOW evalua adaptacion ANTES de abrir la simulacion. Un veto no consume
+                    // vela/cooldown: candleRateLimiter solo registra una ejecucion tras open SUCCESS.
+                    val firmaCandidata = firmaDeContexto(
+                        action = action,
+                        trend = eng.detectedTrend,
+                        distSupportRatio = eng.distanceToSupportRatio,
+                        distResistanceRatio = eng.distanceToResistanceRatio,
+                        isMarketSideways = eng.isChoppinessDetected() || eng.detectedTrend == TrendDirection.SIDEWAYS,
+                        isConsolidationTight = eng.isChoppinessDetected(),
+                        tickVelocity = currentTickVelocity,
+                        isBullishImpulse = tickImpulseBullish,
+                        isBearishImpulse = tickImpulseBearish,
+                        strategy = strategy,
+                        candleSecond = sigCandleSec
+                    )
+                    val (simMax, coincidencia) =
+                        AdaptiveReplayPort.mejorCoincidenciaEnMemoria(firmaCandidata, memoriaPerdidas)
+                    if (AdaptiveReplayPort.motivoBloqueoPorAntiPatron(firmaCandidata, coincidencia, simMax) != null) {
+                        bloqueosAdaptativos++
+                        synchronized(bloqueosRegistrados) {
+                            bloqueosRegistrados.add(
+                                BloqueoAdaptativo(
+                                    ts = lastTick.ts,
+                                    action = action,
+                                    similitud = simMax,
+                                    simPct = (simMax * 100).toInt(),
+                                    strategy = strategy.name
+                                )
+                            )
+                        }
+                        return@senal
+                    }
+
+                    causalGate.accept(lastTick.ts, candleMinute, cooldownUntilTs)
+                    openSignal = SignalSnapshot(
+                        tick = lastTick,
+                        action = action,
+                        reason = reason,
+                        trend = eng.detectedTrend.name,
+                        distSupportRatio = eng.distanceToSupportRatio,
+                        distResistanceRatio = eng.distanceToResistanceRatio,
+                        isChop = eng.isChoppinessDetected(),
+                        tickVelocity = currentTickVelocity,
+                        isBullishImpulse = tickImpulseBullish,
+                        isBearishImpulse = tickImpulseBearish,
+                        assetRic = lastTick.ric
                     )
                 }
             }
@@ -336,6 +412,13 @@ class ReplayBacktestTest {
         var prevPrice = 0.0
 
         for (raw in ticks) {
+            // Igual que TradingEngine.onMarketTick: SHADOW liquida primero y solo despues el
+            // mismo tick entra a SyntheticCandleEngine. No hay escaneo de ticks futuros.
+            if (openSignal != null && causalGate.isSettlementDue(raw.ts)) {
+                causalGate.settle(raw.ts)
+                settleOpen(raw.price)
+            }
+
             // Detectar hueco > 10 s entre el tick previo y el actual
             if (prevTs > 0L && (raw.ts - prevTs) > 10_000L) {
                 // Reiniciar el motor y aplicar veto de entrada en los 120s posteriores al final del hueco
@@ -367,105 +450,17 @@ class ReplayBacktestTest {
             // necesita los flags del tick actual, no los del anterior.
             tickImpulseBullish = isBullish
             tickImpulseBearish = isBearish
+            currentTickVelocity = velocity
             currentEngine.onNewTick(tick)
             prevTs = raw.ts
             prevPrice = raw.price
         }
 
-        val trades = mutableListOf<SimulatedTrade>()
-        var balance = 1000.0
-        val stake = 1.0
-
-        for (sig in pendingSignals) {
-            val entryTick = sig.tick
-            val action = sig.action
-            val reason = sig.reason
-
-            // R23J Fase B: ADAPTIVE_BLOCK se evalua AQUI, contra la memoria de perdidas acumulada
-            // hasta este punto del replay. Es el unico lugar donde la memoria refleja el estado que
-            // tendria el motor vivo al llegar esta senal.
-            val firmaCandidata = firmaDeContexto(
-                action = action,
-                trend = runCatching { TrendDirection.valueOf(sig.trend) }.getOrDefault(TrendDirection.SIDEWAYS),
-                distSupportRatio = sig.distSupportRatio,
-                distResistanceRatio = sig.distResistanceRatio,
-                isMarketSideways = sig.isChop || sig.trend == TrendDirection.SIDEWAYS.name,
-                isConsolidationTight = sig.isChop,
-                tickVelocity = 0f,
-                isBullishImpulse = false,
-                isBearishImpulse = false,
-                strategy = strategy,
-                candleSecond = ((entryTick.ts / 1000L) % 60L).toInt()
-            )
-            val (simMax, coincidencia) = AdaptiveReplayPort.mejorCoincidenciaEnMemoria(firmaCandidata, memoriaPerdidas)
-            if (AdaptiveReplayPort.motivoBloqueoPorAntiPatron(firmaCandidata, coincidencia, simMax) != null) {
-                bloqueosAdaptativos++
-                synchronized(bloqueosRegistrados) {
-                    bloqueosRegistrados.add(
-                        BloqueoAdaptativo(
-                            ts = entryTick.ts,
-                            action = action,
-                            similitud = simMax,
-                            simPct = (simMax * 100).toInt(),
-                            strategy = strategy.name
-                        )
-                    )
-                }
-                continue
-            }
-
-            val exitPrice = priceAt(ticks, entryTick.ts + 60_000L)
-            val (result, _) = resolveTrade(entryTick.price, exitPrice, action)
-
-            // El motor vivo alimenta su memoria SOLO con perdidas (`recordTradeResult`). El replay
-            // hace lo mismo, o la similitud no seria comparable.
-            if (result == "LOSS") memoriaPerdidas.add(firmaCandidata)
-
-            val settledBalance = when (result) {
-                "WIN" -> balance + (stake * 0.82)
-                "LOSS" -> balance - stake
-                else -> balance
-            }
-
-            val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply {
-                timeZone = java.util.TimeZone.getTimeZone("UTC")
-            }.format(Date(entryTick.ts))
-            val candleSec = ((entryTick.ts / 1000L) % 60L).toInt()
-
-            trades.add(
-                SimulatedTrade(
-                    timestamp = entryTick.ts,
-                    isoDate = isoDate,
-                    strategy = strategy.name,
-                    submode = subMode.name,
-                    action = action,
-                    confidence = 0.85f,
-                    entryPrice = entryTick.price,
-                    stake = stake,
-                    baseBalance = balance,
-                    result = result,
-                    settledBalance = settledBalance,
-                    durationSec = 60L,
-                    trend = sig.trend,
-                    distSupportRatio = sig.distSupportRatio,
-                    distResistanceRatio = sig.distResistanceRatio,
-                    tickVelocity = entryTick.price.toFloat(),
-                    impulse = "NEUTRAL",
-                    // R23A Iter 2: vocabulario alineado con el lado live. Antes el replay emitia
-                    // "CHOP" mientras el monitor live emite "SIDEWAYS"/"TRENDING" (a partir de
-                    // `analysis.isMarketSideways`, que en el motor es
-                    // `syntheticCandleEngine.isChoppinessDetected()` — la MISMA fuente que `sig.isChop`
-                    // de aqui). Con vocabularios distintos la comparacion marcaba `market_regime` como
-                    // divergente SIEMPRE, aunque ambos lados describieran el mismo mercado.
-                    marketRegime = if (sig.isChop) "SIDEWAYS" else "TRENDING",
-                    candleSecond = candleSec,
-                    adaptiveStatus = result,
-                    reason = reason,
-                    decisionId = DecisionIds.generateDeterministicDecisionId(sig.assetRic, entryTick.ts, action.name),
-                    assetRic = sig.assetRic
-                )
-            )
-            balance = settledBalance
+        // Si termina el stream con una operacion abierta, el resultado es NO_DATA. No se
+        // inventa TIE ni se busca un tick futuro fuera de la secuencia observada.
+        if (openSignal != null) {
+            causalGate.closeWithoutSettlement()
+            settleOpen(null)
         }
 
         return trades

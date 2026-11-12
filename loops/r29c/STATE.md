@@ -1,5 +1,15 @@
 # R29-C state — 2026-11-12T01:09:51.187607+00:00
 
+## 2026-11-12 — causal replay scheduling checkpoint
+
+HEAD base for this cut: a414cbf. Production strategy/risk/execution bytes remain untouched. The diagnostic Kotlin replay now settles open SHADOW-equivalent trades causally on the first eligible same-asset tick before feeding that tick to the strategy engine. Adaptive/policy vetoes are evaluated before the research gate consumes candle/cooldown state, eliminating the previously documented phantom occupancy after a veto. SHADOW-simulated outcomes no longer mutate replay loss-signature memory because production SHADOW does not call AdaptiveLearningEngine.recordTradeOpened/recordTradeOutcome for simulated trades.
+
+Directed research tests added: veto-without-cooldown, settlement-before-same-tick-candidate, configured cooldown, NO_DATA at end-of-stream and independent gap cooldown. Versioned CI fixture comparison against a414cbf: same 6 deterministic decision IDs and same 4 WIN / 2 LOSS outcomes; no result cherry-picking. tick_velocity output now carries actual tick velocity rather than entry price.
+
+Validation: research suite PASS; impact-aware fast gate PASS; dedicated Kotlin replay PASS; clean full gate 681 tests / 87 classes / 0 failures / 0 errors / 0 skips, Python 87 PASS, replay smoke PASS and APK PASS.
+
+CAUSAL_SCHEDULING_PASS=true. FULL_REPLAY_PARITY remains false. Remaining parity blockers: complete production ExecutionPolicy/context equivalence, global multi-asset portfolio/single-flight semantics, device quote/fill latency, and runtime/prospective source evidence. DATA_PASS remains false and no edge inference is authorized. Exact next research action: introduce a research execution-policy adapter that invokes the actual frozen ExecutionPolicy against explicitly versioned replay context; prove its veto ordering without inventing unavailable device state.
+
 Current round: C0 IN_PROGRESS. HEAD: 4fdb6466d5005499789d801d64916ea9c15421a3. Initial tree clean, r10-night.
 Last approved commit/CI: not independently reverified; historical baseline ab2b73b push43014306435/PR43014313683 success per R29-B STATE.
 Completed rounds: none. Failed gates: none evaluated. Blockers: provenance and parity not yet audited. Approved research datasets: none. Experiments: none executed.
