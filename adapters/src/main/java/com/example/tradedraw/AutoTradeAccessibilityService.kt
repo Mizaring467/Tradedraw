@@ -313,7 +313,15 @@ class AutoTradeAccessibilityService : AccessibilityService() {
             bypassHud: Boolean = false,
             orderAuthorized: Boolean = false
         ) {
-            executeRootTap(x, y, decisionId = null, tradeId = null, onResult = onResult, bypassHud = bypassHud)
+            executeRootTap(
+                x,
+                y,
+                decisionId = null,
+                tradeId = null,
+                onResult = onResult,
+                bypassHud = bypassHud,
+                orderAuthorized = orderAuthorized
+            )
         }
 
         fun executeRootTap(
