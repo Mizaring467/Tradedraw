@@ -49,11 +49,8 @@ jobs:
       - name: Otorgar permisos al wrapper
         run: chmod +x gradlew
 
-      - name: Ejecutar pruebas unitarias Android
-        run: ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache
-
-      - name: Compilar APK Debug
-        run: ./gradlew assembleDebug --no-daemon --no-configuration-cache
+      - name: Validar módulos y compilar APK Debug
+        run: ./gradlew testDebugUnitTest :core:test :simulation:test assembleDebug --no-daemon --no-configuration-cache
 
       - name: Subir APK como artefacto
         uses: actions/upload-artifact@v4

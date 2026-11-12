@@ -67,5 +67,24 @@ class CleanWorktreeUntrackedTest(unittest.TestCase):
         )
 
 
+    def test_clean_gate_includes_every_module_and_jvm_tests(self):
+        tasks = verify.discover_gradle_test_tasks(str(self.repo))
+        expected = {
+            ":app:testDebugUnitTest",
+            ":core:test",
+            ":simulation:test",
+            ":persistence:testDebugUnitTest",
+            ":market:testDebugUnitTest",
+            ":strategy:testDebugUnitTest",
+            ":observability:testDebugUnitTest",
+            ":risk:testDebugUnitTest",
+            ":execution:testDebugUnitTest",
+            ":ui:testDebugUnitTest",
+            ":research:testDebugUnitTest",
+            ":adapters:testDebugUnitTest",
+        }
+        self.assertEqual(expected, set(tasks))
+
+
 if __name__ == "__main__":
     unittest.main()
