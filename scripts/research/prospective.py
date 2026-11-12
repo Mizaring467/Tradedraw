@@ -76,16 +76,23 @@ def prediction_errors(prediction,received_ms):
     return errors
 
 
-def ingest_prediction(journal,prediction,received_ms=None):
+def ingest_prediction(journal,prediction,received_ms=None,epoch_id=None):
     received_ms=time.time_ns()//1_000_000 if received_ms is None else received_ms
-    errors=prediction_errors(prediction,received_ms)
+    candidate=dict(prediction)
+    if epoch_id is not None:
+        candidate['epoch_id']=epoch_id
+    errors=prediction_errors(candidate,received_ms)
     records=journal.records()
-    previous=[r for r in records if r['kind']=='PREDICTION' and r['payload'].get('decisionId')==prediction.get('decisionId')]
+    previous=[r for r in records if r['kind']=='PREDICTION' and r['payload'].get('decisionId')==candidate.get('decisionId')]
     if previous:
-        if previous[0]['payload']==prediction:return previous[0]
+        if previous[0]['payload']==candidate:return previous[0]
         errors.append('CONFLICTING_IMMUTABLE_DECISION')
-    if errors:return journal.append('PREDICTION_REJECTED',dict(prediction=prediction,errors=errors),received_ms)
-    return journal.append('PREDICTION',prediction,received_ms)
+    if errors:
+        rejected=dict(prediction=candidate,errors=errors)
+        if epoch_id is not None:
+            rejected['epoch_id']=epoch_id
+        return journal.append('PREDICTION_REJECTED',rejected,received_ms)
+    return journal.append('PREDICTION',candidate,received_ms)
 
 
 def ingest_asset_observation(journal,event,epoch_start_ms,epoch_id=None):
@@ -106,7 +113,7 @@ def ingest_asset_observation(journal,event,epoch_start_ms,epoch_id=None):
     return journal.append("ACTIVE_ASSET_OBSERVATION",parsed,parsed["atMs"])
 
 
-def ingest_policy_observation(journal,prediction,status,received_ms=None):
+def ingest_policy_observation(journal,prediction,status,received_ms=None,epoch_id=None):
     received_ms=time.time_ns()//1_000_000 if received_ms is None else received_ms
     decision_id=prediction.get('decisionId')
     if not decision_id:return None
@@ -114,6 +121,10 @@ def ingest_policy_observation(journal,prediction,status,received_ms=None):
     existing=[r for r in records if r['kind']=='POLICY_CONTEXT_OBSERVATION' and r['payload'].get('decisionId')==decision_id]
     if existing:return existing[0]
     payload=observed_context_from_status(prediction,status,received_ms)
+    if epoch_id is None:
+        epoch_id=prediction.get('epoch_id')
+    if epoch_id is not None:
+        payload=dict(payload,epoch_id=epoch_id)
     return journal.append('POLICY_CONTEXT_OBSERVATION',payload,received_ms)
 
 
@@ -131,6 +142,8 @@ def ingest_settlement(journal,settlement,received_ms=None):
     # Imported settlement is retained but not scored until first-eligible-tick evidence is reconciled.
     result='TRUE_TIE' if price==p['entry_price'] else ('WIN' if ((price>p['entry_price'])==(p['action']=='BUY')) else 'LOSS')
     payload=dict(settlement,result=result,verification='REQUIRES_RAW_TICK_PARITY_RECONCILIATION')
+    if p.get('epoch_id') is not None:
+        payload['epoch_id']=p['epoch_id']
     old=[r for r in records if r['kind']=='SETTLEMENT_CANDIDATE' and r['payload']['decisionId']==p['decisionId']]
     if old:
         if old[0]['payload']==payload:return old[0]
@@ -138,8 +151,49 @@ def ingest_settlement(journal,settlement,received_ms=None):
     return journal.append('SETTLEMENT_CANDIDATE',payload,received_ms)
 
 
-def scorecard(journal):
-    records=journal.records();counts=collections.Counter(r['kind'] for r in records)
+def _epoch_index(records):
+    starts={}
+    completed=set()
+    for row in records:
+        kind=row.get('kind')
+        current=_payload_epoch_id(row)
+        if kind=='CAPTURE_EPOCH_START' and current:
+            if current in starts:
+                raise ValueError('DUPLICATE_CAPTURE_EPOCH_START')
+            starts[current]=row
+        elif kind=='CAPTURE_EPOCH_END' and current and row.get('payload',{}).get('status')=='COMPLETE':
+            completed.add(current)
+    return starts,completed
+
+
+def select_scorecard_epoch(records,epoch_id=None):
+    records=list(records)
+    starts,completed=_epoch_index(records)
+    if not starts:
+        if epoch_id is not None:
+            raise ValueError('CAPTURE_EPOCH_NOT_FOUND')
+        return records,None,True
+
+    if epoch_id is None:
+        candidates=sorted(set(starts)&completed)
+        if len(candidates)!=1:
+            raise ValueError('NO_UNIQUE_COMPLETE_CAPTURE_EPOCH')
+        epoch_id=candidates[0]
+    else:
+        epoch_id=str(epoch_id).strip()
+        if epoch_id not in starts:
+            raise ValueError('CAPTURE_EPOCH_NOT_FOUND')
+
+    selected=[row for row in records if _payload_epoch_id(row)==epoch_id]
+    if not selected:
+        raise ValueError('CAPTURE_EPOCH_EMPTY')
+    return selected,epoch_id,epoch_id in completed
+
+
+def scorecard(journal,epoch_id=None):
+    all_records=journal.records()
+    records,selected_epoch_id,epoch_complete=select_scorecard_epoch(all_records,epoch_id=epoch_id)
+    counts=collections.Counter(r['kind'] for r in records)
     predictions=[r['payload'] for r in records if r['kind']=='PREDICTION']
     observations=[r['payload'] for r in records if r['kind']=='POLICY_CONTEXT_OBSERVATION']
     asset_observations=[r['payload'] for r in records if r['kind']=='ACTIVE_ASSET_OBSERVATION']
@@ -147,7 +201,8 @@ def scorecard(journal):
     policy_coverage=coverage_summary(predictions)
     observed_coverage=observation_summary(observations)
     asset_timeline=timeline_summary(asset_observations)
-    return dict(evidence_class='PROSPECTIVE_SHADOW',records=len(records),precommitted_decisions=n,
+    return dict(evidence_class='PROSPECTIVE_SHADOW',records=len(records),capture_epoch_id=selected_epoch_id,
+                capture_epoch_complete=epoch_complete,precommitted_decisions=n,
                 settlement_candidates=counts['SETTLEMENT_CANDIDATE'],rejected_predictions=counts['PREDICTION_REJECTED'],
                 data_quality_failures=counts['CAPTURE_ERROR'],verified_settlements=0,WIN=None,LOSS=None,TRUE_TIE=None,
                 NO_DATA=None,WR=None,EV=None,max_drawdown=None,longest_loss_streak=None,rejection_rate=None,
@@ -172,19 +227,7 @@ def select_export_epoch(records,epoch_id=None):
     explicit epoch_id is requested.
     """
     records=list(records)
-    starts={}
-    completed=set()
-    for row in records:
-        kind=row.get("kind")
-        current=_payload_epoch_id(row)
-        if kind=="CAPTURE_EPOCH_START" and current:
-            if current in starts:
-                raise ValueError("DUPLICATE_CAPTURE_EPOCH_START")
-            starts[current]=row
-        elif kind=="CAPTURE_EPOCH_END" and current:
-            payload=row.get("payload",{})
-            if payload.get("status")=="COMPLETE":
-                completed.add(current)
+    starts,completed=_epoch_index(records)
 
     if not starts:
         if epoch_id is not None:
@@ -297,7 +340,7 @@ def capture(journal,samples,interval):
                             'CAPTURE_EPOCH_END',
                             dict(epoch_id=epoch_id,status='ABORTED_BUILD_CHANGE',ended_at_ms=time.time_ns()//1_000_000),
                         )
-                        return
+                        return epoch_id
                 if endpoint=='/simulation':
                     for prediction in value.get('pendingDecisions',[]):
                         if prediction.get('timestamp',-1)<epoch_start_ms:
@@ -308,9 +351,9 @@ def capture(journal,samples,interval):
                         if prediction.get('git_sha')!=initial_status.get('gitSha'):
                             journal.append('CAPTURE_ERROR',dict(epoch_id=epoch_id,reason='BUILD_IDENTITY_MISMATCH',prediction=prediction))
                             continue
-                        accepted=ingest_prediction(journal,prediction)
+                        accepted=ingest_prediction(journal,prediction,epoch_id=epoch_id)
                         if accepted.get('kind')=='PREDICTION' and latest_status is not None:
-                            ingest_policy_observation(journal,prediction,latest_status)
+                            ingest_policy_observation(journal,accepted['payload'],latest_status,epoch_id=epoch_id)
                 if endpoint=='/events':
                     for event in value.get('events',[]):
                         key=hashlib.sha256(canonical(event)).hexdigest()
@@ -320,10 +363,15 @@ def capture(journal,samples,interval):
                             if initial_status and initial_status.get('mode')=='SHADOW':
                                 ingest_asset_observation(journal,event,epoch_start_ms,epoch_id=epoch_id)
                         elif event.get('kind')=='SHADOW_PREDICTION':
-                            try:ingest_prediction(journal,json.loads(event['detail']))
-                            except (ValueError,TypeError):journal.append('CAPTURE_ERROR',dict(epoch_id=epoch_id,reason='INVALID_PREDICTION_EVENT',event=event))
+                            try:
+                                event_prediction=json.loads(event['detail'])
+                                if event_prediction.get('timestamp',-1)<epoch_start_ms:
+                                    continue
+                                ingest_prediction(journal,event_prediction,epoch_id=epoch_id)
+                            except (ValueError,TypeError):
+                                journal.append('CAPTURE_ERROR',dict(epoch_id=epoch_id,reason='INVALID_PREDICTION_EVENT',event=event))
                         elif event.get('kind')=='SHADOW_DECISION':
-                            journal.append('UNSCORABLE_LEGACY_DECISION',dict(event=event,reason='No canonical pre-outcome metadata; do not infer after settlement'))
+                            journal.append('UNSCORABLE_LEGACY_DECISION',dict(epoch_id=epoch_id,event=event,reason='No canonical pre-outcome metadata; do not infer after settlement'))
             except Exception as error:
                 journal.append('CAPTURE_ERROR',dict(epoch_id=epoch_id,endpoint=endpoint,error=type(error).__name__,detail=str(error)))
         if i+1<samples:time.sleep(interval)
@@ -331,6 +379,7 @@ def capture(journal,samples,interval):
         'CAPTURE_EPOCH_END',
         dict(epoch_id=epoch_id,status='COMPLETE',ended_at_ms=time.time_ns()//1_000_000),
     )
+    return epoch_id
 
 
 def main():
@@ -346,10 +395,10 @@ def main():
     if args.samples<1 or not 0<args.interval<=60:p.error('samples >=1, interval in (0,60]')
     j=Journal(args.journal)
     if args.mode=='capture':
-        capture(j,args.samples,args.interval)
-        print(json.dumps(scorecard(j),indent=2))
+        captured_epoch_id=capture(j,args.samples,args.interval)
+        print(json.dumps(scorecard(j,epoch_id=captured_epoch_id),indent=2))
     elif args.mode=='scorecard':
-        print(json.dumps(scorecard(j),indent=2))
+        print(json.dumps(scorecard(j,epoch_id=args.epoch_id),indent=2))
     else:
         if not args.timeline_out or args.max_age_ms is None or args.max_age_ms<0:
             p.error('export-timeline requires --timeline-out and --max-age-ms >= 0')

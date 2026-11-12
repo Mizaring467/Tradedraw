@@ -155,6 +155,84 @@ class ProspectiveJournalTest(unittest.TestCase):
                     j,Path(tmp)/"incomplete.json",2500,epoch_id="epoch-a"
                 )
 
+    def test_scorecard_is_scoped_to_one_capture_epoch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            j=Journal(Path(tmp)/"journal.jsonl")
+
+            def add_epoch(epoch_id,start_ms,decision_id,prediction_ts):
+                j.append(
+                    "CAPTURE_EPOCH_START",
+                    {"epoch_id":epoch_id,"started_at_ms":start_ms,"collector_sha256":"fixture"},
+                    start_ms,
+                )
+                p=self.prediction()
+                p["decisionId"]=decision_id
+                p["timestamp"]=prediction_ts
+                accepted=ingest_prediction(
+                    j,p,received_ms=prediction_ts+1000,epoch_id=epoch_id
+                )
+                self.assertEqual(epoch_id,accepted["payload"]["epoch_id"])
+                settlement=ingest_settlement(
+                    j,
+                    {
+                        "decisionId":decision_id,
+                        "asset":"A",
+                        "timestamp":prediction_ts+60001,
+                        "exit_price":101,
+                    },
+                    received_ms=prediction_ts+61000,
+                )
+                self.assertEqual(epoch_id,settlement["payload"]["epoch_id"])
+                j.append(
+                    "CAPTURE_EPOCH_END",
+                    {"epoch_id":epoch_id,"status":"COMPLETE","ended_at_ms":prediction_ts+62000},
+                    prediction_ts+62000,
+                )
+
+            add_epoch("epoch-a",9000,"D-A",10000)
+            add_epoch("epoch-b",99000,"D-B",100000)
+
+            with self.assertRaisesRegex(ValueError,"NO_UNIQUE_COMPLETE_CAPTURE_EPOCH"):
+                scorecard(j)
+
+            a=scorecard(j,epoch_id="epoch-a")
+            b=scorecard(j,epoch_id="epoch-b")
+            self.assertEqual("epoch-a",a["capture_epoch_id"])
+            self.assertEqual("epoch-b",b["capture_epoch_id"])
+            self.assertTrue(a["capture_epoch_complete"])
+            self.assertTrue(b["capture_epoch_complete"])
+            self.assertEqual(1,a["precommitted_decisions"])
+            self.assertEqual(1,b["precommitted_decisions"])
+            self.assertEqual(1,a["settlement_candidates"])
+            self.assertEqual(1,b["settlement_candidates"])
+            self.assertEqual(0,a["rejected_predictions"])
+            self.assertEqual(0,b["rejected_predictions"])
+
+    def test_explicit_incomplete_epoch_scorecard_is_visible_but_not_complete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            j=Journal(Path(tmp)/"journal.jsonl")
+            j.append(
+                "CAPTURE_EPOCH_START",
+                {"epoch_id":"epoch-open","started_at_ms":9000,"collector_sha256":"fixture"},
+                9000,
+            )
+            p=self.prediction()
+            ingest_prediction(j,p,received_ms=11000,epoch_id="epoch-open")
+            card=scorecard(j,epoch_id="epoch-open")
+            self.assertEqual("epoch-open",card["capture_epoch_id"])
+            self.assertFalse(card["capture_epoch_complete"])
+            self.assertEqual(1,card["precommitted_decisions"])
+            self.assertEqual("INSUFFICIENT_EVIDENCE",card["status"])
+
+    def test_legacy_scorecard_remains_backward_compatible(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            j=Journal(Path(tmp)/"journal.jsonl")
+            ingest_prediction(j,self.prediction(),11000)
+            card=scorecard(j)
+            self.assertIsNone(card["capture_epoch_id"])
+            self.assertTrue(card["capture_epoch_complete"])
+            self.assertEqual(1,card["precommitted_decisions"])
+
     def test_timeline_export_rejects_mixed_build_epoch(self):
         with tempfile.TemporaryDirectory() as tmp:
             j=Journal(Path(tmp)/"journal.jsonl")

@@ -61,3 +61,18 @@ Export rules:
 - the timeline manifest records `capture_epoch_id` and the selected epoch's terminal hash/code SHA.
 
 Therefore separate capture sessions cannot be concatenated merely because they share a build SHA. A future cohort must preregister its epoch/timeline selection and preserve the exported manifest hash before any replay or scorecard interpretation.
+
+
+## 2026-11-11 — cohort-scoped prospective scorecards
+
+Predictions, policy observations and settlement candidates now inherit the capture `epoch_id`. Scorecards no longer aggregate multiple completed capture epochs implicitly.
+
+Rules:
+- legacy journals without epoch markers remain readable;
+- one COMPLETE epoch may be selected automatically;
+- journals containing multiple COMPLETE epochs require `--epoch-id`;
+- an explicit incomplete epoch can be inspected, but the scorecard reports `capture_epoch_complete=false` and remains `INSUFFICIENT_EVIDENCE`;
+- settlements inherit the epoch of their immutable precommitted prediction, even when reconciliation occurs after capture ended;
+- stale `SHADOW_PREDICTION` events whose decision timestamp predates the capture epoch are ignored rather than relabeled into a new cohort.
+
+This closes cross-session aggregation ambiguity. It does not promote any cohort to performance evidence; verified settlement, payout, latency and complete decision-time policy context remain separate gates.

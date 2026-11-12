@@ -124,3 +124,14 @@ Certificación final local ejecutada con `python scripts/ci/fast_verify.py --ful
 - Estrategias productivas y parámetros permanecieron sin cambios.
 
 El gate técnico de este corte es PASS. El gate cuantitativo permanece **INSUFFICIENT_EVIDENCE**: estos resultados certifican infraestructura causal/reproducibilidad, no edge.
+
+
+## 2026-11-11 — prospective cohort isolation checkpoint
+
+Prospective evidence is now scoped end-to-end by capture epoch. `PREDICTION`, `PREDICTION_REJECTED`, policy observations, settlement candidates, transport/error evidence and active-asset observations can be attributed to one epoch. `scorecard()` refuses to combine multiple completed epochs without an explicit selector and exposes `capture_epoch_id` plus `capture_epoch_complete`.
+
+A recovered/old `SHADOW_PREDICTION` event predating the epoch boundary is not admitted to the new cohort. Settlement attribution follows the immutable prediction epoch, so a later reconciliation cannot migrate a decision between cohorts.
+
+Validation: targeted prospective tests **13/13 PASS**; full Python impact gate **134 PASS**; no Android/Gradle/APK work is required because this cut changes only research Python/tests/docs.
+
+Verdict remains `INSUFFICIENT_EVIDENCE`. Cohort integrity improved; DATA/STATISTICAL/PROSPECTIVE evidence gates are not thereby satisfied.
