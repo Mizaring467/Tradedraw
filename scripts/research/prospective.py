@@ -15,7 +15,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from scripts.research.active_asset_timeline import parse_asset_event, timeline_summary
+from scripts.research.active_asset_timeline import build_timeline_manifest, parse_asset_event, timeline_summary
 from scripts.research.policy_context_coverage import coverage_summary, observed_context_from_status, observation_summary
 
 REQUIRED = {'decisionId','timestamp','asset','strategyVersion','action','confidence','reason','regime','observed_payout','git_sha','entry_price'}
@@ -152,6 +152,57 @@ def scorecard(journal):
                 limitation='No automatic performance approval: reconcile raw ticks, lineage, registry, payout, full ExecutionPolicy context and runtime settlement first. Status snapshots are partial pre-outcome observations, never exact decision context. Missing settlements remain pending, never ties.')
 
 
+def unique_epoch_code_sha(records):
+    shas=set()
+    for row in records:
+        if row.get("kind")!="TRANSPORT":
+            continue
+        payload=row.get("payload")
+        if not isinstance(payload,dict) or payload.get("endpoint")!="/status":
+            continue
+        response=payload.get("response")
+        if isinstance(response,dict):
+            sha=response.get("gitSha")
+            if isinstance(sha,str) and sha.strip():
+                shas.add(sha.strip())
+    if len(shas)!=1:
+        raise ValueError("NO_UNIQUE_EPOCH_CODE_SHA")
+    return next(iter(shas))
+
+
+def collector_bundle_sha256():
+    paths=[
+        Path(__file__),
+        Path(__file__).with_name("active_asset_timeline.py"),
+        Path(__file__).with_name("policy_context_coverage.py"),
+    ]
+    digest=hashlib.sha256()
+    for path in sorted(paths,key=lambda item:item.name):
+        digest.update(path.name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def export_active_asset_timeline(journal,out_path,max_age_ms):
+    records=journal.records()
+    manifest=build_timeline_manifest(
+        records,
+        max_age_ms=max_age_ms,
+        code_sha=unique_epoch_code_sha(records),
+        collector_sha256=collector_bundle_sha256(),
+    )
+    out=Path(out_path)
+    out.parent.mkdir(parents=True,exist_ok=True)
+    with out.open("x",encoding="utf-8") as handle:
+        json.dump(manifest,handle,sort_keys=True,separators=(",",":"))
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    return manifest
+
+
 def capture(journal,samples,interval):
     # Explicitly fixed loopback; redirect handling disabled to prevent leaving ADB tunnel.
     class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -207,14 +258,24 @@ def capture(journal,samples,interval):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('mode',choices=['capture','scorecard'])
+    p.add_argument('mode',choices=['capture','scorecard','export-timeline'])
     p.add_argument('--journal',required=True)
     p.add_argument('--samples',type=int,default=1)
     p.add_argument('--interval',type=float,default=2.0)
+    p.add_argument('--timeline-out')
+    p.add_argument('--max-age-ms',type=int)
     args=p.parse_args()
     if args.samples<1 or not 0<args.interval<=60:p.error('samples >=1, interval in (0,60]')
     j=Journal(args.journal)
-    if args.mode=='capture':capture(j,args.samples,args.interval)
-    print(json.dumps(scorecard(j),indent=2))
+    if args.mode=='capture':
+        capture(j,args.samples,args.interval)
+        print(json.dumps(scorecard(j),indent=2))
+    elif args.mode=='scorecard':
+        print(json.dumps(scorecard(j),indent=2))
+    else:
+        if not args.timeline_out or args.max_age_ms is None or args.max_age_ms<0:
+            p.error('export-timeline requires --timeline-out and --max-age-ms >= 0')
+        manifest=export_active_asset_timeline(j,args.timeline_out,args.max_age_ms)
+        print(json.dumps(manifest,indent=2))
 
 if __name__=='__main__':main()

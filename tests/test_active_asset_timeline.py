@@ -1,6 +1,6 @@
 import unittest
 
-from scripts.research.active_asset_timeline import active_asset_at, join_records_to_active_asset, parse_asset_event, timeline_summary
+from scripts.research.active_asset_timeline import active_asset_at, build_timeline_manifest, join_records_to_active_asset, parse_asset_event, timeline_summary
 
 
 class ActiveAssetTimelineTest(unittest.TestCase):
@@ -81,6 +81,37 @@ class ActiveAssetTimelineTest(unittest.TestCase):
         self.assertEqual("UNKNOWN_NO_PRIOR_OBSERVATION",joined[0]["active_asset_evidence"]["status"])
         self.assertEqual("KNOWN_CAUSAL_OBSERVATION",joined[1]["active_asset_evidence"]["status"])
         self.assertEqual("UNKNOWN_INVALID_RECORD_TIMESTAMP",joined[2]["active_asset_evidence"]["status"])
+
+
+    def test_manifest_builder_seals_source_and_preserves_only_explicit_observations(self):
+        records=[
+            {"kind":"TRANSPORT","payload":{},"sha256":"1"*64},
+            {"kind":"ACTIVE_ASSET_OBSERVATION","payload":{
+                "atMs":2000,"ric":"B","quality":"RUNTIME_SCREEN_ASSET_OBSERVED"
+            },"sha256":"2"*64},
+            {"kind":"ACTIVE_ASSET_OBSERVATION","payload":{
+                "atMs":1000,"ric":"A","quality":"RUNTIME_SCREEN_ASSET_OBSERVED"
+            },"sha256":"3"*64},
+        ]
+        manifest=build_timeline_manifest(
+            records,
+            max_age_ms=2500,
+            code_sha="deadbeef",
+            collector_sha256="a"*64,
+        )
+        self.assertEqual(1,manifest["schema_version"])
+        self.assertEqual("3"*64,manifest["source_journal_final_sha256"])
+        self.assertEqual(2500,manifest["max_age_ms"])
+        self.assertEqual(["A","B"],[row["ric"] for row in manifest["observations"]])
+
+    def test_manifest_builder_rejects_unsealed_or_invalid_identity(self):
+        with self.assertRaisesRegex(ValueError,"SOURCE_JOURNAL_EMPTY"):
+            build_timeline_manifest([],max_age_ms=1,code_sha="x",collector_sha256="a"*64)
+        with self.assertRaisesRegex(ValueError,"INVALID_COLLECTOR_SHA256"):
+            build_timeline_manifest(
+                [{"kind":"X","payload":{},"sha256":"b"*64}],
+                max_age_ms=1,code_sha="x",collector_sha256="bad",
+            )
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from scripts.research.prospective import Journal,ingest_asset_observation,ingest_policy_observation,ingest_prediction,ingest_settlement,scorecard
+from scripts.research.prospective import Journal,collector_bundle_sha256,export_active_asset_timeline,ingest_asset_observation,ingest_policy_observation,ingest_prediction,ingest_settlement,scorecard,unique_epoch_code_sha
 
 
 class ProspectiveJournalTest(unittest.TestCase):
@@ -59,3 +59,31 @@ class ProspectiveJournalTest(unittest.TestCase):
             self.assertEqual(1,card["active_asset_timeline"]["observations"])
             self.assertEqual(["Z-CRY/IDX"],card["active_asset_timeline"]["assets"])
             self.assertFalse(card["active_asset_timeline"]["supports_mixed_asset_replay"])
+
+
+    def test_timeline_export_is_sealed_versioned_and_exclusive_create(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            j=Journal(Path(tmp)/"journal.jsonl")
+            j.append("TRANSPORT",{"endpoint":"/status","response":{"gitSha":"abc123"}},1000)
+            ingest_asset_observation(
+                j,
+                {"atMs":1100,"kind":"ASSET","detail":'visible="Crypto IDX" ric="Z-CRY/IDX"'},
+                epoch_start_ms=1000,
+            )
+            out=Path(tmp)/"timeline.json"
+            manifest=export_active_asset_timeline(j,out,2500)
+            self.assertEqual(1,manifest["schema_version"])
+            self.assertEqual("abc123",manifest["code_sha"])
+            self.assertEqual(2500,manifest["max_age_ms"])
+            self.assertEqual(collector_bundle_sha256(),manifest["collector_sha256"])
+            self.assertEqual("Z-CRY/IDX",manifest["observations"][0]["ric"])
+            self.assertTrue(out.exists())
+            with self.assertRaises(FileExistsError):
+                export_active_asset_timeline(j,out,2500)
+
+    def test_timeline_export_rejects_mixed_build_epoch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            j=Journal(Path(tmp)/"journal.jsonl")
+            j.append("TRANSPORT",{"endpoint":"/status","response":{"gitSha":"a"}},1000)
+            j.append("TRANSPORT",{"endpoint":"/status","response":{"gitSha":"b"}},1001)
+            self.assertRaisesRegex(ValueError,"NO_UNIQUE_EPOCH_CODE_SHA",unique_epoch_code_sha,j.records())

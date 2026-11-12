@@ -153,3 +153,68 @@ def join_records_to_active_asset(
             evidence = active_asset_at(obs, ts, max_age_ms=max_age_ms)
         joined.append({**record, "active_asset_evidence": evidence})
     return joined
+
+
+_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+def build_timeline_manifest(
+    journal_records: Iterable[dict[str, Any]],
+    *,
+    max_age_ms: int,
+    code_sha: str,
+    collector_sha256: str,
+) -> dict[str, Any]:
+    """Build the versioned manifest consumed by Kotlin research.
+
+    The source journal's final hash seals all prior append-only records. No asset
+    intervals are inferred here; only explicit ACTIVE_ASSET_OBSERVATION payloads
+    are exported.
+    """
+    if not isinstance(max_age_ms, int) or max_age_ms < 0:
+        raise ValueError("INVALID_MAX_AGE")
+    if not isinstance(code_sha, str) or not code_sha.strip():
+        raise ValueError("CODE_SHA_REQUIRED")
+    if not isinstance(collector_sha256, str) or not _SHA256_RE.fullmatch(collector_sha256):
+        raise ValueError("INVALID_COLLECTOR_SHA256")
+
+    records = list(journal_records)
+    if not records:
+        raise ValueError("SOURCE_JOURNAL_EMPTY")
+    source_hash = records[-1].get("sha256")
+    if not isinstance(source_hash, str) or not _SHA256_RE.fullmatch(source_hash):
+        raise ValueError("INVALID_SOURCE_JOURNAL_SHA256")
+
+    observations: list[dict[str, Any]] = []
+    for row in records:
+        if row.get("kind") != "ACTIVE_ASSET_OBSERVATION":
+            continue
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            raise ValueError("INVALID_ACTIVE_ASSET_PAYLOAD")
+        at_ms = payload.get("atMs")
+        ric = payload.get("ric")
+        quality = payload.get("quality")
+        if not isinstance(at_ms, int) or at_ms < 0:
+            raise ValueError("INVALID_OBSERVATION_TIMESTAMP")
+        if not isinstance(ric, str) or not ric.strip():
+            raise ValueError("OBSERVATION_RIC_REQUIRED")
+        if quality != "RUNTIME_SCREEN_ASSET_OBSERVED":
+            raise ValueError("UNSUPPORTED_OBSERVATION_QUALITY")
+        observations.append(
+            {
+                "atMs": at_ms,
+                "ric": ric.strip(),
+                "quality": quality,
+            }
+        )
+
+    observations.sort(key=lambda row: row["atMs"])
+    return {
+        "schema_version": 1,
+        "source_journal_final_sha256": source_hash.lower(),
+        "collector_sha256": collector_sha256.lower(),
+        "code_sha": code_sha.strip(),
+        "max_age_ms": max_age_ms,
+        "observations": observations,
+    }
