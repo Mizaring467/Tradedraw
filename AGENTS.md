@@ -67,12 +67,11 @@ Este documento proporciona el contexto completo, la arquitectura tÃ©cnica, las
 
 ---
 
-## âš¡ 1. Regla de Oro para Agentes (Flujo Directo a `main`)
+## âš¡ 1. Regla de Oro para Agentes (Preservar rama activa)
 
-1. **NO abrir Pull Requests innecesarios.** A menos que el usuario lo pida explÃ­citamente, realiza los cambios, haz commit y push **DIRECTAMENTE a la rama `main`**.
-2. **CI/CD Automatizado:** Cada push a `main` activa el pipeline de GitHub Actions (`.github/workflows/android-build.yml`), el cual compila automÃ¡ticamente el APK de depuraciÃ³n:
-   - **Enlace de Descarga del APK:** `https://github.com/Mizaring467/Tradedraw/actions` âž” Artefacto: **`TradeDraw-debug`** (`app-debug.apk`).
-3. **Entrega al Usuario:** Al finalizar tu tarea, proporciona siempre el enlace de GitHub Actions confirmando que el APK estÃ¡ listo para instalarse.
+1. **NO cambies de rama ni empujes a `main` por tu cuenta.** Trabaja y publica sobre la rama que recibiste. Si el checkout activo es `r10-night`, el push debe ir a `r10-night`; el PR de release existente se encarga de la integraciÃ³n a `main`.
+2. **CI/CD por impacto:** `.github/workflows/android-build.yml` valida `main` y `r10-night`. Los cambios ejecutables usan el gate pesado; commits exclusivamente Markdown usan el fast-path documental y no generan APK nuevo.
+3. **Entrega proporcional al cambio:** proporciona artefacto/APK sólo cuando el cambio haya producido uno. Para documentación o tooling sin impacto Android, reporta los tests/CI relevantes sin afirmar que existe un APK nuevo.
 
 ---
 
@@ -219,26 +218,35 @@ Todo agente autónomo o asistente de desarrollo que intervenga en **TradeDraw** 
 
 ## ðŸ“¦ 7. Procedimiento de VerificaciÃ³n de Cambios
 
-Tras realizar modificaciones en el cÃ³digo:
+Usa validación por impacto durante la iteración:
+
 ```bash
-# 1. Comprobar estado de archivos y compilar
-./gradlew assembleDebug --no-daemon --no-configuration-cache
+# 1. Ver qué gates corresponden a los archivos modificados
+python scripts/ci/fast_verify.py --plan
 
-# 2. Instalar de inmediato en el dispositivo conectado vÃ­a ADB
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+# 2. Ejecutar únicamente los gates afectados
+python scripts/ci/fast_verify.py
 
-# 3. Agregar y commitear con mensaje descriptivo
-git add -A
-git commit -m "feat/fix: descripciÃ³n clara del cambio"
-
-# 4. Empujar directamente a main
-git push origin main
+# 3. Para un corte de código que vaya a certificarse como gate final
+python scripts/ci/fast_verify.py --full
 ```
-Luego, verifica en la pestaÃ±a de **Actions** del repositorio de GitHub que el build haya concluido en verde (âœ“) y deja el enlace al artefacto descargable para el usuario.
 
-> ⚡ **Regla Estricta y Memoria Permanente:**
-> 1. **Siempre al terminar una tarea o cambio**, compila e instala de inmediato la app en el teléfono vía `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
-> 2. **El probador (`tester`) DEBE probar la app en el dispositivo** (verificación visual, logs de runtime y flujos clave) y **emitir su reporte formal** con evidencia para validar el avance y continuar con la siguiente iteración.
+Después revisa `git diff`/`git status`, commitea y empuja **la rama activa**:
+
+```bash
+branch="$(git branch --show-current)"
+git add <archivos-del-corte>
+git commit -m "feat/fix/ci/docs: descripción clara"
+git push origin "$branch"
+```
+
+Reglas de dispositivo y APK:
+
+1. **Cambios de runtime Android/app:** requieren APK, instalación en dispositivo cuando haya un dispositivo de prueba disponible y verificación del flujo afectado antes de cerrar el gate.
+2. **Cambios sólo de documentación, CI, scripts de análisis o research que no alteren runtime Android:** NO requieren reconstruir ni instalar APK localmente por defecto. Ejecuta el gate de impacto correspondiente y deja que CI aplique el camino pesado o documental según el delta.
+3. **Cambios compartidos que puedan afectar app aunque nazcan fuera de `:app`:** usa el grafo de `fast_verify`; si `:app` aparece downstream, el plan incluirá APK.
+4. **El probador (`tester`) es obligatorio para cambios que alteren comportamiento runtime**, no para commits puramente documentales/tooling sin impacto de ejecución.
+5. Nunca declares un APK nuevo si el gate no ejecutó `:app:assembleDebug` o CI lo omitió por fast-path documental.
 
 ---
 
