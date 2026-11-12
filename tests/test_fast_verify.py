@@ -1,4 +1,5 @@
 import importlib.util
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -102,6 +103,28 @@ class FastVerifyTest(unittest.TestCase):
         self.assertTrue(fast_verify.is_ignored("app/build/foo.xml"))
         self.assertTrue(fast_verify.is_ignored("graft/.cache/file.json"))
         self.assertFalse(fast_verify.is_ignored("app/src/main/Foo.kt"))
+
+    def test_gradle_lock_rejects_second_owner_and_releases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock_path = Path(tmp) / "gradle.lock"
+            previous = os.environ.get(fast_verify.GRADLE_LOCK_ENV)
+            os.environ[fast_verify.GRADLE_LOCK_ENV] = str(lock_path)
+            try:
+                with fast_verify.gradle_verification_lock(self.repo):
+                    self.assertIn(str(os.getpid()), lock_path.read_text())
+                    with self.assertRaises(SystemExit) as ctx:
+                        with fast_verify.gradle_verification_lock(self.repo):
+                            pass
+                    self.assertIn("already active", str(ctx.exception))
+
+                self.assertEqual("", lock_path.read_text())
+                with fast_verify.gradle_verification_lock(self.repo):
+                    self.assertTrue(lock_path.read_text().strip())
+            finally:
+                if previous is None:
+                    os.environ.pop(fast_verify.GRADLE_LOCK_ENV, None)
+                else:
+                    os.environ[fast_verify.GRADLE_LOCK_ENV] = previous
 
     def test_fast_gradle_command_reuses_daemon_and_combines_apk(self):
         plan = fast_verify.build_plan(

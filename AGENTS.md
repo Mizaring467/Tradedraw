@@ -2,7 +2,7 @@
 
 # POLÍTICA OPERATIVA — EJECUCIÓN VISIBLE OBLIGATORIA
 
-**Aplicación:** AGY, Hermes, Claude Code y OpenCode.
+**Aplicación:** AGY, Hermes, Claude Code, OpenCode y Codex.
 
 > **BLOQUE DE APERTURA.** Esta sección es la primera autoridad del documento. Se incorpora desde
 > `workflows/AGENT_EXECUTION_POLICY.md` y amplía el contenido existente sin sustituir ninguna
@@ -44,6 +44,8 @@ Reglas:
 5. Para tratar cualquier scope lógico compartido como bloqueo, usa `--strict-scope`.
 6. Un claim `GLOBAL` o sobre archivos Gradle/config globales se considera de alcance proyecto completo.
 7. Todo agente que trabaje concurrentemente debe usar un worktree Git separado y ejecutar este pre-flight antes del primer edit de cada nuevo frente.
+8. Los gates Gradle locales deben ejecutarse mediante `python scripts/ci/fast_verify.py` (o `--full` para certificación) para respetar el lock global entre worktrees. No lanzar dos `./gradlew` pesados en paralelo en el mismo dispositivo.
+9. Si `fast_verify` informa que otro Gradle gate posee el lock, no fuerces otro daemon ni borres el lock: cambia temporalmente a un frente no-Gradle y reintenta cuando el propietario haya terminado.
 
 ---
 

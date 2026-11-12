@@ -57,6 +57,14 @@ El modo full limpia outputs, usa daemon fresco, ejecuta todos los módulos, Pyth
 
 Un PASS rápido nunca sustituye el gate full cuando el corte va a publicarse como evidencia final.
 
+## 4. Exclusión de Gradle entre worktrees
+
+`fast_verify.py` usa un lock compartido en `~/.cache/tradedraw/gradle-verify.lock`.
+
+Si otro worktree ya está ejecutando un gate Gradle, un segundo `fast_verify` no arranca otro daemon pesado: falla de forma explícita mostrando PID, repositorio y hora del propietario. El lock usa `flock`, por lo que el sistema operativo lo libera aunque el proceso propietario termine o se caiga.
+
+Esto evita competir por memoria/CPU en el mismo teléfono y reduce los crashes de daemon observados con dos builds simultáneos.
+
 ## 4. CI
 
 GitHub Actions clasifica el delta del evento.

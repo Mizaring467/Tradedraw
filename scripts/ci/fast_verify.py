@@ -18,6 +18,10 @@ instead of maintaining a second hand-written dependency graph.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import errno
+import json
 import os
 from pathlib import Path
 import re
@@ -27,7 +31,12 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import IO, Iterable, Iterator, Sequence
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows fallback keeps verification usable.
+    fcntl = None
 
 PROJECT_RE = re.compile(r"""project\(\s*["']:([^"']+)["']\s*\)""")
 ANDROID_PLUGIN_RE = re.compile(r"libs\.plugins\.android\.(?:application|library)")
@@ -37,6 +46,7 @@ PYTHON_TIMEOUT_SEC = 180
 REPLAY_TIMEOUT_SEC = 120
 GRADLE_FAST_TIMEOUT_SEC = 600
 GRADLE_FULL_TIMEOUT_SEC = 900
+GRADLE_LOCK_ENV = "TRADEDRAW_GRADLE_LOCK"
 
 IGNORED_PREFIXES = (
     ".git/",
@@ -327,6 +337,84 @@ def _terminate_process_group(proc: subprocess.Popen[bytes] | subprocess.Popen[st
         proc.wait(timeout=3)
 
 
+def gradle_lock_path() -> Path:
+    override = os.environ.get(GRADLE_LOCK_ENV)
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".cache" / "tradedraw" / "gradle-verify.lock"
+
+
+def _read_lock_owner(handle: IO[str]) -> str:
+    try:
+        handle.seek(0)
+        raw = handle.read().strip()
+    except OSError:
+        return "unknown owner"
+    if not raw:
+        return "unknown owner"
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+    return (
+        f"pid={data.get('pid', '?')} "
+        f"repo={data.get('repo', '?')} "
+        f"started={data.get('started_at', '?')}"
+    )
+
+
+@contextmanager
+def gradle_verification_lock(repo: Path) -> Iterator[Path]:
+    """Prevent multiple TradeDraw worktrees from running Gradle gates concurrently."""
+    path = gradle_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("a+", encoding="utf-8")
+
+    if fcntl is None:
+        # TradeDraw CI and Termux are Unix. Keep other platforms functional
+        # rather than introducing a broken emulated lock.
+        try:
+            yield path
+        finally:
+            handle.close()
+        return
+
+    try:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            if exc.errno not in (errno.EACCES, errno.EAGAIN):
+                raise
+            owner = _read_lock_owner(handle)
+            raise SystemExit(
+                "another TradeDraw Gradle verification is already active "
+                f"({owner}); do not start a second heavy build"
+            ) from exc
+
+        owner = {
+            "pid": os.getpid(),
+            "repo": str(repo.resolve()),
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }
+        handle.seek(0)
+        handle.truncate()
+        json.dump(owner, handle, sort_keys=True)
+        handle.write("\n")
+        handle.flush()
+        print(f"[gradle-lock] acquired {path} for {owner['repo']}", flush=True)
+
+        try:
+            yield path
+        finally:
+            handle.seek(0)
+            handle.truncate()
+            handle.flush()
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            print(f"[gradle-lock] released {path}", flush=True)
+    finally:
+        handle.close()
+
+
 def run_command(
     repo: Path,
     command: Sequence[str],
@@ -428,9 +516,10 @@ def execute_plan(
     gradle = gradle_command(plan, cold=cold)
     if gradle:
         gradle_timeout = GRADLE_FULL_TIMEOUT_SEC if plan.full else GRADLE_FAST_TIMEOUT_SEC
-        run_command(repo, gradle, "gradle", env=env, timeout_s=gradle_timeout)
-        if plan.full:
-            enforce_full_test_summary(repo)
+        with gradle_verification_lock(repo):
+            run_command(repo, gradle, "gradle", env=env, timeout_s=gradle_timeout)
+            if plan.full:
+                enforce_full_test_summary(repo)
 
     if plan.run_replay:
         command = replay_command(repo)
