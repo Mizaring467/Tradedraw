@@ -1,4 +1,6 @@
+import contextlib
 import importlib.util
+import io
 from pathlib import Path
 import sys
 import unittest
@@ -125,6 +127,58 @@ detached
                 claims_present=True,
             ),
         )
+
+    def test_claim_human_output_suppresses_unrelated_history(self):
+        result = worktree_overlap.OverlapResult(
+            current="/current",
+            other="/other",
+            other_branch="agent",
+            exact_paths=("research/Foo.kt",),
+            shared_scopes=("research",),
+            claimed_conflicts=(),
+            current_changes=("research/Foo.kt",),
+            other_changes=("research/Foo.kt",),
+        )
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            worktree_overlap.print_human([result], claims_present=True)
+        rendered = out.getvalue()
+        self.assertIn("Claim clear across 1 other worktree(s).", rendered)
+        self.assertNotIn("research/Foo.kt", rendered)
+        self.assertNotIn("DIRECT FILE COLLISIONS", rendered)
+
+    def test_claim_human_output_only_shows_claim_conflicts(self):
+        safe = worktree_overlap.OverlapResult(
+            current="/current",
+            other="/safe",
+            other_branch="safe-agent",
+            exact_paths=("research/Foo.kt",),
+            shared_scopes=("research",),
+            claimed_conflicts=(),
+            current_changes=(),
+            other_changes=("research/Foo.kt",),
+        )
+        conflict = worktree_overlap.OverlapResult(
+            current="/current",
+            other="/busy",
+            other_branch="busy-agent",
+            exact_paths=(),
+            shared_scopes=(),
+            claimed_conflicts=("scripts/ci",),
+            current_changes=(),
+            other_changes=("scripts/ci/tool.py",),
+        )
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            worktree_overlap.print_human(
+                [safe, conflict],
+                claims_present=True,
+            )
+        rendered = out.getvalue()
+        self.assertIn("/busy [busy-agent]", rendered)
+        self.assertIn("CLAIM CONFLICTS: scripts/ci", rendered)
+        self.assertNotIn("/safe", rendered)
+        self.assertNotIn("research/Foo.kt", rendered)
 
     def test_global_scope_is_project_wide_risk(self):
         modules = {"app"}

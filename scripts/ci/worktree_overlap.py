@@ -243,10 +243,26 @@ def analyze(repo: Path, claims: Iterable[str] = ()) -> list[OverlapResult]:
     return results
 
 
-def print_human(results: list[OverlapResult]) -> None:
+def print_human(
+    results: list[OverlapResult],
+    *,
+    claims_present: bool = False,
+) -> None:
     print("=== TradeDraw worktree collision guard ===")
     if not results:
         print("No other worktrees registered.")
+        return
+
+    if claims_present:
+        conflicts = [result for result in results if result.claimed_conflicts]
+        if not conflicts:
+            print(f"Claim clear across {len(results)} other worktree(s).")
+            return
+
+        for result in conflicts:
+            branch = result.other_branch or "(detached)"
+            print(f"\nAgainst: {result.other} [{branch}]")
+            print("  CLAIM CONFLICTS:", ", ".join(result.claimed_conflicts))
         return
 
     for result in results:
@@ -324,7 +340,7 @@ def main() -> int:
     if args.json:
         print(json.dumps([asdict(r) for r in results], indent=2))
     else:
-        print_human(results)
+        print_human(results, claims_present=bool(args.claim))
 
     return exit_code(
         results,
