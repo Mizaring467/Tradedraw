@@ -17,6 +17,7 @@ dependencies {
     implementation(project(":core"))
     testImplementation(project(":strategy"))
     testImplementation(project(":simulation"))
+    testImplementation(project(":execution"))
     testImplementation("org.json:json:20240303")
     testImplementation(libs.junit)
 }
