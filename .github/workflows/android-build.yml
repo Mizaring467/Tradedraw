@@ -7,9 +7,10 @@ on:
     branches: [main, r10-night]
   workflow_dispatch:
 
-# A newer commit makes an older build obsolete; cancel it instead of burning CI time.
+# Push and PR events for the same head branch share one slot. The later event
+# cancels the duplicate runner instead of compiling the same SHA twice.
 concurrency:
-  group: tradedraw-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: tradedraw-${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
