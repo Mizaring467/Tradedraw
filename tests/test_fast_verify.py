@@ -88,6 +88,16 @@ class FastVerifyTest(unittest.TestCase):
         self.assertFalse(plan.gradle_tasks)
         self.assertTrue(plan.run_replay)
 
+    def test_normalize_path_preserves_dotfile_prefix(self):
+        self.assertEqual(
+            ".github/workflows/android-build.yml",
+            fast_verify.normalize_path(".github/workflows/android-build.yml"),
+        )
+        self.assertEqual(
+            ".github/workflows/android-build.yml",
+            fast_verify.normalize_path("./.github/workflows/android-build.yml"),
+        )
+
     def test_ignored_generated_paths(self):
         self.assertTrue(fast_verify.is_ignored("app/build/foo.xml"))
         self.assertTrue(fast_verify.is_ignored("graft/.cache/file.json"))

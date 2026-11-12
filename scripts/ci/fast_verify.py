@@ -106,7 +106,10 @@ def run_git(repo: Path, *args: str) -> str:
 
 
 def normalize_path(raw: str) -> str:
-    return raw.strip().replace("\\", "/").lstrip("./")
+    normalized = raw.strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
 
 
 def is_ignored(path: str) -> bool:
