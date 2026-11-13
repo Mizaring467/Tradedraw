@@ -1,8 +1,11 @@
 import contextlib
 import importlib.util
 import io
+import json
 from pathlib import Path
 import sys
+import subprocess
+import tempfile
 import unittest
 
 
@@ -68,7 +71,7 @@ detached
             ["research", "loops/r29c/STATE.md", "scripts/ci"],
             modules,
         )
-        self.assertEqual({"research", "loops/r29c", "scripts/ci"}, claims)
+        self.assertEqual({"research", "loops/r29c/STATE.md", "scripts/ci"}, claims)
 
     def test_claim_conflict_matches_other_scope(self):
         modules = {"app", "research"}
@@ -191,6 +194,123 @@ detached
                 ("GLOBAL" in other_scopes and current)):
             shared.add("GLOBAL")
         self.assertIn("GLOBAL", shared)
+
+
+class WorktreeClaimIntegrationTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        self.repo = root / "main"
+        self.repo.mkdir()
+        self.run_git(self.repo, "init", "-q")
+        self.run_git(self.repo, "config", "user.email", "test@example.invalid")
+        self.run_git(self.repo, "config", "user.name", "Overlap test")
+        for name in ("settings.gradle.kts", "app/build.gradle.kts",
+                     "app/src/A.kt", "app/src/B.kt", "scripts/ci/a.py",
+                     "scripts/ci/b.py", "loops/r29c/STATE.md"):
+            self.write(self.repo, name)
+        self.run_git(self.repo, "add", ".")
+        self.run_git(self.repo, "commit", "-qm", "fixture")
+        self.other = root / "other"
+        self.run_git(self.repo, "worktree", "add", "-qb", "agent", str(self.other))
+
+    def run_git(self, repo, *args):
+        return subprocess.run(["git", *args], cwd=repo, check=True,
+                              capture_output=True, text=True)
+
+    def write(self, repo, name):
+        path = repo / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("fixture change\n")
+
+    def cli(self, *args):
+        return subprocess.run([sys.executable, str(MODULE_PATH), "--repo",
+                               str(self.repo), *args], capture_output=True, text=True)
+
+    def assert_claim(self, claim, expected):
+        proc = self.cli("--claim", claim, "--json")
+        self.assertEqual(expected, proc.returncode, proc.stderr + proc.stdout)
+        result = json.loads(proc.stdout)[0]
+        self.assertEqual(bool(expected), bool(result["claimed_conflicts"]))
+        return result
+
+    def test_siblings_exact_directory_module_and_untracked(self):
+        (self.other / "app/src/A.kt").write_text("modified\n")
+        self.assert_claim("app/src/B.kt", 0)
+        self.assert_claim("app/src/A.kt", 4)
+        self.assert_claim("app/src", 4)
+        self.assert_claim("app", 4)
+        self.assert_claim("app/src/A", 0)
+        self.write(self.other, "scripts/ci/new file é.py")
+        self.assert_claim("scripts/ci/new file é.py", 4)
+        self.assert_claim("scripts/ci/other.py", 0)
+        self.assert_claim("scripts/ci", 4)
+        self.assert_claim("scripts", 4)
+        self.assert_claim("scripts/c", 0)
+
+    def test_normalization_and_invalid_claims(self):
+        (self.other / "app/src/A.kt").write_text("modified\n")
+        for claim in ("./app//src/./A.kt", "app\\src\\A.kt",
+                      str(self.repo / "app/src/A.kt")):
+            self.assert_claim(claim, 4)
+        for claim in ("", " ", "../app", "app/../app/src/A.kt",
+                      "/outside/app/src/A.kt", "C:\\app\\src\\A.kt"):
+            with self.subTest(claim=claim):
+                proc = self.cli("--claim", claim)
+                self.assertEqual(1, proc.returncode, proc.stdout + proc.stderr)
+                self.assertIn("Invalid claim:", proc.stderr)
+        (self.repo / "alias").symlink_to(self.other, target_is_directory=True)
+        proc = self.cli("--claim", "alias/app/src/A.kt")
+        self.assertEqual(1, proc.returncode)
+
+    def test_renames_and_unusual_names_keep_both_paths(self):
+        self.assert_claim("GLOBAL", 0)
+        self.run_git(self.other, "mv", "app/src/A.kt", "app/src/Renamed.kt")
+        self.assert_claim("app/src/A.kt", 4)
+        self.assert_claim("app/src/Renamed.kt", 4)
+        self.run_git(self.other, "commit", "-qm", "rename")
+        self.assert_claim("app/src/A.kt", 4)
+        for name in ("scripts/ci/line\nbreak.py", "scripts/ci/trailing.py "):
+            self.write(self.other, name)
+            self.assert_claim(name, 4)
+            self.run_git(self.other, "add", name)
+            self.run_git(self.other, "commit", "-qm", "unusual filename")
+            self.assert_claim(name, 4)
+
+    def test_global_in_both_directions(self):
+        self.write(self.other, "new.txt")
+        for claim in ("GLOBAL", ".", "gradle", "gradle/wrapper/new",
+                      "settings.gradle.kts"):
+            self.assert_claim(claim, 4)
+        (self.other / "settings.gradle.kts").write_text("modified\n")
+        self.assert_claim("unrelated/new.py", 4)
+
+    def test_strict_scope_and_exit_codes_stay_compatible(self):
+        (self.repo / "app/src/B.kt").write_text("current\n")
+        (self.other / "app/src/A.kt").write_text("other\n")
+        self.assertEqual(0, self.cli().returncode)
+        self.assertEqual(3, self.cli("--strict-scope").returncode)
+        # Prospective claims still ignore unrelated historical logical overlap.
+        self.assertEqual(0, self.cli("--strict-scope", "--claim", "scripts/ci").returncode)
+        (self.other / "app/src/B.kt").write_text("other\n")
+        self.assertEqual(2, self.cli().returncode)
+        self.assertEqual(2, self.cli("--strict-scope").returncode)
+        self.assert_claim("app/src/B.kt", 4)
+
+    def test_committed_staged_deleted_and_parent_replacement(self):
+        (self.other / "app/src/A.kt").write_text("committed\n")
+        self.run_git(self.other, "add", ".")
+        self.run_git(self.other, "commit", "-qm", "agent edit")
+        self.assert_claim("app/src/A.kt", 4)
+        self.assert_claim("app/src/B.kt", 0)
+        (self.other / "scripts/ci/a.py").unlink()
+        self.run_git(self.other, "add", "scripts/ci/a.py")
+        self.assert_claim("scripts/ci/a.py", 4)
+        self.assert_claim("scripts/ci/a.py/child", 4)
+        self.write(self.other, "loops/r29c/extra.md")
+        self.assert_claim("loops/r29c/STATE.md", 0)
+        self.assert_claim("loops/r29c", 4)
 
 
 if __name__ == "__main__":

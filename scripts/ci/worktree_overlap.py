@@ -103,20 +103,20 @@ def list_worktrees(repo: Path) -> list[WorktreeInfo]:
 def working_changes(worktree: Path) -> set[str]:
     paths: set[str] = set()
     for args in (
-        ("diff", "--name-only", "HEAD"),
-        ("diff", "--cached", "--name-only"),
-        ("ls-files", "--others", "--exclude-standard"),
+        ("diff", "--name-only", "--no-renames", "-z", "HEAD"),
+        ("diff", "--cached", "--name-only", "--no-renames", "-z"),
+        ("ls-files", "--others", "--exclude-standard", "-z"),
     ):
         output = git(worktree, *args)
-        paths.update(line.strip() for line in output.splitlines() if line.strip())
+        paths.update(path for path in output.split("\0") if path)
     return paths
 
 
 def committed_changes_since(
     repo: Path, merge_base: str, head: str
 ) -> set[str]:
-    output = git(repo, "diff", "--name-only", f"{merge_base}..{head}")
-    return {line.strip() for line in output.splitlines() if line.strip()}
+    output = git(repo, "diff", "--name-only", "--no-renames", "-z", f"{merge_base}..{head}")
+    return {path for path in output.split("\0") if path}
 
 
 def pair_changes(
@@ -163,22 +163,40 @@ def scopes(paths: Iterable[str], modules: set[str]) -> set[str]:
 
 
 
-def normalize_claims(claims: Iterable[str], modules: set[str]) -> set[str]:
-    """Translate module/scope/path claims into the same logical scopes used by analysis."""
+def normalize_claims(
+    claims: Iterable[str], modules: set[str], repo: Path | None = None,
+) -> set[str]:
+    """Keep explicit path granularity; module/directory claims cover descendants.
+
+    No existence or extension heuristic is needed: component boundaries distinguish
+    siblings, including new/deleted files. Global config retains project-wide scope.
+    Absolute paths require a repo and must be inside it; traversal is rejected.
+    """
     normalized: set[str] = set()
-    known_scoped = {
-        f"{root}/{child}"
-        for root in SCOPED_ROOTS
-        for child in ("ci", "research", "validation", "backtest", "r29c")
-    }
     for raw in claims:
-        token = raw.strip().replace("\\", "/").strip("/")
+        token = raw.replace("\\", "/")
+        if not token.strip() or ".." in token.split("/") or "\0" in token:
+            raise ValueError(f"invalid claim: {raw!r}")
+        if len(token) >= 2 and token[1] == ":":
+            raise ValueError(f"drive-qualified claim is unsupported: {raw!r}")
+        path = Path(token)
+        if path.is_absolute():
+            if repo is None:
+                raise ValueError(f"absolute claim requires repository root: {raw!r}")
+            try:
+                token = path.relative_to(repo.resolve()).as_posix()
+            except ValueError:
+                raise ValueError(f"claim outside repository: {raw!r}") from None
+        token = "/".join(part for part in token.split("/") if part and part != ".")
+        if repo is not None:
+            candidate = repo / token
+            if candidate.resolve() != candidate.absolute():
+                raise ValueError(f"claim contains a symlink: {raw!r}")
         if not token:
-            continue
-        if token == "GLOBAL" or token in modules or token in known_scoped:
-            normalized.add(token)
-            continue
-        normalized.add(scope_for(token, modules))
+            token = "GLOBAL"  # claiming the repository root covers everything
+        if token == "gradle" or scope_for(token, modules) == "GLOBAL":
+            token = "GLOBAL"
+        normalized.add(token)
     return normalized
 
 
@@ -189,11 +207,12 @@ def claimed_conflicts_for(
 ) -> set[str]:
     if not claimed_scopes or not other_changes:
         return set()
-    other_scopes = scopes(other_changes, modules)
-    conflicts = claimed_scopes & other_scopes
-    if "GLOBAL" in claimed_scopes:
-        conflicts.add("GLOBAL")
-    if "GLOBAL" in other_scopes:
+    conflicts = {
+        claim for claim in claimed_scopes
+        if any(claim == path or path.startswith(claim + "/")
+               or claim.startswith(path + "/") for path in other_changes)
+    }
+    if "GLOBAL" in claimed_scopes or "GLOBAL" in scopes(other_changes, modules):
         conflicts.add("GLOBAL")
     return conflicts
 
@@ -209,7 +228,7 @@ def analyze(repo: Path, claims: Iterable[str] = ()) -> list[OverlapResult]:
         raise RuntimeError(f"current path is not a registered worktree: {repo}")
 
     modules = module_roots(repo)
-    claimed_scopes = normalize_claims(claims, modules)
+    claimed_scopes = normalize_claims(claims, modules, repo)
     results: list[OverlapResult] = []
     for other in worktrees:
         if other.path == current.path:
@@ -307,6 +326,8 @@ def parse_args() -> argparse.Namespace:
         metavar="SCOPE_OR_PATH",
         help=(
             "Declare an intended module/scope/path before editing. Repeatable. "
+            "Paths retain their granularity; directories/modules cover descendants. "
+            "GLOBAL and Gradle config cover the project. "
             "Examples: --claim research --claim loops/r29c --claim app/src/Main.kt"
         ),
     )
@@ -335,7 +356,11 @@ def exit_code(
 def main() -> int:
     args = parse_args()
     repo = Path(args.repo).resolve()
-    results = analyze(repo, args.claim)
+    try:
+        results = analyze(repo, args.claim)
+    except ValueError as exc:
+        print(f"Invalid claim: {exc}", file=sys.stderr)
+        return 1
 
     if args.json:
         print(json.dumps([asdict(r) for r in results], indent=2))
