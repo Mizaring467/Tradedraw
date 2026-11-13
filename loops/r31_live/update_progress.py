@@ -111,6 +111,16 @@ def pending_from_csv(csv_path: Path) -> int:
     return n
 
 
+def pending_from_rows(rows) -> int:
+    """Igual que pending_from_csv pero sobre filas ya cargadas/segmentadas
+    (usar con new_rows tras restar el baseline)."""
+    n = 0
+    for row in rows:
+        if (row.get("result") or "").strip().upper() == "PENDING":
+            n += 1
+    return n
+
+
 def fetch_device_csv(serial: str, dest: Path) -> Path:
     out = subprocess.run(
         ["adb", "-s", serial, "shell", "cat", DEFAULT_DEVICE_CSV],
@@ -120,6 +130,11 @@ def fetch_device_csv(serial: str, dest: Path) -> Path:
         raise RuntimeError(f"adb shell cat falló (rc={out.returncode}): {out.stderr[:200]}")
     dest.write_text(out.stdout, encoding="utf-8")
     return dest
+
+
+R30_LIVE = Path(__file__).resolve().parent.parent / "r30_live"
+R30_EVENTS = R30_LIVE / "watchdog_events.jsonl"
+R31_EVENTS = Path(__file__).resolve().parent / "watchdog_events.jsonl"
 
 
 def parse_iso(ts: str) -> float:
@@ -132,7 +147,8 @@ def runtime_minutes(session_start: Path) -> int:
         return 0
     try:
         data = json.loads(session_start.read_text(encoding="utf-8"))
-        start = data.get("start_ts_utc") or data.get("start_ts")
+        # session_start.json de R31 usa "start_utc" (ISO8601); aceptar variantes.
+        start = data.get("start_utc") or data.get("start_ts_utc") or data.get("start_ts")
         if not start:
             return 0
         start = str(start)
@@ -149,7 +165,25 @@ def runtime_minutes(session_start: Path) -> int:
         return 0
 
 
-def infra_counters(watchdog_state: Path, events: Path):
+def infra_counters(watchdog_state: Path, since_epoch: float):
+    """Contadores de infraestructura SOLO de la ventana R31.
+
+    Los counters del watchdog_state.json (reconexiones_ok/fail, disconnects)
+    son CUMULATIVOS de la vida del daemon r30 (desde 17:39Z, pre-R31) y NO
+    son filtrables por tiempo: se IGNORAN cuando hay ventana temporal.
+    La fuente verificable son los EVENTS JSONL (r30_live + r31_live)
+    filtrados por timestamp_utc >= since_epoch. Con since_epoch<=0 se
+    conserva el comportamiento legacy (counters del state + events sin
+    filtro) para compatibilidad.
+    """
+    if since_epoch <= 0:
+        return _infra_counters_legacy(watchdog_state)
+    return load_events(since_epoch)
+
+
+def _infra_counters_legacy(watchdog_state: Path):
+    """Comportamiento anterior (sin ventana temporal): counters del state
+    (cumulativos del daemon) combinados con events SIN filtro temporal."""
     disconnects = recoveries_ok = recoveries_failed = 0
     if watchdog_state.exists():
         try:
@@ -163,8 +197,10 @@ def infra_counters(watchdog_state: Path, events: Path):
     # events: contar WS_DISCONNECT (incidentes) y RECOVERY_OK/RECOVERY_FAIL
     ev_disc = ev_ok = ev_fail = 0
     seen_incidents = set()
-    if events.exists():
-        with open(events, encoding="utf-8", errors="replace") as fh:
+    for events_path in (R30_EVENTS, R31_EVENTS):
+        if not events_path.exists():
+            continue
+        with open(events_path, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
@@ -192,17 +228,79 @@ def infra_counters(watchdog_state: Path, events: Path):
     return disconnects, recoveries_ok, recoveries_failed
 
 
+def load_events(since_epoch: float):
+    """Lee los events JSONL (r30_live + r31_live) y devuelve
+    (disconnects, recoveries_ok, recoveries_failed) contando SOLO eventos
+    con timestamp_utc >= since_epoch. Desconexiones deduplicadas por
+    incident_id/event_id."""
+    disc = ok = fail = 0
+    seen_incidents = set()
+    for events_path in (R30_EVENTS, R31_EVENTS):
+        if not events_path.exists():
+            continue
+        try:
+            with open(events_path, encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        ev = json.loads(line)
+                    except Exception:
+                        continue
+                    ts = ev.get("timestamp_utc") or ev.get("ts_utc") or ""
+                    try:
+                        t_epoch = parse_iso(ts)
+                    except Exception:
+                        continue  # sin timestamp parseable: no cuenta
+                    if t_epoch < since_epoch:
+                        continue  # evento pre-R31: NO cuenta (anti-R30-skew)
+                    et = ev.get("event_type") or ev.get("event") or ""
+                    if et == "WS_DISCONNECT":
+                        iid = ((ev.get("data") or {}).get("incident_id")
+                               or ev.get("event_id") or "")
+                        if iid not in seen_incidents:
+                            seen_incidents.add(iid)
+                            disc += 1
+                    elif et == "RECOVERY_OK":
+                        ok += 1
+                    elif et == "RECOVERY_FAIL":
+                        fail += 1
+        except Exception:
+            continue
+    return disc, ok, fail
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Progreso R31 (idempotente)")
     ap.add_argument("--csv", help="CSV provisto localmente (pull del coordinador)")
     ap.add_argument("--device", action="store_true",
                     help="leer el journal vía adb shell cat (path canónico)")
     ap.add_argument("--serial", default="emulator-5554")
-    ap.add_argument("--watchdog-state", default=str(Path(__file__).resolve().parent.parent.parent / "loops" / "r31_live" / "watchdog_state.json"))
-    ap.add_argument("--events", default=str(Path(__file__).resolve().parent.parent.parent / "loops" / "r31_live" / "watchdog_events.jsonl"))
+    ap.add_argument("--watchdog-state",
+                    default=str(R30_LIVE / "watchdog_state.json"),
+                    help="state del watchdog (solo usado en modo legacy, since<=0)")
+    ap.add_argument("--events", default="",
+                    help="obsoleto: los events se leen de r30_live+r31_live; "
+                         "el argumento se conserva por compatibilidad y se ignora")
+    ap.add_argument("--since", default=None,
+                    help="ISO8601 UTC: contar solo eventos posteriores "
+                         "(default: start_utc de session_start.json)")
     ap.add_argument("--session-start", default=str(SESSION_START))
     ap.add_argument("--out", default=str(OUTPUT))
     args = ap.parse_args(argv)
+
+    # Ventana temporal R31: start_utc de session_start.json (fallback: epoch 0
+    # = comportamiento legacy). FIX anti-doble-conteo de ops R30.
+    since_epoch = 0.0
+    try:
+        ss = json.loads(Path(args.session_start).read_text(encoding="utf-8"))
+        baseline_rows = int(ss.get("baseline_journal_rows") or 0)
+        since_epoch = parse_iso(ss.get("start_utc") or "")
+    except Exception:
+        baseline_rows = 0
+    if args.since:
+        since_epoch = parse_iso(args.since)
 
     csv_path = None
     if args.csv:
@@ -218,13 +316,44 @@ def main(argv=None):
             csv_path = Path(args.out).with_suffix(".device.csv")
             fetch_device_csv(args.serial, csv_path)
 
-    rows, dup = load_rows(csv_path)
+    rows_all, dup = load_rows(csv_path)
+    # FIX bug (a): segmentar por baseline — el journal contiene TODO el
+    # historial (R30 inclusive); R31 cuenta SOLO filas nuevas. Corte
+    # PRIMARIO = temporal (signal_ts >= start_utc del armado, robusto contra
+    # off-by-one de conteo de líneas vs data-rows — el baseline real son 32
+    # data rows: evidencia r30_live/evidence/trade_journal_pulled_20261113T2149Z.csv);
+    # FALLBACK = conteo baseline_journal_rows si el timestamp no es parseable.
+    if baseline_rows > 0 and since_epoch > 0:
+        def _sig(r):
+            v = (r.get("signal_ts") or r.get("timestamp") or "").strip()
+            try:
+                f = float(v)
+            except ValueError:
+                return None
+            if f > 1e12:  # milisegundos → segundos (signal_ts es epoch ms)
+                f /= 1000.0
+            return f
+        rows = [r for r in rows_all if (_sig(r) is not None and _sig(r) >= since_epoch)
+                or _sig(r) is None]
+        n_pre = len(rows_all) - len(rows)
+        if n_pre:
+            print(f"[update_progress] Corte temporal: {n_pre} filas pre-R31 "
+                  f"excluidas (signal_ts < {args.since or 'start_utc'}).",
+                  file=sys.stderr)
+    elif baseline_rows > 0 and len(rows_all) > baseline_rows:
+        rows = rows_all[baseline_rows:]
+    else:
+        rows = rows_all
+        if baseline_rows > 0 and len(rows_all) <= baseline_rows:
+            print(f"[update_progress] Aviso: {len(rows_all)} filas válidas <= "
+                  f"baseline {baseline_rows}; 0 ops R31 nuevas aún.",
+                  file=sys.stderr)
     wins, losses, ties = classify(rows)
-    pending = pending_from_csv(csv_path)
+    pending = pending_from_rows(rows)
     resolved = wins + losses + ties
 
     disconnects, recoveries_ok, recoveries_failed = infra_counters(
-        Path(args.watchdog_state), Path(args.events))
+        Path(args.watchdog_state), since_epoch)
     runtime = runtime_minutes(Path(args.session_start))
 
     progress = {

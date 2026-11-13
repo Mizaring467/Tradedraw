@@ -168,27 +168,15 @@ section "T3. order_pending-aware: order_late + hasPendingTrade=true + tick fresc
 T3_DIR="${TMP_BASE}/t3"; mkdir -p "${T3_DIR}/ev" "${T3_DIR}/vis"
 # status: health BLOCKED (order pending > 60s simulada), tick fresco 300ms, pendiente true
 mk_status "${T3_DIR}/status.json" true 300 true BLOCKED
-# captura del /status real usado en el fixture (evidencia del contrato risk.*)
-python3 - <<'PY' > "${T3_DIR}/parsed.txt"
-import json
-d = json.load(open("PLACEHOLDER/status.json"))
-r = d["risk"]
-print(r["hasPendingTrade"], d["feed"]["lastTickAgeMs"], d["health"]["state"])
-PY
-sed -i "s|PLACEHOLDER|${T3_DIR}|" /dev/null 2>/dev/null || true
 python3 - "${T3_DIR}" <<'PY' > "${T3_DIR}/parsed.txt"
 import json, sys
 d = json.load(open(sys.argv[1] + "/status.json"))
 r = d["risk"]
 print(r["hasPendingTrade"], d["feed"]["lastTickAgeMs"], d["health"]["state"])
 PY
-# pytest de la función PURA classify_order_late vía subshell que la sourcea
-parse_funcs() {
-  # extrae solo las funciones puras + utilidades del watchdog para testearlas
-  awk '/^# =================================================== FUNCIONES PURAS/,/^find_btn_headless\(\)/' "${WATCHDOG}" > "${TMP_BASE}/pure_fns.sh"
-  echo 'BTN_LABEL_RE="(Reintentar|Reintentar conexión|reintentar conexión|Reconectar|Reconnect|Retry)"' >> "${TMP_BASE}/pure_fns.sh"
-}
-parse_funcs
+# extracción del BLOQUE DE FUNCIONES PURAS del watchdog (marcado explícitamente)
+awk '/^# INICIO BLOQUE DE FUNCIONES PURAS/,/^# ================ FIN BLOQUE DE FUNCIONES PURAS/' "${WATCHDOG}" > "${TMP_BASE}/pure_fns.sh"
+grep -q 'classify_order_late' "${TMP_BASE}/pure_fns.sh" || { echo "FATAL: extracción de funciones puras vacía" >&2; exit 99; }
 bash -c '
   set -u
   source "'"${TMP_BASE}"'/pure_fns.sh"
@@ -408,8 +396,8 @@ check "T7b: guard L3-pending presente en el código" \
   $(grep -q 'NO se relanza Binomo' "${WATCHDOG}"; echo $?)
 check "T7c: L3 usa monkey LAUNCHER (jamás force-stop)" \
   $(grep -q 'do_monkey_broker\b' "${WATCHDOG}" && grep -q 'monkey -p "$PKG_BROKER" -c android.intent.category.LAUNCHER 1' "${WATCHDOG}"; echo $?)
-check "T7d: jamás am force-stop en el script" \
-  $(grep -q 'force-stop' "${WATCHDOG}" && ! grep -q 'am force-stop\|force-stop \"' "${WATCHDOG}"; echo $?)
+check "T7d: jamás am force-stop en el código ejecutable" \
+  $( ! grep -v '^[[:space:]]*#' "${WATCHDOG}" | grep -q 'force-stop'; echo $? )
 
 # =====================================================================
 section "T8. purge_escalate (pura) — matriz completa"
@@ -474,7 +462,7 @@ python3 "${SCRIPT_DIR}/update_progress.py" --csv "${T9_DIR}/journal.csv" \
 check "T9c: idempotente (2 ejecuciones → mismo JSON)" $(cmp -s "${T9_DIR}/first.json" "${T9_DIR}/R31_PROGRESS.json"; echo $?)
 # con infra: state + events del watchdog
 python3 - "$T9_DIR" <<'PY'
-import json
+import json, sys
 state = {"watchdog":"r31_watchdog","counters":{"reconexiones_ok":3,"reconexiones_fail":1,"disconnects":2,"tiempo_desconectado_acum_s":100,"ciclos":200}}
 open(sys.argv[1] + "/wd_state.json","w").write(json.dumps(state))
 evs = [
@@ -503,9 +491,12 @@ check "T9d: disconnects/recoveries desde watchdog state+events" $([ $? = "0" ]; 
 
 # =====================================================================
 section "T10. no-invasión: el script jamás POSTea /mode ni tiene --allow-disarm"
-check "T10a: sin flag --allow-disarm" $( ! grep -q 'allow-disarm' "${WATCHDOG}"; echo $? )
-check "T10b: sin POST /mode (ningún curl -X POST)" $( ! grep -qE 'curl .*(-X|--request) +POST' "${WATCHDOG}"; echo $? )
-check "T10c: sin 'monto' (jamás toca campos de monto)" $( ! grep -qiE 'investmentAmount|amount_field|input text.*monto' "${WATCHDOG}"; echo $? )
+check "T10a: sin flag --allow-disarm en código ejecutable" \
+  $( ! grep -v '^[[:space:]]*#' "${WATCHDOG}" | grep -q 'allow-disarm'; echo $? )
+check "T10b: sin POST /mode en código ejecutable" \
+  $( ! grep -v '^[[:space:]]*#' "${WATCHDOG}" | grep -qE 'curl .*(-X|--request) +POST'; echo $? )
+check "T10c: sin 'monto' en código ejecutable" \
+  $( ! grep -v '^[[:space:]]*#' "${WATCHDOG}" | grep -qiE 'investmentAmount|amount_field|input text.*monto'; echo $? )
 
 # =====================================================================
 echo
