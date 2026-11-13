@@ -107,9 +107,14 @@ class BinomoAuthActivity : AppCompatActivity() {
         fun onWsUrl(url: String) {
             val sanitizedUrl = url.replace(Regex("""([?&](?:authtoken|token)=)[^&#]+"""), "$1<REDACTED>")
             Log.i(TAG, "🎯 WebSocket URL interceptada desde Binomo Web: $sanitizedUrl")
-            val credStore = SharedPreferencesCredentialStore.fromContext(this@BinomoAuthActivity)
-            credStore.setEndpointUrl(url)
-            OverlayService.instance?.binomoWebSocketClient?.wsUrl = url
+            if (BinomoWebSocketClient.isQuoteSocketEndpoint(url)) {
+                val credStore = SharedPreferencesCredentialStore.fromContext(this@BinomoAuthActivity)
+                credStore.setEndpointUrl(url)
+                OverlayService.instance?.binomoWebSocketClient?.wsUrl = url
+                Log.i(TAG, "Endpoint de cotizaciones reconocido y persistido")
+            } else {
+                Log.i(TAG, "Socket interceptado no es quote feed; no reemplaza el App Socket")
+            }
         }
 
         @JavascriptInterface
@@ -275,7 +280,7 @@ class BinomoAuthActivity : AppCompatActivity() {
         // 2. Detección en CookieManager
         try {
             val cookieManager = CookieManager.getInstance()
-            val cookieHeader = cookieManager.getCookie(url) ?: cookieManager.getCookie("https://binomo.com") ?: ""
+            val cookieHeader = cookieManager.getCookie("https://as.binomo.com") ?: cookieManager.getCookie(url) ?: cookieManager.getCookie("https://binomo.com") ?: ""
 
             // Detección de error password_required en cookie oauth_result
             if (cookieHeader.contains("password_required")) {
@@ -345,7 +350,7 @@ class BinomoAuthActivity : AppCompatActivity() {
     private fun linkCurrentSession() {
         val cookieManager = CookieManager.getInstance()
         cookieManager.flush()
-        val cookies = cookieManager.getCookie("https://binomo.com") ?: ""
+        val cookies = cookieManager.getCookie("https://as.binomo.com") ?: cookieManager.getCookie("https://binomo.com") ?: ""
 
         val regexToken = Regex("""authtoken=([^;]+)""")
         val tokenMatch = regexToken.find(cookies)
