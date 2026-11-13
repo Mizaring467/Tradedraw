@@ -30,6 +30,11 @@ El watchdog mantiene UN transport elegido en el arranque: **Opción A `tcp:18080
 
 **Nota transporte (corregida ronda 3):** usar **`http://127.0.0.1:18080`** — el forward `tcp:18080` ya existe y es el transporte verificado desde Termux. **`[::1]:8080` NO funciona desde Termux sin crear el forward `tcp:8080`** (verificado en baseline: exit 7); solo sería válido si el supervisor crea su propio forward. Elegir UNO en el arranque y no cambiarlo en sesión. Cada request al bridge alimenta el heartbeat R26 (caducidad de AUTONOMOUS a 10 min). Con ciclo ≤60 s el armado por bridge se mantiene vivo sin problema. **Si el watchdog deja de poller >10 min, el motor se desarma SOLO (función de seguridad, no fallo).**
 
+**Semántica de códigos de retorno del bridge (ratificada 20:31Z, asimilación R15/R20):** al evaluar el chequeo #1, el `rc` de curl distingue dos fallos distintos:
+- **rc=52 (Empty reply):** el forward adb `tcp:18080` está VIVO pero el bridge NO tiene listener al otro lado (proceso de TradeDraw muerto **O** proceso vivo con OverlayService no recreado — caso verificado 20:24:02Z: pid 14410 vivo ∧ rc=52). **NO inferir muerte de proceso desde rc=52 solo** — leer SIEMPRE rc=52 + `pidof com.example.tradedraw` + `mode_changes.jsonl` juntos.
+- **rc=7 (Failed to connect):** no hay forward activo o conexión rechazada a nivel TCP (el forward `tcp:18080` desapareció o adb se reinició).
+- Regla del gate: la conclusión "proceso muerto" exige pidof vacío; la conclusión "servicio no corrido" exige pidof vivo ∧ rc=52; la conclusión "sin transporte" exige rc=7. Cualquier otra combinación → screencap + escalar.
+
 **Screencap ante anomalía (siempre):**
 ```bash
 adb -s emulator-5554 exec-out screencap -p > r30_live/wd_$(date -u +%H%M%S)_anomaly.png
