@@ -27,7 +27,7 @@ class ResearchInventoryTest(unittest.TestCase):
     def test_all_frozen_production_sources_match_registered_bytes(self):
         import hashlib
         import json
-        registry=json.loads(Path('loops/r29c/evidence/strategy_registry_v3.json').read_text())
+        registry=json.loads(Path('loops/r29c/evidence/strategy_registry_v4.json').read_text())
         self.assertIn('COMBINED',{r['strategy_id'] for r in registry})
         for path,expected in registry[0]['supporting_sources'].items():
             with self.subTest(path=path):
