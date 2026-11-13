@@ -40,7 +40,7 @@ Releer este archivo + `R30_PREP_STATE.md` + `LIVE_BUILD` checkpoint en `loops/r3
 ## Estado SESSION_002 (21:50Z — coordinador, post OP1)
 - PUNTA CANONICA: b33fc83 (origin/r10-night). LIVE_BUILD_ID: R30-LIVE-FUSION-v22-46b75620 (c9e52e9/v22).
 - OP1: LOSS -4,000 Z-CRY/IDX SELL @21:43:02Z (decision dcdd017d, trade cfabf986, latencia señal→tap 28ms, settle 72s). Journal perennizado en evidence/trade_journal_pulled_20261113T2149Z.csv. Stats: W0/L1, balance 36,788,615.68.
-- DAEMONS: observer v2 pid 28560 (pidfile ok), watchdog pid 17165 (pidfile ok; escalate-cosmetico heredado, attempts 0/3). TD 3614, Binomo 4288.
+- DAEMONS: observer v2 pid 28560 (pidfile ok), watchdog pid 4604 (sess-0784ab49, relaunch 22:12:03Z con --reset-escalate, escalate=false verificado, counters preservados; pidfile ok). TD 3614, Binomo 4288.
 - WATCHDOG incidente #4 CERRADO: self-heal 21:47:32Z (RECOVERY_OK, outage 183s) — ver ERRATA-3 en ledger 21:51:10Z; reinicio del coordinador innecesario-pero-inofensivo (pid nuevo 17165 CONNECTED); mejora sugerida: no tratar order_late como WS_DISCONNECT si hasPendingTrade=true. Estado incidente preservado en evidence/watchdog_state_incident_FP_20261113T214449Z.json.
 - OBSERVER v2: parse risk.* (orderState/hasPendingTrade/effectiveStake) — capturo CONFIRMADA y stake de OP1; backup v1 en .v1.bak.
 - Martingala politica [M1|$2.0] cosmética; STAKE-PLANO 4,000 manda (observedStake).
