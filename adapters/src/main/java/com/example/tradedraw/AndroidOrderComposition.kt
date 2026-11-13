@@ -2,9 +2,16 @@ package com.example.tradedraw
 
 import com.example.tradedraw.core.*
 
-/** Android adapters are assembled here; execution never looks up application singletons. */
-fun createAndroidOrderGateway(hudPort: HudPort?, events: EventSink = RingBufferEventSink()): DefaultOrderGateway =
-    DefaultOrderGateway(
+/**
+ * Ronda 2 (E→F): composición Android con PREFLIGHT fail-closed de presencia del broker.
+ *
+ * La cascada congelada (ExecutionPolicy —13 vetos— y el cuerpo de DefaultOrderGateway)
+ * NO se modifica: aquí solo se ENVUELVE el gateway compuesto con
+ * [BrokerPresenceGateTransport], que veta con `BROKER_APP_ABSENT` cuando no hay ventana
+ * de broker fresca ANTES de que ningún transporte toque la UI del broker.
+ */
+fun createAndroidOrderGateway(hudPort: HudPort?, events: EventSink = RingBufferEventSink()): OrderGateway {
+    val inner = DefaultOrderGateway(
         demoAccountGuard = AutoTradeAccessibilityService.demoAccountGuard,
         eventSink = events,
         rootTransport = RootTapTransport(events, hudPort,
@@ -22,4 +29,7 @@ fun createAndroidOrderGateway(hudPort: HudPort?, events: EventSink = RingBufferE
             }
         })
     )
-
+    // Preflight de presencia: GESTURE/ROOT tocan la UI del broker; sin ventana fresca del
+    // broker no hay despacho (fail-closed). SHADOW/sim y transportes no-UI no pasan por aquí.
+    return BrokerPresenceGateTransport(inner, BrokerProcessPresenceSensor.fromDetector, events)
+}
