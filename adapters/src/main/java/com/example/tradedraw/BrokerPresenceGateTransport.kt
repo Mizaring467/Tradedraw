@@ -18,6 +18,10 @@ import com.example.tradedraw.core.OrderRequest
  * un veto la orden queda TERMINAL no despachada (coherente con «sin retry de entrega
  * incierta»); un ciclo futuro evalúa de nuevo.
  *
+ * SEÑAL DE PRESENCIA (revisión): dual, ver [BrokerProcessPresenceSensor] — autoridad =
+ * ventana activa leída en el instante del despacho (`rootInActiveWindow`); fallback =
+ * stream de eventos de ventana con frescura ≤120 s. Fail-closed ante señal ausente.
+ *
  * UBICACIÓN: vive en la COMPOSICIÓN Android porque `DefaultOrderGateway.kt` está
  * byte-congelado en loops/r29c/evidence/strategy_registry_v3.json — cualquier cambio allí
  * rompe el oráculo congelado. Envolver la composición añade el veto sin tocar un byte del

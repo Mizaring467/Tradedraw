@@ -13,12 +13,17 @@ import org.junit.Test
  * cubre la PRESENCIA del proceso/ventana del broker destino.
  *
  * (a) broker ausente → veto BROKER_APP_ABSENT, cero gestos, evento registrado, orden
- *     terminal; (b) broker presente → comportamiento idéntico al actual (delegación);
+ *     terminal; (b) broker presente → comportamiento idéntico al actual (delegación),
+ *     INCLUIDO el broker estable en primer plano sin cambios de paquete (defecto de la
+ *     señal de solo-eventos, corregido con la señal viva rootInActiveWindow);
  *     (c) la cascada de 13 vetos queda intacta (no se toca ningún byte congelado; el
  *     suite oráculo vive en :app — VetoCascadeEquivalenceTest / PreregistroR12VetosTest —
  *     y los archivos que valida no cambiaron, ver registry v3).
  */
 class BrokerPresenceGateTest {
+
+    /** JVM: sin servicio de accesibilidad → señal viva no disponible (usa el stream). */
+    private val noLiveWindow: () -> String? = { null }
 
     private class RecordingEventSink : EventSink {
         val events = mutableListOf<String>()
@@ -45,6 +50,7 @@ class BrokerPresenceGateTest {
         val inner = CountingGateway()
         var testTime = 1_000_000L
         val sensor = BrokerProcessPresenceSensor(
+            activeWindowPackageSupplier = noLiveWindow,
             packageNameSupplier = { "com.marketly.trading" },
             lastChangedAtSupplier = { 500_000L }, // visto hace 500 s > maxAge
             brokerClassifier = { BrokerDetector.currentBrokerFor(it) },
@@ -76,6 +82,7 @@ class BrokerPresenceGateTest {
     fun sinEventoDeVentanaNuncaDespacha() {
         val inner = CountingGateway()
         val sensor = BrokerProcessPresenceSensor(
+            activeWindowPackageSupplier = noLiveWindow,
             packageNameSupplier = { "" },
             lastChangedAtSupplier = { 0L },
             brokerClassifier = { BrokerDetector.currentBrokerFor(it) },
@@ -97,6 +104,7 @@ class BrokerPresenceGateTest {
         val sink = RecordingEventSink()
         var testTime = 1_000_000L
         val sensor = BrokerProcessPresenceSensor(
+            activeWindowPackageSupplier = noLiveWindow,
             packageNameSupplier = { "com.android.launcher" },
             lastChangedAtSupplier = { testTime - 1_000L }, // fresco pero NO es broker
             brokerClassifier = { BrokerDetector.currentBrokerFor(it) },
@@ -120,6 +128,7 @@ class BrokerPresenceGateTest {
         val inner = CountingGateway()
         var testTime = 1_000_000L
         val sensor = BrokerProcessPresenceSensor(
+            activeWindowPackageSupplier = noLiveWindow,
             packageNameSupplier = { "com.marketly.trading" },
             lastChangedAtSupplier = { testTime - 5_000L }, // fresco: hace 5 s
             brokerClassifier = { BrokerDetector.currentBrokerFor(it) },
@@ -137,6 +146,133 @@ class BrokerPresenceGateTest {
         assertEquals("Sin vetos espurios", 0, sink.events.size)
     }
 
+    /**
+     * DEFECTO CORREGIDO (revisión): un broker estable en primer plano (la noche normal)
+     * NO genera cambios de paquete — el stream queda rancio tras 120 s. La señal VIVA
+     * (rootInActiveWindow, en el instante del despacho) debe autorizar el despacho aunque
+     * no haya habido ningún evento de ventana reciente.
+     */
+    @Test
+    fun brokerEstableEnPrimerPlanoSinCambiosDePaqueteSigueDespachando() {
+        val sink = RecordingEventSink()
+        val inner = CountingGateway()
+        val streamOnly = BrokerProcessPresenceSensor(
+            activeWindowPackageSupplier = noLiveWindow,
+            packageNameSupplier = { "com.marketly.trading" },
+            lastChangedAtSupplier = { 1_000L }, // último cambio hace 999 s: rancio
+            brokerClassifier = { BrokerDetector.currentBrokerFor(it) },
+            clock = { 1_000_000L },
+            maxAgeMs = 120_000L
+        )
+        assertFalse("sanity: el stream solo VETARÍA (defecto original)", streamOnly.isBrokerWindowPresent())
+        val sensor = BrokerProcessPresenceSensor(
+            activeWindowPackageSupplier = { "com.marketly.trading" }, // ventana viva AHORA
+            packageNameSupplier = { "com.marketly.trading" },
+            lastChangedAtSupplier = { 1_000L },
+            brokerClassifier = { BrokerDetector.currentBrokerFor(it) },
+            clock = { 1_000_000L },
+            maxAgeMs = 120_000L
+        )
+        assertTrue("sanity: la señal viva autoriza", sensor.isBrokerWindowPresent())
+        val gate = BrokerPresenceGateTransport(inner, sensor, sink)
+
+        var receipt: OrderReceipt? = null
+        gate.dispatch(OrderRequest(TradeAction.BUY, 100f, 200f, "decision-7", "trade-7")) { receipt = it }
+
+        assertTrue(receipt is OrderReceipt.Success)
+        assertEquals("Despacho autorizado por señal viva", 1, inner.dispatchCount)
+        assertEquals("Sin vetos espurios", 0, sink.events.size)
+    }
+
+    /** La señal viva es la AUTORIDAD: si hay ventana activa legible, el stream no decide. */
+    @Test
+    fun ventanaActivaNoBrokerVetaAunqueElStreamSeaFresco() {
+        val inner = CountingGateway()
+        val sink = RecordingEventSink()
+        val sensor = BrokerProcessPresenceSensor(
+            activeWindowPackageSupplier = { "com.android.launcher" }, // ventana viva: launcher
+            packageNameSupplier = { "com.marketly.trading" },
+            lastChangedAtSupplier = { 999_000L }, // stream fresco (hace 1 s) — NO debe bastar
+            brokerClassifier = { BrokerDetector.currentBrokerFor(it) },
+            clock = { 1_000_000L },
+            maxAgeMs = 120_000L
+        )
+        val gate = BrokerPresenceGateTransport(inner, sensor, sink)
+
+        var receipt: OrderReceipt? = null
+        gate.dispatch(OrderRequest(TradeAction.BUY, 100f, 200f, "decision-8", "trade-8")) { receipt = it }
+
+        assertTrue(receipt is OrderReceipt.Vetoed)
+        assertEquals(BrokerPresenceGateTransport.REASON, (receipt as OrderReceipt.Vetoed).reason)
+        assertEquals(0, inner.dispatchCount)
+        assertTrue(sink.events.any { it.contains("FOREGROUND_NOT_BROKER") && it.contains("com.android.launcher") })
+    }
+
+    /** Sin señal viva disponible → fallback al stream, fail-closed si está rancio. */
+    @Test
+    fun senalVivaNoDisponibleCaeAlStreamYVetaSiEstaRancio() {
+        val inner = CountingGateway()
+        val sink = RecordingEventSink()
+        val sensor = BrokerProcessPresenceSensor(
+            activeWindowPackageSupplier = noLiveWindow,
+            packageNameSupplier = { "com.marketly.trading" },
+            lastChangedAtSupplier = { 500_000L },
+            brokerClassifier = { BrokerDetector.currentBrokerFor(it) },
+            clock = { 1_000_000L },
+            maxAgeMs = 120_000L
+        )
+        val gate = BrokerPresenceGateTransport(inner, sensor, sink)
+
+        var receipt: OrderReceipt? = null
+        gate.dispatch(OrderRequest(TradeAction.BUY, 100f, 200f, "decision-9", "trade-9")) { receipt = it }
+
+        assertTrue(receipt is OrderReceipt.Vetoed)
+        assertEquals(0, inner.dispatchCount)
+        assertTrue(sink.events.any { it.contains("WINDOW_EVENT_STALE") })
+    }
+
+    /** Sin señal viva disponible + stream fresco → delega (fallback funcional). */
+    @Test
+    fun senalVivaNoDisponibleConStreamFrescoDelega() {
+        val inner = CountingGateway()
+        val sensor = BrokerProcessPresenceSensor(
+            activeWindowPackageSupplier = noLiveWindow,
+            packageNameSupplier = { "net.binarymove.binomo" },
+            lastChangedAtSupplier = { 995_000L },
+            brokerClassifier = { BrokerDetector.currentBrokerFor(it) },
+            clock = { 1_000_000L },
+            maxAgeMs = 120_000L
+        )
+        val gate = BrokerPresenceGateTransport(inner, sensor, RecordingEventSink())
+
+        var receipt: OrderReceipt? = null
+        gate.dispatch(OrderRequest(TradeAction.BUY, 100f, 200f, "decision-10", "trade-10")) { receipt = it }
+
+        assertTrue(receipt is OrderReceipt.Success)
+        assertEquals(1, inner.dispatchCount)
+    }
+
+    /** Un fallo del binder al leer la ventana viva se trata como señal no disponible. */
+    @Test
+    fun falloDeLecturaDeVentanaVivaCaeAlStream() {
+        val inner = CountingGateway()
+        val sensor = BrokerProcessPresenceSensor(
+            activeWindowPackageSupplier = { error("DeadObject") },
+            packageNameSupplier = { "com.marketly.trading" },
+            lastChangedAtSupplier = { 995_000L },
+            brokerClassifier = { BrokerDetector.currentBrokerFor(it) },
+            clock = { 1_000_000L },
+            maxAgeMs = 120_000L
+        )
+        val gate = BrokerPresenceGateTransport(inner, sensor, RecordingEventSink())
+
+        var receipt: OrderReceipt? = null
+        gate.dispatch(OrderRequest(TradeAction.BUY, 100f, 200f, "decision-11", "trade-11")) { receipt = it }
+
+        assertTrue(receipt is OrderReceipt.Success)
+        assertEquals(1, inner.dispatchCount)
+    }
+
     // ---------- (c) La cascada congelada queda intacta ----------
 
     @Test
@@ -148,6 +284,7 @@ class BrokerPresenceGateTest {
         val gate = BrokerPresenceGateTransport(
             inner,
             BrokerProcessPresenceSensor(
+                activeWindowPackageSupplier = noLiveWindow,
                 packageNameSupplier = { "" },
                 lastChangedAtSupplier = { 0L },
                 clock = { 1_000_000L }
@@ -169,6 +306,7 @@ class BrokerPresenceGateTest {
         var testTime = 1_000_000L
         val lastChange = 880_000L // constante: testTime inicial - 120_000 (age = maxAge exacto)
         val sensor = BrokerProcessPresenceSensor(
+            activeWindowPackageSupplier = noLiveWindow,
             packageNameSupplier = { "com.binomo.app" },
             lastChangedAtSupplier = { lastChange },
             brokerClassifier = { BrokerDetector.currentBrokerFor(it) },
