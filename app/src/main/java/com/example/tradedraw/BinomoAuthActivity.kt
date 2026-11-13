@@ -352,6 +352,11 @@ class BinomoAuthActivity : AppCompatActivity() {
         cookieManager.flush()
         val cookies = cookieManager.getCookie("https://as.binomo.com") ?: cookieManager.getCookie("https://binomo.com") ?: ""
 
+        if (cookies.isBlank()) {
+            Toast.makeText(this, "No hay sesión Web disponible. Inicia sesión en Binomo y vuelve a vincular.", Toast.LENGTH_LONG).show()
+            return
+        }
+
         val regexToken = Regex("""authtoken=([^;]+)""")
         val tokenMatch = regexToken.find(cookies)
         val token = tokenMatch?.groupValues?.get(1)?.trim() ?: etAuthToken.text.toString().trim()
@@ -381,7 +386,7 @@ class BinomoAuthActivity : AppCompatActivity() {
             Log.e(TAG, "Error notificando al WebSocket", e)
         }
 
-        Toast.makeText(this, "✅ ¡Sesión vinculada con éxito!\nCotizaciones activas a 0ms sin captura de pantalla", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Sesión guardada. Conectando al canal de cotizaciones…", Toast.LENGTH_LONG).show()
         finish()
     }
 

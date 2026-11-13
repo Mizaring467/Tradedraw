@@ -249,4 +249,34 @@ class BinomoWebSocketClientTest {
         assertFalse(payload.has("event"))
     }
 
+    @Test
+    fun quoteCredentialsNeverFollowUntrustedEndpoint() {
+        for (url in listOf(
+            "wss://as.binomo.com.attacker.test/", "wss://as.binomo.com@attacker.test/",
+            "wss://user@as.binomo.com/", "ws://as.binomo.com/", "wss://as.binomo.com:444/",
+            "wss://as.binomo.com/path", "wss://as.binomo.com/?token=fake", "not a url"
+        )) {
+            assertFalse(url, BinomoWebSocketClient.isQuoteSocketEndpoint(url))
+            val request = BinomoWebSocketClient.buildQuoteSocketRequest(url, "fake-cookie", "test")
+            assertEquals("https://as.binomo.com/", request.url.toString())
+        }
+    }
+
+    @Test
+    fun callbacksFromStoppedOrReplacedSocketCannotMutateNewSession() {
+        val session = QuoteConnectionSession()
+        session.activate()
+        val oldSocket = session.beginAttempt()
+        assertTrue(session.accepts(oldSocket))
+        session.stop()
+        assertFalse(session.accepts(oldSocket))
+        session.activate()
+        val replacement = session.beginAttempt()
+        assertFalse(session.accepts(oldSocket))
+        assertTrue(session.accepts(replacement))
+        val retry = session.beginAttempt()
+        assertFalse(session.accepts(replacement))
+        assertTrue(session.accepts(retry))
+    }
+
 }

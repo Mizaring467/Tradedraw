@@ -233,6 +233,8 @@ class BinomoWebSocketClient(
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS) // Sin timeout de lectura para websockets continuos
         .retryOnConnectionFailure(true)
+        .followRedirects(false)
+        .followSslRedirects(false)
         .build()
 
     private var webSocket: WebSocket? = null
@@ -476,6 +478,7 @@ class BinomoWebSocketClient(
         }
     }
 
+    private val connectionSession = QuoteConnectionSession()
     private var reconnectAttempts = 0
     private val MAX_RECONNECT_DELAY_MS = 15000L
 
@@ -491,13 +494,16 @@ class BinomoWebSocketClient(
             Log.d(TAG, "WebSocket desactivado por configuración.")
             return
         }
-        workerHandler.post { startConnectionInternal() }
-        // Ronda 20: arrancar tambien la vigilancia de activo sin ticks.
-        programarVigilanciaSinTicks()
+        workerHandler.post {
+            connectionSession.activate()
+            startConnectionInternal()
+            programarVigilanciaSinTicks()
+        }
     }
 
     fun stop() {
         workerHandler.post {
+            connectionSession.stop()
             reconnectAttempts = 0
             workerHandler.removeCallbacks(reconnectRunnable)
             // Ronda 20: detener la vigilancia; si no, seguiria sondeando con el socket cerrado.
@@ -515,7 +521,7 @@ class BinomoWebSocketClient(
     }
 
     private fun startConnectionInternal() {
-        if (isConnectedFlag.get() || isConnecting.get()) return
+        if (!connectionSession.running || isConnectedFlag.get() || isConnecting.get()) return
 
         isConnecting.set(true)
         updateState(WebSocketState.CONNECTING, "Conectando a feed de cotizaciones Binomo")
@@ -537,59 +543,96 @@ class BinomoWebSocketClient(
             )
             val targetUrl = request.url.toString()
 
+            val generation = connectionSession.beginAttempt()
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
-                    isConnecting.set(false)
-                    isConnectedFlag.set(true)
-                    reconnectAttempts = 0
-                    updateState(WebSocketState.CONNECTED, "Quote feed conectado")
-                    Log.d(TAG, "Quote WebSocket conectado: " + sanitizeEndpointForLog(targetUrl))
-                    subscribeToReconnectRequest(webSocket)
-                    subscribeToAsset(webSocket, activeAsset)
+                    workerHandler.post {
+                        if (!connectionSession.accepts(generation)) {
+                            webSocket.cancel()
+                            return@post
+                        }
+
+                        isConnecting.set(false)
+                        isConnectedFlag.set(true)
+                        reconnectAttempts = 0
+                        updateState(WebSocketState.CONNECTED, "Quote feed conectado")
+                        Log.d(TAG, "Quote WebSocket conectado: " + sanitizeEndpointForLog(targetUrl))
+                        subscribeToReconnectRequest(webSocket)
+                        subscribeToAsset(webSocket, activeAsset)
+                        programarVigilanciaSinTicks()
+                    }
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
-                    rawSocketMessages++
-                    recordRawFrame(text)
-                    if (rawSocketMessages <= 10) {
-                        Log.d(TAG, "Frame quote WS crudo #" + rawSocketMessages + ": " + text.take(300))
+                    workerHandler.post {
+                        if (!connectionSession.accepts(generation)) {
+                            webSocket.cancel()
+                            return@post
+                        }
+
+                        rawSocketMessages++
+                        recordRawFrame(text)
+                        if (rawSocketMessages <= 10) {
+                            Log.d(TAG, "Frame quote WS crudo #" + rawSocketMessages + ": " + text.take(300))
+                        }
+                        processIncomingMessage(text, source = "socket")
                     }
-                    processIncomingMessage(text, source = "socket")
                 }
 
                 override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                    Log.d(TAG, "Quote WebSocket cerrando: code=" + code + ", reason=" + reason)
-                    webSocket.close(1000, null)
+                    workerHandler.post {
+                        if (!connectionSession.accepts(generation)) {
+                            webSocket.cancel()
+                            return@post
+                        }
+
+                        Log.d(TAG, "Quote WebSocket cerrando: code=" + code + ", reason=" + reason)
+                        webSocket.close(1000, null)
+                    }
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    isConnecting.set(false)
-                    isConnectedFlag.set(false)
-                    desconexiones++
-                    val detail = if (reason.isBlank()) "(sin razón)" else reason
-                    updateState(WebSocketState.DISCONNECTED, "Cerrado: " + code + " " + detail)
-                    scheduleReconnect()
+                    workerHandler.post {
+                        if (!connectionSession.accepts(generation)) {
+                            webSocket.cancel()
+                            return@post
+                        }
+
+                        isConnecting.set(false)
+                        isConnectedFlag.set(false)
+                        desconexiones++
+                        val detail = if (reason.isBlank()) "(sin razón)" else reason
+                        updateState(WebSocketState.DISCONNECTED, "Cerrado: " + code + " " + detail)
+                        scheduleReconnect()
+                    }
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    isConnecting.set(false)
-                    isConnectedFlag.set(false)
-                    desconexiones++
-                    val errorMsg = t.message ?: "Fallo de red"
-                    val responseCode = response?.code
-                    val isUnauthorized = responseCode == 401 || responseCode == 403 ||
-                        errorMsg.contains("401") || errorMsg.contains("403")
-                    if (isUnauthorized) {
-                        Log.w(TAG, "Quote feed no autorizado: HTTP=" + (responseCode ?: -1))
-                        updateState(
-                            WebSocketState.UNAUTHORIZED,
-                            "Sesión Binomo no autorizada; vuelve a vincularla"
-                        )
-                        return
+                    workerHandler.post {
+                        if (!connectionSession.accepts(generation)) {
+                            webSocket.cancel()
+                            return@post
+                        }
+
+                        isConnecting.set(false)
+                        isConnectedFlag.set(false)
+                        desconexiones++
+                        val errorMsg = t.message ?: "Fallo de red"
+                        val responseCode = response?.code
+                        val isUnauthorized = responseCode == 401 || responseCode == 403 ||
+                            errorMsg.contains("401") || errorMsg.contains("403")
+                        if (isUnauthorized) {
+                            Log.w(TAG, "Quote feed no autorizado: HTTP=" + (responseCode ?: -1))
+                            updateState(
+                                WebSocketState.UNAUTHORIZED,
+                                "Sesión Binomo no autorizada; vuelve a vincularla"
+                            )
+                            return@post
+                        }
+                        Log.w(TAG, "Fallo en quote WebSocket: HTTP=" + (responseCode ?: -1) + ", " + errorMsg)
+                        updateState(WebSocketState.ERROR, errorMsg)
+                        scheduleReconnect()
                     }
-                    Log.w(TAG, "Fallo en quote WebSocket: HTTP=" + (responseCode ?: -1) + ", " + errorMsg)
-                    updateState(WebSocketState.ERROR, errorMsg)
-                    scheduleReconnect()
                 }
             })
         } catch (e: Exception) {
@@ -772,7 +815,7 @@ class BinomoWebSocketClient(
     }
 
     private fun scheduleReconnect() {
-        if (!isEnabled) return
+        if (!connectionSession.running || !isEnabled) return
         reconnectAttempts++
         reconexiones++
         val delay = (reconnectAttempts * 2000L).coerceAtMost(MAX_RECONNECT_DELAY_MS)
@@ -797,16 +840,9 @@ class BinomoWebSocketClient(
         const val DEFAULT_QUOTE_SOCKET_URL = "wss://as.binomo.com/"
         const val BINOMO_WEB_ORIGIN = "https://binomo.com"
 
-        internal fun resolveQuoteSocketEndpoint(configured: String): String {
-            val clean = configured.trim()
-            if (clean.isBlank()) return DEFAULT_QUOTE_SOCKET_URL
-            val lower = clean.lowercase()
-            val isPhoenix = lower.contains("vsn=") ||
-                lower.contains("v=2") ||
-                lower.startsWith("wss://ws.binomo.com")
-            val isKnownQuote = lower.startsWith("wss://as.binomo.com")
-            return if (!isPhoenix && isKnownQuote) clean.substringBefore('?') else DEFAULT_QUOTE_SOCKET_URL
-        }
+        // Never carry an intercepted URL, path, query or credentials into the quote request.
+        // Legacy Phoenix and malformed values migrate to the canonical quote endpoint.
+        internal fun resolveQuoteSocketEndpoint(configured: String): String = DEFAULT_QUOTE_SOCKET_URL
 
         internal fun buildQuoteSocketUrl(base: String): String =
             resolveQuoteSocketEndpoint(base).trimEnd('/') + "/"
@@ -838,12 +874,15 @@ class BinomoWebSocketClient(
         internal fun sanitizeEndpointForLog(url: String): String =
             url.replace(Regex("([?&](?:authtoken|token)=)[^&#]+"), "$1<REDACTED>")
 
-        fun isQuoteSocketEndpoint(url: String): Boolean {
-            val lower = url.trim().lowercase()
-            return lower.startsWith("wss://as.binomo.com") &&
-                !lower.contains("vsn=") &&
-                !lower.contains("v=2")
-        }
+        fun isQuoteSocketEndpoint(url: String): Boolean = try {
+            val parsed = java.net.URI(url.trim())
+            parsed.scheme.equals("wss", ignoreCase = true) &&
+                parsed.host.equals("as.binomo.com", ignoreCase = true) &&
+                parsed.rawUserInfo == null && (parsed.port == -1 || parsed.port == 443) &&
+                parsed.rawFragment == null &&
+                (parsed.rawPath.isNullOrEmpty() || parsed.rawPath == "/") &&
+                parsed.rawQuery == null
+        } catch (_: Exception) { false }
 
         /** Umbral único de frescura del feed WebSocket: 5000 ms. */
         const val DEFAULT_FRESHNESS_MS = 5000L
@@ -864,4 +903,15 @@ class BinomoWebSocketClient(
         internal fun segundosSinTicksLegibles(edadMs: Long): Long =
             if (edadMs == Long.MAX_VALUE) -1L else edadMs / 1000L
     }
+}
+
+/** Accessed only by the connection worker; obsolete socket callbacks cannot affect a new session. */
+internal class QuoteConnectionSession {
+    var running = false
+        private set
+    private var generation = 0L
+    fun activate() { running = true }
+    fun beginAttempt(): Long { check(running); return ++generation }
+    fun stop() { running = false; generation++ }
+    fun accepts(ticket: Long): Boolean = running && ticket == generation
 }
