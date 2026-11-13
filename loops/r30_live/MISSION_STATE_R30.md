@@ -36,3 +36,12 @@ Releer este archivo + `R30_PREP_STATE.md` + `LIVE_BUILD` checkpoint en `loops/r3
 4. Incidente 12:48:44Z EXPLICADO: harness del DeepCoder con adb real (PATH-prepend ignorado); fail-closed preexistente abortó antes de taps/re-arm; baseline restaurado; lección en Errores-Conocidos.
 5. Supervisor corregido en `691647d` (CI 43430918900 success): btn_headless + re-arm fail-closed con memoria de modo. No entra en el APK v22 (solo scripts/) — irrelevante para identidad del build.
 6. **POLÍTICA DE BATERÍA (coordinador, 13:23Z): level 73% sin cargador, caída ~15-20%/h.** FASE 3 procede (consumo bajo). **ARMAR AUTONOMOUS PROHIBIDO salvo level ≥60% y caída <10%/h medida en 10 min, o cargador conectado.** Si no se cumple al momento del gate: documentar LIVE_BLOCKER BATTERY y esperar; jamás armar con batería en caída sin cargador.
+
+## Estado SESSION_002 (21:50Z — coordinador, post OP1)
+- PUNTA CANONICA: b33fc83 (origin/r10-night). LIVE_BUILD_ID: R30-LIVE-FUSION-v22-46b75620 (c9e52e9/v22).
+- OP1: LOSS -4,000 Z-CRY/IDX SELL @21:43:02Z (decision dcdd017d, trade cfabf986, latencia señal→tap 28ms, settle 72s). Journal perennizado en evidence/trade_journal_pulled_20261113T2149Z.csv. Stats: W0/L1, balance 36,788,615.68.
+- DAEMONS: observer v2 pid 28560 (pidfile ok), watchdog pid 17165 (pidfile ok; escalate-cosmetico heredado, attempts 0/3). TD 3614, Binomo 4288.
+- WATCHDOG incidente #4 CERRADO: self-heal 21:47:32Z (RECOVERY_OK, outage 183s) — ver ERRATA-3 en ledger 21:51:10Z; reinicio del coordinador innecesario-pero-inofensivo (pid nuevo 17165 CONNECTED); mejora sugerida: no tratar order_late como WS_DISCONNECT si hasPendingTrade=true. Estado incidente preservado en evidence/watchdog_state_incident_FP_20261113T214449Z.json.
+- OBSERVER v2: parse risk.* (orderState/hasPendingTrade/effectiveStake) — capturo CONFIRMADA y stake de OP1; backup v1 en .v1.bak.
+- Martingala politica [M1|$2.0] cosmética; STAKE-PLANO 4,000 manda (observedStake).
+- Siguiente hito: OP2 (cooldown expirado 21:47:15Z, engine READY 62 señales/340 evaluaciones). Protocolo S1: verificar observedStake en instante del tap, delta balance, fila nueva en journal (pull post-settle), decision_id/trade_id únicos.
