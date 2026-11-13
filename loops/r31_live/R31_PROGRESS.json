@@ -1,1 +1,22 @@
-{"target":50,"resolved":0,"wins":0,"losses":0,"ties":0,"pending":0,"runtime_minutes":0,"disconnects":0,"recoveries_ok":0,"recoveries_failed":0}
+{
+  "target": 50,
+  "resolved": 1,
+  "wins": 1,
+  "losses": 0,
+  "ties": 0,
+  "pending": 0,
+  "runtime_minutes": 9.9,
+  "disconnects": 0,
+  "recoveries_ok": 0,
+  "recoveries_failed": 0,
+  "last_update_utc": "2026-11-13T23:12:38Z",
+  "last_trade": {
+    "decision_id": "a8de5dcc-2a3c-38d0-b5b7-12990fe3d461",
+    "trade_id": "2fce383c-1cda-402b-99c6-ba382b41f8d8",
+    "result": "WIN",
+    "net_cop": 3320.32,
+    "latency_signal_to_tap_ms": 27,
+    "duration_sec": 62,
+    "evidence": "evidence/trade_journal_pulled_2312Z.csv"
+  }
+}
