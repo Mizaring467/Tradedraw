@@ -1,0 +1,1 @@
+{"success":true,"total":3,"vetoV1":0,"vetoV2":0,"events":[{"atMs":1794575830138,"kind":"ASSET","detail":"visible='Crypto IDX' ric='Z-CRY/IDX'"},{"atMs":1794575807129,"kind":"ASSET","detail":"visible='Crypto IDX' ric='Z-CRY/IDX'"},{"atMs":1794575702466,"kind":"MODE_CHANGE","detail":"de=NINGUNO a=DISABLED source=onCreate(servicio recreado) origen=onCreate(servicio recreado)"}]}

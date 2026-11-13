@@ -1,0 +1,32 @@
+12:122 © - e B il all Win = @8 4
+
+T[QFE]sEﬁtAa(tfﬁb't‘bE TRADING -TREND @ @ Vela [Im] :51s | © 21% || @ Agente v
+W: 0| L: 0 Nulas: 0| Total: 0 (0.0%) [MO | $1.0] [24% CALL Il 76% PUT ]
+Elige tu broker y prepara tu conr Tu decides cuando
+iniciar. il
+01 - Broker
+Binomo v
+
+Credencial Binomo guardada. La conexiéon y el tipo de cuenta se
+verifican al operar.
+
+Revisar sesion Binomo
+
+02 - Agente |A
+
+Sin clave - Configura el agente para conversar
+
+Configurar agente
+
+03 - Preparacion
+
+Superposicion: activa - Accesibilidad: activa
+
+Revisar accesibilidad
+
+Iniciar con WebSocket
+
+Detener TradeDraw
+
+Abrir esta pantalla no inicia una sesién. El dinero real requiere tu autorizacién
+explicita.

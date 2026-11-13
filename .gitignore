@@ -94,3 +94,6 @@ backups/
 # Supervisor runtime artifacts
 scripts/td_supervisor.lock
 scripts/td_supervisor.log
+
+# R30: latido del sentinel (estado vivo, no evidencia)
+loops/**/.sentinel_heartbeat

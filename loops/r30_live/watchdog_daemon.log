@@ -1,0 +1,7 @@
+r30_watchdog: arranque (interval=30s serial=emulator-5554 allow_disarm=0 evidence=/data/data/com.termux/files/home/Tradedraw/loops/r30_live/watchdog_evidence)
+[r30_watchdog] estado INIT -> CONNECTED
+[r30_watchdog] estado CONNECTED -> DISCONNECTED
+[r30_watchdog] estado DISCONNECTED -> RECOVERING
+[r30_watchdog] estado RECOVERING -> DISCONNECTED
+[r30_watchdog] estado DISCONNECTED -> RECOVERING
+[r30_watchdog] estado RECOVERING -> DISCONNECTED
