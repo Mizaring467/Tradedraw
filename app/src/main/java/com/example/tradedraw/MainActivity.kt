@@ -2,167 +2,101 @@ package com.example.tradedraw
 
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.widget.Button
-import android.widget.TextView
-import android.widget.Toast
+import android.view.View
+import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.example.tradedraw.R
 
 class MainActivity : AppCompatActivity() {
+    private val prefs by lazy { getSharedPreferences("TradeDraw_Home", MODE_PRIVATE) }
+    private var pendingHeadless: Boolean? = null
+    private lateinit var agentSettings: AgentConnectionSettings
     private val overlayPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
-            startFloatingService()
-        } else {
-            Toast.makeText(this, "Permiso denegado. No se puede iniciar el overlay.", Toast.LENGTH_SHORT).show()
-        }
+        val requestedMode = pendingHeadless
+        pendingHeadless = null
+        if (requestedMode != null && Settings.canDrawOverlays(this)) startOverlay(requestedMode)
+        else Toast.makeText(this, R.string.home_overlay_required, Toast.LENGTH_SHORT).show()
+        refresh()
     }
-    private lateinit var btnAccessibility: Button
-    private lateinit var btnStop: Button
-
+    private fun selected() = prefs.getString("broker", "binomo")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
-        val titulo = findViewById<TextView>(R.id.titulo)
-        titulo.text = "📊 TradeDraw"
-
-        val boton = findViewById<Button>(R.id.boton)
-        boton.text = "Iniciar Overlay (con Visión IA)"
-
-        btnStop = findViewById(R.id.btn_stop)
-        btnStop.setOnClickListener {
-            val stopIntent = Intent(this, OverlayService::class.java).apply {
-                action = "com.example.tradedraw.STOP"
-            }
-            startService(stopIntent)
-            Toast.makeText(this, "Overlay detenido", Toast.LENGTH_SHORT).show()
+        pendingHeadless = if (savedInstanceState?.containsKey("pendingHeadless") == true)
+            savedInstanceState.getBoolean("pendingHeadless") else null
+        agentSettings = AgentConnectionSettings(this) { refresh() }
+        val spinner = findViewById<Spinner>(R.id.broker_selector)
+        spinner.adapter = object : ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item,
+            BrokerCatalog.profiles.map { it.label + if (it.available) "" else " · Próximamente" }) {
+            private fun tint(view: View): View = view.apply { (this as? TextView)?.setTextColor(android.graphics.Color.rgb(225, 236, 248)) }
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View = tint(super.getView(position, convertView, parent))
+            override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View = tint(super.getDropDownView(position, convertView, parent))
         }
-        
-        btnAccessibility = findViewById(R.id.btn_accessibility)
-        btnAccessibility.setOnClickListener {
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            startActivity(intent)
-            Toast.makeText(this, "Busca 'TradeDraw' y activa el servicio de accesibilidad", Toast.LENGTH_LONG).show()
-        }
-
-        val btnHeadless = findViewById<Button>(R.id.btn_headless)
-        btnHeadless.setOnClickListener {
-            if (checkOverlayPermission()) {
-                val intent = Intent(this, OverlayService::class.java).apply {
-                    putExtra("EXTRA_HEADLESS_MODE", true)
-                }
-                ContextCompat.startForegroundService(this, intent)
-                Toast.makeText(this, "🚀 Modo WebSocket Puro Activo (0% captura de pantalla)", Toast.LENGTH_LONG).show()
-                finish()
-            } else {
-                requestOverlayPermission()
+        spinner.setSelection(BrokerCatalog.profiles.indexOfFirst { it.id == selected() }.coerceAtLeast(0))
+        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                prefs.edit().putString("broker", BrokerCatalog.profiles[position].id).apply()
+                refresh()
             }
         }
-
-        val btnLinkBinomo = findViewById<Button>(R.id.btn_link_binomo)
-        btnLinkBinomo.setOnClickListener {
-            val intent = Intent(this, BinomoAuthActivity::class.java)
-            startActivity(intent)
+        findViewById<Button>(R.id.btn_link_binomo).setOnClickListener {
+            if (BrokerCatalog.canStart(selected())) startActivity(Intent(this, BinomoAuthActivity::class.java))
         }
-
-        boton.setOnClickListener {
-            if (checkOverlayPermission()) {
-                startFloatingService()
-            } else {
-                requestOverlayPermission()
-            }
+        findViewById<Button>(R.id.btn_headless).setOnClickListener { requestStart(true) }
+        findViewById<Button>(R.id.boton).visibility = View.GONE
+        findViewById<Button>(R.id.btn_accessibility).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
-
-        // Ronda 15 / B1: si el permiso de overlay YA estaba concedido, arrancar el servicio sin
-        // esperar a que alguien pulse el boton. Motivo medido: `adb install -r` mata el proceso y
-        // abrir la app no ejecutaba ningun listener, asi que el bridge :8080 quedaba caido y no
-        // habia forma de leer /status en modo desatendido. No se concede ningun permiso nuevo: se
-        // automatiza un arranque que el usuario ya habia autorizado. No se toca el modo.
-        //
-        // La condicion es SOLO `canDrawOverlays`, tal y como fija el preregistro. NO se exige el
-        // servicio de accesibilidad: el bridge y el HUD no lo necesitan, y atarlo a el dejaria el
-        // bridge caido justo cuando la accesibilidad esta desactivada (medido: bloqueo espurio).
-        if (checkOverlayPermission()) {
-            launchService(null)
+        findViewById<Button>(R.id.btn_agent_settings).setOnClickListener { agentSettings.show() }
+        findViewById<Button>(R.id.btn_stop).setOnClickListener {
+            startService(Intent(this, OverlayService::class.java).apply { action = "com.example.tradedraw.STOP" })
+            Toast.makeText(this, R.string.home_stopped, Toast.LENGTH_SHORT).show()
         }
+        // Opening the broker chooser must not launch Binomo or start an overlay implicitly.
+        refresh()
     }
-
-    override fun onResume() {
-        super.onResume()
-        updateAccessibilityButtonState()
-        updateBinomoTokenState()
+    override fun onResume() { super.onResume(); if (::agentSettings.isInitialized) refresh() }
+    override fun onSaveInstanceState(outState: Bundle) {
+        pendingHeadless?.let { outState.putBoolean("pendingHeadless", it) }
+        super.onSaveInstanceState(outState)
     }
-
-    private fun updateBinomoTokenState() {
-        val btnLinkBinomo = findViewById<Button>(R.id.btn_link_binomo) ?: return
-        val token = com.example.tradedraw.core.SharedPreferencesCredentialStore.fromContext(this).getAuthToken()
-        if (token.isNotEmpty()) {
-            btnLinkBinomo.text = "🔑 Sesión Binomo: VINCULADA ✓"
-            btnLinkBinomo.setTextColor(android.graphics.Color.parseColor("#22c55e"))
-        } else {
-            btnLinkBinomo.text = "🔑 Vincular Cuenta Binomo (Token WebSocket)"
-            btnLinkBinomo.setTextColor(android.graphics.Color.parseColor("#38bdf8"))
+    private fun refresh() {
+        val available = BrokerCatalog.canStart(selected())
+        val linked = com.example.tradedraw.core.SharedPreferencesCredentialStore.fromContext(this).getAuthToken().isNotBlank()
+        findViewById<TextView>(R.id.broker_status).setText(when {
+            !available -> R.string.home_broker_pending
+            linked -> R.string.home_broker_saved
+            else -> R.string.home_broker_missing
+        })
+        for (id in listOf(R.id.btn_headless, R.id.boton, R.id.btn_link_binomo)) {
+            findViewById<Button>(id).apply { isEnabled = available; alpha = if (available) 1f else 0.45f }
         }
+        findViewById<Button>(R.id.btn_link_binomo).setText(if (linked) R.string.home_relink else R.string.home_link)
+        val access = AutoTradeAccessibilityService.instance != null || AutoTradeAccessibilityService.isAccessibilityPermissionGranted(this)
+        findViewById<TextView>(R.id.permission_status).text = getString(
+            R.string.home_permissions,
+            getString(if (Settings.canDrawOverlays(this)) R.string.home_ready else R.string.home_pending),
+            getString(if (access) R.string.home_ready else R.string.home_pending))
+        findViewById<TextView>(R.id.agent_status).text = agentSettings.summary()
     }
-
-    private fun updateAccessibilityButtonState() {
-        val isConnected = AutoTradeAccessibilityService.instance != null || AutoTradeAccessibilityService.isAccessibilityPermissionGranted(this)
-        if (isConnected) {
-            btnAccessibility.text = "Accesibilidad: ACTIVA ✓"
-            btnAccessibility.setBackgroundColor(android.graphics.Color.parseColor("#15803d"))
-        } else {
-            btnAccessibility.text = "Activar Accesibilidad (Auto-Trading)"
-            btnAccessibility.setBackgroundColor(android.graphics.Color.parseColor("#334155"))
+    private fun requestStart(headless: Boolean) {
+        if (!BrokerCatalog.canStart(selected())) return
+        if (Settings.canDrawOverlays(this)) startOverlay(headless)
+        else {
+            pendingHeadless = headless
+            overlayPermissionLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }
     }
-
-    private fun checkOverlayPermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Settings.canDrawOverlays(this)
-        } else {
-            true
-        }
+    private fun startOverlay(headless: Boolean) {
+        if (!BrokerCatalog.canStart(selected())) return
+        ContextCompat.startForegroundService(this, Intent(this, OverlayService::class.java).apply {
+            putExtra("EXTRA_HEADLESS_MODE", headless)
+        })
+        Toast.makeText(this, R.string.home_started, Toast.LENGTH_SHORT).show()
     }
-
-    private fun requestOverlayPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            overlayPermissionLauncher.launch(intent)
-            Toast.makeText(this, "Por favor, permite que TradeDraw se muestre sobre otras apps", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private fun startFloatingService() {
-        // Modo WebSocket Puro: NO se solicita MediaProjection (la grabación de pantalla agota
-        // la batería del teléfono y lo ralentiza). Se arranca el overlay directamente.
-        launchService(null)
-    }
-
-    private fun launchService(data: Intent?) {
-        val intent = Intent(this, OverlayService::class.java)
-        if (data != null) intent.putExtra("EXTRA_MEDIA_PROJECTION_DATA", data)
-        ContextCompat.startForegroundService(this, intent)
-        Toast.makeText(this, "Overlay iniciado en Modo WebSocket Puro (sin grabación)", Toast.LENGTH_SHORT).show()
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        @Suppress("DEPRECATION")
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 123) {
-            if (checkOverlayPermission()) {
-                startFloatingService()
-            } else {
-                Toast.makeText(this, "Permiso overlay denegado", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
+    override fun onDestroy() { if (::agentSettings.isInitialized) agentSettings.destroy(); super.onDestroy() }
 }

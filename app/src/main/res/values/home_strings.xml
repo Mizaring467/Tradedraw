@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_title">TradeDraw</string>
+    <string name="home_eyebrow">TU ESPACIO DE TRADING</string>
+    <string name="home_intro">Elige tu broker y prepara tu conexión. Tú decides cuándo iniciar.</string>
+    <string name="home_broker">01  ·  Broker</string>
+    <string name="home_broker_pending">Integración pendiente. Este perfil todavía no conecta datos ni ejecuta operaciones. El servicio que ya esté iniciado no cambia de broker.</string>
+    <string name="home_broker_saved">Credencial Binomo guardada. La conexión y el tipo de cuenta se verifican al operar.</string>
+    <string name="home_broker_missing">Conecta tu sesión Binomo para recibir datos de mercado.</string>
+    <string name="home_link">Vincular Binomo</string>
+    <string name="home_relink">Revisar sesión Binomo</string>
+    <string name="home_agent">02  ·  Agente IA</string>
+    <string name="home_agent_setup">Configurar agente</string>
+    <string name="home_permissions_title">03  ·  Preparación</string>
+    <string name="home_permissions">Superposición: %1$s  ·  Accesibilidad: %2$s</string>
+    <string name="home_ready">activa</string>
+    <string name="home_pending">pendiente</string>
+    <string name="home_access">Revisar accesibilidad</string>
+    <string name="home_start">Iniciar con WebSocket</string>
+    <string name="home_overlay">Abrir herramientas flotantes</string>
+    <string name="home_stop">Detener TradeDraw</string>
+    <string name="home_footer">Abrir esta pantalla no inicia una sesión. El dinero real requiere tu autorización explícita.</string>
+    <string name="home_started">Herramientas iniciadas sin grabación de pantalla</string>
+    <string name="home_stopped">Solicitud de parada enviada</string>
+    <string name="home_overlay_required">Activa el permiso de superposición para iniciar.</string>
+</resources>
