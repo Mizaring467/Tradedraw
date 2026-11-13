@@ -10,8 +10,10 @@
 #     secuencia de recuperacion verificada el 2026-11-06:
 #       1. Toggle del setting de accesibilidad (reaplicar el mismo valor NO
 #          fuerza re-bind en HyperOS; quitar y volver a anadir, si).
-#       2. Abrir MainActivity y tocar INICIAR OVERLAY (OverlayService no es
-#          exportable: solo se puede arrancar desde la UI de la app).
+#       2. Abrir MainActivity y tocar el boton de inicio del servicio
+#          (resource-id btn_headless, "Iniciar con WebSocket" desde el
+#          candidato R30 v22; OverlayService no es exportable: solo se puede
+#          arrancar desde la UI de la app).
 #       3. Esperar el puerto 8080.
 #       4. Traer Binomo (com.marketly.trading) al frente: la lectura de balance
 #          corre en eventos TYPE_WINDOW_STATE_CHANGED cada 5 s.
@@ -43,6 +45,7 @@ POLL_S="${POLL_S:-30}"
 AUTO_REARM="${AUTO_REARM:-1}"
 LOG="${LOG:-$HOME/Tradedraw/scripts/td_supervisor.log}"
 MAX_LOG_BYTES=$((2 * 1024 * 1024))
+LAST_MODE=""   # ultimo modo observado por el propio supervisor (para re-arm fail-closed)
 
 A11Y_IN="com.omkar.voiceflow/.VoiceFlowAccessibilityService:af.shizuku.plus.api/af.shizuku.manager.automation.AICorePlusService:com.example.tradedraw/com.example.tradedraw.AutoTradeAccessibilityService"
 A11Y_OUT="com.omkar.voiceflow/.VoiceFlowAccessibilityService:af.shizuku.plus.api/af.shizuku.manager.automation.AICorePlusService"
@@ -76,7 +79,8 @@ screen_awake() {
 }
 
 recover() {
-  log "RECUPERACION: inicio (causa: bridge sin respuesta)"
+  log "RECUPERACION: inicio (causa: bridge sin respuesta; modo previo: ${LAST_MODE:-DESCONOCIDO})"
+  MODE_AT_RECOVER_START="$LAST_MODE"
   PID=$(adb shell pidof "$PKG_TD" 2>/dev/null | tr -d '\r')
   if [ -n "$PID" ]; then
     log "RECUPERACION: proceso vivo ($PID) pero bridge caido; kill suave via run-as"
@@ -106,11 +110,19 @@ recover() {
   adb shell am start -n "$PKG_TD/.MainActivity" >/dev/null 2>&1
   sleep 6
 
-  # -- Paso 4: tocar INICIAR OVERLAY (localizar por jerarquia; fallback fijo) --
+  # -- Paso 4: tocar el boton de inicio del servicio (localizar por jerarquia) --
+  # R30 (v22): home re-hecha (ScrollView + cards). El boton de arranque del
+  # servicio es btn_headless ("Iniciar con WebSocket", home_strings.xml:19).
+  # "Abrir herramientas flotantes" (boton, antes "INICIAR OVERLAY") sigue en el
+  # layout pero MainActivity lo oculta (visibility=GONE, MainActivity.kt:50).
+  # Localizar por resource-id+text; si la jerarquia no es legible -> FAIL-CLOSED
+  # (el fallback fijo (610,1738) era del layout antiguo y con el nuevo puede
+  # pulsar un control equivocado). Requiere dump fresco verificado en FASE 3.
   adb shell uiautomator dump /sdcard/td_sup.xml >/dev/null 2>&1
   sleep 2
   BOUNDS=$(adb shell cat /sdcard/td_sup.xml 2>/dev/null \
-    | tr '<' '\n<' | grep -i 'INICIAR OVERLAY' \
+    | tr '<' '\n<' | grep 'resource-id="com.example.tradedraw:id/btn_headless"' \
+    | grep -i 'Iniciar con WebSocket' \
     | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | head -1)
   if [ -n "$BOUNDS" ]; then
     COORDS=$(echo "$BOUNDS" | grep -oE '[0-9]+' | tr '\n' ' ')
@@ -118,8 +130,8 @@ recover() {
     CX=$(( ($1 + $3) / 2 )); CY=$(( ($2 + $4) / 2 ))
     log "RECUPERACION: boton localizado en ($CX,$CY) desde jerarquia"
   else
-    CX=610; CY=1738
-    log "RECUPERACION: jerarquia no legible; fallback (610,1738) verificado 2026-11-06"
+    log "FALLO: boton btn_headless no localizado en jerarquia; ABORTO sin tap (fail-closed)"
+    return 1
   fi
   adb shell input tap "$CX" "$CY"
   sleep 7
@@ -150,9 +162,14 @@ recover() {
   fi
 
   # -- Paso 8: re-armar modo --
-  if [ "$AUTO_REARM" = "1" ]; then
+  # R30: restauracion fail-closed del estado previo. Solo se re-arma AUTONOMOUS
+  # si el propio supervisor LO VIO armado (AUTONOMOUS) justo antes de la caida:
+  # nunca se escala desde DISABLED/MANUAL ni desde estado desconocido.
+  if [ "$AUTO_REARM" = "1" ] && [ "$MODE_AT_RECOVER_START" = "AUTONOMOUS" ]; then
     RES=$(curl -s --max-time 8 "http://[::1]:8080/mode?name=AUTONOMOUS" 2>/dev/null)
     log "RECUPERACION: re-arm -> ${RES:-SIN_RESPUESTA}"
+  elif [ "$AUTO_REARM" = "1" ]; then
+    log "RECUPERACION: AUTO_REARM=1 pero modo previo ${MODE_AT_RECOVER_START:-DESCONOCIDO} != AUTONOMOUS; no se re-arma (fail-closed)"
   else
     log "RECUPERACION: AUTO_REARM=0; modo dejado en DISABLED"
   fi
@@ -175,6 +192,10 @@ while true; do
   log_rotate
   if bridge_ok; then
     MODE=$(bridge_field '"mode":[[:space:]]*"[^"]+"')
+    MODE="${MODE#*:}"
+    MODE="${MODE//\"/}"
+    MODE="${MODE// /}"
+    LAST_MODE="$MODE"
     STATE=$(bridge_field '"state":[[:space:]]*"[A-Z]+"' | head -1)
     log "OK ${MODE} ${STATE}"
   else
