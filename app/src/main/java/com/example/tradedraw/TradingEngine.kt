@@ -179,6 +179,8 @@ class TradingEngine(
             riskManager.currentSubMode = value
         }
 
+    var validationMode: com.example.tradedraw.core.ValidationMode = com.example.tradedraw.core.ValidationMode.VALIDATION_REAL
+
     var timeframe: CandleTimeframe = CandleTimeframe.M1
         set(value) {
             field = value
@@ -482,6 +484,7 @@ class TradingEngine(
      */
     fun onMarketTick(tick: MarketTick) {
         VetoProfiler.INSTANCE.recordTick()
+        VetoProfiler.INSTANCE.recordEvaluationTick()
         shadowSimulation.onTick(tick)
         latestMarketTick = tick
         // El `asset` del MarketTick ya es el RIC del feed; se guarda tal cual para que el id
@@ -1776,6 +1779,17 @@ class TradingEngine(
             }
         }
 
+        // R31 FASE 6: Gobernanza estricta FAST_DEMO — imposible en cuenta REAL o no confirmada
+        if (validationMode == com.example.tradedraw.core.ValidationMode.FAST_DEMO) {
+            val accType = brokerRuntime.demoAccountGuard.getAccountType()
+            val isDemo = brokerRuntime.getBrokerState().isDemoAccount
+            if (accType != com.example.tradedraw.core.AccountType.DEMO || !isDemo) {
+                Log.e("TradingEngine", "⛔ VIOLACIÓN CRÍTICA: FAST_DEMO prohibido en cuenta no-DEMO ($accType). Abortando.")
+                setTradingMode(AutoTradeMode.DISABLED, "seguridad:fast-demo-no-demo")
+                return
+            }
+        }
+
         val now = System.currentTimeMillis()
         val currentCandleEpochMinute = (latestMarketTick?.timestampMs ?: now) / 60000L
         val sec = latestMarketTick?.candleSecond ?: ((now / 1000L) % 60L).toInt()
@@ -2089,50 +2103,49 @@ class TradingEngine(
             handler.post {
                 autoDrawEngine.clearTradeEntry()
 
-                TradeJournalLogger.logTrade(
-                    context = context,
-                    strategy = strategy.name,
-                    submode = autonomousSubMode.name,
-                    action = pendingAction.name,
-                    confidence = pendingConfidence,
-                    priceY = pendingEntry.toFloat(),
-                    stake = pendingStake,
-                    baseBalance = baseBalance,
-                    result = journalResult,
-                    settledBalance = currentBal,
-                    durationSec = elapsedSec,
-                    reason = method,
-                    trend = wsAnalysis.trend.name,
-                    distSupportRatio = wsAnalysis.distanceToSupportRatio,
-                    distResistanceRatio = wsAnalysis.distanceToResistanceRatio,
-                    tickVelocity = latestMarketTick?.velocity ?: 0f,
-                    impulse = when {
-                        latestMarketTick?.isBullishImpulse == true -> "BULLISH"
-                        latestMarketTick?.isBearishImpulse == true -> "BEARISH"
-                        else -> "NEUTRAL"
-                    },
-                    marketRegime = if (syntheticCandleEngine.isChoppinessDetected()) "CHOP" else "TRENDING",
-                    // H10: se persiste el segundo REAL de ENTRADA (capturado al enviar la orden),
-                    // no el de liquidación. Si por alguna ruta no se capturó (-1), se usa el actual.
-                    candleSecond = if (riskManager.pendingTradeEntryCandleSecond >= 0)
-                        riskManager.pendingTradeEntryCandleSecond else sec,
-                    adaptiveStatus = journalResult,
-                    tradeStartMs = pendingTradeStartMs,
-                    // Ronda 14 (A2): instrumentacion de latencia. Se persiste lo que realmente
-                    // midio la ruta de tap, no una reconstruccion: el journal guardaba solo el
-                    // segundo de la DECISION, que con 255-1205 ms de latencia puede no ser el
-                    // segundo en que el broker ve el toque.
-                    latency = TradeJournalLogger.LatencyRecord(
+                val tradeLoggerAction = {
+                    val lat = TradeJournalLogger.LatencyRecord(
                         signalTs = riskManager.pendingTradeSignalTs,
                         tapStartTs = riskManager.pendingTradeTapStartTs,
                         tapEndTs = riskManager.pendingTradeTapEndTs,
                         candleSecondAtTapEnd = riskManager.pendingTradeCandleSecondAtTapEnd,
                         priceAtSignal = riskManager.pendingTradePriceAtSignal,
                         priceAtTapEnd = riskManager.pendingTradePriceAtTapEnd
-                    ),
-                    decisionId = snapshot.decisionId,
-                    tradeId = snapshot.tradeId
-                )
+                    )
+                    val candleSec = if (riskManager.pendingTradeEntryCandleSecond >= 0)
+                        riskManager.pendingTradeEntryCandleSecond else sec
+                    val regime = if (syntheticCandleEngine.isChoppinessDetected()) "CHOP" else "TRENDING"
+                    val impulse = when {
+                        latestMarketTick?.isBullishImpulse == true -> "BULLISH"
+                        latestMarketTick?.isBearishImpulse == true -> "BEARISH"
+                        else -> "NEUTRAL"
+                    }
+
+                    if (validationMode == com.example.tradedraw.core.ValidationMode.FAST_DEMO) {
+                        TradeJournalLogger.logFastDemoTrade(
+                            context = context, strategy = strategy.name, submode = autonomousSubMode.name,
+                            action = pendingAction.name, confidence = pendingConfidence, priceY = pendingEntry.toFloat(),
+                            stake = pendingStake, baseBalance = baseBalance, result = journalResult, settledBalance = currentBal,
+                            durationSec = elapsedSec, reason = method, trend = wsAnalysis.trend.name,
+                            distSupportRatio = wsAnalysis.distanceToSupportRatio, distResistanceRatio = wsAnalysis.distanceToResistanceRatio,
+                            tickVelocity = latestMarketTick?.velocity ?: 0f, impulse = impulse, marketRegime = regime,
+                            candleSecond = candleSec, adaptiveStatus = journalResult, tradeStartMs = pendingTradeStartMs,
+                            latency = lat, decisionId = snapshot.decisionId, tradeId = snapshot.tradeId
+                        )
+                    } else {
+                        TradeJournalLogger.logValidationRealTrade(
+                            context = context, strategy = strategy.name, submode = autonomousSubMode.name,
+                            action = pendingAction.name, confidence = pendingConfidence, priceY = pendingEntry.toFloat(),
+                            stake = pendingStake, baseBalance = baseBalance, result = journalResult, settledBalance = currentBal,
+                            durationSec = elapsedSec, reason = method, trend = wsAnalysis.trend.name,
+                            distSupportRatio = wsAnalysis.distanceToSupportRatio, distResistanceRatio = wsAnalysis.distanceToResistanceRatio,
+                            tickVelocity = latestMarketTick?.velocity ?: 0f, impulse = impulse, marketRegime = regime,
+                            candleSecond = candleSec, adaptiveStatus = journalResult, tradeStartMs = pendingTradeStartMs,
+                            latency = lat, decisionId = snapshot.decisionId, tradeId = snapshot.tradeId
+                        )
+                    }
+                }
+                tradeLoggerAction()
 
                 if (isTie) {
                     recordTieVoidIfFresh(riskManager, saldoFresco)

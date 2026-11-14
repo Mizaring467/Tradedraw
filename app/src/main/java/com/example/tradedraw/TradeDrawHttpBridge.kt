@@ -688,6 +688,24 @@ class TradeDrawHttpBridge(
                         )
                         sendJsonResponse(output, 200, json)
                     }
+                    "/config/validation_mode" -> {
+                        val requestedMode = params["mode"]?.uppercase()
+                        if (requestedMode == "FAST_DEMO") {
+                            val accType = overlayService.tradingEngine.brokerRuntime.demoAccountGuard.getAccountType()
+                            val isDemo = overlayService.tradingEngine.brokerRuntime.getBrokerState().isDemoAccount
+                            if (accType != com.example.tradedraw.core.AccountType.DEMO || !isDemo) {
+                                sendJsonResponse(output, 403, """{"success":false,"error":"FAST_DEMO prohibido en cuenta REAL o no confirmada"}""")
+                            } else {
+                                overlayService.tradingEngine.validationMode = com.example.tradedraw.core.ValidationMode.FAST_DEMO
+                                sendJsonResponse(output, 200, """{"success":true,"validationMode":"FAST_DEMO"}""")
+                            }
+                        } else if (requestedMode == "VALIDATION_REAL") {
+                            overlayService.tradingEngine.validationMode = com.example.tradedraw.core.ValidationMode.VALIDATION_REAL
+                            sendJsonResponse(output, 200, """{"success":true,"validationMode":"VALIDATION_REAL"}""")
+                        } else {
+                            sendJsonResponse(output, 200, """{"validationMode":"${overlayService.tradingEngine.validationMode.name}"}""")
+                        }
+                    }
                     else -> {
                         sendJsonResponse(output, 404, """{"error":"Ruta no encontrada: $path"}""")
                     }
@@ -795,6 +813,7 @@ class TradeDrawHttpBridge(
             "health": ${healthReport.toJson()},
             "mode": "$mode",
             "submode": "${te.autonomousSubMode.name}",
+            "validationMode": "${te.validationMode.name}",
             "lastModeChangeSource": "${escapeJson(te.lastModeChange)}",
             "lastModeChangeTs": ${te.lastModeChangeTs},
             "strategy": "$strat",

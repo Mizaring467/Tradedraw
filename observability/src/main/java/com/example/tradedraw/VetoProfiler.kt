@@ -148,8 +148,11 @@ class VetoProfiler(
         allowed: Boolean,
         category: VetoCategory? = null
     ): EvaluationRecord {
-        totalEvaluations.incrementAndGet()
-        totalCandidateSignals.incrementAndGet()
+        val cands = totalCandidateSignals.incrementAndGet()
+        // Invariante monótona del funnel: totalEvaluations >= totalCandidateSignals
+        if (totalEvaluations.get() < cands) {
+            totalEvaluations.set(cands)
+        }
 
         val effectiveCategory = if (allowed) null else (category ?: classifyVeto(vetoIndex, vetoReason))
 

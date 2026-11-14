@@ -285,6 +285,67 @@ object TradeJournalLogger {
     }
 
     /**
+     * Registra una operación de estrategia en loops/r31_validation/trade_journal_validation.csv
+     * con validation_mode=VALIDATION_REAL y la preserva también en el journal principal (FASE 6 R31).
+     */
+    fun logValidationRealTrade(
+        context: Context,
+        strategy: String,
+        submode: String,
+        action: String,
+        confidence: Float,
+        priceY: Float,
+        stake: Number,
+        baseBalance: Number,
+        result: String,
+        settledBalance: Number,
+        durationSec: Long,
+        reason: String,
+        trend: String = "SIDEWAYS",
+        distSupportRatio: Float = 0.5f,
+        distResistanceRatio: Float = 0.5f,
+        tickVelocity: Float = 0f,
+        impulse: String = "NEUTRAL",
+        marketRegime: String = "NORMAL",
+        candleSecond: Int = 0,
+        adaptiveStatus: String = "ALLOWED",
+        tradeStartMs: Long = 0L,
+        latency: LatencyRecord = LatencyRecord(),
+        decisionId: String = "",
+        tradeId: String = ""
+    ): Boolean {
+        // También persiste en el journal raíz para compatibilidad con dashboards existentes
+        logTrade(
+            context, strategy, submode, action, confidence, priceY, stake, baseBalance,
+            result, settledBalance, durationSec, reason, trend, distSupportRatio,
+            distResistanceRatio, tickVelocity, impulse, marketRegime, candleSecond,
+            adaptiveStatus, tradeStartMs, latency, decisionId, tradeId
+        )
+        return try {
+            val valDir = File("/data/data/com.termux/files/home/Tradedraw/loops/r31_validation")
+            if (!valDir.exists()) valDir.mkdirs()
+            val file = File(valDir, "trade_journal_validation.csv")
+            val baseLine = buildLine(action, result, reason, strategy, submode, confidence, priceY,
+                stake, baseBalance, settledBalance, durationSec, trend, distSupportRatio,
+                distResistanceRatio, tickVelocity, impulse, marketRegime, candleSecond,
+                adaptiveStatus, latency, decisionId, tradeId).trimEnd()
+            val line = "$baseLine,VALIDATION_REAL\n"
+            synchronized(lock) {
+                val writeHeader = !file.exists() || file.length() == 0L
+                FileWriter(file, true).use { writer ->
+                    if (writeHeader) writer.write(FAST_DEMO_HEADER)
+                    writer.write(line)
+                    writer.flush()
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error escribiendo en validation_real journal", e)
+            false
+        }
+    }
+
+    /**
      * Registra una decisión simulada autorizada en modo SHADOW.
      * Cero taps, cero órdenes despachadas al broker, saldo inalterado.
      */

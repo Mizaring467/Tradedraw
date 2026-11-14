@@ -141,6 +141,36 @@ class CandidateRankingEngineTest {
     }
 
     @Test
+    fun testSelectBestCandidate_srRatioAffectsRanking() {
+        // Two candidates identical in confidence, confluence, payout, regime, and latency
+        // but cand1 has distanceToSrRatio = 0.9 (clear room / strong bounce) vs cand2 = 0.1 (immediate barrier conflict)
+        val cand1 = CandidateSignal(
+            asset = "CRYPTO_IDX",
+            action = TradeAction.BUY,
+            confidence = 0.85f,
+            confluenceScore = 85,
+            payoutRate = 0.82,
+            marketRegime = "TRENDING",
+            distanceToSrRatio = 0.90f,
+            tickAgeMs = 100L
+        )
+        val cand2 = CandidateSignal(
+            asset = "EUR_USD_OTC",
+            action = TradeAction.BUY,
+            confidence = 0.85f,
+            confluenceScore = 85,
+            payoutRate = 0.82,
+            marketRegime = "TRENDING",
+            distanceToSrRatio = 0.10f,
+            tickAgeMs = 100L
+        )
+
+        val result = engine.selectBestCandidate(listOf(cand2, cand1))
+        assertEquals("CRYPTO_IDX should win due to superior S/R ratio", "CRYPTO_IDX", result.winner?.asset)
+        assertTrue("Winner score must be greater than superseded", result.winnerScore > result.superseded[0].score)
+    }
+
+    @Test
     fun testSelectBestCandidate_emptyList() {
         val result = engine.selectBestCandidate(emptyList())
         assertNull(result.winner)

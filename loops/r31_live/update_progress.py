@@ -42,18 +42,23 @@ OUTPUT = Path(__file__).resolve().parent / "R31_PROGRESS.json"
 
 
 def valid_row(row: dict) -> bool:
-    """Fila válida = completa y con decision_id/trade_id presentes y únicos."""
+    """Fila válida = completa y con decision_id/trade_id presentes y únicos (o PENDING en curso)."""
     did = (row.get("decision_id") or "").strip()
+    res = (row.get("result") or "").strip().upper()
+    if not did:
+        return False
+    if res == "PENDING":
+        return True
     tid = (row.get("trade_id") or "").strip()
-    if not did or not tid:
+    if not tid:
         return False
     # debe tener al menos action y result no vacíos
     if not (row.get("action") or "").strip():
         return False
-    if not (row.get("result") or "").strip():
+    if not res:
         return False
     # descartar filas obviamente truncadas: result debe ser uno de los conocidos
-    if (row.get("result") or "").strip().upper() not in {"WIN", "LOSS", "TIE", "TIE_INCIERTO"}:
+    if res not in {"WIN", "LOSS", "TIE", "TIE_INCIERTO"}:
         return False
     return True
 
@@ -67,11 +72,11 @@ def load_rows(csv_path: Path):
             # tolerar BOM / espacios en nombres de columna y campos overflow
             row = {(k or "").strip().lstrip("\ufeff"): (v if isinstance(v, str) else "").strip()
                    for k, v in raw.items() if k is not None}
-            did = row.get("decision_id", "")
-            tid = row.get("trade_id", "")
             if not valid_row(row):
                 continue
-            key = (did, tid)
+            did = row.get("decision_id", "")
+            tid = row.get("trade_id", "")
+            key = (did, tid if tid else "PENDING")
             if key in seen:
                 dup += 1
                 continue  # fila duplicada (decision_id/trade_id no únicos) → no cuenta
@@ -88,8 +93,8 @@ def classify(rows):
             w += 1
         elif res == "LOSS":
             l += 1
-        else:
-            t += 1  # TIE / TIE_INCIERTO
+        elif res in {"TIE", "TIE_INCIERTO"}:
+            t += 1
     return w, l, t
 
 

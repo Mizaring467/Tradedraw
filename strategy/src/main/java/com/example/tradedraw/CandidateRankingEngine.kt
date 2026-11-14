@@ -36,13 +36,15 @@ data class SupersededCandidate(
 
 /**
  * Motor determinista de ranking y selección de mejor candidato multi-activo.
- * Implementa ponderación objetiva de 5 factores con desempate jerárquico determinista.
+ * Implementa ponderación objetiva de 6 factores (Confidence, Confluence, Payout, Regime, S/R, Freshness)
+ * con desempate jerárquico determinista (Payout -> Latencia -> Símbolo).
  */
 class CandidateRankingEngine(
-    val weightConfidence: Double = 0.35,
-    val weightConfluence: Double = 0.25,
+    val weightConfidence: Double = 0.30,
+    val weightConfluence: Double = 0.20,
     val weightPayout: Double = 0.15,
     val weightRegime: Double = 0.15,
+    val weightSr: Double = 0.10,
     val weightFreshness: Double = 0.10
 ) {
 
@@ -69,19 +71,23 @@ class CandidateRankingEngine(
             else -> 0.5
         }
 
-        // 5. Frescura del tick (penalización a partir de 250ms, 0 a 1000ms)
+        // 5. Calidad de espacio S/R [0.0, 1.0]
+        val sr = candidate.distanceToSrRatio.coerceIn(0.0f, 1.0f).toDouble()
+
+        // 6. Frescura del tick (penalización a partir de 250ms, 0 a 1000ms)
         val f = (1.0 - (candidate.tickAgeMs.toDouble() / 1000.0)).coerceIn(0.0, 1.0)
 
         return (weightConfidence * c) +
                 (weightConfluence * k) +
                 (weightPayout * p) +
                 (weightRegime * r) +
+                (weightSr * sr) +
                 (weightFreshness * f)
     }
 
     /**
      * Evalúa una lista de candidatos concurrentes y selecciona el BEST_VALID_CANDIDATE.
-     * En caso de empate cuantitativo (diferencia < 1e-4), desempata en orden determinista:
+     * En caso de empate cuantitativo (diferencia <= 1e-3), desempata en orden determinista:
      * 1. Mayor payout del broker
      * 2. Menor latencia de tick (tickAgeMs)
      * 3. Orden lexicográfico del símbolo del activo
@@ -114,21 +120,21 @@ class CandidateRankingEngine(
 
         // Ordenar con comparador determinista
         val comparator = Comparator<Pair<CandidateSignal, Double>> { a, b ->
-            val scoreDiff = b.second.compareTo(a.second)
-            if (Math.abs(b.second - a.second) > 1e-4) {
-                scoreDiff
+            val diff = Math.abs(b.second - a.second)
+            if (diff > 1e-3) {
+                b.second.compareTo(a.second)
             } else {
                 // Desempate 1: mayor payout
                 val payoutDiff = b.first.payoutRate.compareTo(a.first.payoutRate)
                 if (payoutDiff != 0) {
                     payoutDiff
                 } else {
-                    // Desempate 2: menor latencia de tick
+                    // Desempate 2: menor latencia de tick (menor tickAgeMs)
                     val latencyDiff = a.first.tickAgeMs.compareTo(b.first.tickAgeMs)
                     if (latencyDiff != 0) {
                         latencyDiff
                     } else {
-                        // Desempate 3: símbolo determinista
+                        // Desempate 3: símbolo determinista lexicográfico
                         a.first.asset.compareTo(b.first.asset)
                     }
                 }

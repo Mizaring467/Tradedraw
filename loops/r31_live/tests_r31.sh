@@ -382,8 +382,7 @@ R31_ADB_STUB="${T6B_DIR}/adb.sh" R31_CURL_STUB="${T6B_DIR}/status_server.sh" R31
   timeout 90 bash "${WATCHDOG}" --max-cycles 2 --interval 1 --recheck-wait 0 \
     --state-file "${T6B_DIR}/state.json" --events-file "${T6B_DIR}/events.jsonl" \
     --evidence-dir "${T6B_DIR}/ev" --visual-task-dir "${T6B_DIR}/vis" > "${T6B_DIR}/out2.log" 2>&1
-check "T6e: rechazo del guardian → escalada a L3 (evento RECOVERY_ROTATE con L3)" \
-  $(grep -q 'rotando a L3' "${T6B_DIR}/events.jsonl"; echo $?)
+check "T6e: rechazo del guardian → escalada a L3 (evento RECOVERY_ROTATE con L3)" $(grep -q 'rotando a L3' "${T6B_DIR}/events.jsonl"; echo $?)
 
 # =====================================================================
 section "T7. L3: NO relanzar Binomo con operación pendiente; SÍ sin pendiente"

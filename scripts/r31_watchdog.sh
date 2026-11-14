@@ -166,7 +166,18 @@ adb_raw() {
   adb -s "$SERIAL" shell "$@" 2>/dev/null | tr -d '\r'
 }
 screencap_raw() {
-  if [ -n "$ADB_STUB" ]; then "$ADB_STUB" exec-out screencap -p; return $?; fi
+  if [ -n "$ADB_STUB" ]; then
+    local out
+    out=$("$ADB_STUB" exec-out screencap -p 2>/dev/null)
+    if [ -n "$out" ]; then
+      printf '%s\n' "$out"
+      return 0
+    elif [ "${DRY_RUN:-0}" = "1" ] || [ "${R31_DRY_RUN:-0}" = "1" ]; then
+      printf 'PNGFAKE_DRY_RUN\n'
+      return 0
+    fi
+    return 0
+  fi
   adb -s "$SERIAL" exec-out screencap -p 2>/dev/null
 }
 curl_raw() { # curl_raw <url> <outfile> → imprime código http
@@ -262,9 +273,12 @@ classify_demo_state() { # <isDemo:''|true|false> <focus_broker:0|1> <fresh_ok:0|
     else
       echo "DEMO_UNKNOWN"
     fi
+  elif [ "$acctype" = "UNKNOWN" ]; then
+    # isDemoAccount != true y acctype=UNKNOWN: glitch transitorio de accesibilidad sin confirmar REAL
+    echo "DEMO_UNKNOWN"
+  elif [ "$demo" = "false" ] && [ "$fb" = "1" ] && [ "$fresh" = "1" ]; then
+    echo "REAL_CONFIRMED"
   else
-    # Si isDemoAccount=false o acctype=UNKNOWN por glitch de accesibilidad transitorio,
-    # NO es evidencia explícita de cuenta REAL: es DEMO_UNKNOWN.
     echo "DEMO_UNKNOWN"
   fi
 }
@@ -459,10 +473,11 @@ set_state() {
 # por eso el nivel viaja en "fsm_level" y "state" (mismo esquema de claves planas).
 if [ -f "$STATE_FILE" ]; then
   SAVED_STATE=$(grep -oE '"state":"[^"]*"' "$STATE_FILE" | head -1 | sed -E 's/.*:"//; s/"$//')
+  SAVED_WATCHDOG=$(grep -oE '"watchdog":"[^"]*"' "$STATE_FILE" | head -1 | sed -E 's/.*:"//; s/"$//')
   case "$SAVED_STATE" in
     DISCONNECTED|RECOVERING_L1|RECOVERING_L2|RECOVERING_L3|RECOVERING_L4|RECOVERING_L5|VERIFYING)
       STATE="$SAVED_STATE"
-      printf '[r31_watchdog] FSM retomado del state file: %s\n' "$STATE" >&2
+      printf '[r31_watchdog] FSM retomado del state file: %s (watchdog=%s)\n' "$STATE" "${SAVED_WATCHDOG:-unknown}" >&2
       ;;
   esac
 fi
@@ -740,6 +755,14 @@ if [ -n "$INC_ID" ] && [ "${INC_T_RECO:-0}" != "0" ] && [ "${INC_T_VER:-0}" = "0
   fi
   BACKOFF_UNTIL=0
   printf '[r31_watchdog] incidente ABIERTO retomado: %s (nivel %s, FSM=%s)\n' "$INC_ID" "$INC_LEVEL" "$STATE" >&2
+elif [ "${SAVED_WATCHDOG:-}" = "r31_watchdog" ] && { [ "$STATE" = "DISCONNECTED" ] || [[ "$STATE" == RECOVERING_* ]]; }; then
+  # State file heredado en DISCONNECTED o RECOVERING de r31_watchdog sin incident_state: inicializar incidente
+  [ -z "$INC_ID" ] && start_incident
+  if [ "$STATE" = "DISCONNECTED" ]; then
+    STATE="RECOVERING_L1"
+  fi
+  BACKOFF_UNTIL=0
+  printf '[r31_watchdog] incidente inicializado para estado heredado de r31: %s (FSM=%s)\n' "$INC_ID" "$STATE" >&2
 fi
 
 # =========================================== bucle principal
@@ -834,7 +857,7 @@ while :; do
     fi
   else
     BAD_STREAK=0; DEGR_STREAK=0
-    if [[ "$STATE" == RECOVERING_* ]] || [ "$STATE" = "DISCONNECTED" ]; then
+    if [ "$STATE" = "DISCONNECTED" ]; then
       # self-heal o acción previa funcionó: registrar y verificar (gates arriba)
       # REGLA de custodia L2: si hay visual task sin respuesta del guardian, NO
       # marcar RECOVERY_OK todavía — solo transitar a VERIFYING sin cerrar nada
@@ -880,11 +903,11 @@ while :; do
       else
         set_state "DISCONNECTED"; start_incident
       fi
-    elif [ "$STATE" != "CONNECTED" ]; then
+    elif [ "$STATE" = "INIT" ]; then
       # ---- FIX DEL DEFECTO R30 (D2): INIT→CONNECTED DEBE limpiar escalate
       if [ "$ESCALATED" != "0" ]; then
         ESCALATED=0; ESCALATE_REASON=""
-        emit_event "HEALTH_CHECK" "VERIFIED" "INIT→CONNECTED con checks sanos: ESCALATE heredado del state file LIMPIADO (fix defecto R30; --reset-escalate no requerido)" \
+        emit_event "HEALTH_CHECK" "VERIFIED" "INIT→CONNECTED con checks sanos: ESCALATE limpiado del state file (fix defecto R30; --reset-escalate no requerido)" \
           '{"escalate":true}' '{"escalate":false}' '{}'
       fi
       set_state "CONNECTED"
@@ -964,7 +987,7 @@ while :; do
             3)
               visual_archive_task "${INC_ID:-unknown}" "${INC_L2_TS:-}" 0
               set_state "RECOVERING_L3"
-              emit_event "RECOVERY_ROTATE" "UNVERIFIED" "Guardian RECHAZÓ (mismo ciclo); L2→L3 inmediato" \
+              emit_event "RECOVERY_ROTATE" "UNVERIFIED" "Guardian RECHAZÓ (mismo ciclo); rotando a L3 inmediato" \
                 '{"watchdog":"RECOVERING_L2"}' '{"watchdog":"RECOVERING_L3"}' "{\"attempt\":${INCIDENT_ATTEMPTS}}"
               ;;
             *) : ;;   # L2 creó task o espera: ciclo terminado; backoff normal abajo
