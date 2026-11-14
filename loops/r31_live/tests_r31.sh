@@ -229,19 +229,21 @@ section "T4. DEMO tristate: 3 fixtures"
 bash -c '
   set -u
   source "'"${TMP_BASE}"'/pure_fns.sh"
-  d1=$(classify_demo_state "true"  1 1)   # foco binomo + flag true + fresco
-  d2=$(classify_demo_state "false" 0 1)   # foco termux + flag false
-  d3=$(classify_demo_state "false" 1 1)   # foco binomo + flag false
-  d4=$(classify_demo_state "false" 1 0)   # flag false con foco pero lectura STALE
-  d5=$(classify_demo_state ""     1 1)    # parse vacío (body truncado)
-  printf "%s %s %s %s %s\n" "$d1" "$d2" "$d3" "$d4" "$d5"
+  d1=$(classify_demo_state "true"  1 1)          # foco binomo + flag true + fresco
+  d2=$(classify_demo_state "false" 0 1)          # foco termux + flag false
+  d3=$(classify_demo_state "false" 1 1 "REAL")   # foco binomo + flag false + REAL confirmado
+  d4=$(classify_demo_state "false" 1 0)          # flag false con foco pero lectura STALE
+  d5=$(classify_demo_state ""     1 1)           # parse vacío (body truncado)
+  d6=$(classify_demo_state "false" 1 1 "UNKNOWN") # foco binomo + glitch accesibilidad sin confirmar REAL
+  printf "%s %s %s %s %s %s\n" "$d1" "$d2" "$d3" "$d4" "$d5" "$d6"
 ' > "${TMP_BASE}/demo.txt"
-read -r D1 D2 D3 D4 D5 < "${TMP_BASE}/demo.txt"
+read -r D1 D2 D3 D4 D5 D6 < "${TMP_BASE}/demo.txt"
 check "T4a: foco binomo + true + fresco → DEMO_CONFIRMED (got ${D1})" $([ "$D1" = "DEMO_CONFIRMED" ]; echo $?)
 check "T4b: foco termux + false → DEMO_UNKNOWN (got ${D2})" $([ "$D2" = "DEMO_UNKNOWN" ]; echo $?)
-check "T4c: foco binomo + false + fresco → REAL_CONFIRMED (got ${D3})" $([ "$D3" = "REAL_CONFIRMED" ]; echo $?)
+check "T4c: foco binomo + false + fresco + REAL → REAL_CONFIRMED (got ${D3})" $([ "$D3" = "REAL_CONFIRMED" ]; echo $?)
 check "T4d: flag false pero stale → DEMO_UNKNOWN, NO alarma (got ${D4})" $([ "$D4" = "DEMO_UNKNOWN" ]; echo $?)
 check "T4e: parse vacío → DEMO_UNKNOWN, NO alarma (got ${D5})" $([ "$D5" = "DEMO_UNKNOWN" ]; echo $?)
+check "T4f: glitch accesibilidad (acctype UNKNOWN) → DEMO_UNKNOWN (got ${D6})" $([ "$D6" = "DEMO_UNKNOWN" ]; echo $?)
 
 # =====================================================================
 section "T5. L1 fallback visual: dump vacío de Binomo → L2 en el mismo ciclo (defecto D1/D4)"
@@ -434,18 +436,18 @@ header = "timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,ba
 rows = [
  # PRE-R31 (signal_ts viejo, debe EXCLUIRSE por corte temporal): 1 WIN
  "1794000000000,2026-11-07,OLD,CONSERVATIVE,CALL,0.8,641.8,4000.0,36700000.0,WIN,36703320.32,62,UP,0.1,0.1,1.0,0.5,TREND,1,ON,old,1793999940000,1793999990000,1794000000000,1,641.8,641.9,d-000,t-000\n",
- # R31: 3 resueltas (2 WIN, 1 LOSS), 1 TIE, 1 PENDING (sin trade_id), 1 duplicada
- "1794591782000,2026-11-13,TRUE_FRAMEWORK,CONSERVATIVE,CALL,0.81,641.86,4000.0,36792616.96,LOSS,36788615.68,44,UP,0.1457,0.2539,1.2,0.4,TREND,3,ON,signal_ok,1794591700000,1794591780000,1794591782000,3,641.8,641.9,d-aaa,t-111\n",
- "1794592400000,2026-11-13,TRUE_FRAMEWORK,CONSERVATIVE,PUT,0.77,641.90,4000.0,36788615.68,WIN,36804615.68,38,DOWN,0.2,0.1,0.9,0.2,TREND,2,ON,signal_ok,1794592340000,1794592390000,1794592400000,2,641.9,641.8,d-bbb,t-222\n",
- "1794593000000,2026-11-13,TRUE_FRAMEWORK,CONSERVATIVE,CALL,0.83,641.70,4000.0,36804615.68,WIN,36820615.68,41,UP,0.1,0.3,1.5,0.6,TREND,4,ON,signal_ok,1794592900000,1794592980000,1794593000000,4,641.7,641.9,d-ccc,t-333\n",
- "1794593600000,2026-11-13,TRUE_FRAMEWORK,CONSERVATIVE,PUT,0.74,641.95,4000.0,36820615.68,TIE,36820615.68,30,DOWN,0.3,0.05,0.7,0.1,CHOP,1,ON,signal_ok,1794593540000,1794593580000,1794593600000,1,641.95,641.95,d-ddd,t-444\n",
- "1794594200000,2026-11-13,TRUE_FRAMEWORK,CONSERVATIVE,CALL,0.8,641.8,4000.0,36820615.68,PENDING,,,,,,,,,,ON,pending,1794594140000,1794594180000,,0,641.8,,d-eee,\n",
- "1794592400000,2026-11-13,TRUE_FRAMEWORK,CONSERVATIVE,PUT,0.77,641.90,4000.0,36788615.68,WIN,36804615.68,38,DOWN,0.2,0.1,0.9,0.2,TREND,2,ON,signal_ok,1794592340000,1794592390000,1794592400000,2,641.9,641.8,d-bbb,t-222\n",
+ # R31 (en ventana 22:31Z-22:34Z): 3 resueltas (2 WIN, 1 LOSS), 1 TIE, 1 PENDING (sin trade_id), 1 duplicada
+ "1794609060000,2026-11-13,TRUE_FRAMEWORK,CONSERVATIVE,CALL,0.81,641.86,4000.0,36792616.96,LOSS,36788615.68,44,UP,0.1457,0.2539,1.2,0.4,TREND,3,ON,signal_ok,1794609060000,1794609060020,1794609060150,3,641.8,641.9,d-aaa,t-111\n",
+ "1794609120000,2026-11-13,TRUE_FRAMEWORK,CONSERVATIVE,PUT,0.77,641.90,4000.0,36788615.68,WIN,36804615.68,38,DOWN,0.2,0.1,0.9,0.2,TREND,2,ON,signal_ok,1794609120000,1794609120020,1794609120150,2,641.9,641.8,d-bbb,t-222\n",
+ "1794609180000,2026-11-13,TRUE_FRAMEWORK,CONSERVATIVE,CALL,0.83,641.70,4000.0,36804615.68,WIN,36820615.68,41,UP,0.1,0.3,1.5,0.6,TREND,4,ON,signal_ok,1794609180000,1794609180020,1794609180150,4,641.7,641.9,d-ccc,t-333\n",
+ "1794609240000,2026-11-13,TRUE_FRAMEWORK,CONSERVATIVE,PUT,0.74,641.95,4000.0,36820615.68,TIE,36820615.68,30,DOWN,0.3,0.05,0.7,0.1,CHOP,1,ON,signal_ok,1794609240000,1794609240020,1794609240150,1,641.95,641.95,d-ddd,t-444\n",
+ "1794609300000,2026-11-13,TRUE_FRAMEWORK,CONSERVATIVE,CALL,0.8,641.8,4000.0,36820615.68,PENDING,,,,,,,,,,ON,pending,1794609300000,1794609300020,,0,641.8,,d-eee,\n",
+ "1794609120000,2026-11-13,TRUE_FRAMEWORK,CONSERVATIVE,PUT,0.77,641.90,4000.0,36788615.68,WIN,36804615.68,38,DOWN,0.2,0.1,0.9,0.2,TREND,2,ON,signal_ok,1794609120000,1794609120020,1794609120150,2,641.9,641.8,d-bbb,t-222\n",
 ]
 with open(sys.argv[1] + "/journal.csv", "w") as f:
     f.write(header)
     f.writelines(rows)
-# session_start: start_utc posterior a la fila pre-R31, anterior a las R31
+# session_start: start_utc posterior a la fila pre-R31, anterior a las R31 (22:30Z)
 open(sys.argv[1] + "/start.json", "w").write(
     '{"session":"R31_LIVE_SESSION_001","start_utc":"2026-11-13T22:30:00Z","baseline_journal_rows":1}')
 PY

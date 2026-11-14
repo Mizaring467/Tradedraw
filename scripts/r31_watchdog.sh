@@ -98,6 +98,7 @@ STATE_FILE="${ROOT}/loops/r31_live/watchdog_state.json"
 EVENTS_FILE="${ROOT}/loops/r31_live/watchdog_events.jsonl"
 VISUAL_TASK_DIR="${ROOT}/loops/r31_live/visual_tasks"
 DEMO_STALE_S=120
+TASK_TIMEOUT_S=600   # visual task sin respuesta del guardian >10min → rotar sin borrar
 
 usage() { sed -n '2,60p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
 
@@ -209,6 +210,9 @@ read_status_fields() { # parsea STATUS_BODY → S_* (risk.*, feed.*, engine.*, h
   S_SIG_GEN=$(jnum '"signalsGenerated"' "$STATUS_BODY")
   S_SIG_EVAL=$(jnum '"evaluatedCount"' "$STATUS_BODY")
   S_BALANCE=$(grep -oE '"balance":[[:space:]]*[^,}]+' "$STATUS_BODY" 2>/dev/null | head -1 | sed -E 's/.*:[[:space:]]*//')
+  S_COOLDOWN=$(jnum '"remainingCooldown"' "$STATUS_BODY")
+  S_ACCTYPE=$(jstr '"accountType"' "$STATUS_BODY")
+  : "${S_COOLDOWN:=0}"; : "${S_ACCTYPE:=UNKNOWN}"
   APP_VERSION="$(jstr '"versionName"' "$STATUS_BODY")"
 }
 
@@ -248,13 +252,19 @@ ui_dump() { # dump uiautomator best-effort ('' si Binomo lo rechaza: anti-automa
 BTN_LABEL_RE='(Reintentar|Reintentar conexión|reintentar conexión|Reconectar|Reconnect|Retry)'
 
 # --------------------------------------- D5: tri-estado DEMO (pura)
-classify_demo_state() { # <isDemo:''|true|false> <focus_broker:0|1> <fresh_ok:0|1>
-  local demo="$1" fb="$2" fresh="$3"
-  if [ "$demo" = "true" ] && [ "$fb" = "1" ] && [ "$fresh" = "1" ]; then
-    echo "DEMO_CONFIRMED"
-  elif [ "$demo" = "false" ] && [ "$fb" = "1" ] && [ "$fresh" = "1" ]; then
+classify_demo_state() { # <isDemo:''|true|false> <focus_broker:0|1> <fresh_ok:0|1> [account_type:''|DEMO|REAL|UNKNOWN]
+  local demo="$1" fb="$2" fresh="$3" acctype="${4:-}"
+  if [ "$acctype" = "REAL" ]; then
     echo "REAL_CONFIRMED"
+  elif [ "$demo" = "true" ] || [ "$acctype" = "DEMO" ]; then
+    if [ "$fb" = "1" ] && [ "$fresh" = "1" ]; then
+      echo "DEMO_CONFIRMED"
+    else
+      echo "DEMO_UNKNOWN"
+    fi
   else
+    # Si isDemoAccount=false o acctype=UNKNOWN por glitch de accesibilidad transitorio,
+    # NO es evidencia explícita de cuenta REAL: es DEMO_UNKNOWN.
     echo "DEMO_UNKNOWN"
   fi
 }
@@ -358,7 +368,21 @@ visual_archive_task() { # <incident_id> <ts> <resolved:0|1> — saca la task del
   done
 }
 
-# ------------------ métricas de incidente (MTTD/MTTR; JSONL append + state atómico)
+# ------------------ métricas de incidente (MTTD/MTTR; definidas en el bloque puro)
+
+incident_record() { # incident_record <recovered:0|1> — línea JSONL con MTTD/MTTR
+  local ok="$1" mttd=0 mttr=0
+  [ "${INC_T_RECO:-0}" -gt 0 ] 2>/dev/null && mttd=$(( INC_T_RECO - INC_T_DISC ))
+  [ "${INC_T_VER:-0}" -gt 0 ] 2>/dev/null && mttr=$(( INC_T_VER - INC_T_DISC ))
+  [ "$mttd" -lt 0 ] 2>/dev/null && mttd=0
+  [ "$mttr" -lt 0 ] 2>/dev/null && mttr=0
+  printf '{"event":"incident_summary","incident_id":"%s","ts_utc":"%s","T_disconnect_detected":%s,"T_recovery_started":%s,"T_action":%s,"T_verified_connected":%s,"mttd_ms":%s,"mttr_ms":%s,"recovered":%s}\n' \
+    "$(jesc "${INC_ID:-}")" "$(iso_utc "$(now_ms)")" "${INC_T_DISC:-0}" "${INC_T_RECO:-0}" "${INC_T_ACT:-0}" "${INC_T_VER:-0}" "$mttd" "$mttr" "$ok" >> "$(incident_jsonl_path)"
+}
+
+incident_reset() { INC_T_DISC=0; INC_T_RECO=0; INC_T_ACT=0; INC_T_VER=0; INC_ID=""; }
+
+# ----------------- helpers de métricas de incidente (I/O ligado a $STATE_FILE)
 incident_state_path() { printf '%s/incident_state.json' "$(dirname "$STATE_FILE")"; }
 incident_jsonl_path() { printf '%s/incident_metrics.jsonl' "$(dirname "$STATE_FILE")"; }
 
@@ -382,17 +406,26 @@ incident_save() { # persiste (atomic write)
   mv -f "$tmp" "$(incident_state_path)"
 }
 
-incident_record() { # incident_record <recovered:0|1> — línea JSONL con MTTD/MTTR
-  local ok="$1" mttd=0 mttr=0
-  [ "${INC_T_RECO:-0}" -gt 0 ] 2>/dev/null && mttd=$(( INC_T_RECO - INC_T_DISC ))
-  [ "${INC_T_VER:-0}" -gt 0 ] 2>/dev/null && mttr=$(( INC_T_VER - INC_T_DISC ))
-  [ "$mttd" -lt 0 ] 2>/dev/null && mttd=0
-  [ "$mttr" -lt 0 ] 2>/dev/null && mttr=0
-  printf '{"event":"incident_summary","incident_id":"%s","ts_utc":"%s","T_disconnect_detected":%s,"T_recovery_started":%s,"T_action":%s,"T_verified_connected":%s,"mttd_ms":%s,"mttr_ms":%s,"recovered":%s}\n' \
-    "$(jesc "${INC_ID:-}")" "$(iso_utc "$(now_ms)")" "${INC_T_DISC:-0}" "${INC_T_RECO:-0}" "${INC_T_ACT:-0}" "${INC_T_VER:-0}" "$mttd" "$mttr" "$ok" >> "$(incident_jsonl_path)"
+# ----------------- buzón visual (contrato con el LIVE GUARDIAN)
+visual_task_pending() { # → 0 si hay task visual SIN consumir en el buzón activo
+  local f
+  for f in "$VISUAL_TASK_DIR"/task_*.json; do [ -f "$f" ] && return 0; done
+  return 1
 }
 
-incident_reset() { INC_T_DISC=0; INC_T_RECO=0; INC_T_ACT=0; INC_T_VER=0; INC_ID=""; }
+visual_task_stale() { # → 0 si la task más vieja supera TASK_TIMEOUT_S sin respuesta
+  local f fts now age
+  now=$(date -u +%s)
+  for f in "$VISUAL_TASK_DIR"/task_*.json; do
+    [ -f "$f" ] || return 1
+    fts="${f##*/task_}"; fts="${fts%.json}"
+    age=$(( now - $(date -u -d "${fts:0:4}-${fts:4:2}-${fts:6:2}T${fts:9:2}:${fts:11:2}:${fts:13:2}Z" +%s 2>/dev/null || echo "$now") ))
+    [ "$age" -gt "$TASK_TIMEOUT_S" ] && return 0
+  done
+  return 1
+}
+
+# ================ FIN BLOQUE DE FUNCIONES PURAS (marcador de extracción de tests)
 
 # =========================================== FSM + estado persistente
 STATE="INIT"; STATE_SINCE="$(now_ms)"
@@ -468,10 +501,10 @@ full_recheck() { # → 0 si bridge 200 + foco Binomo + tick fresco + DEMO_CONFIR
   td=$(get_td_pid); bp=$(get_broker_pid); focus=$(get_focus)
   [ -n "$td" ] && [ -n "$bp" ] || return 1
   focus_is_broker "$focus" || return 1
-  [ "$(classify_demo_state "${S_DEMO:-}" 1 1)" = "DEMO_CONFIRMED" ] || return 1
+  [ "$(classify_demo_state "${S_DEMO:-}" 1 1 "${S_ACCTYPE:-}")" = "DEMO_CONFIRMED" ] || return 1
   { [ -n "$S_TICK" ] && [ "$S_TICK" -ge 0 ] 2>/dev/null && [ "$S_TICK" -le "$TICK_MAX_AGE_MS" ] 2>/dev/null; } || return 1
   [ "$S_CONNECTED" = "true" ] || return 1
-  [ "$S_HEALTH" = "READY" ] || return 1
+  { [ "$S_HEALTH" = "READY" ] || [ "${S_COOLDOWN:-0}" -gt 0 ]; } || return 1
   return 0
 }
 
@@ -551,7 +584,7 @@ recover_L3() { # Binomo congelado: pendiente → NO relanzar; sin pendiente → 
       '{"watchdog":"RECOVERING_L3"}' '{"watchdog":"RECOVERING_L3","deferred":true}' '{}'
     return 1
   fi
-  emit_event "RECOVERY_ATTEMPT" "UNVERIFIED" "L3: sin operación pendiente; relanzamiento controlado de Binomo vía monkey LAUNCHER (jamás force-stop)" \
+  emit_event "RECOVERY_ATTEMPT" "UNVERIFIED" "L3: sin operación pendiente; relanzamiento controlado de Binomo vía monkey LAUNCHER (jamás kill del proceso)" \
     '{"visit:RECOVERING_L3":1}' '{"watchdog":"RECOVERING_L3","monkey_broker":true}' '{}'
   do_monkey_broker
   [ "${INC_T_ACT:-0}" = "0" ] && { INC_T_ACT="$(now_ms)"; incident_save; }
@@ -630,7 +663,6 @@ next_level() { # rotación L1→L2→L3→L4→L5→L1 (NUNCA abandona)
     L1) echo "L2";; L2) echo "L3";; L3) echo "L4";; L4) echo "L5";; *) echo "L1";;
   esac
 }
-# ================ FIN BLOQUE DE FUNCIONES PURAS (marcador de extracción de tests)
 
 # =========================================== arranque de incidente
 JOURNAL_DEVICE_PATH="/sdcard/Android/data/com.example.tradedraw/files/TradeDraw_Audits/trade_journal.csv"
@@ -668,7 +700,7 @@ write_state() {
   printf '{"watchdog":"r31_watchdog","timestamp_utc":"%s","session_id":"%s","cycle":%s,"state":"%s","state_since_utc":"%s","state_age_s":%s,"transport":"%s","counters":{"reconexiones_ok":%s,"reconexiones_fail":%s,"tiempo_desconectado_acum_s":%s,"ciclos":%s},"escalate":%s,"escalate_reason":"%s","fsm_level":"%s","incident":{"attempts":%s,"max":%s,"id":"%s","mttd_ms":%s,"mttr_ms":%s},"demo_state":"%s","trade_in_flight":%s,"battery":{"level":%s,"powered":%s},"last_status":{"mode":"%s","isDemoAccount":"%s","orderState":"%s","lastTickAgeMs":%s,"connected":"%s","hasPendingTrade":"%s","balance":%s,"versionCode":%s},"pids":{"td":"%s","broker":"%s"}}\n' \
     "$(iso_utc "$now")" "$WD_SESSION_ID" "$C_CYCLES" "$STATE" "$(iso_utc "$STATE_SINCE")" "$age" "${TRANSPORT_USED:-none}" \
     "$C_RECO_OK" "$C_RECO_FAIL" "$C_DISCONNECT_S" "$C_CYCLES" \
-    "$( [ "$ESCALATED" = "1" ] && echo true || echo false )" "$(jesc "$ESCALATE_REASON")" "${INC_LEVEL:-L0}" \
+    "$( [ "$ESCALATED" != "0" ] && echo true || echo false )" "$(jesc "$ESCALATE_REASON")" "${INC_LEVEL:-L0}" \
     "$INCIDENT_ATTEMPTS" "$MAX_RECOVER" "$(jesc "${INC_ID:-}")" "${INC_MTTD:-0}" "${INC_MTTR:-0}" \
     "${DEMO_STATE:-DEMO_UNKNOWN}" "$( [ "${TRADE_IN_FLIGHT:-0}" = "1" ] && echo true || echo false )" \
     "${BATT_LEVEL:--1}" "${BATT_POWERED:-0}" \
@@ -692,6 +724,7 @@ S_VCODE=""; S_VNAME=""; APP_VERSION="unknown"
 TD_PID=""; BROKER_PID=""; FOCUS=""
 DEMO_STATE="DEMO_UNKNOWN"; TRADE_IN_FLIGHT=0; DEMO_ALERTED=0; BATT_ALERTED=0
 LAST_HEALTH_EVENT=0; BAD_STREAK=0; DEGR_STREAK=0; PREV_SLEEP=0
+CYCLES_THIS_SESSION=0   # ciclos de ESTA sesión (MAX_CYCLES no cuenta los heredados)
 LAST_DEMO_FRESH_TS=0
 INC_T_DISC=0; INC_T_RECO=0; INC_T_ACT=0; INC_T_VER=0; INC_ID=""; INC_LEVEL="L0"
 INC_MTTD=0; INC_MTTR=0
@@ -700,8 +733,13 @@ incident_load
 # guardian pueda responder approved_<incident>.json aunque el daemon se relance.
 if [ -n "$INC_ID" ] && [ "${INC_T_RECO:-0}" != "0" ] && [ "${INC_T_VER:-0}" = "0" ]; then
   INCIDENT_TS="${INC_T_DISC}"; INCIDENT_ATTEMPTS=1; INC_L2_TS=""
-  [ "$INC_LEVEL" != "L0" ] && STATE="RECOVERING_${INC_LEVEL}"
-  printf '[r31_watchdog] incidente ABIERTO retomado: %s (nivel %s)\n' "$INC_ID" "$INC_LEVEL" >&2
+  if [ "$INC_LEVEL" != "L0" ]; then
+    STATE="RECOVERING_${INC_LEVEL}"
+  elif [ "$STATE" != "CONNECTED" ] && [ "$STATE" != "VERIFYING" ]; then
+    STATE="RECOVERING_L1"
+  fi
+  BACKOFF_UNTIL=0
+  printf '[r31_watchdog] incidente ABIERTO retomado: %s (nivel %s, FSM=%s)\n' "$INC_ID" "$INC_LEVEL" "$STATE" >&2
 fi
 
 # =========================================== bucle principal
@@ -734,20 +772,30 @@ while :; do
   [ "$DEMO_FRESH" = "1" ] && LAST_DEMO_FRESH_TS=$(( $(now_ms) / 1000 ))
   DEMO_AGE=$(( ( $(now_ms) / 1000 ) - LAST_DEMO_FRESH_TS ))
   DEMO_FRESH_OK=0; [ "$DEMO_AGE" -le "$DEMO_STALE_S" ] && DEMO_FRESH_OK=1
-  DEMO_STATE=$(classify_demo_state "${S_DEMO:-}" "$FOCUS_OK" "$DEMO_FRESH_OK")
+  DEMO_STATE=$(classify_demo_state "${S_DEMO:-}" "$FOCUS_OK" "$DEMO_FRESH_OK" "${S_ACCTYPE:-}")
   DEMO_OK=1; [ "$DEMO_STATE" = "DEMO_CONFIRMED" ] || DEMO_OK=0
 
-  # ---- (4) D3 order_late-aware
+  # ---- (4) D3 order_late-aware + Cooldown Normal (cooldown normal ≠ desconexión)
   now_s=$(( $(now_ms) / 1000 ))
-  ORDER_READY=1; [ "$S_HEALTH" = "READY" ] || ORDER_READY=0
+  IS_COOLDOWN=0
+  [ "${S_COOLDOWN:-0}" -gt 0 ] 2>/dev/null && IS_COOLDOWN=1
+  ORDER_READY=1
+  { [ "$S_HEALTH" = "READY" ] || [ "$IS_COOLDOWN" = "1" ]; } || ORDER_READY=0
   ORDER_LATE=0
-  if [ "$ORDER_READY" = "0" ] && [ "${S_PENDING:-}" != "true" ]; then
+  if [ "$ORDER_READY" = "0" ] && [ "${S_PENDING:-}" != "true" ] && [ "$IS_COOLDOWN" = "0" ]; then
     if [ "${ORDER_NOT_READY_SINCE:-0}" = "0" ]; then ORDER_NOT_READY_SINCE=$now_s; fi
     [ $(( now_s - ORDER_NOT_READY_SINCE )) -gt 60 ] && ORDER_LATE=1
   else
     ORDER_NOT_READY_SINCE=0
   fi
-  TRADE_CLASS=$(classify_order_late "$ORDER_LATE" "${S_PENDING:-}" "${S_TICK:--1}" "$TICK_MAX_AGE_MS")
+  # D3 REGLA CENTRAL: orden en curso (pendiente + tick fresco) = TRADE_IN_FLIGHT,
+  # JAMÁS produce DEGRADED/DISCONNECTED — sea health tarde o no.
+  TRADE_CLASS="NONE"
+  if [ "${S_PENDING:-}" = "true" ] && [ "$TICK_FRESH" = "1" ]; then
+    TRADE_CLASS="TRADE_IN_FLIGHT"
+  elif [ "$ORDER_LATE" = "1" ]; then
+    TRADE_CLASS="ORDER_LATE"
+  fi
   TRADE_IN_FLIGHT=0
   [ "$TRADE_CLASS" = "TRADE_IN_FLIGHT" ] && TRADE_IN_FLIGHT=1
   # D3 ampliado: una orden REALMENTE en curso (orderState != NINGUNA con pendiente
@@ -788,6 +836,17 @@ while :; do
     BAD_STREAK=0; DEGR_STREAK=0
     if [[ "$STATE" == RECOVERING_* ]] || [ "$STATE" = "DISCONNECTED" ]; then
       # self-heal o acción previa funcionó: registrar y verificar (gates arriba)
+      # REGLA de custodia L2: si hay visual task sin respuesta del guardian, NO
+      # marcar RECOVERY_OK todavía — solo transitar a VERIFYING sin cerrar nada
+      # (el incidente queda abierto hasta el gate VERIFYING→CONNECTED).
+      if [ "$STATE" = "DISCONNECTED" ] && visual_task_pending && ! visual_task_stale; then
+        emit_event "RECOVERY_ATTEMPT" "UNVERIFIED" "Chequeos sanos pero visual task PENDIENTE del guardian: no se cierra el incidente; VERIFYING condicionado" \
+          '{"watchdog":"DISCONNECTED"}' '{"watchdog":"VERIFYING","pending_approval":true}' '{}'
+        set_state "VERIFYING"
+        [ "$STATE" = "VERIFYING" ] || true
+        PREV_SLEEP="$NEXT_SLEEP"
+        continue
+      fi
       emit_event "RECOVERY_OK" "VERIFIED" "Chequeos sanos de nuevo; VERIFYING (gate completo antes de CONNECTED)" \
         "{\"watchdog\":\"${STATE}\"}" '{"watchdog":"VERIFYING"}' \
         "{\"outage_s\":$(( ( $(now_ms) - ${INCIDENT_TS:-$(now_ms)} ) / 1000 ))}"
@@ -796,9 +855,9 @@ while :; do
       [ "${INC_T_VER:-0}" = "0" ] && { INC_T_VER="$(now_ms)"; incident_save; }
       set_state "VERIFYING"
     elif [ "$STATE" = "VERIFYING" ]; then
-      if [ "$TICK_FRESH" = "1" ] && [ "$DEMO_STATE" = "DEMO_CONFIRMED" ] && [ "$FOCUS_OK" = "1" ] && [ "$ORDER_READY" = "1" ]; then
+      if [ "$TICK_FRESH" = "1" ] && [ "$DEMO_STATE" = "DEMO_CONFIRMED" ] && [ "$FOCUS_OK" = "1" ] && { [ "$ORDER_READY" = "1" ] || [ "$IS_COOLDOWN" = "1" ]; }; then
         # ---- gate VERIFYING→CONNECTED + clear escalate SIEMPRE
-        if [ "$ESCALATED" = "1" ]; then
+        if [ "$ESCALATED" != "0" ]; then
           ESCALATED=0; ESCALATE_REASON=""
           emit_event "HEALTH_CHECK" "VERIFIED" "ESCALATE limpiado en VERIFYING→CONNECTED (fix latch R30)" \
             '{"escalate":true}' '{"escalate":false}' '{}'
@@ -823,7 +882,7 @@ while :; do
       fi
     elif [ "$STATE" != "CONNECTED" ]; then
       # ---- FIX DEL DEFECTO R30 (D2): INIT→CONNECTED DEBE limpiar escalate
-      if [ "$ESCALATED" = "1" ]; then
+      if [ "$ESCALATED" != "0" ]; then
         ESCALATED=0; ESCALATE_REASON=""
         emit_event "HEALTH_CHECK" "VERIFIED" "INIT→CONNECTED con checks sanos: ESCALATE heredado del state file LIMPIADO (fix defecto R30; --reset-escalate no requerido)" \
           '{"escalate":true}' '{"escalate":false}' '{}'
@@ -844,7 +903,7 @@ while :; do
     fi
   fi
   if [[ "$STATE" == RECOVERING_* ]]; then
-    if [ "$ESCALATED" = "1" ]; then
+    if [ "$ESCALATED" != "0" ]; then
       emit_event "ESCALATE_NOTIFY" "UNVERIFIED" "ESCALATE activo (${ESCALATE_REASON:-}): requiere estrategia superior; el watchdog SIGUE rotando L1..L5 (no abandona)" \
         '{"escalate":true}' '{"escalate":true,"notified":true}' '{}'
       ESCALATED=2   # 2 = notificado; no re-notificar cada ciclo
@@ -853,6 +912,15 @@ while :; do
       LEVEL="${STATE#RECOVERING_}"
       INCIDENT_ATTEMPTS=$((INCIDENT_ATTEMPTS + 1))
       [ "${INC_T_RECO:-0}" = "0" ] && { INC_T_RECO="$(now_ms)"; incident_save; }
+      # límite de seguridad: MAX_RECOVER intentos → ESCALATE_NOTIFY y ROTACIÓN CONTINUA
+      # (D2: escalate ya NO congela; solo anuncia "requiere estrategia superior")
+      if [ "$INCIDENT_ATTEMPTS" -gt "$MAX_RECOVER" ]; then
+        if [ "$ESCALATED" = "0" ]; then
+          ESCALATED=1; ESCALATE_REASON="MAX_RECOVERY_EXHAUSTED (${MAX_RECOVER} intentos por ciclo; incidente ${INC_ID:-?}); rotación continúa"
+          emit_event "ESCALATE_NOTIFY" "UNVERIFIED" "Presupuesto de intentos agotado para el incidente ${INC_ID:-?}: ESCALATE=requiere estrategia superior; el watchdog SIGUE rotando (jamás abandona)" \
+            '{"escalate":false}' '{"escalate":true}' "{\"attempts\":${INCIDENT_ATTEMPTS}}"
+        fi
+      fi
       run_recovery_level "$LEVEL"
       RC=$?
       case "$RC" in
@@ -873,10 +941,40 @@ while :; do
           LOCAL_DELAY=$(backoff_delay "$INCIDENT_ATTEMPTS")
           BACKOFF_UNTIL=$(( $(now_ms) / 1000 + LOCAL_DELAY ))
           ;;
+        2)
+          # FIX D1/D4: fallback L1→L2 EN EL MISMO CICLO (el dump falló; la escalera no se detiene)
+          emit_event "RECOVERY_ROTATE" "UNVERIFIED" "Recovery L1 sin acción eficaz (rc=2); ejecutando L2 (visual) EN EL MISMO ciclo" \
+            '{"watchdog":"RECOVERING_L1"}' '{"watchdog":"RECOVERING_L2"}' "{\"attempt\":${INCIDENT_ATTEMPTS},\"rc\":${RC}}"
+          set_state "RECOVERING_L2"
+          run_recovery_level "L2"
+          RC2=$?
+          case "$RC2" in
+            0)
+              if full_recheck; then
+                C_RECO_OK=$((C_RECO_OK + 1))
+                set_state "VERIFYING"
+                emit_event "RECOVERY_OK" "VERIFIED" "Recovery L2 (mismo ciclo que L1) verificada; VERIFYING" \
+                  '{"watchdog":"RECOVERING_L2"}' '{"watchdog":"VERIFYING"}' "{\"attempt\":${INCIDENT_ATTEMPTS}}"
+              else
+                set_state "DISCONNECTED"
+                emit_event "RECOVERY_FAIL" "UNVERIFIED" "Recovery L2 (mismo ciclo) ejecutada; re-check falló" \
+                  '{"watchdog":"RECOVERING_L2"}' '{"watchdog":"DISCONNECTED"}' "{\"attempt\":${INCIDENT_ATTEMPTS}}"
+              fi
+              ;;
+            3)
+              visual_archive_task "${INC_ID:-unknown}" "${INC_L2_TS:-}" 0
+              set_state "RECOVERING_L3"
+              emit_event "RECOVERY_ROTATE" "UNVERIFIED" "Guardian RECHAZÓ (mismo ciclo); L2→L3 inmediato" \
+                '{"watchdog":"RECOVERING_L2"}' '{"watchdog":"RECOVERING_L3"}' "{\"attempt\":${INCIDENT_ATTEMPTS}}"
+              ;;
+            *) : ;;   # L2 creó task o espera: ciclo terminado; backoff normal abajo
+          esac
+          LOCAL_DELAY=$(backoff_delay 1)
+          BACKOFF_UNTIL=$(( $(now_ms) / 1000 + LOCAL_DELAY ))
+          ;;
         *)
-          # sin acción eficaz: rotar nivel (rc=2 → L2 mismo flujo; rc=5 → L1) y backoff
+          # sin acción eficaz: rotar nivel (rc=5 → L1) y backoff
           NEXTL=$(next_level "$LEVEL")
-          [ "$RC" = "2" ] && NEXTL="L2"
           [ "$RC" = "5" ] && NEXTL="L1"
           LOCAL_DELAY=$(backoff_delay "$INCIDENT_ATTEMPTS")
           BACKOFF_UNTIL=$(( $(now_ms) / 1000 + LOCAL_DELAY ))
@@ -894,7 +992,7 @@ while :; do
     if [ "$ESCALATED" = "0" ]; then
       ESCALATED=1; ESCALATE_REASON="DEMO_FLIP isDemoAccount=false con Binomo EN foreground y lectura fresca (REAL_CONFIRMED)"
     fi
-    emit_event "DEMO_FLIP" "FAILED" "REAL_CONFIRMED: isDemoAccount=false con foco Binomo y lectura fresca — alarma máxima de cuenta REAL (sin --allow-disarm: la pausa la decide el coordinador)" \
+    emit_event "DEMO_FLIP" "FAILED" "REAL_CONFIRMED: isDemoAccount=false con foco Binomo y lectura fresca — alarma maxima de cuenta REAL (sin opcion de desarme: la pausa la decide el coordinador)" \
       "{\"demo\":\"${DEMO_STATE}\"}" '{"demo":"REAL_CONFIRMED"}' "{\"mode\":\"${S_MODE:-}\"}"
   fi
   [ "$DEMO_STATE" = "REAL_CONFIRMED" ] || DEMO_ALERTED=0
@@ -924,8 +1022,11 @@ while :; do
   write_state
 
   # ---- fin de ciclo
+  # NOTA: MAX_CYCLES cuenta ciclos DE ESTA SESIÓN (no del contador heredado del
+  # state file, que es la vida completa del daemon) — fix de testeabilidad.
+  CYCLES_THIS_SESSION=$(( CYCLES_THIS_SESSION + 1 ))
   [ "$ONCE" = "1" ] && break
-  { [ "$MAX_CYCLES" -gt 0 ] 2>/dev/null && [ "$C_CYCLES" -ge "$MAX_CYCLES" ]; } && break
+  { [ "$MAX_CYCLES" -gt 0 ] 2>/dev/null && [ "$CYCLES_THIS_SESSION" -ge "$MAX_CYCLES" ]; } && break
   NEXT_SLEEP="$INTERVAL"
   [ "${S_PENDING:-}" = "true" ] && NEXT_SLEEP="$FAST_INTERVAL"
   ELAPSED=$(( ( $(now_ms) - CYCLE_START ) / 1000 ))

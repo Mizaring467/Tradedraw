@@ -64,9 +64,9 @@ def load_rows(csv_path: Path):
     with open(csv_path, newline="", encoding="utf-8", errors="replace") as fh:
         reader = csv.DictReader(fh)
         for raw in reader:
-            # tolerar BOM / espacios en nombres de columna
-            row = {(k or "").strip().lstrip("\ufeff"): (v or "").strip()
-                   for k, v in raw.items()}
+            # tolerar BOM / espacios en nombres de columna y campos overflow
+            row = {(k or "").strip().lstrip("\ufeff"): (v if isinstance(v, str) else "").strip()
+                   for k, v in raw.items() if k is not None}
             did = row.get("decision_id", "")
             tid = row.get("trade_id", "")
             if not valid_row(row):
@@ -333,13 +333,19 @@ def main(argv=None):
             if f > 1e12:  # milisegundos → segundos (signal_ts es epoch ms)
                 f /= 1000.0
             return f
-        rows = [r for r in rows_all if (_sig(r) is not None and _sig(r) >= since_epoch)
-                or _sig(r) is None]
-        n_pre = len(rows_all) - len(rows)
-        if n_pre:
-            print(f"[update_progress] Corte temporal: {n_pre} filas pre-R31 "
-                  f"excluidas (signal_ts < {args.since or 'start_utc'}).",
-                  file=sys.stderr)
+        has_any_ts = any(_sig(r) is not None for r in rows_all)
+        if has_any_ts:
+            rows = [r for r in rows_all if (_sig(r) is not None and _sig(r) >= since_epoch)
+                    or _sig(r) is None]
+            n_pre = len(rows_all) - len(rows)
+            if n_pre:
+                print(f"[update_progress] Corte temporal: {n_pre} filas pre-R31 "
+                      f"excluidas (signal_ts < {args.since or 'start_utc'}).",
+                      file=sys.stderr)
+        elif len(rows_all) > baseline_rows:
+            rows = rows_all[baseline_rows:]
+        else:
+            rows = rows_all
     elif baseline_rows > 0 and len(rows_all) > baseline_rows:
         rows = rows_all[baseline_rows:]
     else:

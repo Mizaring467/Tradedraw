@@ -1,0 +1,41 @@
+{
+  "evaluations": 28420,
+  "candidate_signals": 3614,
+  "authorized": 218,
+  "conversion_rate": 0.0603,
+  "vetos": {
+    "TIMING": 2982,
+    "COOLDOWN": 124,
+    "CANDLE_ALREADY_EXECUTED": 86,
+    "ADAPTIVE_BLOCK": 56,
+    "CHOP": 112,
+    "RISK_LIMIT": 14,
+    "ASSET_MISMATCH": 0,
+    "BROKER_ABSENT": 0,
+    "WS_STALE": 8,
+    "NO_DEMO": 2,
+    "PENDING_TRADE": 148,
+    "SR_CONFLICT": 42,
+    "BUY_EXHAUSTION": 37,
+    "OTHER": 21
+  },
+  "funnel": {
+    "total_ticks": 141086,
+    "evaluations": 28420,
+    "candidate_signals": 3614,
+    "passed_timing": 632,
+    "passed_strategy": 441,
+    "passed_adaptive": 385,
+    "passed_risk": 218,
+    "authorized": 218,
+    "taps_dispatched": 218,
+    "settled": 216,
+    "evaluation_rate": 0.2014,
+    "candidate_rate": 0.1272,
+    "timing_pass_rate": 0.1749,
+    "strategy_pass_rate": 0.6978,
+    "adaptive_pass_rate": 0.8730,
+    "risk_pass_rate": 0.5662,
+    "execution_rate": 1.0000
+  }
+}

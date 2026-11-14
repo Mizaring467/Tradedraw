@@ -20,6 +20,7 @@ object TradeJournalLogger {
     // las columnas que no conoce) y un lector nuevo sobre un journal viejo obtiene null/ausente
     // en vez de un error. Nunca se reordena ni se borra una columna existente.
     private const val HEADER = "timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason,signal_ts,tap_start_ts,tap_end_ts,candle_second_at_tap_end,price_at_signal,price_at_tap_end,decision_id,trade_id\n"
+    private const val FAST_DEMO_HEADER = "timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason,signal_ts,tap_start_ts,tap_end_ts,candle_second_at_tap_end,price_at_signal,price_at_tap_end,decision_id,trade_id,validation_mode\n"
 
     /** Cabecera del journal. Expuesta para los tests de retrocompatibilidad del esquema. */
     internal fun headerForTests(): String = HEADER
@@ -228,6 +229,60 @@ object TradeJournalLogger {
     /** Cabecera del journal de modo SHADOW - Esquema v2 versionado (15 columnas). */
     const val SHADOW_HEADER_V2 = "timestamp,iso_date,strategy,submode,action,confidence,price_y,trend,candle_second,decision_id,reason,schema_version,sim_result,sim_exit_price,sim_balance\n"
     private const val SHADOW_JOURNAL_NAME = "shadow_journal.csv"
+
+    /**
+     * Registra una operación de ingeniería FAST_DEMO en loops/fast_demo/trade_journal_fast_demo.csv
+     * garantizando aislamiento estricto respecto al dataset científico de validación real (FASE 6).
+     */
+    fun logFastDemoTrade(
+        context: Context,
+        strategy: String,
+        submode: String,
+        action: String,
+        confidence: Float,
+        priceY: Float,
+        stake: Number,
+        baseBalance: Number,
+        result: String,
+        settledBalance: Number,
+        durationSec: Long,
+        reason: String,
+        trend: String = "SIDEWAYS",
+        distSupportRatio: Float = 0.5f,
+        distResistanceRatio: Float = 0.5f,
+        tickVelocity: Float = 0f,
+        impulse: String = "NEUTRAL",
+        marketRegime: String = "NORMAL",
+        candleSecond: Int = 0,
+        adaptiveStatus: String = "ALLOWED",
+        tradeStartMs: Long = 0L,
+        latency: LatencyRecord = LatencyRecord(),
+        decisionId: String = "",
+        tradeId: String = ""
+    ): Boolean {
+        return try {
+            val fastDemoDir = File("/data/data/com.termux/files/home/Tradedraw/loops/fast_demo")
+            if (!fastDemoDir.exists()) fastDemoDir.mkdirs()
+            val file = File(fastDemoDir, "trade_journal_fast_demo.csv")
+            val baseLine = buildLine(action, result, reason, strategy, submode, confidence, priceY,
+                stake, baseBalance, settledBalance, durationSec, trend, distSupportRatio,
+                distResistanceRatio, tickVelocity, impulse, marketRegime, candleSecond,
+                adaptiveStatus, latency, decisionId, tradeId).trimEnd()
+            val line = "$baseLine,FAST_DEMO\n"
+            synchronized(lock) {
+                val writeHeader = !file.exists() || file.length() == 0L
+                FileWriter(file, true).use { writer ->
+                    if (writeHeader) writer.write(FAST_DEMO_HEADER)
+                    writer.write(line)
+                    writer.flush()
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error escribiendo en fast_demo journal", e)
+            false
+        }
+    }
 
     /**
      * Registra una decisión simulada autorizada en modo SHADOW.

@@ -658,6 +658,36 @@ class TradeDrawHttpBridge(
                             sendJsonResponse(output, 503, """{"success":false,"error":"Servicio de Accesibilidad inactivo"}""")
                         }
                     }
+                    "/diagnostics/veto_stats" -> {
+                        val json = VetoProfiler.INSTANCE.buildVetoStatsJson()
+                        try {
+                            val loopDir = java.io.File("/data/data/com.termux/files/home/Tradedraw/loops/r31_throughput")
+                            if (!loopDir.exists()) loopDir.mkdirs()
+                            VetoProfiler.INSTANCE.persistToFile(java.io.File(loopDir, "veto_stats.json"))
+                        } catch (_: Exception) {}
+                        sendJsonResponse(output, 200, json)
+                    }
+                    "/diagnostics/no_trade" -> {
+                        val engine = overlayService.tradingEngine
+                        val remCooldown = engine.riskManager.getRemainingCooldown(engine.autonomousSubMode)
+                        val hasPending = engine.riskManager.hasPendingTrade
+                        val wsHealthy = engine.isFeedFresh()
+                        val brokerState = engine.brokerRuntime.getBrokerState()
+                        val guard = engine.brokerRuntime.demoAccountGuard
+                        val demoStatus = when (guard.getAccountType()) {
+                            com.example.tradedraw.core.AccountType.DEMO -> "confirmed"
+                            com.example.tradedraw.core.AccountType.REAL -> "REAL_CONFIRMED"
+                            else -> if (brokerState.isDemoAccount) "confirmed" else "unknown"
+                        }
+                        val json = VetoProfiler.INSTANCE.buildNoTradeDiagnosticJson(
+                            remainingCooldownSeconds = remCooldown,
+                            entryWindow = ":01-:05",
+                            hasPendingTrade = hasPending,
+                            isWsHealthy = wsHealthy,
+                            demoAccountStatus = demoStatus
+                        )
+                        sendJsonResponse(output, 200, json)
+                    }
                     else -> {
                         sendJsonResponse(output, 404, """{"error":"Ruta no encontrada: $path"}""")
                     }
@@ -761,6 +791,7 @@ class TradeDrawHttpBridge(
             "buildId": "${BuildConfig.BUILD_ID}",
             "buildTimestamp": ${BuildConfig.BUILD_TIMESTAMP},
             "isDemoAccount": ${AutoTradeAccessibilityService.isDemoAccount},
+            "accountType": "${AutoTradeAccessibilityService.demoAccountGuard.getAccountType().name}",
             "health": ${healthReport.toJson()},
             "mode": "$mode",
             "submode": "${te.autonomousSubMode.name}",

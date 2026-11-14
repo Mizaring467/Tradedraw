@@ -481,6 +481,7 @@ class TradingEngine(
      * Invocado cuando llega un nuevo micro-tick en tiempo real vía WebSocket.
      */
     fun onMarketTick(tick: MarketTick) {
+        VetoProfiler.INSTANCE.recordTick()
         shadowSimulation.onTick(tick)
         latestMarketTick = tick
         // El `asset` del MarketTick ya es el RIC del feed; se guarda tal cual para que el id
@@ -1552,6 +1553,9 @@ class TradingEngine(
             val recovery = com.example.tradedraw.core.BrokerRecoveryContext(System.currentTimeMillis(), balance,
                 latestMarketTick?.price ?: 0.0, confidence, reason)
             orderGateway.dispatch(OrderRequest(action, x, y, decisionId, tradeId, mode = mode, recoveryContext = recovery)) { receipt ->
+                if (receipt is OrderReceipt.Success) {
+                    VetoProfiler.INSTANCE.recordTapDispatched()
+                }
                 if (terminal.compareAndSet(false, true)) {
                     handler.post {
                         when (receipt) {
@@ -1713,16 +1717,63 @@ class TradingEngine(
         //     seguridad que apaga el motor a DISABLED convertiria un fallo de LECTURA en un apagon.
         // La seguridad de "no operar en real" la da `isDemoAccount`, que es el dato del que depende
         // toda la distincion demo/real y que ya no puede mentir por diseño fail-closed.
-        if (mode == AutoTradeMode.AUTONOMOUS) brokerRuntime.refreshBalance()
-        if (mode == AutoTradeMode.AUTONOMOUS && !puedeOperarAutonomoEnDemo(brokerRuntime.getBrokerState().isDemoAccount)) {
-            Log.e("TradingEngine", "⛔ BLOQUEO CRÍTICO DE SEGURIDAD: Cuenta NO DEMO detectada. Abortando trade autónomo.")
-            eventSink.add(
-                TradeEventLog.Kind.VETO,
-                "SEGURIDAD_NO_DEMO cuenta_real_bloqueada",
-                decisionId = currentDecisionId
-            )
-            setTradingMode(AutoTradeMode.DISABLED, "seguridad:no-demo")
-            return
+        if (mode == AutoTradeMode.AUTONOMOUS) {
+            brokerRuntime.refreshBalance()
+            val accountType = brokerRuntime.demoAccountGuard.getAccountType()
+            val isDemo = brokerRuntime.getBrokerState().isDemoAccount
+            if (accountType == com.example.tradedraw.core.AccountType.REAL) {
+                Log.e("TradingEngine", "⛔ BLOQUEO CRÍTICO DE SEGURIDAD: Cuenta REAL explícitamente confirmada. Abortando trade autónomo.")
+                eventSink.add(
+                    TradeEventLog.Kind.VETO,
+                    "SEGURIDAD_NO_DEMO cuenta_real_bloqueada REAL_CONFIRMED",
+                    decisionId = currentDecisionId
+                )
+                VetoProfiler.INSTANCE.recordEvaluation(
+                    asset = brokerRuntime.getBrokerState().rawObservedAsset.ifBlank { "Crypto IDX" },
+                    strategy = strategy.name, submode = autonomousSubMode.name,
+                    action = action.name, confidence = 0.0f, candleSecond = latestMarketTick?.candleSecond ?: 0,
+                    marketRegime = latestAnalysisResult?.trend?.name ?: "SIDEWAYS", signalScore = 0,
+                    vetoIndex = 0, vetoReason = "SEGURIDAD_NO_DEMO REAL_CONFIRMED", allowed = false,
+                    category = VetoCategory.NO_DEMO
+                )
+                setTradingMode(AutoTradeMode.DISABLED, "seguridad:no-demo")
+                return
+            } else if (accountType == com.example.tradedraw.core.AccountType.UNKNOWN || !isDemo) {
+                // R31 FASE 8: tri-estado DEMO_CONFIRMED / DEMO_UNKNOWN / REAL_CONFIRMED
+                // Evita que un único frame corrupto de accesibilidad desarme el motor permanentemente.
+                var recoveredDemo = false
+                for (retry in 1..3) {
+                    brokerRuntime.refreshBalance()
+                    if (brokerRuntime.demoAccountGuard.getAccountType() == com.example.tradedraw.core.AccountType.DEMO &&
+                        brokerRuntime.getBrokerState().isDemoAccount) {
+                        recoveredDemo = true
+                        break
+                    }
+                    if (brokerRuntime.demoAccountGuard.getAccountType() == com.example.tradedraw.core.AccountType.REAL) {
+                        Log.e("TradingEngine", "⛔ BLOQUEO CRÍTICO DE SEGURIDAD: Cuenta REAL detectada en reintento $retry. Abortando.")
+                        setTradingMode(AutoTradeMode.DISABLED, "seguridad:no-demo")
+                        return
+                    }
+                }
+                if (!recoveredDemo) {
+                    // DEMO_UNKNOWN: bloquear orden de manera fail-closed SIN desarmar permanentemente el motor
+                    Log.w("TradingEngine", "⚠️ Lectura de cuenta DEMO no concluyente (DEMO_UNKNOWN). Bloqueando orden temporalmente de forma preventiva.")
+                    eventSink.add(
+                        TradeEventLog.Kind.VETO,
+                        "SEGURIDAD_NO_DEMO DEMO_UNKNOWN_transitorio",
+                        decisionId = currentDecisionId
+                    )
+                    VetoProfiler.INSTANCE.recordEvaluation(
+                        asset = brokerRuntime.getBrokerState().rawObservedAsset.ifBlank { "Crypto IDX" },
+                        strategy = strategy.name, submode = autonomousSubMode.name,
+                        action = action.name, confidence = 0.0f, candleSecond = latestMarketTick?.candleSecond ?: 0,
+                        marketRegime = latestAnalysisResult?.trend?.name ?: "SIDEWAYS", signalScore = 0,
+                        vetoIndex = 0, vetoReason = "SEGURIDAD_NO_DEMO DEMO_UNKNOWN_transitorio", allowed = false,
+                        category = VetoCategory.NO_DEMO
+                    )
+                    return
+                }
+            }
         }
 
         val now = System.currentTimeMillis()
@@ -1759,7 +1810,23 @@ class TradingEngine(
                 motivoVetoPorAgotamientoDeCompra(action, effectiveAnalysis.trend, effectiveAnalysis.signalPowerCall)
             }
         )
+        val evaluatedAsset = brokerRuntime.getBrokerState().rawObservedAsset.ifBlank { "Crypto IDX" }
+        val evalRegime = effectiveAnalysis.trend.name
+        val evalScore = effectiveAnalysis.confluenceScoreCall.coerceAtLeast(effectiveAnalysis.confluenceScorePut)
         if (policyResult is ExecutionPolicyResult.Vetoed) {
+            VetoProfiler.INSTANCE.recordEvaluation(
+                asset = evaluatedAsset,
+                strategy = strategy.name,
+                submode = autonomousSubMode.name,
+                action = action.name,
+                confidence = 0.0f,
+                candleSecond = sec,
+                marketRegime = evalRegime,
+                signalScore = evalScore,
+                vetoIndex = policyResult.vetoIndex,
+                vetoReason = policyResult.message,
+                allowed = false
+            )
             if (policyResult.incrementVetoActivoDesajustado) vetoActivoDesajustado++
             eventSink.add(TradeEventLog.Kind.VETO, policyResult.message, decisionId = currentDecisionId)
             policyResult.secondaryEventKind?.let {
@@ -1778,6 +1845,19 @@ class TradingEngine(
             return
         }
         val allowed = policyResult as ExecutionPolicyResult.Allowed
+        VetoProfiler.INSTANCE.recordEvaluation(
+            asset = evaluatedAsset,
+            strategy = strategy.name,
+            submode = autonomousSubMode.name,
+            action = allowed.finalAction.name,
+            confidence = allowed.headlessConfidence,
+            candleSecond = sec,
+            marketRegime = evalRegime,
+            signalScore = evalScore,
+            vetoIndex = 0,
+            vetoReason = allowed.finalReason,
+            allowed = true
+        )
         val finalAction = allowed.finalAction
         val finalReason = allowed.finalReason
         val headlessConfidence = allowed.headlessConfidence
@@ -1983,6 +2063,7 @@ class TradingEngine(
 
         if (isWin != null || isTie) {
             if (!isTradeResolving.compareAndSet(false, true)) return
+            VetoProfiler.INSTANCE.recordTradeSettled()
 
             val finalWin = isWin ?: false
             val pendingAction = snapshot.action
