@@ -1,0 +1,11 @@
+[
+  {"timestamp_ms":999,"status":"UNKNOWN_NO_PRIOR_OBSERVATION","ric":null,"observation_at_ms":null,"age_ms":null},
+  {"timestamp_ms":1000,"status":"KNOWN_CAUSAL_OBSERVATION","ric":"A","observation_at_ms":1000,"age_ms":0},
+  {"timestamp_ms":1999,"status":"KNOWN_CAUSAL_OBSERVATION","ric":"A","observation_at_ms":1000,"age_ms":999},
+  {"timestamp_ms":2000,"status":"KNOWN_CAUSAL_OBSERVATION","ric":"B","observation_at_ms":2000,"age_ms":0},
+  {"timestamp_ms":2999,"status":"KNOWN_CAUSAL_OBSERVATION","ric":"B","observation_at_ms":2000,"age_ms":999},
+  {"timestamp_ms":3000,"status":"UNKNOWN_CONFLICT_AT_TIMESTAMP","ric":null,"observation_at_ms":3000,"age_ms":0},
+  {"timestamp_ms":4001,"status":"UNKNOWN_CONFLICT_AT_TIMESTAMP","ric":null,"observation_at_ms":3000,"age_ms":1001},
+  {"timestamp_ms":5000,"status":"KNOWN_CAUSAL_OBSERVATION","ric":"E","observation_at_ms":5000,"age_ms":0},
+  {"timestamp_ms":6001,"status":"UNKNOWN_STALE_OBSERVATION","ric":null,"observation_at_ms":5000,"age_ms":1001}
+]

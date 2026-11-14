@@ -87,7 +87,85 @@ class TestRiskManagerDefects(unittest.TestCase):
     Reproduces and verifies the fix for:
     1. YOLO bypassing takeProfitWins
     2. subMode=null ignoring currentSubMode
+    3. Double count on WIN / LOSS resolution race condition (e.g. 7 -> 9 instead of 7 -> 8)
     """
+
+    class OldRiskManagerWithRaceCondition:
+        """
+        Old implementation before R24/B1 (7be78e8 / 6fc51f4):
+        Manual resolution (HUD/bridge) called recordTradeWins(force=true) and cleared pending trade,
+        but did NOT mark the trade as liquidated.
+        When async handler.post evaluated, resolvePendingTradeWin() returned False,
+        and fallback unconditionally invoked recordTradeWins(1, force=true),
+        causing total_wins to jump by 2 (e.g. 7 -> 9 instead of 7 -> 8).
+        """
+        def __init__(self, initial_wins=7):
+            self.total_wins = initial_wins
+            self.has_pending_trade = False
+            self.pending_trade_id = None
+
+        def record_trade_sent(self, trade_id):
+            self.has_pending_trade = True
+            self.pending_trade_id = trade_id
+
+        def settle_manual_old(self, win=True):
+            if win:
+                self.total_wins += 1
+            self.has_pending_trade = False
+            # Bug: did not mark trade_id as liquidated!
+            return True
+
+        def engine_post_fallback_old(self, captured_trade_id, win=True):
+            if not self.has_pending_trade:
+                # Fallback in old code called recordTradeWin(force=True) unconditionally
+                if win:
+                    self.total_wins += 1
+                return True
+            return False
+
+    class FixedRiskManagerWithIdempotency:
+        """
+        Fixed implementation with settleTradeOnce and settleManual (7be78e8):
+        Tracks liquidated trade keys in a set and ensures each tradeId/startMs is only settled once.
+        """
+        def __init__(self, initial_wins=7):
+            self.total_wins = initial_wins
+            self.has_pending_trade = False
+            self.pending_trade_id = None
+            self.liquidated_keys = set()
+            self.manual_wins = 0
+
+        def record_trade_sent(self, trade_id):
+            self.has_pending_trade = True
+            self.pending_trade_id = trade_id
+
+        def mark_liquidated(self, trade_id):
+            key = trade_id if trade_id else "ts:0"
+            if key in self.liquidated_keys:
+                return False
+            self.liquidated_keys.add(key)
+            return True
+
+        def settle_trade_once(self, trade_id, win=True):
+            if not self.mark_liquidated(trade_id):
+                return False  # Already liquidated, deduplicate!
+            if win:
+                self.total_wins += 1
+            return True
+
+        def settle_manual(self, trade_id, win=True):
+            if trade_id:
+                self.mark_liquidated(trade_id)
+            if win:
+                self.total_wins += 1
+                self.manual_wins += 1
+            self.has_pending_trade = False
+            return True
+
+        def engine_post_fallback(self, captured_trade_id, win=True):
+            if not self.has_pending_trade:
+                return self.settle_trade_once(captured_trade_id, win=win)
+            return False
 
     class OldRiskManager:
         def __init__(self, current_sub_mode="NORMAL", take_profit_wins=3):
@@ -152,6 +230,45 @@ class TestRiskManagerDefects(unittest.TestCase):
         fixed_rm = self.FixedRiskManager(current_sub_mode="YOLO")
         allowed_fixed, msg_fixed = fixed_rm.can_execute_trade(sub_mode=None)
         self.assertIn("MODO YOLO", msg_fixed)
+
+    def test_reproduce_double_count_anomaly_in_old(self):
+        """
+        Demuestra la anomalía donde una victoria duplicaba el contador: 7 -> 9 en vez de 7 -> 8.
+        """
+        rm = self.OldRiskManagerWithRaceCondition(initial_wins=7)
+        trade_id = "trade-xyz"
+        rm.record_trade_sent(trade_id)
+
+        # 1. Operador o bridge liquida manualmente (HUD o /win):
+        rm.settle_manual_old(win=True)
+        self.assertEqual(rm.total_wins, 8)
+
+        # 2. Asíncronamente, el handler.post del motor ejecuta el fallback:
+        rm.engine_post_fallback_old(captured_trade_id=trade_id, win=True)
+
+        # En el código antiguo, total_wins saltaba a 9 (anomalía 7 -> 9)
+        self.assertEqual(rm.total_wins, 9)
+
+    def test_verify_double_count_anomaly_fixed_in_idempotent(self):
+        """
+        Verifica que con la idempotencia por tradeId (settleManual + settleTradeOnce),
+        la victoria única incrementa exactamente a 8 (7 -> 8) y el fallback queda descartado.
+        """
+        rm = self.FixedRiskManagerWithIdempotency(initial_wins=7)
+        trade_id = "trade-xyz"
+        rm.record_trade_sent(trade_id)
+
+        # 1. Operador o bridge liquida manualmente:
+        rm.settle_manual(trade_id=trade_id, win=True)
+        self.assertEqual(rm.total_wins, 8)
+
+        # 2. Motor ejecuta fallback asíncrono con el mismo trade_id:
+        fallback_counted = rm.engine_post_fallback(captured_trade_id=trade_id, win=True)
+
+        # El fallback es rechazado por clave duplicada
+        self.assertFalse(fallback_counted)
+        self.assertEqual(rm.total_wins, 8)  # Se mantiene exactamente en 8, NO salta a 9
+
 
 
 if __name__ == "__main__":

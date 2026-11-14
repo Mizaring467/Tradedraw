@@ -1,0 +1,39 @@
+{
+  "acceptance_criteria": [
+    "APK build identity matches pinned git_sha",
+    "GET /simulation contains pendingDecisions array",
+    "all raw responses/errors retained in verified hash chain",
+    "zero approved edge metrics from probes"
+  ],
+  "broker_orders_authorized": false,
+  "collector_sha256": "87f69fd4089cbd0f61a2f6cc6f5c947e0513e9f01090073d4d0bbe1d425c17da",
+  "created_at": "2026-11-12T01:31:24.322562+00:00",
+  "dataset_hashes": [],
+  "dataset_ids": [],
+  "execution_semantics": "FIRST_ACCEPTED_SAME_ASSET_TICK_AT_OR_AFTER_ENTRY_PLUS_60000_MS; missing settlement pending/NO_DATA, never tie",
+  "experiment_id": "R29C-PLUMBING-20261111-001",
+  "experiment_type": "DIAGNOSTIC_TRANSPORT_NOT_EDGE",
+  "git_sha": "b5378fc910b06168eb9fd10ef977641b1199d677",
+  "holdout": null,
+  "interval_seconds": 2,
+  "metrics": [
+    "transport_success",
+    "data_quality_errors",
+    "precommitted_decisions",
+    "rejected_predictions",
+    "source_build_identity"
+  ],
+  "output": "loops/r29c/evidence/prospective-diagnostic-001.jsonl",
+  "payout_assumptions": "No observed payout inferred; configured simulation payout is hypothetical",
+  "polls": 3,
+  "range_reason": "Transport/immutability diagnostic only; no historical performance or virgin holdout claim",
+  "seed": 290017,
+  "statistical_status": "NOT_AN_EDGE_EXPERIMENT",
+  "strategies": {
+    "registry_sha256": "5e2696ee02c7a001fe7972b7c21f79a2caa082f9ba869a5b8ab4dce652fb3068",
+    "version": "r29c-frozen-4fdb646"
+  },
+  "test": "three consecutive fixed monitor polls after candidate installation",
+  "train": null,
+  "validation": null
+}

@@ -1,0 +1,128 @@
+=== ADB FORWARD ===
+=== BATERIA ===
+Current Battery Service state:
+  AC powered: false
+  USB powered: true
+  Wireless powered: false
+  Max charging current: 500000
+  Max charging voltage: 5000000
+  Charge counter: 4937240
+  status: 2
+  health: 2
+  present: true
+  level: 98
+  scale: 100
+  voltage: 4295
+  temperature: 456
+  technology: Li-poly
+=== CURRENT FOCUS ===
+  mCurrentFocus=Window{d358d5d u0 Application Error: com.marketly.trading}
+  mCurrentFocus=Window{7f6be15 u0 com.marketly.trading/com.marketly.trading.modules.trading.TradingActivity}
+=== APP STATUS ===
+{
+            "app": "TradeDraw",
+            "versionCode": 19,
+            "versionName": "1.9-r23h-exhaustion",
+            "gitSha": "8cdb61f",
+            "buildId": "R23H-BUY-EXHAUSTION",
+            "buildTimestamp": 1792375144504,
+            "isDemoAccount": true,
+            "health": {"state":"READY","reasons":[],"sinceMs":1792392828567},
+            "mode": "DISABLED",
+            "submode": "YOLO",
+            "lastModeChangeSource": "AUTONOMOUS -> DISABLED | source=bridge:/mode",
+            "lastModeChangeTs": 1792393662859,
+            "strategy": "AUTO_ADAPTIVE",
+            "accessibilityActive": true,
+            "balance": 3.898573568E7,
+            "analysis": {
+                "currentPriceY": 641.8673,
+                "dynamicResistanceY": 0.0,
+                "dynamicSupportY": 0.0,
+                "dynamicResistancePrice": 641.86731445,
+                "dynamicSupportPrice": 641.86731353,
+                "callPower": 76,
+                "putPower": 24,
+                "isMarketSideways": false,
+                "trend": "UPTREND",
+                "candleCount": 60,
+                "streak": "TREND 🟢"
+            },
+            "risk": {
+                "totalWins": 0,
+                "totalLosses": 1,
+                "winRate": 0.0,
+                "currentLossStreak": 1,
+                "martingaleStatus": "[M1 | $2.0]",
+                "investmentAmount": 2.0,
+                "observedStake": 100000.0,
+                "effectiveStake": 100000.0,
+                "hasPendingTrade": false,
+                "orderState": "NINGUNA",
+                "hasConfirmedTrade": false,
+                "remainingCooldown": 0,
+                "vetoV1": 12,
+                "vetoV2": 0,
+                "vetoTotal": 430,
+                "ultimoVeto": "VETO_BUY_EXHAUSTION_CLIMAX UPTREND con callPower >= 70% (callPower=86)",
+                "tapsDespachados": 26,
+                "inoperableCount": 0,
+                "inoperableNow": false,
+                "inoperableSeconds": 0,
+                "inoperableRatio": -1.0,
+                "inoperableReference": -1.0,
+                "ultimoInoperable": "",
+                "vetoActivoDesajustado": 0,
+                "recuperacionesPorSinTicks": 0,
+                "shadowOrders": 0
+            },
+            "activeSignal": null,
+            "feed": {
+                "source": "websocket",
+                "lastTickAgeMs": 171,
+                "activeAsset": "Z-CRY/IDX",
+                "ws_active_asset": "Z-CRY/IDX",
+                "connected": true,
+                "isFresh": true,
+                "tickSource": "socket",
+                "rawSocketMessages": 10821,
+                "socketTicks": 10819,
+                "journalWrites": 12,
+                "lastJournalWriteMs": 1302500,
+                "journalError": "",
+                "journalDuplicatesRejected": 0,
+                "journalRotations": 0,
+                "priceFrozen": false,
+                "recentPriceRangeRatio": 1.9474418753279488E-10,
+                "rangoRelativoMinimo": 1.0E-11,
+                "rangoRelativoActual": 1.9474418753279488E-10,
+                "volatilidadSuficiente": true,
+                "payoutFromPercentLabel": null,
+                "payoutFromButtonRatio": 0.8300000000000001,
+                "payoutResolved": 0.8300000000000001,
+                "payoutDiscrepant": false,
+                "payoutConfigured": 0.8500000238418579,
+                "rawFrames": ["{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-19T07:14:54.500153Z\",\"provider_time\":\"2026-10-19T07:14:54.498000Z\",\"rate\":641.867314385,\"created_at_with_millis\":\"2026-10-19T07:14:54.499000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.8673144,\"created_at\":\"2026-10-19T07:14:55.000000Z\",\"bid\":641.86731437,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}","{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-19T07:14:54.900079Z\",\"provider_time\":\"2026-10-19T07:14:54.898000Z\",\"rate\":641.86731438,\"created_at_with_millis\":\"2026-10-19T07:14:54.899000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.86731439,\"created_at\":\"2026-10-19T07:14:55.000000Z\",\"bid\":641.86731437,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}","{\"data\":[{\"assets\":[{\"sent_at\":\"2026-10-19T07:14:55.300317Z\",\"provider_time\":\"2026-10-19T07:14:55.298000Z\",\"rate\":641.86731435,\"created_at_with_millis\":\"2026-10-19T07:14:55.300000Z\",\"precision\":10,\"repeat\":0,\"ask\":641.86731436,\"created_at\":\"2026-10-19T07:14:56.000000Z\",\"bid\":641.86731434,\"ric\":\"Z-CRY/IDX\"}],\"action\":\"assets\"}],\"success\":true,\"errors\":[]}"],
+                "acceptedTicks": 10819,
+                "rejectedForeignAssetTicks": 0,
+                "ultimoRicConTicks": "Z-CRY/IDX",
+                "activoSinFeed": "",
+                "segundosSinTicks": 0,
+                "diagMultiRic": {
+                    "ricSecundario": "",
+                    "ticksRicSecundario": 0,
+                    "ultimoTickRicSecundarioMs": 0,
+                    "desconexiones": 1,
+                    "reconexiones": 1
+                }
+            },
+            "engine": {
+                "signalsGenerated": 206,
+                "lastSignalTimestampMs": 1792394045589,
+                "lastSignalAction": "BUY",
+                "evaluatedCount": 921,
+                "suppressedByConfluence": 334,
+                "suppressedByChop": 0,
+                "suppressedByMicroCompression": 0
+            }
+        }

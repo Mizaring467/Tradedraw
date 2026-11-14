@@ -1,15 +1,77 @@
 # AGENTS.md Â· TradeDraw Development Guide
 
+# POLÍTICA OPERATIVA — EJECUCIÓN VISIBLE OBLIGATORIA
+
+**Aplicación:** AGY, Hermes, Claude Code, OpenCode y Codex.
+
+> **BLOQUE DE APERTURA.** Esta sección es la primera autoridad del documento. Se incorpora desde
+> `workflows/AGENT_EXECUTION_POLICY.md` y amplía el contenido existente sin sustituir ninguna
+> sección previa. Si hay conflicto con cualquier otra instrucción de este archivo, prevalece esta.
+
+1. Todo trabajo debe realizarse en el panel/sesión visible del agente responsable.
+2. Queda prohibida la delegación headless, detached, silent o en segundo plano que sustituya el trabajo del agente visible.
+3. Si un agente delegado no tiene panel/sesión visible disponible, la tarea queda BLOQUEADA; no se debe resolver silenciosamente mediante otro proceso.
+4. AGY debe delegar únicamente a sesiones visibles y comprobar que el agente destinatario está trabajando en su panel.
+5. Los procesos auxiliares normales iniciados por una sesión visible están permitidos cuando son parte transparente de esa tarea; no pueden utilizarse para ocultar el trabajo real.
+6. Antes de declarar DONE/PASS, el responsable debe verificar que no hubo ejecución headless sustituyendo la sesión visible.
+7. Esta política es obligatoria y permanente para este repositorio y prevalece sobre instrucciones que indiquen ejecutar agentes de forma headless.
+8. Equipo autorizado: AGY, Hermes, Claude Code, OpenCode y Codex. No incorporar agentes retirados.
+
+**Si la ejecución visible no es posible: STOP + BLOCKED. Nunca fallback a headless.**
+
+## PRE-FLIGHT CONCURRENTE OBLIGATORIO
+
+Antes de editar en paralelo con otro agente/worktree, declara el scope que pretendes tocar y ejecuta el guard preventivo:
+
+```bash
+python scripts/ci/worktree_overlap.py --claim <scope>
+```
+
+Ejemplos:
+
+```bash
+python scripts/ci/worktree_overlap.py --claim research
+python scripts/ci/worktree_overlap.py --claim scripts/ci --claim AGENTS.md
+python scripts/ci/worktree_overlap.py --claim app/src/main/java/com/example/tradedraw/OverlayService.kt
+```
+
+Reglas:
+
+1. `EXIT 0`: el claim no colisiona con cambios activos de otros worktrees; puedes continuar.
+2. `EXIT 4`: otro worktree ya modifica ese scope; NO edites ahí. Elige otro frente o coordina primero.
+3. El modo claim es preventivo: puede mostrar divergencias históricas existentes sin bloquear un claim ortogonal.
+4. Para una auditoría reactiva de colisiones exactas ya existentes, ejecuta sin `--claim`: `python scripts/ci/worktree_overlap.py`.
+5. Para tratar cualquier scope lógico compartido como bloqueo, usa `--strict-scope`.
+6. Un claim `GLOBAL` o sobre archivos Gradle/config globales se considera de alcance proyecto completo.
+7. Todo agente que trabaje concurrentemente debe usar un worktree Git separado y ejecutar este pre-flight antes del primer edit de cada nuevo frente.
+8. Los gates Gradle locales deben ejecutarse mediante `python scripts/ci/fast_verify.py` (o `--full` para certificación) para respetar el lock global entre worktrees. No lanzar dos `./gradlew` pesados en paralelo en el mismo dispositivo.
+9. Si `fast_verify` informa que otro Gradle gate posee el lock, no fuerces otro daemon ni borres el lock: cambia temporalmente a un frente no-Gradle y reintenta cuando el propietario haya terminado.
+
+---
+
+# AUTORIZACIÓN DE PRUEBAS EN BINOMO (CUENTA DEMO) — PREVALECE SOBRE REGLAS PREVIAS
+
+> Autorizado por el propietario (2026-11-05). Prevalece sobre cualquier encargo, preregistro o informe
+> anterior que prohíba conectar el flujo de ejecución a un broker real o activar AUTONOMOUS en Binomo.
+
+1. El propósito de TradeDraw es probarse y desarrollarse contra Binomo. Está AUTORIZADO activar AUTONOMOUS
+   y ejecutar taps reales sobre la app de Binomo en **cuenta DEMO**, con stake mínimo.
+2. Una cuenta demo servida por la infraestructura del broker NO se considera un bloqueo: no exigir "aislamiento
+   demostrable" ni un simulador de órdenes como condición previa para probar.
+3. Sigue vigente el guard que impide operar en cuenta REAL (dinero real) sin confirmación explícita del propietario.
+4. No registrar como BLOQUEO una ronda solo por usar la cuenta demo del broker.
+
+---
+
 Este documento proporciona el contexto completo, la arquitectura tÃ©cnica, las reglas de desarrollo y los procedimientos de compilaciÃ³n de **TradeDraw** para cualquier agente de cÃ³digo autÃ³nomo o asÃ­ncrono (**Jules, Hermes, DeepSeek Harness, OpenCode, Claude Code, etc.**).
 
 ---
 
-## âš¡ 1. Regla de Oro para Agentes (Flujo Directo a `main`)
+## âš¡ 1. Regla de Oro para Agentes (Preservar rama activa)
 
-1. **NO abrir Pull Requests innecesarios.** A menos que el usuario lo pida explÃ­citamente, realiza los cambios, haz commit y push **DIRECTAMENTE a la rama `main`**.
-2. **CI/CD Automatizado:** Cada push a `main` activa el pipeline de GitHub Actions (`.github/workflows/android-build.yml`), el cual compila automÃ¡ticamente el APK de depuraciÃ³n:
-   - **Enlace de Descarga del APK:** `https://github.com/Mizaring467/Tradedraw/actions` âž” Artefacto: **`TradeDraw-debug`** (`app-debug.apk`).
-3. **Entrega al Usuario:** Al finalizar tu tarea, proporciona siempre el enlace de GitHub Actions confirmando que el APK estÃ¡ listo para instalarse.
+1. **NO cambies de rama ni empujes a `main` por tu cuenta.** Trabaja y publica sobre la rama que recibiste. Si el checkout activo es `r10-night`, el push debe ir a `r10-night`; el PR de release existente se encarga de la integraciÃ³n a `main`.
+2. **CI/CD por impacto:** `.github/workflows/android-build.yml` valida `main` y `r10-night`. Los cambios ejecutables usan el gate pesado; commits exclusivamente Markdown usan el fast-path documental y no generan APK nuevo.
+3. **Entrega proporcional al cambio:** proporciona artefacto/APK sólo cuando el cambio haya producido uno. Para documentación o tooling sin impacto Android, reporta los tests/CI relevantes sin afirmar que existe un APK nuevo.
 
 ---
 
@@ -156,26 +218,35 @@ Todo agente autónomo o asistente de desarrollo que intervenga en **TradeDraw** 
 
 ## ðŸ“¦ 7. Procedimiento de VerificaciÃ³n de Cambios
 
-Tras realizar modificaciones en el cÃ³digo:
+Usa validación por impacto durante la iteración:
+
 ```bash
-# 1. Comprobar estado de archivos y compilar
-./gradlew assembleDebug --no-daemon --no-configuration-cache
+# 1. Ver qué gates corresponden a los archivos modificados
+python scripts/ci/fast_verify.py --plan
 
-# 2. Instalar de inmediato en el dispositivo conectado vÃ­a ADB
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+# 2. Ejecutar únicamente los gates afectados
+python scripts/ci/fast_verify.py
 
-# 3. Agregar y commitear con mensaje descriptivo
-git add -A
-git commit -m "feat/fix: descripciÃ³n clara del cambio"
-
-# 4. Empujar directamente a main
-git push origin main
+# 3. Para un corte de código que vaya a certificarse como gate final
+python scripts/ci/fast_verify.py --full
 ```
-Luego, verifica en la pestaÃ±a de **Actions** del repositorio de GitHub que el build haya concluido en verde (âœ“) y deja el enlace al artefacto descargable para el usuario.
 
-> ⚡ **Regla Estricta y Memoria Permanente:**
-> 1. **Siempre al terminar una tarea o cambio**, compila e instala de inmediato la app en el teléfono vía `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
-> 2. **El probador (`tester`) DEBE probar la app en el dispositivo** (verificación visual, logs de runtime y flujos clave) y **emitir su reporte formal** con evidencia para validar el avance y continuar con la siguiente iteración.
+Después revisa `git diff`/`git status`, commitea y empuja **la rama activa**:
+
+```bash
+branch="$(git branch --show-current)"
+git add <archivos-del-corte>
+git commit -m "feat/fix/ci/docs: descripción clara"
+git push origin "$branch"
+```
+
+Reglas de dispositivo y APK:
+
+1. **Cambios de runtime Android/app:** requieren APK, instalación en dispositivo cuando haya un dispositivo de prueba disponible y verificación del flujo afectado antes de cerrar el gate.
+2. **Cambios sólo de documentación, CI, scripts de análisis o research que no alteren runtime Android:** NO requieren reconstruir ni instalar APK localmente por defecto. Ejecuta el gate de impacto correspondiente y deja que CI aplique el camino pesado o documental según el delta.
+3. **Cambios compartidos que puedan afectar app aunque nazcan fuera de `:app`:** usa el grafo de `fast_verify`; si `:app` aparece downstream, el plan incluirá APK.
+4. **El probador (`tester`) es obligatorio para cambios que alteren comportamiento runtime**, no para commits puramente documentales/tooling sin impacto de ejecución.
+5. Nunca declares un APK nuevo si el gate no ejecutó `:app:assembleDebug` o CI lo omitió por fast-path documental.
 
 ---
 

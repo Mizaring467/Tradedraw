@@ -15,10 +15,12 @@ import java.util.Locale
 object TradeJournalLogger {
     private const val TAG = "TradeJournalLogger"
     // Ronda 14 (A2): los campos de instrumentacion de latencia se anaden AL FINAL del header.
+    // Ronda 21 (Frente A): decision_id y trade_id se anaden AL FINAL del header (solo-append).
     // Es un esquema solo-append: un lector viejo con `csv.DictReader` sigue funcionando (ignora
     // las columnas que no conoce) y un lector nuevo sobre un journal viejo obtiene null/ausente
     // en vez de un error. Nunca se reordena ni se borra una columna existente.
-    private const val HEADER = "timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason,signal_ts,tap_start_ts,tap_end_ts,candle_second_at_tap_end,price_at_signal,price_at_tap_end\n"
+    private const val HEADER = "timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason,signal_ts,tap_start_ts,tap_end_ts,candle_second_at_tap_end,price_at_signal,price_at_tap_end,decision_id,trade_id\n"
+    private const val FAST_DEMO_HEADER = "timestamp,iso_date,strategy,submode,action,confidence,price_y,stake,base_balance,result,settled_balance,duration_sec,trend,dist_support,dist_resistance,tick_velocity,impulse,market_regime,candle_second,adaptive_status,reason,signal_ts,tap_start_ts,tap_end_ts,candle_second_at_tap_end,price_at_signal,price_at_tap_end,decision_id,trade_id,validation_mode\n"
 
     /** Cabecera del journal. Expuesta para los tests de retrocompatibilidad del esquema. */
     internal fun headerForTests(): String = HEADER
@@ -99,6 +101,24 @@ object TradeJournalLogger {
             return if (ts <= 0L) -1L else (System.currentTimeMillis() - ts).coerceAtLeast(0L)
         }
 
+    private fun resolveDirs(context: Context): Pair<File, File> {
+        val internalDir = File(context.filesDir, "TradeDraw_Audits")
+        val externalRoot = context.getExternalFilesDir(null)
+        val externalDir = externalRoot?.let { File(it, "TradeDraw_Audits") }
+        val externalUsable = externalDir != null && isWritableDir(externalDir)
+        val dir = if (externalUsable) {
+            externalDir!!
+        } else {
+            if (externalDir == null) {
+                Log.e(TAG, "getExternalFilesDir(null) devolvió null: usando almacenamiento interno")
+            } else {
+                Log.e(TAG, "Externo no escribible (${externalDir.absolutePath}): usando almacenamiento interno")
+            }
+            internalDir
+        }
+        return Pair(dir, internalDir)
+    }
+
     /**
      * Registra una operación cerrada con todas sus características cuantitativas y contextuales.
      * Devuelve true si la evidencia quedó persistida en disco.
@@ -128,27 +148,13 @@ object TradeJournalLogger {
         candleSecond: Int = 0,
         adaptiveStatus: String = "ALLOWED",
         tradeStartMs: Long = 0L,
-        latency: LatencyRecord = LatencyRecord()
+        latency: LatencyRecord = LatencyRecord(),
+        decisionId: String = "",
+        tradeId: String = ""
     ): Boolean {
         try {
-            // getExternalFilesDir puede devolver null (almacenamiento externo no montado) o apuntar a
-            // un directorio heredado de una instalación anterior cuyo UID ya no es el nuestro: en
-            // ambos casos la evidencia de auditoría se perdería en silencio, así que se escala al
-            // almacenamiento interno antes de rendirse.
-            val internalDir = File(context.filesDir, "TradeDraw_Audits")
-            val externalRoot = context.getExternalFilesDir(null)
-            val externalDir = externalRoot?.let { File(it, "TradeDraw_Audits") }
-            val externalUsable = externalDir != null && isWritableDir(externalDir)
-            val dir = if (externalUsable) {
-                externalDir!!
-            } else {
-                if (externalDir == null) {
-                    Log.e(TAG, "getExternalFilesDir(null) devolvió null: usando almacenamiento interno")
-                } else {
-                    Log.e(TAG, "Externo no escribible (${externalDir.absolutePath}): usando almacenamiento interno")
-                }
-                internalDir
-            }
+            val (dir, internalDir) = resolveDirs(context)
+            val externalUsable = dir.canonicalPath != internalDir.canonicalPath
 
             synchronized(lock) {
                 // Permisos externos recuperados: vaciar primero lo acumulado internamente.
@@ -180,7 +186,7 @@ object TradeJournalLogger {
                     val line = buildLine(action, result, reason, strategy, submode, confidence, priceY,
                         stake, baseBalance, settledBalance, durationSec, trend, distSupportRatio,
                         distResistanceRatio, tickVelocity, impulse, marketRegime, candleSecond,
-                        adaptiveStatus, latency)
+                        adaptiveStatus, latency, decisionId, tradeId)
                     // La escritura en el externo puede fallar aunque canWrite() dijera true: el directorio
                     // heredado de una instalación previa cambia de propietario con el UID nuevo de Android
                     // y FileWriter lanza Permission denied. Reintento inmediato en interno para no perder
@@ -215,6 +221,202 @@ object TradeJournalLogger {
             lastError = "${e.javaClass.simpleName}: ${e.message}"
             Log.e(TAG, "FALLO AL PERSISTIR EVIDENCIA DE AUDITORÍA (trade $action $result): $lastError", e)
             return false
+        }
+    }
+
+    /** Cabecera del journal de modo SHADOW (Ronda 21, Frente E) - Esquema v1 (11 columnas). */
+    private const val SHADOW_HEADER = "timestamp,iso_date,strategy,submode,action,confidence,price_y,trend,candle_second,decision_id,reason\n"
+    /** Cabecera del journal de modo SHADOW - Esquema v2 versionado (15 columnas). */
+    const val SHADOW_HEADER_V2 = "timestamp,iso_date,strategy,submode,action,confidence,price_y,trend,candle_second,decision_id,reason,schema_version,sim_result,sim_exit_price,sim_balance\n"
+    private const val SHADOW_JOURNAL_NAME = "shadow_journal.csv"
+
+    /**
+     * Registra una operación de ingeniería FAST_DEMO en loops/fast_demo/trade_journal_fast_demo.csv
+     * garantizando aislamiento estricto respecto al dataset científico de validación real (FASE 6).
+     */
+    fun logFastDemoTrade(
+        context: Context,
+        strategy: String,
+        submode: String,
+        action: String,
+        confidence: Float,
+        priceY: Float,
+        stake: Number,
+        baseBalance: Number,
+        result: String,
+        settledBalance: Number,
+        durationSec: Long,
+        reason: String,
+        trend: String = "SIDEWAYS",
+        distSupportRatio: Float = 0.5f,
+        distResistanceRatio: Float = 0.5f,
+        tickVelocity: Float = 0f,
+        impulse: String = "NEUTRAL",
+        marketRegime: String = "NORMAL",
+        candleSecond: Int = 0,
+        adaptiveStatus: String = "ALLOWED",
+        tradeStartMs: Long = 0L,
+        latency: LatencyRecord = LatencyRecord(),
+        decisionId: String = "",
+        tradeId: String = ""
+    ): Boolean {
+        return try {
+            val fastDemoDir = File("/data/data/com.termux/files/home/Tradedraw/loops/fast_demo")
+            if (!fastDemoDir.exists()) fastDemoDir.mkdirs()
+            val file = File(fastDemoDir, "trade_journal_fast_demo.csv")
+            val baseLine = buildLine(action, result, reason, strategy, submode, confidence, priceY,
+                stake, baseBalance, settledBalance, durationSec, trend, distSupportRatio,
+                distResistanceRatio, tickVelocity, impulse, marketRegime, candleSecond,
+                adaptiveStatus, latency, decisionId, tradeId).trimEnd()
+            val line = "$baseLine,FAST_DEMO\n"
+            synchronized(lock) {
+                val writeHeader = !file.exists() || file.length() == 0L
+                FileWriter(file, true).use { writer ->
+                    if (writeHeader) writer.write(FAST_DEMO_HEADER)
+                    writer.write(line)
+                    writer.flush()
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error escribiendo en fast_demo journal", e)
+            false
+        }
+    }
+
+    /**
+     * Registra una operación de estrategia en loops/r31_validation/trade_journal_validation.csv
+     * con validation_mode=VALIDATION_REAL y la preserva también en el journal principal (FASE 6 R31).
+     */
+    fun logValidationRealTrade(
+        context: Context,
+        strategy: String,
+        submode: String,
+        action: String,
+        confidence: Float,
+        priceY: Float,
+        stake: Number,
+        baseBalance: Number,
+        result: String,
+        settledBalance: Number,
+        durationSec: Long,
+        reason: String,
+        trend: String = "SIDEWAYS",
+        distSupportRatio: Float = 0.5f,
+        distResistanceRatio: Float = 0.5f,
+        tickVelocity: Float = 0f,
+        impulse: String = "NEUTRAL",
+        marketRegime: String = "NORMAL",
+        candleSecond: Int = 0,
+        adaptiveStatus: String = "ALLOWED",
+        tradeStartMs: Long = 0L,
+        latency: LatencyRecord = LatencyRecord(),
+        decisionId: String = "",
+        tradeId: String = ""
+    ): Boolean {
+        // También persiste en el journal raíz para compatibilidad con dashboards existentes
+        logTrade(
+            context, strategy, submode, action, confidence, priceY, stake, baseBalance,
+            result, settledBalance, durationSec, reason, trend, distSupportRatio,
+            distResistanceRatio, tickVelocity, impulse, marketRegime, candleSecond,
+            adaptiveStatus, tradeStartMs, latency, decisionId, tradeId
+        )
+        return try {
+            val valDir = File("/data/data/com.termux/files/home/Tradedraw/loops/r31_validation")
+            if (!valDir.exists()) valDir.mkdirs()
+            val file = File(valDir, "trade_journal_validation.csv")
+            val baseLine = buildLine(action, result, reason, strategy, submode, confidence, priceY,
+                stake, baseBalance, settledBalance, durationSec, trend, distSupportRatio,
+                distResistanceRatio, tickVelocity, impulse, marketRegime, candleSecond,
+                adaptiveStatus, latency, decisionId, tradeId).trimEnd()
+            val line = "$baseLine,VALIDATION_REAL\n"
+            synchronized(lock) {
+                val writeHeader = !file.exists() || file.length() == 0L
+                FileWriter(file, true).use { writer ->
+                    if (writeHeader) writer.write(FAST_DEMO_HEADER)
+                    writer.write(line)
+                    writer.flush()
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error escribiendo en validation_real journal", e)
+            false
+        }
+    }
+
+    /**
+     * Registra una decisión simulada autorizada en modo SHADOW.
+     * Cero taps, cero órdenes despachadas al broker, saldo inalterado.
+     */
+    fun logShadowTrade(
+        context: Context,
+        strategy: String,
+        submode: String,
+        action: String,
+        confidence: Float,
+        priceY: Float,
+        trend: String = "SIDEWAYS",
+        candleSecond: Int = 0,
+        decisionId: String = "",
+        reason: String = ""
+    ): Boolean {
+        return try {
+            val (dir, _) = resolveDirs(context)
+            val file = File(dir, SHADOW_JOURNAL_NAME)
+            val now = System.currentTimeMillis()
+            val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(now))
+            val cleanReason = reason.replace(",", ";").replace("\n", " ").take(140)
+            val sanitizeId = decisionId.trim().replace(",", "").replace("\n", "")
+            val line = String.format(
+                Locale.US,
+                "%d,%s,%s,%s,%s,%.2f,%s,%s,%d,%s,\"%s\"\n",
+                now, isoDate, strategy, submode, action, confidence, formatDynamicPrice(priceY.toDouble()),
+                trend, candleSecond, sanitizeId, cleanReason
+            )
+            synchronized(lock) {
+                if (!dir.exists()) dir.mkdirs()
+                val writeHeader = !file.exists() || file.length() == 0L
+                FileWriter(file, true).use { writer ->
+                    if (writeHeader) writer.write(SHADOW_HEADER)
+                    writer.write(line)
+                    writer.flush()
+                }
+            }
+            Log.d(TAG, "Shadow trade registrado: $action @ $priceY conf=$confidence (decisionId=$decisionId)")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error escribiendo en shadow_journal.csv", e)
+            false
+        }
+    }
+
+    /**
+     * Registra una decisión simulada autorizada en modo SHADOW usando el esquema v2 (15 columnas).
+     */
+    fun logShadowTradeV2(
+        context: Context,
+        strategy: String,
+        submode: String,
+        action: String,
+        confidence: Float,
+        priceY: Float,
+        trend: String = "SIDEWAYS",
+        candleSecond: Int = 0,
+        decisionId: String = "",
+        reason: String = "",
+        simResult: String = "",
+        simExitPrice: Double = 0.0,
+        simBalance: Double = 0.0
+    ): Boolean {
+        return try {
+            com.example.tradedraw.persistence.SimulationResultFileJournal(File(context.filesDir, "TradeDraw_Audits"))
+                .appendEntry(com.example.tradedraw.persistence.ShadowJournalEntry(
+                    System.currentTimeMillis(), "", strategy, submode, action, confidence, priceY,
+                    trend, candleSecond, decisionId, reason, 2, simResult, simExitPrice, simBalance))
+        } catch (e: Exception) {
+            Log.e(TAG, "Error escribiendo en shadow_journal.csv v2", e)
+            false
         }
     }
 
@@ -266,13 +468,14 @@ object TradeJournalLogger {
         }
     }
 
-    /** Construye la fila CSV con el esquema fijo del HEADER (solo-append desde R14). */
+    /** Construye la fila CSV con el esquema fijo del HEADER (solo-append desde R14 y R21). */
     internal fun buildLine(
         action: String, result: String, reason: String, strategy: String, submode: String,
         confidence: Float, priceY: Float, stake: Number, baseBalance: Number,
         settledBalance: Number, durationSec: Long, trend: String, distSupportRatio: Float,
         distResistanceRatio: Float, tickVelocity: Float, impulse: String, marketRegime: String,
-        candleSecond: Int, adaptiveStatus: String, latency: LatencyRecord
+        candleSecond: Int, adaptiveStatus: String, latency: LatencyRecord = LatencyRecord(),
+        decisionId: String = "", tradeId: String = ""
     ): String {
         val now = System.currentTimeMillis()
         val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(now))
@@ -281,15 +484,17 @@ object TradeJournalLogger {
         fun ts(v: Long) = if (v > 0L) v.toString() else ""
         fun sec(v: Int) = if (v >= 0) v.toString() else ""
         fun px(v: Double) = if (v > 0.0) String.format(Locale.US, "%.6f", v) else ""
+        fun sanitizeId(v: String) = v.trim().replace(",", "").replace("\n", "")
         return String.format(
             Locale.US,
-            "%d,%s,%s,%s,%s,%.2f,%s,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\",%s,%s,%s,%s,%s,%s\n",
+            "%d,%s,%s,%s,%s,%.2f,%s,%.2f,%.2f,%s,%.2f,%d,%s,%.2f,%.2f,%.2f,%s,%s,%d,%s,\"%s\",%s,%s,%s,%s,%s,%s,%s,%s\n",
             now, isoDate, strategy, submode, action, confidence, formatDynamicPrice(priceY.toDouble()), stake.toDouble(),
             baseBalance.toDouble(), result, settledBalance.toDouble(), durationSec, trend,
             distSupportRatio, distResistanceRatio, tickVelocity, impulse, marketRegime,
             candleSecond, adaptiveStatus, cleanReason,
             ts(latency.signalTs), ts(latency.tapStartTs), ts(latency.tapEndTs),
-            sec(latency.candleSecondAtTapEnd), px(latency.priceAtSignal), px(latency.priceAtTapEnd)
+            sec(latency.candleSecondAtTapEnd), px(latency.priceAtSignal), px(latency.priceAtTapEnd),
+            sanitizeId(decisionId), sanitizeId(tradeId)
         )
     }
 

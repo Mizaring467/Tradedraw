@@ -1,0 +1,11 @@
+# DECISIONS — TradeDraw R29-A
+
+| # | Fecha (UTC) | Decisión | Justificación | Alternativas descartadas |
+| :-- | :--- | :--- | :--- | :--- |
+| D-1 | 2026-11-09T07:01 | No se toca ni revierte el trabajo R27/R28 sin commit; se audita y preserva. | Regla 7/8/9 de la misión; riesgo de pérdida de información. | `git stash` (modifica estado del repo), commit (prohibido por regla 10). |
+| D-2 | 2026-11-09T07:01 | Los subagentes se tratan como parte transparente de esta sesión visible. | `AGENTS.md` (política de ejecución visible) prohíbe delegación headless sustituta; el harness Antigravity ejecuta subagentes dentro de la sesión visible del supervisor. | Ejecución 100% secuencial del supervisor (más lenta, sin beneficio de fiabilidad adicional). |
+| D-3 | 2026-11-09T07:02 | No se elimina `scripts/td_supervisor.lock` obsoleto. | Regla 7 (no eliminar archivos). Solo se documenta su obsolescencia. | Eliminar/renombrar el lock. |
+| D-4 | 2026-11-09T07:02 | AUTONOMOUS y contacto con broker: desactivados para toda R29-A, pese a la autorización Binomo-demo del 2026-11-05. | Reglas 3–5 de la misión R29-A prevalecen para esta fase. | — |
+| D-5 | 2026-11-09T07:40 | Corrección E3 asumida como defecto metodológico del supervisor: toda cifra heredada de un informe anterior debe recalcularse antes de reetiquetarse VERIFICADO. | R1 propagó "+58"/"+211/−109" como VERIFICADO sin recalcular numstat (real: +51/−7, +164/−47). Corregido en R1 y R2. | Dejar la cifra original con nota (menos claro para R29-B). |
+| D-6 | 2026-11-09T07:40 | La frontera `execution/` de R29-B debe abstraer 3 vías de tap (gesto, shell root, bridge HTTP). | E1: root-tap es la vía PRIMARIA según el propio código (`ATAS:211-216`) y opera incluso con accesibilidad caída (`ATAS:238-243`). Un OrderGateway que solo abstraiga `dispatchGesture` sería incompleto. | Modelar solo la vía de accesibilidad. |
+| D-7 | 2026-11-09T08:35 | La futura frontera de ejecución debe también desacoplar el rate-limit de vela (`lastExecutedCandleEpochMinute`, mutado por SHADOW en `:2515-2517`) y hacer visible el modo en el bridge (`/trade` ignora el modo actual). | Hallazgo R3: SHADOW y ejecución comparten estado de vela; `/trade` opera sin consultar DISABLED/SHADOW. | — |

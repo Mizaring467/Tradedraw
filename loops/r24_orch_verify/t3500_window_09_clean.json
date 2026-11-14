@@ -1,0 +1,73 @@
+{
+  "mode": "trades",
+  "summary": {
+    "total_live_trades": 2,
+    "total_replay_trades": 2,
+    "paired_decisions": 1,
+    "exact_matches": 1,
+    "divergences": 0,
+    "missing_live": 1,
+    "missing_replay": 1,
+    "match_rate_pct": 100.0,
+    "pass": true
+  },
+  "divergence_breakdown": {},
+  "pairs": [
+    {
+      "live": {
+        "decision_id": "48250ce1-5f4a-3c1c-8a93-870899ab5ae6",
+        "trade_id": "a7a7cd3a-5a3e-4701-b3bc-a26d9e1a30cf",
+        "timestamp": 1792381443141,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "CONFIRMADA SELL saldo movido",
+        "balance": 39020736.0,
+        "candle_second": 3
+      },
+      "replay": null,
+      "status": "MISSING_REPLAY"
+    },
+    {
+      "live": {
+        "decision_id": "c8624349-ba64-3a50-81d9-52a4eec69c76",
+        "trade_id": "4c3c69dc-afa3-4444-a10b-1ec09fb59a4f",
+        "timestamp": 1792381682890,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "CONFIRMADA SELL saldo movido",
+        "balance": 39103736.32,
+        "candle_second": 2
+      },
+      "replay": {
+        "decision_id": "c8624349-ba64-3a50-81d9-52a4eec69c76",
+        "trade_id": "",
+        "timestamp": 1792381681103,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_REVERSAL: Sobrecompra Extrema en Resistencia (RSI: 82 | Dist R: 5% | ⏱ 1s) -> PUT [Confluencia: 90pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 1
+      },
+      "status": "MATCH",
+      "matched_by": "decision_id",
+      "first_divergence": null,
+      "delta_ms": -1787
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "29a2587a-0d8b-31ac-8997-dcd3fb715beb",
+        "trade_id": "",
+        "timestamp": 1792381985615,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 45% | Dist S: 25% | ⏱ 5s) -> CALL [Confluencia: 83pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 5
+      },
+      "status": "MISSING_LIVE"
+    }
+  ]
+}

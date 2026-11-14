@@ -1,0 +1,15 @@
+[r10-night 563a269] fix(research): align settlement with durable shadow and reject contaminated state
+ 24 files changed, 4082 insertions(+), 54 deletions(-)
+ create mode 100644 loops/r29c/evidence/clean-suite-fixed-env.txt
+ create mode 100644 loops/r29c/evidence/clean-suite.txt
+ create mode 100644 loops/r29c/evidence/green-regressions.txt
+ create mode 100644 loops/r29c/evidence/install-research-cut.txt
+ create mode 100644 loops/r29c/evidence/jvm-summary-v1.json
+ create mode 100644 loops/r29c/evidence/python-59.txt
+ create mode 100644 loops/r29c/evidence/red-regressions.txt
+ create mode 100644 loops/r29c/evidence/settlement-parity.txt
+ create mode 100644 loops/r29c/evidence/strategy_registry_v1.json
+ create mode 100644 loops/r29c/evidence/strategy_registry_v2.json
+ create mode 100644 research/src/test/java/com/example/tradedraw/SettlementParityTest.kt
+ create mode 100644 scripts/research/freeze_registry.py
+ create mode 100644 tests/test_r29c_replay.py

@@ -1,0 +1,12 @@
+{
+ "target": 50,
+ "resolved": 2,
+ "wins": 1,
+ "losses": 1,
+ "ties": 0,
+ "pending": 0,
+ "runtime_minutes": 21,
+ "disconnects": 1,
+ "recoveries_ok": 0,
+ "recoveries_failed": 0
+}

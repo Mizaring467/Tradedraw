@@ -1,0 +1,57 @@
+{
+  "changes": [
+    {
+      "classification": "UNKNOWN",
+      "dataset_id": "ds_7b76936a0203bd2d",
+      "previous_classification": "BROKER_DEVICE_CAPTURE",
+      "previous_quality_status": "VALID_FOR_DIAGNOSTICS_ONLY",
+      "quality_status": "INSUFFICIENT_METADATA",
+      "reason": "STANDALONE_STATUS_SCHEMA_IS_NOT_PROVENANCE",
+      "sha256": "1b1e800e59a19a083c66549c6771779e33635188b07a5279463ba9f268ce93ba",
+      "source": "data/fixtures/golden/status_golden.json"
+    },
+    {
+      "classification": "UNKNOWN",
+      "dataset_id": "ds_1ab15d1d506a897f",
+      "previous_classification": "BROKER_DEVICE_CAPTURE",
+      "previous_quality_status": "VALID_FOR_DIAGNOSTICS_ONLY",
+      "quality_status": "INSUFFICIENT_METADATA",
+      "reason": "STANDALONE_STATUS_SCHEMA_IS_NOT_PROVENANCE",
+      "sha256": "d2f822cf520fc140f61bd0c3bfa84a86b12abf5260dbd8025a4aec740bed175e",
+      "source": "loops/r26_validation/P0_baseline.json"
+    },
+    {
+      "classification": "UNKNOWN",
+      "dataset_id": "ds_9fa9c97a955a5d82",
+      "previous_classification": "BROKER_DEVICE_CAPTURE",
+      "previous_quality_status": "VALID_FOR_DIAGNOSTICS_ONLY",
+      "quality_status": "INSUFFICIENT_METADATA",
+      "reason": "STANDALONE_STATUS_SCHEMA_IS_NOT_PROVENANCE",
+      "sha256": "14952bc3bca131210baa73241c88a55978e6a9fd1a25cd53cc94f65a8920a399",
+      "source": "loops/r26_validation/P1_status_final.json"
+    },
+    {
+      "classification": "UNKNOWN",
+      "dataset_id": "ds_41faaa2605a6a7bf",
+      "previous_classification": "BROKER_DEVICE_CAPTURE",
+      "previous_quality_status": "VALID_FOR_DIAGNOSTICS_ONLY",
+      "quality_status": "INSUFFICIENT_METADATA",
+      "reason": "STANDALONE_STATUS_SCHEMA_IS_NOT_PROVENANCE",
+      "sha256": "b789b0b82e6593cdaa5e6c4cd923485e34471ae4e23ca87b6ec65457f85956c8",
+      "source": "loops/r26_validation/P2_status_final.json"
+    },
+    {
+      "classification": "UNKNOWN",
+      "dataset_id": "ds_07c6147bf4582297",
+      "previous_classification": "BROKER_DEVICE_CAPTURE",
+      "previous_quality_status": "VALID_FOR_DIAGNOSTICS_ONLY",
+      "quality_status": "INSUFFICIENT_METADATA",
+      "reason": "STANDALONE_STATUS_SCHEMA_IS_NOT_PROVENANCE",
+      "sha256": "e41bff56871bcd968b754f57bb0f276cca19ede6e3c5f752c2a08558f3315f6a",
+      "source": "loops/r26_validation/P3_cierre.json"
+    }
+  ],
+  "created_at": "2026-11-12T01:44:08.775852+00:00",
+  "parent_catalog_sha256": "53de2813c5a18e23473b2e33aec6124eb2b5fe6fa0f2b8d980e6310f9c671b86",
+  "transformation": "Conservative manual review overlay: standalone status schema without linked timestamped session is insufficient provenance; preserve source bytes and prior manifests."
+}

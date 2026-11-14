@@ -1,0 +1,21 @@
+{
+  "assets": [
+    "AAVEUSD-OTC",
+    "ETHUSD-OTC"
+  ],
+  "audit_git_sha": "4fdb6466d5005499789d801d64916ea9c15421a3",
+  "byte_identical_paths": [],
+  "classification": "FIXTURE",
+  "dataset_id": "ds_720ea4d91a22f6db",
+  "derived_from": [],
+  "end": 1792030420000,
+  "provenance_evidence": [
+    "compare_live_replay.py save_fixture_to_csv explicitly generates this pair for fixture mode."
+  ],
+  "quality_status": "FIXTURE_ONLY",
+  "rows": 6,
+  "sha256": "98c5a978b95e2f8ec0c958ebee311599e6840432daa5862fa3a8a3cad09ae335",
+  "source": "data/fixtures/r21/fixture_live_decisions.csv",
+  "start": 1792030060000,
+  "version": 1
+}

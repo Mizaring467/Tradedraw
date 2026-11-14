@@ -1,0 +1,27 @@
+{
+  "acceptance": "FAILED_RUNTIME_SOURCE_UNAVAILABLE",
+  "evidence_status": "DIAGNOSTIC_ONLY_NO_EDGE",
+  "experiment_id": "R29C-PLUMBING-20261111-001",
+  "journal_sha256": "46d59860b548c4ccbe24c7a3f656a99a335373228868595abf1232097a712750",
+  "scorecard": {
+    "EV": null,
+    "LOSS": null,
+    "NO_DATA": null,
+    "TRUE_TIE": null,
+    "WIN": null,
+    "WR": null,
+    "data_quality_failures": 12,
+    "evidence_class": "PROSPECTIVE_SHADOW",
+    "limitation": "No automatic performance approval: reconcile raw ticks, lineage, registry, payout and runtime settlement first. Missing settlements remain pending, never ties.",
+    "longest_loss_streak": null,
+    "max_drawdown": null,
+    "precommitted_decisions": 0,
+    "records": 12,
+    "rejected_predictions": 0,
+    "rejection_rate": null,
+    "runtime_discrepancies": null,
+    "settlement_candidates": 0,
+    "status": "INSUFFICIENT_EVIDENCE",
+    "verified_settlements": 0
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "DATA_PASS": false,
+  "PROSPECTIVE_PASS": false,
+  "REPLAY_PARITY_PASS": false,
+  "ROBUSTNESS_PASS": false,
+  "STATISTICAL_PASS": false,
+  "TECHNICAL_PASS": false,
+  "approved_prospective_settlements": 0,
+  "edge_experiments": 0,
+  "evaluated_at": "2026-11-12T01:40:57.549260+00:00",
+  "jvm_classes": 86,
+  "jvm_errors": 0,
+  "jvm_failures": 0,
+  "jvm_skips": 0,
+  "jvm_tests": 676,
+  "local_build_test_pass": true,
+  "next_gates": [
+    "Restore app-side runtime source",
+    "Research event-driven scheduling/policy/adaptive parity",
+    "New immutable prospective cohort with complete lineage"
+  ],
+  "overall_status": "INSUFFICIENT_EVIDENCE",
+  "pr_ci": {
+    "conclusion": "success",
+    "run_id": 43135228011
+  },
+  "push_ci": {
+    "conclusion": "success",
+    "run_id": 43135219044
+  },
+  "python_tests": 59,
+  "runtime_diagnostic": {
+    "predictions": 0,
+    "records": 12,
+    "settlements": 0,
+    "transport_failures": 12
+  },
+  "settlement_helper_parity_pass": true,
+  "source_git_sha": "b5378fc910b06168eb9fd10ef977641b1199d677",
+  "valid_research_datasets": 0
+}

@@ -1,0 +1,2 @@
+trade_id,decision_id,timestamp_ms,asset,action,detail,balance_at_trade
+ea3fec92-7f3b-4bf2-8f66-44ed339cf929,f47ce5e8-198d-3b5b-a293-9611b4390fbb,1792143065441,Z-CRY/IDX,SELL,CONFIRMADA SELL saldo movido,38176737.28

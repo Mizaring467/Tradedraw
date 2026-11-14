@@ -1,0 +1,25 @@
+package com.example.tradedraw.core
+
+import java.util.Locale
+
+enum class CandleTimeframe(val seconds: Int, val label: String) {
+    M1(60, "1m"),
+    M5(300, "5m");
+
+    val durationMs: Long get() = seconds * 1000L
+    val periodMs: Long get() = durationMs
+
+    fun getCycleSecond(timestampMs: Long = System.currentTimeMillis()): Int =
+        ((timestampMs / 1000L) % seconds).toInt()
+
+    fun isSniperTimingWindow(timestampMs: Long = System.currentTimeMillis()): Boolean {
+        val s = getCycleSecond(timestampMs)
+        // R14/A3: ventana con inicio configurable; por defecto identica a `s in 1..5`.
+        return MarketTickFilters.isInEntryWindow(s)
+    }
+
+    fun isStandardTimingWindow(timestampMs: Long = System.currentTimeMillis()): Boolean {
+        val s = getCycleSecond(timestampMs)
+        return MarketTickFilters.isInEntryWindow(s)
+    }
+}

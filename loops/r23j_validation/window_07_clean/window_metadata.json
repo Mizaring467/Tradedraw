@@ -1,0 +1,19 @@
+{
+  "iter": 7,
+  "nominal_window_end_ts": 1792376841.764214,
+  "actual_capture_end_ts": 1792376842.32816,
+  "settlement_extra_seconds": 0.563946008682251,
+  "settlement_grace_period_sec": 75.0,
+  "samples_captured": 82,
+  "initial_balance": 39271736.32,
+  "final_balance_raw": 39337735.68,
+  "final_balance_validated": 39337735.68,
+  "min_validated_balance": 39171737.6,
+  "max_validated_balance": 39437736.96,
+  "drawdown_validated_pct": 0.6744792691066201,
+  "balance_outliers_filtered": 0,
+  "balance_outlier_abs_threshold": 1000000.0,
+  "balance_outlier_stake_multiplier": 10.0,
+  "decisions_captured": 54,
+  "trades_confirmed": 3
+}

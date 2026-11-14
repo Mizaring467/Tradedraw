@@ -1,0 +1,13 @@
+[r10-night b5378fc] feat(research): capture immutable pre-outcome shadow decisions with fail-closed scorecards
+ 22 files changed, 2958 insertions(+), 4 deletions(-)
+ create mode 100644 app/src/main/java/com/example/tradedraw/ProspectivePredictionExport.kt
+ create mode 100644 app/src/test/java/com/example/tradedraw/ProspectivePredictionExportTest.kt
+ create mode 100644 loops/r29c/PROSPECTIVE_SCORECARD.md
+ create mode 100644 loops/r29c/evidence/c0-text/exact_duplicates_v1.json
+ create mode 100644 loops/r29c/evidence/c0-text/inventory_v1.json
+ create mode 100644 loops/r29c/evidence/c0-text/record_overlaps_v1.json
+ create mode 100644 loops/r29c/evidence/jvm-summary-v2.json
+ create mode 100644 loops/r29c/evidence/prospective-clean-suite.txt
+ create mode 100644 loops/r29c/evidence/python-final-v2.txt
+ create mode 100644 scripts/research/prospective.py
+ create mode 100644 tests/test_r29c_prospective.py

@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "total": 1,
+  "vetoV1": 0,
+  "vetoV2": 0,
+  "events": [
+    {
+      "atMs": 1731213600000,
+      "kind": "MODE_CHANGE",
+      "detail": "DISABLED -> AUTONOMOUS (source: UI)",
+      "decisionId": "00000000-0000-0000-0000-000000000001"
+    }
+  ]
+}

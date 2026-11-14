@@ -1,0 +1,1213 @@
+package com.example.tradedraw
+
+import com.example.tradedraw.core.*
+
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.Test
+
+class RiskManagerTest {
+    private object BrokerFixture : BalanceSource, BrokerSensor {
+        var isDemoAccount = true
+        var latestObservedBalance = 0.0
+        var observedOrderAmount = 0.0
+        var latestObservedAsset = ""
+        var isSyntheticOrOTC = false
+        override fun read() = BalanceReading(latestObservedBalance, System.currentTimeMillis(), true)
+        override fun getBrokerState() = BrokerStateView(balance = latestObservedBalance,
+            isDemoAccount = isDemoAccount, observedOrderAmount = observedOrderAmount,
+            observedAsset = latestObservedAsset.ifBlank { "Crypto IDX" }, isSyntheticOrOTC = isSyntheticOrOTC)
+    }
+
+
+    private lateinit var riskManager: RiskManager
+
+    @Before
+    fun setUp() {
+        riskManager = RiskManager(null, balanceSource = BrokerFixture, brokerSensor = BrokerFixture)
+        riskManager.baseAmount = 10.0f
+        riskManager.martingaleMultiplier = 2.2f
+        riskManager.martingaleEnabled = true
+        riskManager.stopLossStreak = 3
+        riskManager.takeProfitWins = 5
+        riskManager.cooldownSeconds = 10
+        riskManager.resetSession()
+        BrokerFixture.isDemoAccount = true
+        BrokerFixture.latestObservedBalance = 0.0
+        BrokerFixture.observedOrderAmount = 0.0
+        BrokerFixture.latestObservedAsset = ""
+        BrokerFixture.isSyntheticOrOTC = false
+    }
+
+    @Test
+    fun testInitialState() {
+        assertEquals("Total wins should be 0", 0, riskManager.totalWins)
+        assertEquals("Total losses should be 0", 0, riskManager.totalLosses)
+        assertEquals("Current loss streak should be 0", 0, riskManager.currentLossStreak)
+        assertFalse("Should not have pending trade", riskManager.hasPendingTrade)
+        assertTrue("Should be able to execute trade initially", riskManager.canTrade())
+        assertEquals("Initial investment should be baseAmount", 10.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+    }
+
+    /**
+     * Regresión del doble registro observado en el journal (00:44:03 y 00:44:04, mismo balance y resultado).
+     *
+     * Causa raíz: la liquidación headless reintenta en CADA tick mientras `hasPendingTrade` siga vivo
+     * (no se limpia hasta que el `handler.post` corre en el hilo principal). `canExecuteTrade` limpia el
+     * pendiente a los MAX_PENDING_TRADE_TIMEOUT_SEC (85s), lo que abre una ventana ZOMBIE de 10s entre
+     * 75s y 85s: el pendiente ya está limpiado (o la ruta de visión liquidó), pero la resolución headless
+     * vuelve a evaluar el MISMO trade y escribe una segunda fila idéntica con 1s de diferencia.
+     */
+    @Test
+    fun testClearPendingTrade_onRiskCheck_expiresAtTimeout() {
+        riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 250.0, baseBalance = 50000.0)
+        assertTrue("Debe haber trade pendiente", riskManager.hasPendingTrade)
+
+        // Envejecemos el pendiente más allá del timeout de seguridad (85s)
+        riskManager.pendingTradeStartTime = System.currentTimeMillis() - 86_000L
+        riskManager.canExecuteTrade(AutonomousSubMode.YOLO, 0.9f)
+
+        assertFalse("Pasado el timeout el pendiente debe limpiarse", riskManager.hasPendingTrade)
+        assertEquals("El timestamp del pendiente debe resetearse", 0L, riskManager.pendingTradeStartTime)
+    }
+
+    /**
+     * Regresion: el HUD decia "Operativa reanudada" pero el bot seguia bloqueado por el Trailing Profit Lock,
+     * porque resetStreakOnly() no reiniciaba la linea base de sesion (sessionStart/Peak). Obligaba a
+     * cerrar y reabrir la app.
+     */
+    @Test
+    fun testResetStreakOnly_liftsTrailingProfitLock() {
+        riskManager.minPeakProfitToLock = 80_000.0
+        val sub = AutonomousSubMode.CONSERVATIVE
+
+        BrokerFixture.latestObservedBalance = 39_422_735.0 // fija sessionStart
+        assertTrue("Debe operar al inicio de la sesion", riskManager.canExecuteTrade(sub).first)
+
+        BrokerFixture.latestObservedBalance = 39_504_736.0 // pico +82,001
+        riskManager.canExecuteTrade(sub)
+
+        BrokerFixture.latestObservedBalance = 39_404_736.0 // devuelve > 40% del pico
+        val (blocked, reason) = riskManager.canExecuteTrade(sub)
+        assertFalse("El Trailing Lock debe bloquear tras devolver el pico", blocked)
+        assertTrue("La razon debe nombrar el Trailing Lock", reason.contains("Trailing"))
+
+        riskManager.resetStreakOnly()
+
+        val (resumed, reasonAfter) = riskManager.canExecuteTrade(sub)
+        assertTrue("Tras reanudar debe poder operar: $reasonAfter", resumed)
+        assertFalse("El flag del lock debe limpiarse", riskManager.trailingProfitLockTriggered)
+    }
+
+    @Test
+    fun testTradePendingBlocksDuplicateExecution() {
+        riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 250.0, baseBalance = 50000.0)
+        assertTrue("Trade pending should be true", riskManager.hasPendingTrade)
+        assertEquals("Action should be BUY", TradeAction.BUY, riskManager.pendingTradeAction)
+        assertEquals("Entry price should match", 250.0, riskManager.pendingTradeEntryPrice, 0.01)
+        assertEquals("Base balance should match", 50000.0, riskManager.pendingTradeBaseBalance, 0.01)
+
+        val (canTrade, reason) = riskManager.canExecuteTrade()
+        assertFalse("Cannot execute trade while pending trade is active", canTrade)
+        assertTrue("Reason should mention open operation", reason.contains("Operación abierta"))
+    }
+
+    @Test
+    fun testMartingaleProgressionAndWinReset() {
+        riskManager.maxMartingaleLevel = 2
+        assertEquals("Initial Martingale status should be M0", "[M0 | $10.0]", riskManager.getMartingaleStatusBadge())
+
+        // 1st Loss -> M1
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals("Loss streak should be 1", 1, riskManager.currentLossStreak)
+        assertEquals("Total losses should be 1", 1, riskManager.totalLosses)
+        assertFalse("Pending trade should be cleared on loss", riskManager.hasPendingTrade)
+        assertEquals("M1 amount should be 10 * 2.2 = 22.0", 22.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+
+        // 2nd Loss -> M2
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals("Loss streak should be 2", 2, riskManager.currentLossStreak)
+        assertEquals("Total losses should be 2", 2, riskManager.totalLosses)
+        assertEquals("M2 amount should be 22 * 2.2 = 48.4", 48.4f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+
+        // Win -> Reset to M0
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        assertEquals("Loss streak should reset to 0", 0, riskManager.currentLossStreak)
+        assertEquals("Current wins should be 1", 1, riskManager.currentWins)
+        assertEquals("Total wins should be 1", 1, riskManager.totalWins)
+        assertEquals("Amount should reset to baseAmount", 10.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+        assertEquals("Martingale status should reset to M0", "[M0 | $10.0]", riskManager.getMartingaleStatusBadge())
+    }
+
+    @Test
+    fun testMaxMartingaleCappedAtM1ForRealMoneySafety() {
+        riskManager.maxMartingaleLevel = 1
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss() // 1 loss -> M1
+        assertEquals("1st loss is M1 (10 * 2.2 = 22.0)", 22.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss() // 2 losses -> Capped at M1 for real money protection
+        assertEquals("2nd loss should be capped at M1 (22.0)", 22.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+    }
+
+    @Test
+    fun testAntiTiltCooldownAfterMG1Failure() {
+        riskManager.maxMartingaleLevel = 1
+        riskManager.martingaleEnabled = true
+        riskManager.lossCooldownSeconds = 120
+
+        // 1ra derrota -> Nivel 1 permitido
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+
+        // 2da derrota -> MG1 falló (> maxMartingaleLevel = 1), debe forzar pausa anti-tilt incluso en modo YOLO
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(2, riskManager.currentLossStreak)
+
+        val (canTradeNormal, reasonNormal) = riskManager.canExecuteTrade()
+        assertFalse("Debe bloquearse por pausa anti-tilt tras fallo MG1", canTradeNormal)
+        assertTrue("Razón debe mencionar pausa anti-tilt", reasonNormal.contains("Pausa Anti-Tilt"))
+
+        val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("Incluso en YOLO debe bloquearse tras fallo MG1", canTradeYolo)
+        assertTrue("Razón YOLO debe mencionar pausa anti-tilt", reasonYolo.contains("Pausa Anti-Tilt"))
+    }
+
+    @Test
+    fun testStopLossAndTakeProfitLimits() {
+        // Deshabilitamos martingala para testear puramente el stop loss general
+        riskManager.martingaleEnabled = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+
+        // Test Stop Loss
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss() // 3 consecutive losses
+        assertEquals(3, riskManager.currentLossStreak)
+
+        val (canTradeSL, reasonSL) = riskManager.canExecuteTrade()
+        assertFalse("Should be blocked by Stop Loss", canTradeSL)
+        assertTrue("Reason should mention Stop Loss", reasonSL.contains("Stop Loss alcanzado"))
+
+        // Reset and Test Take Profit
+        riskManager.resetSession()
+        repeat(5) {
+            riskManager.recordTradeSent(TradeAction.BUY)
+            riskManager.recordTradeWin()
+        }
+        assertEquals(5, riskManager.currentWins)
+
+        val (canTradeTP, reasonTP) = riskManager.canExecuteTrade()
+        assertFalse("Should be blocked by Take Profit", canTradeTP)
+        assertTrue("Reason should mention Take Profit", reasonTP.contains("Take Profit alcanzado"))
+    }
+
+    @Test
+    fun testWinRateCalculation() {
+        riskManager.setStats(wins = 8, losses = 2)
+        assertEquals("Winrate for 8W-2L should be 80%", 80.0f, riskManager.getWinRate(), 0.01f)
+    }
+    @Test
+    fun testSorosCompoundingProgressionAndReset() {
+        riskManager.moneyManagementMode = MoneyManagementMode.SOROS_COMPOUNDING
+        riskManager.baseAmount = 1.0f
+        riskManager.sorosPayoutRate = 0.85f
+        riskManager.sorosCycleTarget = 3
+        riskManager.resetSession()
+
+        // Paso 0: Monto base $1.0
+        assertEquals(1.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+        assertEquals("[Soros S0/3 | $1.0]", riskManager.getMartingaleStatusBadge())
+
+        // 1er Win -> Paso 1 ($1.85)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        assertEquals(1, riskManager.currentSorosStep)
+        assertEquals(1.85f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+        assertEquals("[Soros S1/3 | $1.85]", riskManager.getMartingaleStatusBadge())
+
+        // 2do Win -> Paso 2 ($3.42)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        assertEquals(2, riskManager.currentSorosStep)
+        assertEquals(3.42f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+        assertEquals("[Soros S2/3 | $3.42]", riskManager.getMartingaleStatusBadge())
+
+        // 3er Win -> Completa Ciclo (Target 3) -> Reset a Paso 0 y 1 ciclo completado
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        assertEquals(0, riskManager.currentSorosStep)
+        assertEquals(1, riskManager.completedSorosCycles)
+        assertEquals(1.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+
+        // Pérdida en Paso 1 -> Reset a Paso 0 (Pérdida máxima limitada a $1)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin() // A Paso 1
+        assertEquals(1, riskManager.currentSorosStep)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss() // Pérdida
+        assertEquals(0, riskManager.currentSorosStep)
+        assertEquals(1.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+    }
+
+    @Test
+    fun testYoloLossCooldown_boundedBetween30And45Seconds() {
+        assertEquals("Default YOLO cooldown must be 35s", 35, riskManager.yoloLossCooldownSeconds)
+
+        riskManager.yoloLossCooldownSeconds = 10
+        assertEquals("YOLO cooldown below 30s must be coerced to 30s", 30, riskManager.yoloLossCooldownSeconds)
+
+        riskManager.yoloLossCooldownSeconds = 100
+        assertEquals("YOLO cooldown above 45s must be coerced to 45s", 45, riskManager.yoloLossCooldownSeconds)
+
+        riskManager.yoloLossCooldownSeconds = 35
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+
+        val remainingYolo = riskManager.getRemainingCooldown(AutonomousSubMode.YOLO)
+        assertTrue("YOLO cooldown must be between 30 and 35 seconds", remainingYolo in 30..35)
+        assertTrue("YOLO cooldown must not freeze for 120-180 seconds", remainingYolo <= 45)
+
+        val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("Debe esperar el cooldown corto en YOLO", canTradeYolo)
+        assertTrue("Razón debe ser cooldown YOLO", reasonYolo.contains("Pausa de Cooldown YOLO"))
+    }
+
+    @Test
+    fun testSelectiveMartingaleM1_requiresAPlusSetup() {
+        riskManager.maxMartingaleLevel = 1
+        riskManager.martingaleEnabled = true
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+        riskManager.lastTradeTime = 0L
+
+        // En M0 (racha 0): Cualquier señal válida opera normalmente
+        assertTrue("M0 con 70% debe permitir operar", riskManager.canTrade(0.70f))
+        val (canTradeM0, _) = riskManager.canExecuteTrade(confidence = 0.70f)
+        assertTrue("M0 debe permitir trade", canTradeM0)
+
+        // 1ra Pérdida -> Entra en Martingala Nivel 1 (M1)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+        riskManager.lastTradeTime = 0L // Simular cooldown ya transcurrido
+
+        // En M1 con confianza < 85% (ej. 80%, 84%) -> DEBE BLOQUEARSE (exige setup A+)
+        val (canTrade80, reason80) = riskManager.canExecuteTrade(confidence = 0.80f)
+        assertFalse("M1 con 80% debe bloquearse por no ser A+", canTrade80)
+        assertTrue("Razón debe especificar requisito A+ de M1", reason80.contains("Martingala M1 requiere setup A+"))
+        assertFalse("canTrade(0.80f) debe retornar false en M1", riskManager.canTrade(0.80f))
+        assertFalse("canTrade(0.84f) debe retornar false en M1", riskManager.canTrade(0.84f))
+        assertFalse("canTrade(84f) normalizado debe retornar false en M1", riskManager.canTrade(84f))
+
+        // En M1 con confianza >= 85% (setup A+ / A+ Setup) -> DEBE PERMITIR OPERAR
+        val (canTrade85, reason85) = riskManager.canExecuteTrade(confidence = 0.85f)
+        assertTrue("M1 con 85% es A+ y debe permitirse", canTrade85)
+        assertEquals("Listo para operar", reason85)
+        assertTrue("canTrade(0.85f) debe retornar true en M1", riskManager.canTrade(0.85f))
+        assertTrue("canTrade(0.95f) debe retornar true en M1", riskManager.canTrade(0.95f))
+        assertTrue("canTrade(90f) normalizado debe retornar true en M1", riskManager.canTrade(90f))
+
+        // Si la Martingala está desactivada, el filtro M1 no debe bloquear
+        riskManager.martingaleEnabled = false
+        val (canTradeDisabled, _) = riskManager.canExecuteTrade(confidence = 0.70f)
+        assertTrue("Sin martingala no aplica restricción M1", canTradeDisabled)
+    }
+
+    @Test
+    fun testSelectiveMartingaleM1_inYoloMode() {
+        riskManager.maxMartingaleLevel = 1
+        riskManager.martingaleEnabled = true
+        riskManager.yoloLossCooldownSeconds = 35
+
+        // Pérdida -> M1
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+        // Simular que el cooldown de pérdida YOLO ya transcurrió (40s atrás)
+        riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
+
+        // En YOLO con M1 y confianza 75% -> Bloqueado por filtro selectivo M1
+        val (canTradeYoloLow, reasonYoloLow) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO, confidence = 0.75f)
+        assertFalse("M1 en YOLO con 75% debe ser bloqueado", canTradeYoloLow)
+        assertTrue("Razón debe ser requisito A+ de M1", reasonYoloLow.contains("Martingala M1 requiere setup A+"))
+
+        // En YOLO con M1 y confianza 88% -> Permitido operar
+        val (canTradeYoloHigh, reasonYoloHigh) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO, confidence = 0.88f)
+        assertTrue("M1 en YOLO con 88% debe ser permitido", canTradeYoloHigh)
+        assertTrue("Razón debe confirmar modo YOLO", reasonYoloHigh.contains("MODO YOLO"))
+    }
+
+    @Test
+    fun testYoloPreservesLossStreakAfterCooldown() {
+        riskManager.maxMartingaleLevel = 1
+        riskManager.martingaleEnabled = true
+        riskManager.yoloLossCooldownSeconds = 35
+
+        // Trade 1: Pérdida -> M1 (racha = 1)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+
+        // Trade 2 (M1): Pérdida -> Fallo Martingala (racha = 2 > maxMartingaleLevel)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(2, riskManager.currentLossStreak)
+        assertEquals(22.0f, riskManager.getCurrentInvestmentAmount(), 0.01f) // Capped at M1 multiplier (10.0 * 2.2)
+
+        // 1. Durante la pausa anti-tilt (15s transcurridos < 35s):
+        riskManager.lastTradeTime = System.currentTimeMillis() - 15_000L
+        val (canTradeDuring, reasonDuring) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("Debe bloquearse durante la pausa anti-tilt en YOLO", canTradeDuring)
+        assertTrue("Razón debe indicar Pausa Anti-Tilt", reasonDuring.contains("Pausa Anti-Tilt"))
+        assertEquals("La racha se mantiene en 2 durante la pausa", 2, riskManager.currentLossStreak)
+
+        // 2. Al expirar la pausa anti-tilt (40s transcurridos > 35s):
+        riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
+        val (canTradeAfter, reasonAfter) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue("Debe permitir operar tras finalizar el cooldown anti-tilt en YOLO", canTradeAfter)
+        assertTrue("Razón debe indicar modo YOLO continuo", reasonAfter.contains("MODO YOLO"))
+        assertEquals("En YOLO la racha NO debe reiniciarse para permitir que Stop Loss sea alcanzable", 2, riskManager.currentLossStreak)
+        assertEquals("El monto se mantiene acotado en M1 ($22.0)", 22.0f, riskManager.getCurrentInvestmentAmount(), 0.01f)
+    }
+
+    @Test
+    fun testFix1_canTradeReturnsFalseWhenLossStreakReachesStopLossInYolo() {
+        // R23B Iter 1: POLITICA INVERTIDA A PROPOSITO. Este test exigia que YOLO se bloqueara al
+        // alcanzar `stopLossStreak`; el requerimiento 1.2 de R23B pide que YOLO omita ese limite de
+        // sesion para que la operativa sea continua. El test se actualiza a la politica nueva, no se
+        // borra: el caso sigue cubierto en la direccion contraria (CONSERVATIVE SI bloquea).
+        riskManager.stopLossStreak = 3
+        riskManager.maxMartingaleLevel = 1
+        riskManager.martingaleEnabled = true
+        riskManager.yoloLossCooldownSeconds = 35
+
+        // Trade 1: Pérdida -> racha 1 (M1)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+        riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
+
+        // Trade 2: Pérdida -> racha 2 (Fallo Martingala)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(2, riskManager.currentLossStreak)
+        riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
+
+        val (canTradeAt2, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue("Con racha 2 y stopLoss 3 puede operar tras anti-tilt", canTradeAt2)
+        assertEquals("La racha perdedora se preserva en 2", 2, riskManager.currentLossStreak)
+
+        // Trade 3: Pérdida -> racha 3 (Alcanza Stop Loss = 3)
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(3, riskManager.currentLossStreak)
+        riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
+
+        // En YOLO el stop loss de racha YA NO es terminal (R23B Iter 1). OJO: `canTrade()` sin
+        // argumento cae al `currentSubMode` (CONSERVATIVE, fail-safe), asi que aqui hay que pasar el
+        // submodo explicito — que es justo lo que hacen los callers de produccion.
+        val (canTrade, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue("YOLO no se bloquea por Stop Loss de racha", canTrade)
+
+        // ...pero CONSERVATIVE lo sigue aplicando sin cambios.
+        riskManager.lastTradeTime = System.currentTimeMillis() - 40_000L
+        val (canTradeCons, reasonCons) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.CONSERVATIVE)
+        assertFalse("CONSERVATIVE SI bloquea por Stop Loss de racha", canTradeCons)
+        assertTrue("Razón debe mencionar Stop Loss alcanzado", reasonCons.contains("Stop Loss alcanzado"))
+    }
+
+    @Test
+    fun testFix2_recordTradeVoidIncrementsConsecutiveVoidsAndStopsAtThree() {
+        riskManager.cooldownSeconds = 0
+        assertEquals(0, riskManager.consecutiveVoids)
+        assertTrue(riskManager.canTrade())
+
+        // 1er VOID
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeVoid()
+        assertEquals(1, riskManager.consecutiveVoids)
+        assertFalse("Pending trade debe limpiarse tras VOID", riskManager.hasPendingTrade)
+        assertTrue("Con 1 VOID aún puede operar", riskManager.canTrade())
+
+        // 2do VOID
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeVoid()
+        assertEquals(2, riskManager.consecutiveVoids)
+        assertTrue("Con 2 VOIDs aún puede operar", riskManager.canTrade())
+
+        // 3er VOID consecutivo -> Parada crítica
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeVoid()
+        assertEquals(3, riskManager.consecutiveVoids)
+
+        // canTrade() y canExecuteTrade() deben devolver false
+        assertFalse("canTrade() debe devolver false tras 3 VOIDs consecutivos", riskManager.canTrade())
+        val (canTrade, reason) = riskManager.canExecuteTrade()
+        assertFalse("canExecuteTrade debe ser false tras 3 VOIDs", canTrade)
+        assertTrue("Razón debe mencionar 3 trades VOID", reason.contains("3 trades VOID seguidos"))
+    }
+
+    @Test
+    fun testBug1_StopLossIsTerminal() {
+        // R23B Iter 1: POLITICA INVERTIDA A PROPOSITO para YOLO. El nombre original del test
+        // ("StopLossIsTerminal") describia la politica vieja: "stop loss must be terminal and block
+        // trading even in YOLO". REQ 1.2 pide lo contrario. Se conserva el escenario y se afirma la
+        // politica nueva en YOLO y la vieja en CONSERVATIVE, para que el cambio quede fijado en ambos
+        // sentidos y no se pueda revertir por accidente.
+        riskManager.stopLossStreak = 3
+        riskManager.currentLossStreak = 3
+        riskManager.yoloLossCooldownSeconds = 30
+        riskManager.lossCooldownSeconds = 30
+        riskManager.lastTradeTime = System.currentTimeMillis() - 100_000L
+
+        val (canTradeYolo, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue("YOLO ya NO trata el stop loss de racha como terminal (R23B Iter 1)", canTradeYolo)
+
+        riskManager.lastTradeTime = System.currentTimeMillis() - 100_000L
+        val (canTradeCons, reason) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.CONSERVATIVE)
+        assertFalse("En CONSERVATIVE el stop loss de racha sigue siendo terminal", canTradeCons)
+        assertTrue("Reason must be Stop Loss", reason.contains("Stop Loss alcanzado"))
+    }
+
+    @Test
+    fun testBug2_AbsoluteEquityFloorAndSessionLoss() {
+        riskManager.absoluteEquityFloor = 40000000.0
+        riskManager.sessionStartBalance = 50000000.0
+        riskManager.sessionMaxLossRatio = 0.03f // Max loss: 1.5M, so session floor is 48.5M
+        
+        // 1. Below absolute floor
+        BrokerFixture.latestObservedBalance = 39000000.0
+        val (canTrade1, reason1) = riskManager.canExecuteTrade()
+        assertFalse("Must block if below absolute floor", canTrade1)
+        assertTrue("Reason must mention Absolute Equity Stop", reason1.contains("Stop Equity Absoluto Alcanzado"))
+
+        // 2. Below session floor
+        BrokerFixture.latestObservedBalance = 48000000.0
+        val (canTrade2, reason2) = riskManager.canExecuteTrade()
+        assertFalse("Must block if below session floor", canTrade2)
+        assertTrue("Reason must mention Session Loss", reason2.contains("Stop Loss"))
+    }
+
+    @Test
+    fun testBug3_VoidDoesNotIncrementStreak() {
+        BrokerFixture.latestObservedBalance = 50000000.0
+        riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 0.0, baseBalance = 50000000.0)
+        BrokerFixture.latestObservedBalance = 49920000.0
+        riskManager.recordTradeLoss() // Real loss
+        assertEquals(1, riskManager.currentLossStreak)
+
+        // Void trade (balance doesn't change)
+        riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 0.0, baseBalance = 49920000.0)
+        riskManager.recordTradeLoss() // Engine calls loss, but risk manager should intercept as void
+        assertEquals("Streak should not increment for void trade", 1, riskManager.currentLossStreak)
+        assertEquals("Void count should increment", 1, riskManager.consecutiveVoids)
+    }
+
+    @Test
+    fun testBug3_ThreeVoidsCauseHardStop() {
+        BrokerFixture.latestObservedBalance = 50000000.0
+        for (i in 1..3) {
+            riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 0.0, baseBalance = 50000000.0)
+            riskManager.recordTradeLoss() // Interpreted as void
+        }
+        assertEquals(3, riskManager.consecutiveVoids)
+        val (canTrade, reason) = riskManager.canExecuteTrade()
+        assertFalse("Three void trades must cause a hard stop", canTrade)
+        assertTrue("Reason must mention VOID", reason.contains("VOID"))
+    }
+
+    @Test
+    fun testRealAccount_AllowsTradingWith36000Cop() {
+        BrokerFixture.isDemoAccount = false
+        BrokerFixture.latestObservedBalance = 36000.0
+        BrokerFixture.observedOrderAmount = 4000.0
+        riskManager.absoluteEquityFloor = 40000000.0
+        riskManager.sessionStartBalance = 36000.0
+
+        val (canTrade, reason) = riskManager.canExecuteTrade()
+        assertTrue("Real account with 36,000 COP must not be blocked by 40M demo equity floor: $reason", canTrade)
+    }
+
+    @Test
+    fun testRealAccount_BlocksIfBalanceBelowMinBrokerStake() {
+        BrokerFixture.isDemoAccount = false
+        BrokerFixture.latestObservedBalance = 2500.0
+        BrokerFixture.observedOrderAmount = 4000.0
+        riskManager.sessionStartBalance = 2500.0
+
+        val (canTrade, reason) = riskManager.canExecuteTrade()
+        assertFalse("Must block if balance below 4,000 COP", canTrade)
+        assertTrue("Reason must mention insufficient real balance", reason.contains("Saldo Real Insuficiente"))
+    }
+
+    @Test
+    fun testRealAccount_BlocksIfOrderAmountExceedsBalance() {
+        BrokerFixture.isDemoAccount = false
+        BrokerFixture.latestObservedBalance = 36000.0
+        BrokerFixture.observedOrderAmount = 100000.0
+        riskManager.sessionStartBalance = 36000.0
+
+        val (canTrade, reason) = riskManager.canExecuteTrade()
+        assertFalse("Must block if order amount in broker exceeds real balance", canTrade)
+        assertTrue("Reason must warn about Cantidad exceeding balance", reason.contains("supera saldo"))
+    }
+
+    // ------------------------------------------------------------------
+    // R23A Iter 2: sincronizacion del stake con la cantidad de pantalla
+    // ------------------------------------------------------------------
+
+    @Test
+    fun elStakeEfectivoUsaLaCantidadDePantallaCuandoExiste() {
+        // Caso medido por OpenCode en la iter 1: baseAmount interno 1.0 USD, pantalla 100.000 COP.
+        // El broker debita y liquida con 100.000: ESE es el stake del modelo, no 1.0.
+        BrokerFixture.observedOrderAmount = 100_000.0
+        riskManager.baseAmount = 1.0f
+
+        assertEquals(
+            "el stake efectivo debe ser la cantidad de pantalla, no el calculo interno",
+            100_000.0,
+            riskManager.getEffectiveStake(),
+            0.0
+        )
+    }
+
+    @Test
+    fun elStakeEfectivoCaeAlCalculadoSiLaPantallaAunNoSeLeyo() {
+        // observedOrderAmount == 0.0 significa "sin leer", no "apuesta cero". Si se tomara como cero,
+        // el journal registraria stake 0 y el dimensionamiento de riesgo quedaria desactivado.
+        BrokerFixture.observedOrderAmount = 0.0
+        riskManager.baseAmount = 10.0f
+
+        assertEquals(
+            "sin lectura de pantalla se usa el stake calculado",
+            10.0,
+            riskManager.getEffectiveStake(),
+            0.0
+        )
+        assertEquals(
+            "y coincide con el valor que devuelve la politica de money management",
+            riskManager.getCurrentInvestmentAmount().toDouble(),
+            riskManager.getEffectiveStake(),
+            0.0
+        )
+    }
+
+    @Test
+    fun elStakeEfectivoIgnoraLecturasNegativas() {
+        // Un valor negativo solo puede venir de una lectura corrupta: nunca es un stake valido.
+        BrokerFixture.observedOrderAmount = -5.0
+        riskManager.baseAmount = 10.0f
+
+        assertEquals("negativo no es stake valido", 10.0, riskManager.getEffectiveStake(), 0.0)
+    }
+
+    @Test
+    fun elStakeEfectivoEsPuroYNoDependeDelModo() {
+        // La funcion del companion es la fuente unica: si alguien la cambia, cambia el contrato de
+        // todo el journal. Se fija aparte del estado del singleton.
+        assertEquals(100_000.0, RiskManager.stakeEfectivo(100_000.0, 1.0), 0.0)
+        assertEquals(1.0, RiskManager.stakeEfectivo(0.0, 1.0), 0.0)
+        assertEquals(2.0, RiskManager.stakeEfectivo(-1.0, 2.0), 0.0)
+    }
+
+    @Test
+    fun testTrailingProfitLock_SecuresPeakProfitsOnRetracement() {
+        BrokerFixture.isDemoAccount = true
+        riskManager.absoluteEquityFloor = 40000000.0
+        riskManager.minPeakProfitToLock = 80000.0
+        riskManager.trailingProfitRetracementRatio = 0.40f
+
+        // 1. Inicio de sesión en 40.500.000 COP
+        BrokerFixture.latestObservedBalance = 40500000.0
+        val (canTrade1, _) = riskManager.canExecuteTrade()
+        assertTrue("Sesión inicial debe permitir operar", canTrade1)
+        assertEquals(40500000.0, riskManager.sessionStartBalance, 0.01)
+        assertEquals(40500000.0, riskManager.sessionPeakBalance, 0.01)
+
+        // 2. Ganancias consecutivas elevan el saldo a un pico de 40.650.000 COP (+150.000 COP de beneficio)
+        BrokerFixture.latestObservedBalance = 40650000.0
+        val (canTrade2, _) = riskManager.canExecuteTrade()
+        assertTrue("En pico de ganancias debe permitir operar", canTrade2)
+        assertEquals(40650000.0, riskManager.sessionPeakBalance, 0.01)
+
+        // 3. Retroceso: el saldo cae a 40.580.000 COP (retroceso de 70.000 COP = 46.6% del pico > 40% permitido)
+        // Suelo trailing = 40.650.000 - (150.000 * 0.40) = 40.590.000 COP
+        BrokerFixture.latestObservedBalance = 40580000.0
+        val (canTrade3, reason3) = riskManager.canExecuteTrade()
+        assertFalse("Debe bloquearse por Trailing Profit Lock al ceder más del 40% del pico", canTrade3)
+        assertTrue("Razón debe mencionar Trailing Profit Lock", reason3.contains("Trailing Profit Lock"))
+    }
+
+    @Test
+    fun testExtendedLossCooldown_EnforcesThreeMinutePauseAfterTwoLosses() {
+        riskManager.maxMartingaleLevel = 1
+        riskManager.martingaleEnabled = true
+        riskManager.currentSubMode = AutonomousSubMode.CONSERVATIVE
+
+        // 1 derrota -> racha = 1
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+
+        // 2da derrota -> racha = 2 -> en modo conservador debe exigir 180s de enfriamiento extendido
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(2, riskManager.currentLossStreak)
+
+        val remainingCooldown = riskManager.getRemainingCooldown(AutonomousSubMode.CONSERVATIVE)
+        assertTrue("Cooldown tras 2 pérdidas en modo conservador debe ser de 180s", remainingCooldown > 60)
+
+        val (canTrade, reason) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.CONSERVATIVE)
+        assertFalse("Debe bloquearse tras 2 derrotas", canTrade)
+        assertTrue("Razón debe mencionar Pausa Anti-Tilt", reason.contains("Pausa Anti-Tilt"))
+    }
+
+    @Test
+    fun testPendingTradeConfidence_PersistsAndResetsCorrectly() {
+        assertEquals("Initial pendingTradeConfidence should be 0.0f", 0.0f, riskManager.pendingTradeConfidence, 0.001f)
+
+        // Persistencia al abrir trade con recordTradeSent
+        riskManager.recordTradeSent(TradeAction.BUY, entryPrice = 250.0, baseBalance = 50000.0, confidence = 0.88f)
+        assertEquals("Confidence should be persisted on recordTradeSent", 0.88f, riskManager.pendingTradeConfidence, 0.001f)
+
+        // Reseteo al limpiar trade pendiente con clearPendingTrade
+        riskManager.clearPendingTrade()
+        assertEquals("Confidence should be reset on clearPendingTrade", 0.0f, riskManager.pendingTradeConfidence, 0.001f)
+
+        // Persistencia mediante notifyTradePlaced
+        riskManager.notifyTradePlaced(TradeAction.SELL, entryPrice = 150.0, baseBalance = 45000.0, confidence = 0.92f)
+        assertEquals("Confidence should be persisted on notifyTradePlaced", 0.92f, riskManager.pendingTradeConfidence, 0.001f)
+
+        // Reseteo al liquidar trade (recordTradeLoss limpia pending trade)
+        riskManager.recordTradeLoss()
+        assertEquals("Confidence should be reset after trade resolution", 0.0f, riskManager.pendingTradeConfidence, 0.001f)
+    }
+
+    @Test
+    fun testSniperMode_FlatStake_ZeroMartingale() {
+        riskManager.martingaleEnabled = true
+        riskManager.maxMartingaleLevel = 2
+        riskManager.baseAmount = 4000f
+
+        // 1ra pérdida
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        assertEquals(1, riskManager.currentLossStreak)
+
+        // En submodo SNIPER la inversión DEBE ser estrictamente plana M0 (baseAmount)
+        val amountSniper = riskManager.getCurrentInvestmentAmount(AutonomousSubMode.SNIPER)
+        assertEquals("En Francotirador el stake debe ser estrictamente plano (M0)", 4000f, amountSniper, 0.01f)
+
+        // En submodo CONSERVATIVE o YOLO el monto sí aplica martingala
+        val amountNormal = riskManager.getCurrentInvestmentAmount(AutonomousSubMode.CONSERVATIVE)
+        assertEquals("En modo normal con 1 pérdida debe ser M1", 4000f * 2.2f, amountNormal, 0.01f)
+
+        // Badge en Sniper
+        val badge = riskManager.getMartingaleStatusBadge(AutonomousSubMode.SNIPER)
+        assertTrue("Badge debe indicar stake plano M0", badge.contains("M0") || badge.contains("FRANCOTIRADOR"))
+    }
+
+    @Test
+    fun testSniperMode_StopLoss_MaxTwoLosses() {
+        BrokerFixture.latestObservedAsset = "EUR/USD"
+        BrokerFixture.isSyntheticOrOTC = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.lastTradeTime = 0L
+        val (canTrade1, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertTrue("Con 1 pérdida aún puede operar", canTrade1)
+
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.lastTradeTime = 0L
+        val (canTrade2, reason2) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Con 2 pérdidas debe bloquearse por Stop Loss Francotirador", canTrade2)
+        assertTrue("Razón debe mencionar Stop Loss Francotirador", reason2.contains("Stop Loss Francotirador"))
+    }
+
+    @Test
+    fun testSniperMode_TakeProfit_TwoWins() {
+        BrokerFixture.latestObservedAsset = "EUR/USD"
+        BrokerFixture.isSyntheticOrOTC = false
+        riskManager.cooldownSeconds = 0
+
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        riskManager.lastTradeTime = 0L
+        val (canTrade1, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertTrue("Con 1 victoria aún puede operar", canTrade1)
+
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        riskManager.lastTradeTime = 0L
+        val (canTrade2, reason2) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Con 2 victorias debe bloquearse por Take Profit Francotirador", canTrade2)
+        assertTrue("Razón debe mencionar Take Profit Francotirador", reason2.contains("Take Profit Francotirador"))
+    }
+
+    @Test
+    fun testSniperMode_MaxThreeTradesPerSession() {
+        BrokerFixture.latestObservedAsset = "EUR/USD"
+        BrokerFixture.isSyntheticOrOTC = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+
+        // 1 Victoria
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        riskManager.lastTradeTime = 0L
+
+        // 1 Derrota
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.lastTradeTime = 0L
+
+        val (canTrade2, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertTrue("Con 2 trades totales (1W, 1L) aún puede operar", canTrade2)
+
+        // 1 Empate (Void) -> total session trades = 3 (1W + 1L + 1Void)
+        riskManager.recordTradeVoid()
+        riskManager.lastTradeTime = 0L
+        val (canTrade3, reason3) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Con 3 operaciones de sesión debe bloquearse por límite de trades", canTrade3)
+        assertTrue("Razón debe mencionar límite diario", reason3.contains("Límite diario Francotirador"))
+    }
+
+    @Test
+    fun testSniperMode_SyntheticAssetVeto() {
+        BrokerFixture.latestObservedAsset = "Crypto IDX"
+        BrokerFixture.isSyntheticOrOTC = true
+        val (canTradeIdx, reasonIdx) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Crypto IDX debe ser vetado en modo Francotirador", canTradeIdx)
+        assertTrue("Razón debe mencionar Veto Francotirador", reasonIdx.contains("Veto Francotirador"))
+
+        BrokerFixture.latestObservedAsset = "EUR/USD OTC"
+        BrokerFixture.isSyntheticOrOTC = true
+        val (canTradeOtc, reasonOtc) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("OTC debe ser vetado en modo Francotirador", canTradeOtc)
+        assertTrue("Razón debe mencionar Veto Francotirador", reasonOtc.contains("Veto Francotirador"))
+
+        BrokerFixture.latestObservedAsset = "EUR/USD"
+        BrokerFixture.isSyntheticOrOTC = false
+        val (canTradeForex, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertTrue("Forex real EUR/USD debe ser permitido", canTradeForex)
+    }
+
+    @Test
+    fun testSniperMode_CumulativeTradesWithAlternatingVoids() {
+        BrokerFixture.latestObservedAsset = "EUR/USD"
+        BrokerFixture.isSyntheticOrOTC = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+
+        // 1. Trade 1: Void
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeVoid()
+        assertEquals(1, riskManager.totalVoids)
+        assertEquals(1, riskManager.consecutiveVoids)
+
+        // 2. Trade 2: Win (consecutiveVoids se reinicia a 0, pero totalVoids debe mantenerse en 1)
+        riskManager.lastTradeTime = 0L
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeWin()
+        assertEquals(0, riskManager.consecutiveVoids)
+        assertEquals(1, riskManager.totalVoids)
+        assertEquals(1, riskManager.totalWins)
+
+        val (canTrade2, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertTrue("Con 2 trades acumulados (1 Void + 1 Win) debe permitir trade 3", canTrade2)
+
+        // 3. Trade 3: Otro Void (totalVoids = 2, totalWins = 1 -> totalSessionTrades = 3)
+        riskManager.lastTradeTime = 0L
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeVoid()
+        assertEquals(2, riskManager.totalVoids)
+
+        val (canTrade3, reason3) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Con 3 operaciones acumuladas (2 Voids + 1 Win) debe bloquearse por límite diario", canTrade3)
+        assertTrue("Razón debe mencionar límite diario Francotirador", reason3.contains("Límite diario Francotirador"))
+    }
+
+    @Test
+    fun testSniperMode_ResetSniperSession_clearsStatsAndResumes() {
+        BrokerFixture.latestObservedAsset = "EUR/USD"
+        BrokerFixture.isSyntheticOrOTC = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+
+        // Forzar bloqueo por 2 derrotas
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.lastTradeTime = 0L
+
+        val (blocked, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Debe estar bloqueado tras 2 derrotas", blocked)
+
+        // Reset Sniper Session
+        riskManager.resetSniperSession()
+        assertEquals(0, riskManager.totalWins)
+        assertEquals(0, riskManager.totalLosses)
+        assertEquals(0, riskManager.totalVoids)
+        assertEquals(0, riskManager.currentLossStreak)
+
+        val (canTradeAgain, _) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertTrue("Tras resetSniperSession debe permitir nueva sesión de Francotirador", canTradeAgain)
+    }
+
+    @Test
+    fun testSniperMode_M5TimeoutScaling() {
+        riskManager.timeframe = CandleTimeframe.M5
+        riskManager.recordTradeSent(TradeAction.BUY)
+
+        // A los 90s, una operación de 5m NO debe considerarse timeout (85s solo aplica a M1)
+        riskManager.pendingTradeStartTime = System.currentTimeMillis() - 90000L
+        val (canTrade90s, reason90s) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Operación abierta a los 90s aún está en curso para M5", canTrade90s)
+        assertTrue("Razón debe indicar operación abierta", reason90s.contains("Operación abierta en curso"))
+
+        // A los 335s (supera 330s de timeout M5), el timeout se ejecuta y limpia la operación
+        riskManager.pendingTradeStartTime = System.currentTimeMillis() - 335000L
+        riskManager.canExecuteTrade(subMode = AutonomousSubMode.SNIPER)
+        assertFalse("Pending trade fue limpiado por timeout", riskManager.hasPendingTrade)
+    }
+
+    @Test
+    fun testRecordTradeWin_withForce_registersWithoutPendingTrade() {
+        assertFalse("No debe haber pending trade", riskManager.hasPendingTrade)
+        assertEquals(0, riskManager.totalWins)
+
+        // Without force, recordTradeWin is ignored
+        riskManager.recordTradeWin(force = false)
+        assertEquals("Sin force y sin pending trade no debe sumar", 0, riskManager.totalWins)
+
+        // With force, recordTradeWin increments win count even without pending trade
+        riskManager.recordTradeWin(force = true)
+        assertEquals("Con force debe sumar 1 victoria", 1, riskManager.totalWins)
+        assertEquals("Current wins debe ser 1", 1, riskManager.currentWins)
+        assertEquals("Racha de pérdidas debe ser 0", 0, riskManager.currentLossStreak)
+
+        // With force, recordTradeLoss increments loss count even without pending trade
+        riskManager.recordTradeLoss(force = true)
+        assertEquals("Con force debe sumar 1 derrota", 1, riskManager.totalLosses)
+        assertEquals("Racha de pérdidas debe ser 1", 1, riskManager.currentLossStreak)
+    }
+
+    @Test
+    fun testCorrectStats_updatesTotalsAndWinRate() {
+        riskManager.correctStats(2, 0)
+        assertEquals(2, riskManager.totalWins)
+        assertEquals(0, riskManager.totalLosses)
+        assertEquals(100.0f, riskManager.getWinRate(), 0.01f)
+
+        riskManager.correctStats(0, 2)
+        assertEquals(0, riskManager.totalWins)
+        assertEquals(2, riskManager.totalLosses)
+        assertEquals(2, riskManager.currentLossStreak)
+        assertEquals(0.0f, riskManager.getWinRate(), 0.01f)
+
+        riskManager.correctStats(3, 1)
+        assertEquals(3, riskManager.totalWins)
+        assertEquals(1, riskManager.totalLosses)
+        assertEquals(75.0f, riskManager.getWinRate(), 0.01f)
+    }
+
+    @Test
+    fun testResolvePendingTrade_claimsAtomicallyAndPreventsDuplicate() {
+        assertFalse("Sin pending trade no debe resolver", riskManager.resolvePendingTradeWin())
+        assertFalse("Sin pending trade no debe resolver", riskManager.resolvePendingTradeLoss())
+
+        riskManager.recordTradeSent(TradeAction.BUY)
+        assertTrue("Con pending trade debe resolver la primera vez", riskManager.resolvePendingTradeWin())
+        assertEquals(1, riskManager.totalWins)
+        assertFalse("Pending trade debe quedar limpio", riskManager.hasPendingTrade)
+
+        // Second call on the same trade must be rejected
+        assertFalse("Segunda llamada debe ser rechazada", riskManager.resolvePendingTradeWin())
+        assertEquals("Total wins no debe incrementar dos veces", 1, riskManager.totalWins)
+
+        // Now test loss
+        riskManager.recordTradeSent(TradeAction.SELL)
+        assertTrue("Con pending trade debe resolver loss", riskManager.resolvePendingTradeLoss())
+        assertEquals(1, riskManager.totalLosses)
+        assertFalse("Segunda llamada de loss debe ser rechazada", riskManager.resolvePendingTradeLoss())
+        assertEquals("Total losses no debe incrementar dos veces", 1, riskManager.totalLosses)
+    }
+
+    // ==================================================================
+    // R23B Iter 1: desbloqueo de limites de SESION en el submodo YOLO
+    // ==================================================================
+
+    /**
+     * Monta una sesion valida en DEMO con un pico de ganancia y un retroceso posterior, que es el
+     * estado exacto del baseline donde OpenCode midio 75/101 vetos por Trailing Profit Lock.
+     */
+    private fun montarSesionConPicoYRetroceso() {
+        riskManager.absoluteEquityFloor = 20_000_000.0
+        BrokerFixture.isDemoAccount = true
+        riskManager.sessionStartBalance = 40_500_000.0
+        riskManager.sessionPeakBalance = 40_650_000.0
+        riskManager.minPeakProfitToLock = 80_000.0
+        riskManager.trailingProfitRetracementRatio = 0.40f
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+        riskManager.yoloLossCooldownSeconds = 0
+        riskManager.lastTradeTime = 0L
+        riskManager.martingaleEnabled = false
+        // Suelo trailing = 40.650.000 - (150.000 * 0.40) = 40.590.000; el saldo queda por debajo.
+        BrokerFixture.latestObservedBalance = 40_580_000.0
+    }
+
+    @Test
+    fun canExecuteTrade_yoloIgnoresTrailingProfitLockAndSessionFloor() {
+        montarSesionConPicoYRetroceso()
+
+        // YOLO: la operativa es continua, el retroceso desde el pico no bloquea.
+        val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue(
+            "YOLO debe ignorar el Trailing Profit Lock: $reasonYolo",
+            canTradeYolo
+        )
+
+        // CONSERVATIVE: exactamente el mismo estado SI se bloquea. Esto es lo que fija que el
+        // desbloqueo es especifico de YOLO y no una relajacion global.
+        val (canTradeCons, reasonCons) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.CONSERVATIVE)
+        assertFalse("CONSERVATIVE debe seguir bloqueado por Trailing Profit Lock", canTradeCons)
+        assertTrue(
+            "La razón en CONSERVATIVE debe mencionar el lock",
+            reasonCons.contains("Trailing Profit Lock")
+        )
+    }
+
+    @Test
+    fun canExecuteTrade_yoloIgnoresSessionFloorStopLoss() {
+        // Variante del anterior sin pico: el saldo cae por debajo del SUELO DE SESION (perdida del 3%
+        // del startBalance). YOLO debe ignorarlo igual que el trailing.
+        riskManager.absoluteEquityFloor = 20_000_000.0
+        BrokerFixture.isDemoAccount = true
+        riskManager.sessionStartBalance = 40_500_000.0
+        riskManager.sessionPeakBalance = 40_500_000.0
+        riskManager.sessionMaxLossRatio = 0.03f
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+        riskManager.yoloLossCooldownSeconds = 0
+        riskManager.lastTradeTime = 0L
+        riskManager.martingaleEnabled = false
+        // Suelo de sesion = 40.500.000 - max(1.215.000, 100.000) = 39.285.000. Saldo por debajo.
+        BrokerFixture.latestObservedBalance = 39_000_000.0
+
+        val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue("YOLO debe ignorar el suelo de sesion: $reasonYolo", canTradeYolo)
+
+        val (canTradeCons, reasonCons) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.CONSERVATIVE)
+        assertFalse("CONSERVATIVE debe seguir bloqueado por el suelo de sesion", canTradeCons)
+        assertTrue("La razón debe mencionar el suelo de sesion", reasonCons.contains("Stop Loss Sesion Alcanzado"))
+    }
+
+    @Test
+    fun canExecuteTrade_yoloIgnoresStopLossStreak() {
+        riskManager.stopLossStreak = 3
+        riskManager.martingaleEnabled = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+        riskManager.yoloLossCooldownSeconds = 0
+        riskManager.currentLossStreak = 3
+        riskManager.lastTradeTime = 0L
+
+        val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertTrue("YOLO debe ignorar el stop loss de racha: $reasonYolo", canTradeYolo)
+
+        val (canTradeCons, reasonCons) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.CONSERVATIVE)
+        assertFalse("CONSERVATIVE debe seguir bloqueado por racha", canTradeCons)
+        assertTrue("La razón debe mencionar Stop Loss alcanzado", reasonCons.contains("Stop Loss alcanzado"))
+    }
+
+    @Test
+    fun canExecuteTrade_yoloRespectsAbsoluteEquityFloor() {
+        // El suelo de equity absoluto es la proteccion que NO se relaja ni en YOLO: sin el, el
+        // submodo continuo vaciaria la cuenta demo. Es el limite entre "operativa continua" y
+        // "sin limites en absoluto".
+        riskManager.absoluteEquityFloor = 20_000_000.0
+        BrokerFixture.isDemoAccount = true
+        riskManager.martingaleEnabled = false
+        riskManager.cooldownSeconds = 0
+        riskManager.lossCooldownSeconds = 0
+        riskManager.yoloLossCooldownSeconds = 0
+        riskManager.lastTradeTime = 0L
+        // Saldo por debajo del suelo absoluto (y aun asi es una cuenta demo valida).
+        BrokerFixture.latestObservedBalance = 19_500_000.0
+
+        val (canTradeYolo, reasonYolo) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("YOLO SI debe detenerse por suelo de equity absoluto", canTradeYolo)
+        assertTrue("La razón debe mencionar el Stop Equity", reasonYolo.contains("Stop Equity"))
+    }
+
+    @Test
+    fun canExecuteTrade_yoloStillRespectsAntiTiltAndPendingTrade() {
+        // Los guards que la especificacion pide MANTENER, verificados que siguen mordiendo en YOLO.
+        riskManager.absoluteEquityFloor = 20_000_000.0
+        BrokerFixture.isDemoAccount = true
+        BrokerFixture.latestObservedBalance = 40_000_000.0
+        riskManager.martingaleEnabled = true
+        riskManager.maxMartingaleLevel = 1
+        riskManager.yoloLossCooldownSeconds = 35
+
+        // Operacion en curso: bloquea.
+        riskManager.recordTradeSent(TradeAction.BUY)
+        val (canTradePending, reasonPending) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("YOLO debe respetar la operacion en curso", canTradePending)
+        assertTrue("La razón debe mencionar la operación abierta", reasonPending.contains("Operación abierta"))
+
+        // Pausa anti-tilt tras fallo de martingala (> maxMartingaleLevel): bloquea.
+        riskManager.recordTradeLoss()
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.recordTradeLoss()
+        riskManager.lastTradeTime = System.currentTimeMillis()
+        val (canTradeTilt, reasonTilt) = riskManager.canExecuteTrade(subMode = AutonomousSubMode.YOLO)
+        assertFalse("YOLO debe respetar la pausa anti-tilt", canTradeTilt)
+        assertTrue("La razón debe mencionar la pausa anti-tilt", reasonTilt.contains("Pausa Anti-Tilt"))
+    }
+
+    @Test
+    fun elFallbackSinSubmodoEsFailSafe() {
+        // `canTrade(confidence)` no recibe submodo, asi que cae al `currentSubMode`. Si ese default
+        // fuera YOLO, una llamada sin argumento quedaria SIN limites de sesion (fail-open). El default
+        // debe ser CONSERVATIVE: sin argumento se aplican todos los guards.
+        assertEquals(
+            "el fallback por defecto debe ser fail-safe",
+            AutonomousSubMode.CONSERVATIVE,
+            riskManager.currentSubMode
+        )
+
+        // Comprobacion de comportamiento: mismo estado de sesion, sin pasar submodo -> bloqueado.
+        montarSesionConPicoYRetroceso()
+        val (canTradeSinArgs, reason) = riskManager.canExecuteTrade()
+        assertFalse("sin submodo explicito NO se debe desbloquear la sesion", canTradeSinArgs)
+        assertTrue("La razón debe mencionar el lock", reason.contains("Trailing Profit Lock"))
+    }
+
+    // ==================================================================
+    // R23B Iter 2: accion deterministica en los eventos de orden
+    // ==================================================================
+
+    /**
+     * Extrae el ultimo evento ORDER_STATE del log. Se usa `lastOf` porque `snapshot()` no existe en
+     * `TradeEventLog` (la API real es `recent()` / `lastOf()`), a diferencia de lo que sugeria la
+     * especificacion. Ojo: `recent()` devuelve los MAS RECIENTES PRIMERO, asi que `lastOrNull` sobre
+     * esa lista da el mas ANTIGUO — usar `lastOf`.
+     */
+    private fun ultimoEventoDeOrden(): TradeEventLog.Event? =
+        TradeEventLog.lastOf(TradeEventLog.Kind.ORDER_STATE)
+
+    @Test
+    fun testSetOrderStateIncludesPendingTradeAction() {
+        TradeEventLog.clear()
+        riskManager.pendingTradeAction = TradeAction.BUY
+
+        riskManager.setOrderState(OrderState.CONFIRMADA, "saldo movido")
+
+        val evento = ultimoEventoDeOrden()
+        assertNotNull("Debe existir un evento ORDER_STATE", evento)
+        assertEquals(
+            "El detalle debe llevar la accion para que el parser no tenga que adivinar",
+            "CONFIRMADA BUY saldo movido",
+            evento?.detail
+        )
+    }
+
+    @Test
+    fun testSetOrderStateIncludesPendingTradeActionSell() {
+        TradeEventLog.clear()
+        riskManager.pendingTradeAction = TradeAction.SELL
+
+        riskManager.setOrderState(OrderState.CONFIRMADA, "saldo movido")
+
+        assertEquals(
+            "Misma garantia para SELL",
+            "CONFIRMADA SELL saldo movido",
+            ultimoEventoDeOrden()?.detail
+        )
+    }
+
+    @Test
+    fun testSetOrderStateWithoutPendingActionKeepsLegacyFormat() {
+        TradeEventLog.clear()
+        // `setOrderState` retorna temprano si el estado no cambia, asi que hay que mover el estado a
+        // otro valor primero o no se emite evento alguno.
+        riskManager.setOrderState(OrderState.ENVIADA, "previo")
+        TradeEventLog.clear()
+        riskManager.pendingTradeAction = null
+
+        riskManager.setOrderState(OrderState.NINGUNA, "sin operacion en curso")
+
+        // Compatibilidad regresiva: sin accion pendiente el formato es el de antes, sin dobles
+        // espacios ni prefijo vacio.
+        assertEquals(
+            "Sin accion no debe quedar prefijo ni espacio doble",
+            "NINGUNA sin operacion en curso",
+            ultimoEventoDeOrden()?.detail
+        )
+        assertFalse(
+            "No debe aparecer un espacio doble por el prefijo vacio",
+            ultimoEventoDeOrden()?.detail?.contains("  ") == true
+        )
+    }
+
+    @Test
+    fun testOrderStateEventChainCarriesActionEndToEnd() {
+        // La cadena completa de una orden real: ENVIADA -> CONFIRMADA. LOS DOS eventos deben llevar la
+        // direccion. El de ENVIADA era el hueco original: `setOrderState` se llamaba antes de asignar
+        // `pendingTradeAction`, asi que salia sin accion.
+        TradeEventLog.clear()
+
+        riskManager.recordTradeSent(TradeAction.BUY)
+        riskManager.markOrderConfirmed()
+
+        val eventos = TradeEventLog.recent()
+            .filter { it.kind == TradeEventLog.Kind.ORDER_STATE }
+            .map { it.detail }
+
+        assertTrue(
+            "El evento ENVIADA debe llevar la accion. Eventos: $eventos",
+            eventos.any { it.startsWith("ENVIADA BUY") }
+        )
+        assertTrue(
+            "El evento CONFIRMADA debe llevar la accion. Eventos: $eventos",
+            eventos.any { it.startsWith("CONFIRMADA BUY") }
+        )
+    }
+
+    @Test
+    fun testOrderStateUnprocessedCarriesActionDespiteCleanup() {
+        // `markOrderUnprocessed` llama a `clearPendingTrade()` (que pone la accion en null) ANTES de
+        // emitir el evento. Sin preservarla, el unico evento que registra el FALLO de envio saldria
+        // sin direccion. Mismo tratamiento que ya recibian los ids.
+        TradeEventLog.clear()
+
+        riskManager.recordTradeSent(TradeAction.SELL)
+        riskManager.markOrderUnprocessed()
+
+        val evento = ultimoEventoDeOrden()
+        assertEquals(OrderState.NO_PROCESADA, riskManager.orderState)
+        assertTrue(
+            "El evento NO_PROCESADA debe llevar la accion. Detalle: ${evento?.detail}",
+            evento?.detail?.startsWith("NO_PROCESADA SELL") == true
+        )
+    }
+}
+

@@ -1,0 +1,64 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.5.0/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Configure project :adapters
+WARNING: The option setting 'android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2' is experimental.
+
+> Task :core:checkKotlinGradlePluginConfigurationErrors
+> Task :core:compileKotlin UP-TO-DATE
+> Task :core:compileJava NO-SOURCE
+> Task :core:processResources NO-SOURCE
+> Task :core:classes UP-TO-DATE
+> Task :core:jar UP-TO-DATE
+> Task :simulation:checkKotlinGradlePluginConfigurationErrors
+> Task :simulation:compileKotlin UP-TO-DATE
+> Task :simulation:compileJava NO-SOURCE
+> Task :simulation:processResources NO-SOURCE
+> Task :simulation:classes UP-TO-DATE
+> Task :simulation:jar UP-TO-DATE
+> Task :research:checkKotlinGradlePluginConfigurationErrors
+> Task :research:preBuild UP-TO-DATE
+> Task :research:preDebugBuild UP-TO-DATE
+> Task :research:generateDebugResValues UP-TO-DATE
+> Task :research:generateDebugResources UP-TO-DATE
+> Task :research:packageDebugResources UP-TO-DATE
+> Task :research:parseDebugLocalResources UP-TO-DATE
+> Task :research:generateDebugRFile UP-TO-DATE
+> Task :research:compileDebugKotlin NO-SOURCE
+> Task :research:javaPreCompileDebug UP-TO-DATE
+> Task :research:compileDebugJavaWithJavac NO-SOURCE
+> Task :research:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :research:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :research:preDebugUnitTestBuild UP-TO-DATE
+> Task :strategy:preBuild UP-TO-DATE
+> Task :strategy:preDebugBuild UP-TO-DATE
+> Task :strategy:generateDebugResValues UP-TO-DATE
+> Task :strategy:generateDebugResources UP-TO-DATE
+> Task :strategy:packageDebugResources UP-TO-DATE
+> Task :strategy:parseDebugLocalResources UP-TO-DATE
+> Task :strategy:generateDebugRFile UP-TO-DATE
+> Task :research:generateDebugUnitTestStubRFile UP-TO-DATE
+> Task :strategy:checkKotlinGradlePluginConfigurationErrors
+> Task :strategy:compileDebugKotlin UP-TO-DATE
+> Task :strategy:javaPreCompileDebug UP-TO-DATE
+> Task :strategy:compileDebugJavaWithJavac NO-SOURCE
+> Task :strategy:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :research:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :research:processDebugJavaRes NO-SOURCE
+> Task :strategy:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :strategy:processDebugJavaRes UP-TO-DATE
+> Task :research:compileDebugUnitTestKotlin
+> Task :research:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :research:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :research:testDebugUnitTest
+
+[Incubating] Problems report is available at: file:///data/data/com.termux/files/home/Tradedraw/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.5.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 57s
+31 actionable tasks: 6 executed, 25 up-to-date

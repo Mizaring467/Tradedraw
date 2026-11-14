@@ -1,0 +1,87 @@
+{
+  "mode": "trades",
+  "summary": {
+    "total_live_trades": 3,
+    "total_replay_trades": 2,
+    "paired_decisions": 1,
+    "exact_matches": 1,
+    "divergences": 0,
+    "missing_live": 1,
+    "missing_replay": 2,
+    "match_rate_pct": 100.0,
+    "pass": true
+  },
+  "divergence_breakdown": {},
+  "pairs": [
+    {
+      "live": {
+        "decision_id": "e48b2fd6-609a-3c2b-b02a-939a17c5fcea",
+        "trade_id": "8d08b3c3-93a6-4010-9b07-144ced36df63",
+        "timestamp": 1792399984482,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "CONFIRMADA SELL saldo movido",
+        "balance": 38651735.04,
+        "candle_second": 4
+      },
+      "replay": {
+        "decision_id": "3aae0395-e4df-3ddc-8b52-155f7f7df2ec",
+        "trade_id": "",
+        "timestamp": 1792399983194,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_MOMENTUM: Impulso Bajista Temprano (Dist S: 75% | ⏱ 3s) -> PUT [Confluencia: 88pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 3
+      },
+      "status": "MATCH",
+      "matched_by": "temporal",
+      "first_divergence": null,
+      "delta_ms": -1288
+    },
+    {
+      "live": {
+        "decision_id": "4e725f7a-fb16-3415-ba49-8d4c85c96551",
+        "trade_id": "e9a3fd70-52ff-42e9-b558-2292ddb02860",
+        "timestamp": 1792400103955,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "CONFIRMADA SELL saldo movido",
+        "balance": 38551736.32,
+        "candle_second": 3
+      },
+      "replay": null,
+      "status": "MISSING_REPLAY"
+    },
+    {
+      "live": {
+        "decision_id": "bd85ca1b-c4eb-3855-b835-944caa3f94bb",
+        "trade_id": "db9e644b-d8e5-4ad7-8033-6f0a8bd666cd",
+        "timestamp": 1792400285958,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "CONFIRMADA SELL saldo movido",
+        "balance": 38551736.32,
+        "candle_second": 5
+      },
+      "replay": null,
+      "status": "MISSING_REPLAY"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "49ef7fd6-7ef0-3f54-a940-e56f999215c8",
+        "trade_id": "",
+        "timestamp": 1792400581911,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_FALSE_BREAKOUT: Trampa en Resistencia (Mecha: 43% | ⏱ 1s) -> PUT [Confluencia: 95pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    }
+  ]
+}

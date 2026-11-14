@@ -1,0 +1,21 @@
+{
+  "evidence_class": "PROSPECTIVE_SHADOW",
+  "records": 12,
+  "precommitted_decisions": 0,
+  "settlement_candidates": 0,
+  "rejected_predictions": 0,
+  "data_quality_failures": 12,
+  "verified_settlements": 0,
+  "WIN": null,
+  "LOSS": null,
+  "TRUE_TIE": null,
+  "NO_DATA": null,
+  "WR": null,
+  "EV": null,
+  "max_drawdown": null,
+  "longest_loss_streak": null,
+  "rejection_rate": null,
+  "runtime_discrepancies": null,
+  "status": "INSUFFICIENT_EVIDENCE",
+  "limitation": "No automatic performance approval: reconcile raw ticks, lineage, registry, payout and runtime settlement first. Missing settlements remain pending, never ties."
+}

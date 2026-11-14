@@ -1,0 +1,2 @@
+counterfactual_id,decision_id,asset,action,decision_ts,entry_price,expiry_ts,exit_price,result,score,similarity,market_regime,trend,payout,theoretical_ev
+CF-9fe738a1-5d91-3ea1-a1e9-441656b26d11-1792208285915,9fe738a1-5d91-3ea1-a1e9-441656b26d11,Z-CRY/IDX,BUY,1792208285915,641.867301875,1792208345915,641.86730113,COUNTERFACTUAL_LOSS,78.0,99.0,TRENDING,UPTREND,0.83,-100000.0

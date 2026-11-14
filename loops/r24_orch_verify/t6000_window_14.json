@@ -1,0 +1,74 @@
+{
+  "mode": "trades",
+  "summary": {
+    "total_live_trades": 1,
+    "total_replay_trades": 3,
+    "paired_decisions": 1,
+    "exact_matches": 1,
+    "divergences": 0,
+    "missing_live": 2,
+    "missing_replay": 0,
+    "match_rate_pct": 100.0,
+    "pass": true
+  },
+  "divergence_breakdown": {},
+  "pairs": [
+    {
+      "live": {
+        "decision_id": "de5033bc-831a-33d9-9315-afb4867e3b22",
+        "trade_id": "62bee090-8e57-4712-acbc-6986ec39b60c",
+        "timestamp": 1792396862812,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "CONFIRMADA BUY saldo movido",
+        "balance": 38751736.32,
+        "candle_second": 2
+      },
+      "replay": {
+        "decision_id": "de5033bc-831a-33d9-9315-afb4867e3b22",
+        "trade_id": "",
+        "timestamp": 1792396861122,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_REJECTION: Rechazo en Soporte (Mecha: 84% | Dist S: 4% | ⏱ 1s) -> CALL [Confluencia: 75pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 1
+      },
+      "status": "MATCH",
+      "matched_by": "decision_id",
+      "first_divergence": null,
+      "delta_ms": -1690
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "9287e829-1e73-3a85-8a8f-d06319272dde",
+        "trade_id": "",
+        "timestamp": 1792396741116,
+        "asset": "Z-CRY/IDX",
+        "action": "SELL",
+        "detail": "🎯 MT_MOMENTUM: Impulso Bajista Temprano (Dist S: 25% | ⏱ 1s) -> PUT [Confluencia: 80pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    },
+    {
+      "live": null,
+      "replay": {
+        "decision_id": "2c960219-eef1-37bc-bc22-ec063c4e762f",
+        "trade_id": "",
+        "timestamp": 1792397341114,
+        "asset": "Z-CRY/IDX",
+        "action": "BUY",
+        "detail": "🎯 MT_3_VELAS_AGOT: Agotamiento 3 Velas Rojas en Soporte (C3 <= 65% C1 | ⏱ 1s) -> CALL [Confluencia: 75pts]",
+        "price": 641.87,
+        "result": "LOSS",
+        "candle_second": 1
+      },
+      "status": "MISSING_LIVE"
+    }
+  ]
+}

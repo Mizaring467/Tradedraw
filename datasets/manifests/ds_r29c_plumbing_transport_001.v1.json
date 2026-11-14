@@ -1,0 +1,17 @@
+{
+  "assets": [],
+  "classification": "REPORT_DERIVED",
+  "dataset_id": "ds_r29c_plumbing_transport_001",
+  "derived_from": [
+    "experiments/R29C-PLUMBING-20261111-001.v1.json"
+  ],
+  "description": "12 failed HTTP polling attempts; no successful feed/decision payload. Not market data.",
+  "end": 1794447476796,
+  "git_sha": "b5378fc910b06168eb9fd10ef977641b1199d677",
+  "quality_status": "VALID_FOR_DIAGNOSTICS_ONLY",
+  "rows": 12,
+  "sha256": "46d59860b548c4ccbe24c7a3f656a99a335373228868595abf1232097a712750",
+  "source": "loops/r29c/evidence/prospective-diagnostic-001.jsonl",
+  "start": 1794447417684,
+  "version": 1
+}

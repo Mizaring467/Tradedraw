@@ -1,0 +1,2 @@
+timestamp,iso_date,strategy,submode,action,confidence,price_y,trend,candle_second,decision_id,reason
+1731213600000,2026-11-10T04:40:00.000Z,MT_REJECTION,NORMAL,CALL,85,600.5,BULLISH,2,00000000-0000-0000-0000-000000000002,shadow_simulated_trade

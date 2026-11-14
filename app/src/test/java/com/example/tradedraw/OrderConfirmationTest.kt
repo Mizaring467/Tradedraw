@@ -91,7 +91,7 @@ class OrderConfirmationTest {
         assertTrue("Debe quedar una operacion en curso", rm.hasPendingTrade)
         assertEquals(
             "Al despachar el tap solo esta ENVIADA, nunca confirmada",
-            RiskManager.OrderState.ENVIADA, rm.orderState
+            OrderState.ENVIADA, rm.orderState
         )
         assertFalse(
             "El HUD no debe poder mostrar 'Trade Activo' sin confirmacion",
@@ -104,7 +104,7 @@ class OrderConfirmationTest {
         rm.recordTradeSent(TradeAction.SELL, entryPrice = 641.867, baseBalance = 44_925_809.0)
         rm.markOrderConfirmed()
 
-        assertEquals(RiskManager.OrderState.CONFIRMADA, rm.orderState)
+        assertEquals(OrderState.CONFIRMADA, rm.orderState)
         assertTrue("Confirmada, ahora si es una operacion activa", rm.hasConfirmedTrade)
     }
 
@@ -113,7 +113,7 @@ class OrderConfirmationTest {
         rm.recordTradeSent(TradeAction.SELL, entryPrice = 641.867, baseBalance = 44_925_809.0)
         rm.markOrderUnprocessed()
 
-        assertEquals(RiskManager.OrderState.NO_PROCESADA, rm.orderState)
+        assertEquals(OrderState.NO_PROCESADA, rm.orderState)
         assertFalse("Sin operacion pendiente", rm.hasPendingTrade)
         assertFalse("Y por tanto nada que mostrar como activo", rm.hasConfirmedTrade)
     }

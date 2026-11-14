@@ -18,6 +18,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.Toast
+import com.example.tradedraw.core.SharedPreferencesCredentialStore
 import androidx.appcompat.app.AppCompatActivity
 import java.net.URLDecoder
 
@@ -90,13 +91,30 @@ class BinomoAuthActivity : AppCompatActivity() {
         })();
     """.trimIndent()
 
+    companion object {
+        fun maskSecret(secret: String): String {
+            if (secret.isEmpty()) return "[VACÍO]"
+            return if (secret.length > 10) {
+                "${secret.take(4)}...${secret.takeLast(4)} (len=${secret.length})"
+            } else {
+                "[PRESENTE len=${secret.length}]"
+            }
+        }
+    }
+
     inner class TradeDrawBridge {
         @JavascriptInterface
         fun onWsUrl(url: String) {
-            Log.i(TAG, "🎯 WebSocket URL interceptada desde Binomo Web: $url")
-            val prefs = getSharedPreferences("TradeDraw_WSConfig", Context.MODE_PRIVATE)
-            prefs.edit().putString("ws_endpoint_url", url).apply()
-            OverlayService.instance?.binomoWebSocketClient?.wsUrl = url
+            val sanitizedUrl = url.replace(Regex("""([?&](?:authtoken|token)=)[^&#]+"""), "$1<REDACTED>")
+            Log.i(TAG, "🎯 WebSocket URL interceptada desde Binomo Web: $sanitizedUrl")
+            if (BinomoWebSocketClient.isQuoteSocketEndpoint(url)) {
+                val credStore = SharedPreferencesCredentialStore.fromContext(this@BinomoAuthActivity)
+                credStore.setEndpointUrl(url)
+                OverlayService.instance?.binomoWebSocketClient?.wsUrl = url
+                Log.i(TAG, "Endpoint de cotizaciones reconocido y persistido")
+            } else {
+                Log.i(TAG, "Socket interceptado no es quote feed; no reemplaza el App Socket")
+            }
         }
 
         @JavascriptInterface
@@ -253,7 +271,7 @@ class BinomoAuthActivity : AppCompatActivity() {
             tokenRegex.find(url)?.let { match ->
                 val extracted = URLDecoder.decode(match.groupValues[1], "UTF-8").trim()
                 if (extracted.isNotEmpty()) {
-                    Log.d(TAG, "Token detectado en URL: $extracted")
+                    Log.d(TAG, "Token detectado en URL: ${maskSecret(extracted)}")
                     mainHandler.post { etAuthToken.setText(extracted) }
                 }
             }
@@ -262,7 +280,7 @@ class BinomoAuthActivity : AppCompatActivity() {
         // 2. Detección en CookieManager
         try {
             val cookieManager = CookieManager.getInstance()
-            val cookieHeader = cookieManager.getCookie(url) ?: cookieManager.getCookie("https://binomo.com") ?: ""
+            val cookieHeader = cookieManager.getCookie("https://as.binomo.com") ?: cookieManager.getCookie(url) ?: cookieManager.getCookie("https://binomo.com") ?: ""
 
             // Detección de error password_required en cookie oauth_result
             if (cookieHeader.contains("password_required")) {
@@ -319,7 +337,7 @@ class BinomoAuthActivity : AppCompatActivity() {
         view.evaluateJavascript(jsCode) { result ->
             val clean = result?.trim('"', ' ', '\'', '\\') ?: ""
             if (clean.isNotEmpty() && clean != "null" && clean != "undefined") {
-                Log.d(TAG, "Token en LocalStorage: $clean")
+                Log.d(TAG, "Token en LocalStorage: ${maskSecret(clean)}")
                 mainHandler.post { etAuthToken.setText(clean) }
             }
         }
@@ -332,7 +350,12 @@ class BinomoAuthActivity : AppCompatActivity() {
     private fun linkCurrentSession() {
         val cookieManager = CookieManager.getInstance()
         cookieManager.flush()
-        val cookies = cookieManager.getCookie("https://binomo.com") ?: ""
+        val cookies = cookieManager.getCookie("https://as.binomo.com") ?: cookieManager.getCookie("https://binomo.com") ?: ""
+
+        if (cookies.isBlank()) {
+            Toast.makeText(this, "No hay sesión Web disponible. Inicia sesión en Binomo y vuelve a vincular.", Toast.LENGTH_LONG).show()
+            return
+        }
 
         val regexToken = Regex("""authtoken=([^;]+)""")
         val tokenMatch = regexToken.find(cookies)
@@ -342,14 +365,12 @@ class BinomoAuthActivity : AppCompatActivity() {
         val devMatch = regexDevice.find(cookies)
         val devId = devMatch?.groupValues?.get(1)?.trim() ?: ""
 
-        val prefs = getSharedPreferences("TradeDraw_WSConfig", Context.MODE_PRIVATE)
-        val editor = prefs.edit()
-        if (cookies.isNotEmpty()) editor.putString("ws_cookie_header", cookies)
-        if (token.isNotEmpty()) editor.putString("ws_auth_token", token)
-        if (devId.isNotEmpty()) editor.putString("ws_device_id", devId)
-        editor.apply()
+        val credStore = SharedPreferencesCredentialStore.fromContext(this)
+        if (cookies.isNotEmpty()) credStore.setCookieHeader(cookies)
+        if (token.isNotEmpty()) credStore.setAuthToken(token)
+        if (devId.isNotEmpty()) credStore.setDeviceId(devId)
 
-        Log.d(TAG, "Sesión vinculada: token=$token, devId=$devId, cookiesLen=${cookies.length}")
+        Log.d(TAG, "Sesión vinculada: token=${maskSecret(token)}, devId=${maskSecret(devId)}, cookiesLen=${cookies.length}")
 
         // Notificar al WebSocket client en OverlayService
         try {
@@ -365,13 +386,13 @@ class BinomoAuthActivity : AppCompatActivity() {
             Log.e(TAG, "Error notificando al WebSocket", e)
         }
 
-        Toast.makeText(this, "✅ ¡Sesión vinculada con éxito!\nCotizaciones activas a 0ms sin captura de pantalla", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Sesión guardada. Conectando al canal de cotizaciones…", Toast.LENGTH_LONG).show()
         finish()
     }
 
     private fun saveTokenAndNotify(token: String) {
-        val prefs = getSharedPreferences("TradeDraw_WSConfig", Context.MODE_PRIVATE)
-        prefs.edit().putString("ws_auth_token", token).apply()
+        val credStore = SharedPreferencesCredentialStore.fromContext(this)
+        credStore.setAuthToken(token)
 
         linkCurrentSession()
     }

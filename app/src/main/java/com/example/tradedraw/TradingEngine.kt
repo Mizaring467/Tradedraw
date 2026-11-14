@@ -19,30 +19,43 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-enum class TradeAction {
-    BUY, SELL
-}
-
-enum class AutoTradeMode {
-    AUTONOMOUS,      // Ejecuta clics automáticos
-    SEMIAUTOMATIC,   // Alerta y prepara dibujos, usuario opera
-    DISABLED         // Apagado
-}
-
-enum class AutonomousSubMode {
-    CONSERVATIVE,    // Con gestión de riesgo estándar (Stop Loss, Take Profit, Cooldown)
-    YOLO,            // Sin Stop Loss ni límites, operativa continua y desatendida
-    SNIPER           // Modo Francotirador: Stake plano (M0), SL 2 derrotas, TP 2 victorias, máx 3 ops por sesión
-}
+import com.example.tradedraw.core.AutoTradeMode
+import com.example.tradedraw.core.AutonomousSubMode
+import com.example.tradedraw.core.CapitalPolicy
+import com.example.tradedraw.core.DecisionIds
+import com.example.tradedraw.core.EventSink
+import com.example.tradedraw.core.MarketTick
+import com.example.tradedraw.core.TapCoordinateResolver
+import com.example.tradedraw.core.OrderGateway
+import com.example.tradedraw.core.OrderRequest
+import com.example.tradedraw.core.OrderReceipt
+import com.example.tradedraw.core.TradeAction
+import com.example.tradedraw.execution.CandleRateLimiter
+import com.example.tradedraw.execution.ExecutionContext
+import com.example.tradedraw.execution.ExecutionPolicyResult
+import com.example.tradedraw.execution.ExecutionPolicy
 
 class TradingEngine(
     private val context: Context,
     private val drawingView: CustomDrawingView,
     val riskManager: RiskManager,
     var calibrationManager: CalibrationManager? = null,
-    val aiClient: AIClient = AIClient(context)
+    val aiClient: com.example.tradedraw.execution.AIAdvisor = AIClient(context),
+    val brokerRuntime: com.example.tradedraw.core.BrokerRuntimePort = AndroidBrokerRuntime(context),
+    val eventSink: EventSink = RingBufferEventSink(),
+    val capitalPolicy: CapitalPolicy = riskManager,
+    var tapCoordinateResolver: TapCoordinateResolver = CalibrationTapCoordinateResolver { calibrationManager },
+    val candleRateLimiter: CandleRateLimiter = CandleRateLimiter(),
+    var hudPort: com.example.tradedraw.core.HudPort? = null,
+    val orderGateway: OrderGateway = com.example.tradedraw.core.SingleFlightOrderGateway(
+        createAndroidOrderGateway(hudPort = hudPort),
+        PersistentPendingDispatchStore(context))
 ) {
+    val executionPolicy: ExecutionPolicy = createExecutionPolicy()
+    val shadowSimulation = com.example.tradedraw.simulation.ShadowSimulationRuntime(context, eventSink)
+    var shadowSimulationEnabled: Boolean
+        get() = shadowSimulation.enabled
+        set(value) { shadowSimulation.enabled = value }
     val chartViewportController = ChartViewportController(context, riskManager)
     val agentController = AutonomousAgentController(context, this, riskManager, chartViewportController)
 
@@ -103,17 +116,28 @@ class TradingEngine(
         // Solo observabilidad: registrar el cambio NO lo altera. El ORIGEN es lo unico que permite
         // atribuir un rearme espontaneo: sin el, un cambio automatico y un toque humano son
         // indistinguibles.
-        TradeEventLog.add(
+        eventSink.add(
             TradeEventLog.Kind.MODE_CHANGE,
             "de=$anterior a=$newMode source=$source origen=$origen"
         )
 
         if (newMode == AutoTradeMode.AUTONOMOUS) {
+            // R26: el armado por bridge abre la ventana de caducidad; el armado por HUD no.
+            autonomousWatchdog.arm(System.currentTimeMillis(), source.startsWith("bridge:"))
             agentController.start()
         } else {
+            autonomousWatchdog.disarm()
             agentController.stop()
         }
         return true
+    }
+
+    /**
+     * R26: senal de vida del host que supervisa. Cualquier peticion al bridge la emite; sin
+     * peticiones durante [AUTONOMOUS_HEARTBEAT_TIMEOUT_MS] el motor se desarma solo.
+     */
+    fun noteBridgeHeartbeat() {
+        autonomousWatchdog.heartbeat(System.currentTimeMillis())
     }
 
     /**
@@ -145,7 +169,17 @@ class TradingEngine(
         set(value) {
             field = value
             syntheticCandleEngine.subMode = value
+            // R23D Fase 1 (REQ 3): sincronizacion del submodo EFECTIVO hacia el RiskManager.
+            // `RiskManager.currentSubMode` es el fallback de `getRemainingCooldown()` /
+            // `canExecuteTrade()` cuando el caller no pasa argumento explicito. Su default es
+            // CONSERVATIVE (fail-safe), asi que sin esta linea HealthSupervisor y el endpoint
+            // `/status` calculaban el cooldown con la politica de perdidas de CONSERVATIVE (180s)
+            // aunque el motor estuviera en YOLO (35s), publicando un `COOLDOWN_ACTIVE: 178s`
+            // espurio. El motor es la fuente de verdad del submodo; el RiskManager solo lo espeja.
+            riskManager.currentSubMode = value
         }
+
+    var validationMode: com.example.tradedraw.core.ValidationMode = com.example.tradedraw.core.ValidationMode.VALIDATION_REAL
 
     var timeframe: CandleTimeframe = CandleTimeframe.M1
         set(value) {
@@ -165,11 +199,12 @@ class TradingEngine(
                 sniperShutdownReason = reason
                 handler.post {
                     Toast.makeText(context, "🛑 $reason", Toast.LENGTH_LONG).show()
-                    OverlayService.instance?.updateHUDView()
+                    hudPort?.updateHUDView()
                 }
             }
         }
     }
+    private val liveStrategyEvaluator = LiveStrategyEvaluator(brokerRuntime)
     val syntheticCandleEngine = SyntheticCandleEngine()
     val adaptiveLearningEngine = AdaptiveLearningEngine()
 
@@ -181,11 +216,34 @@ class TradingEngine(
     var debugModeEnabled: Boolean = false
 
     val visionAnalyzer = VisionAnalyzer()
-    private val autoDrawEngine = AutoDrawEngine(drawingView)
+    private val autoDrawEngine = AutoDrawEngine(drawingView) { syntheticCandleEngine.recentPriceBounds() }
     private val handler = Handler(Looper.getMainLooper())
 
     private var lastProcessTime = 0L
     private val PROCESS_INTERVAL_MS = 1000L
+
+    /**
+     * R26: caducidad de `AUTONOMOUS` armado desde el bridge cuando el host deja de dar senal.
+     * Ver [AutonomousWatchdog] para el alcance y el porque de excluir el armado por HUD.
+     */
+    private val autonomousWatchdog = AutonomousWatchdog(AUTONOMOUS_HEARTBEAT_TIMEOUT_MS)
+
+    private val autonomousWatchdogTick = object : Runnable {
+        override fun run() {
+            try {
+                if (mode == AutoTradeMode.AUTONOMOUS &&
+                    autonomousWatchdog.shouldExpire(System.currentTimeMillis())
+                ) {
+                    // `setTradingMode` ya registra el MODE_CHANGE; el source permite atribuirlo.
+                    setTradingMode(AutoTradeMode.DISABLED, "engine:autonomous-expiry")
+                }
+            } catch (e: Exception) {
+                Log.e("TradingEngine", "Fallo en el watchdog de AUTONOMOUS", e)
+            } finally {
+                handler.postDelayed(this, AUTONOMOUS_WATCHDOG_TICK_MS)
+            }
+        }
+    }
 
     private var pendingTradeHasObservedWin: Boolean = false
     private val isTradeResolving = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -218,22 +276,37 @@ class TradingEngine(
             }
         }
 
-        // Conectar señales generadas matemáticamente por el motor Headless WebSocket
+        // Conectar señales generadas matemáticamente por el motor Headless WebSocket.
+        //
+        // R23 Iter 3: el `decisionId` es DETERMINISTA (antes `UUID.randomUUID()`), para que el
+        // comparador Live <-> Replay pueda emparejar la misma decision en ambos motores. La clave
+        // usa el RIC normalizado y el MILISEGUNDO del tick que disparo la senal, no un reloj
+        // leido en el callback: `System.currentTimeMillis()` aqui desalinearia el id respecto al
+        // instante real de la senal y el replay (que usa el ts del tick) no coincidiria.
         syntheticCandleEngine.onSignalGenerated = { action, reason ->
-            if (mode == AutoTradeMode.AUTONOMOUS) {
-                executeHeadlessTrade(action, reason)
+            val signalTsMs = latestMarketTick?.timestampMs ?: System.currentTimeMillis()
+            val assetName = brokerRuntime.getBrokerState().rawObservedAsset.ifBlank { "Crypto IDX" }
+            val decisionId = generateDeterministicDecisionId(assetName, signalTsMs, action.name)
+            if (mode == AutoTradeMode.AUTONOMOUS || mode == AutoTradeMode.SHADOW) {
+                executeHeadlessTrade(action, reason, decisionId)
             } else if (mode == AutoTradeMode.SEMIAUTOMATIC) {
                 currentActiveSignal = ActiveSignal(
                     action = action,
                     title = "Señal Sniper WebSocket",
                     reason = reason,
-                    timestamp = System.currentTimeMillis()
+                    timestamp = System.currentTimeMillis(),
+                    decisionId = decisionId
                 )
                 handler.post {
                     onSignalListener?.invoke(action, reason)
                 }
             }
         }
+
+        // R26: arranca el vigilante de caducidad. Es un tick barato (una comparacion de relojes)
+        // y arranca con el motor, no con el armado: asi una sesion armada antes de este codigo
+        // tambien queda cubierta.
+        handler.postDelayed(autonomousWatchdogTick, AUTONOMOUS_WATCHDOG_TICK_MS)
     }
 
     /** Desbloquea todas las líneas para que la IA las recalcule */
@@ -248,7 +321,8 @@ class TradingEngine(
         val title: String,
         val reason: String,
         val timestamp: Long,
-        val expirySeconds: Int = 30
+        val expirySeconds: Int = 30,
+        val decisionId: String = ""
     )
 
     data class EngineReasoning(
@@ -269,13 +343,17 @@ class TradingEngine(
          */
         val entryPrice: Double,
         val baseBalance: Double,
-        val confidence: Float
+        val confidence: Float,
+        val decisionId: String = "",
+        val tradeId: String = ""
     )
 
     /** Minuto de época (epochMs / 60000) de la última orden ejecutada. Garantiza máx 1 trade por vela. */
-    @Volatile
-    var lastExecutedCandleEpochMinute: Long = -1L
-        internal set
+    var lastExecutedCandleEpochMinute: Long
+        get() = candleRateLimiter.lastExecutedCandleEpochMinute
+        set(value) {
+            candleRateLimiter.lastExecutedCandleEpochMinute = value
+        }
 
     var currentActiveSignal: ActiveSignal? = null
         private set
@@ -352,6 +430,11 @@ class TradingEngine(
     var vetoActivoDesajustado: Long = 0L
         private set
 
+    /** Ronda 21 (Frente E): órdenes simuladas autorizadas en modo SHADOW (cero taps, cero saldo alterado). */
+    @Volatile
+    var shadowOrdersGenerated: Long = 0L
+        private set
+
     /** Ronda 20: recuperaciones de activo sin feed, para `/status`. */
     fun recuperacionesPorSinTicks(): Long = binomoWebSocketClientRef?.invoke()?.recuperacionesPorSinTicks ?: 0L
 
@@ -388,10 +471,25 @@ class TradingEngine(
     val inoperabilityDetector = MarketInoperabilityDetector()
 
     /**
+     * R23 Iter 4: buffer circular de los ultimos ticks VALIDADOS, expuesto por `GET /ticks`.
+     *
+     * Se alimenta en [onMarketTick], que es el punto donde el tick ya paso todos los filtros del
+     * feed (frescura, salto implausible, activo) y va a entrar al motor. Registrar antes de esos
+     * filtros volcaria ticks que el motor nunca vio y el replay no podria reproducir nada.
+     */
+    internal val tickBuffer = TickRingBuffer(TICK_BUFFER_CAPACITY)
+
+    /**
      * Invocado cuando llega un nuevo micro-tick en tiempo real vía WebSocket.
      */
     fun onMarketTick(tick: MarketTick) {
+        VetoProfiler.INSTANCE.recordTick()
+        VetoProfiler.INSTANCE.recordEvaluationTick()
+        shadowSimulation.onTick(tick)
         latestMarketTick = tick
+        // El `asset` del MarketTick ya es el RIC del feed; se guarda tal cual para que el id
+        // determinista y el replay coincidan sin pasar por el mapeo de nombre visible.
+        tickBuffer.record(tick.timestampMs, tick.asset, tick.price)
         syntheticCandleEngine.subMode = autonomousSubMode
         syntheticCandleEngine.onNewTick(tick)
 
@@ -399,7 +497,7 @@ class TradingEngine(
         // (cuando el aviso se enciende), o `/events` se llenaria con el mismo aviso repetido.
         // La frescura la aporta el propio tick: si el feed estuviera caido no llegaria ninguno.
         if (inoperabilityDetector.onTick(tick.price, tick.timestampMs, feedFresh = true)) {
-            TradeEventLog.add(
+            eventSink.add(
                 TradeEventLog.Kind.INOPERABLE,
                 "INOPERABLE activo=${tick.asset} segundos=${inoperabilityDetector.holdSeconds} " +
                     "ratio=%.3e".format(Locale.US, inoperabilityDetector.lastRatio)
@@ -431,34 +529,18 @@ class TradingEngine(
         val rsi = syntheticCandleEngine.syntheticTickRsi
         val isChoppy = syntheticCandleEngine.cachedChoppiness || trend == TrendDirection.SIDEWAYS
 
-        // Cálculo dinámico de probabilidades para termómetro del HUD y telemetría
-        var callPower = 50
-        var putPower = 50
-        when (trend) {
-            TrendDirection.UPTREND -> {
-                callPower = 68
-                putPower = 32
-                if (distSup <= 0.25f) callPower += 10
-                if (rsi in 40.0..68.0) callPower += 8
-                if (tick.isBullishImpulse) callPower += 6
-            }
-            TrendDirection.DOWNTREND -> {
-                callPower = 32
-                putPower = 68
-                if (distRes <= 0.25f) putPower += 10
-                if (rsi in 32.0..60.0) putPower += 8
-                if (tick.isBearishImpulse) putPower += 6
-            }
-            TrendDirection.SIDEWAYS -> {
-                if (distSup <= 0.20f) { callPower = 62; putPower = 38 }
-                else if (distRes <= 0.20f) { callPower = 38; putPower = 62 }
-            }
-        }
-        callPower = callPower.coerceIn(15, 95)
-        putPower = putPower.coerceIn(15, 95)
-        // Termometro coherente: CALL + PUT = 100. Antes cada lado se ajustaba por separado y sumaban
-        // hasta 118% (p.ej. 32% CALL / 86% PUT). El lado dominante manda; el otro es su complemento.
-        if (callPower >= putPower) putPower = 100 - callPower else callPower = 100 - putPower
+        // Cálculo dinámico de probabilidades para termómetro del HUD y telemetría.
+        // R23H Fase 2: extraido a `calcularPoderesDeMercado` para que el arnes de replay
+        // (`ReplayBacktestTest`) pueda reproducir el MISMO callPower sin duplicar la formula.
+        // Duplicarla habria hecho que replay y vivo divergieran en silencio al primer ajuste.
+        val (callPower, putPower) = calcularPoderesDeMercado(
+            trend = trend,
+            distSupportRatio = distSup,
+            distResistanceRatio = distRes,
+            rsi = rsi,
+            isBullishImpulse = tick.isBullishImpulse,
+            isBearishImpulse = tick.isBearishImpulse
+        )
 
         val streak = when {
             syntheticCandleEngine.consecutiveUpTicks >= 2 -> "${syntheticCandleEngine.consecutiveUpTicks}T 🟢"
@@ -540,8 +622,7 @@ class TradingEngine(
                 var isTie: Boolean = false
                 var method = ""
 
-                val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance() 
-                    ?: AutoTradeAccessibilityService.latestObservedBalance
+                val currentBal = brokerRuntime.refreshBalance()
 
                 // 1. Verificación por Saldo Real Inmutable de Binomo
                 if (baseBalance > 0.0 && currentBal > 0.0) {
@@ -594,6 +675,15 @@ class TradingEngine(
                     }
                     android.util.Log.d("TradingEngine", "Liquidación atómica de trade único: Win=$isWin, Tie=$isTie [$method]")
                     val finalWin = isWin ?: false
+                    // R24/B1.a: la clave de idempotencia se captura ANTES del `post`. Dentro del
+                    // hilo principal otra ruta (HUD, bridge) puede haber limpiado el pendiente y
+                    // `pendingTradeTradeId` ya estaria vacio: la clave se perderia justo cuando
+                    // hace falta.
+                    val settleTradeId = riskManager.pendingTradeTradeId
+                    val settleStartMs = riskManager.pendingTradeStartTime
+                    // R24/B1.b: sin saldo legible no hay evidencia de saldo; la LOSS se resolvio
+                    // por accion de precio. Es exactamente el caso que el contador monotono mide.
+                    val lossSinEvidencia = !finalWin && !isTie && !(baseBalance > 0.0 && currentBal > 0.0)
                     handler.post {
                         pendingTradeHasObservedWin = false
                         val curTrend = analysis.trend.name
@@ -605,17 +695,17 @@ class TradingEngine(
                         val sec = analysis.candleSecond
 
                         if (isTie) {
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "TIE", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "TIE", tradeStartMs)
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getEffectiveStake(), baseBalance, "TIE", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "TIE", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
                             riskManager.recordTradeVoid()
                             autoDrawEngine.clearTradeEntry()
                             Toast.makeText(context, "⚪ EMPATE EN BINOMO (Reembolso de capital)", Toast.LENGTH_LONG).show()
-                            OverlayService.instance?.updateHUDView()
+                            hudPort?.updateHUDView()
                         } else if (finalWin) {
                             val resolved = riskManager.resolvePendingTradeWin()
                             if (!resolved) {
-                                riskManager.recordTradeWin(force = true)
+                                riskManager.settleTradeOnce(settleTradeId, settleStartMs, win = true)
                             }
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN", tradeStartMs)
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getEffectiveStake(), baseBalance, "WIN", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "WIN", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
                             adaptiveLearningEngine.recordTradeOutcome(true, context)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
@@ -623,10 +713,12 @@ class TradingEngine(
                             onTradeExecutedListener?.invoke(action ?: TradeAction.BUY, true)
                         } else {
                             val resolved = riskManager.resolvePendingTradeLoss()
-                            if (!resolved) {
-                                riskManager.recordTradeLoss(force = true)
-                            }
-                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getCurrentInvestmentAmount(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS", tradeStartMs)
+                            val counted = if (resolved) true
+                                else riskManager.settleTradeOnce(settleTradeId, settleStartMs, win = false)
+                            // Solo cuenta si ESTA llamada registro el LOSS: si otra ruta ya lo hizo,
+                            // sumar aqui dejaria el contador por encima de totalLosses.
+                            if (counted && lossSinEvidencia) riskManager.recordLossSinEvidencia()
+                            TradeJournalLogger.logTrade(context, strategy.name, autonomousSubMode.name, action?.name ?: "UNKNOWN", pendingConfidence, entryY, riskManager.getEffectiveStake(), baseBalance, "LOSS", currentBal, elapsedSec, method, curTrend, supDist, resDist, tickVel, imp, reg, sec, "LOSS", tradeStartMs, decisionId = riskManager.pendingTradeDecisionId, tradeId = riskManager.pendingTradeTradeId)
                             adaptiveLearningEngine.recordTradeOutcome(false, context)
                             autoDrawEngine.clearTradeEntry()
                             emitHapticAndAudioFeedback()
@@ -695,7 +787,7 @@ class TradingEngine(
         strategy: AutoTradeStrategy = this.strategy,
         analysis: VisionAnalysisResult
     ): TradeAction? {
-        val (action, reason) = evaluateStrategySignalWithReason(
+        val (action, reason) = liveStrategyEvaluator.evaluate(
             strategy = strategy,
             analysis = analysis,
             syntheticEngine = syntheticCandleEngine,
@@ -706,14 +798,179 @@ class TradingEngine(
         return action
     }
 
+    init {
+        riskManager.onPendingTradeSettled = { tradeId ->
+            handler.post {
+                val flight = orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
+                if (flight?.pendingRequestId() == tradeId && !flight.isRecovered() && !flight.requiresReview()) {
+                    try {
+                        check(flight.reconcile(tradeId)) { "BROKER_RESERVATION_RELEASE_FAILED" }
+                    } catch (e: Exception) {
+                        eventSink.add("DISPATCH_RECOVERY", "SETTLED_RESERVATION_REQUIRES_REVIEW ${e.message}", tradeId = tradeId)
+                    }
+                }
+            }
+        }
+        handler.post {
+            val flight = orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
+            if (flight?.isRecovered() == true) flight.reservation()?.let {
+                riskManager.holdForBrokerReconciliation(it)
+                eventSink.add("DISPATCH_RECOVERY", "RECOVERED_UNCERTAIN requires=broker_history_review", it.decisionId, it.requestId)
+            }
+        }
+    }
+
+    fun reconcileBrokerDispatch(evidence: com.example.tradedraw.core.BrokerDispatchEvidence, callback: (Boolean) -> Unit) {
+        handler.post {
+            val flight = orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
+            brokerRuntime.refreshBalance()
+            val freshDemo = brokerRuntime.demoAccountGuard.getAccountType() == com.example.tradedraw.core.AccountType.DEMO &&
+                brokerRuntime.demoAccountGuard.isDemoConfirmedFresh(10_000L)
+            val pending = flight?.reservation()
+            val ok = flight?.reconcileWithBrokerEvidence(evidence, freshDemo) == true
+            if (ok && pending != null) {
+                riskManager.holdForBrokerReconciliation(pending)
+                riskManager.applyBrokerRecovery(pending.requestId, evidence.outcome)
+                eventSink.add("DISPATCH_RECOVERY", "${evidence.outcome} source=${evidence.source} reference=${evidence.brokerReference}", pending.decisionId, pending.requestId)
+            }
+            callback(ok)
+        }
+    }
+
     companion object {
+        /**
+         * R23H Fase 1: umbral de `callPower` a partir del cual una compra en UPTREND se considera
+         * agotamiento de liquidez compradora en techo, y NO fuerza de continuacion.
+         *
+         * Origen: `workflows/R23H_BUY_FEATURE_ANALYSIS.md` §5. En la muestra R23G reconciliada el
+         * bucket `BUY + UPTREND + callPower >= 70` fue el unico con poder discriminante (ratio 6:1
+         * perdidas/ganancias). El umbral se congela en 70 y NO se recalibra dentro de esta fase: es
+         * la hipotesis a medir en vivo, no una optimizacion cerrada.
+         */
+        const val VETO_BUY_UPTREND_MAX_CALL_POWER = StrategyReplayPort.VETO_BUY_UPTREND_MAX_CALL_POWER
+
+        /**
+         * R26: silencio maximo tolerado con `AUTONOMOUS` armado desde el bridge antes de
+         * desarmarlo solo.
+         *
+         * El preregistro R25 exige sondeo de `/status` cada <= 2 min durante una ventana; 10 min
+         * son 5x esa cadencia, asi que una ventana bien supervisada no puede caducar por error.
+         * Los dos incidentes de rearme desatendido habrian quedado cortados (R24: 3 h 15 min;
+         * R25/W02: ~5 min). Congelado en `workflows/PREREGISTRO_R26.md` antes de medir nada.
+         */
+        const val AUTONOMOUS_HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000L
+
+        /** Cadencia del vigilante. Barato: solo compara relojes cuando el modo es AUTONOMOUS. */
+        const val AUTONOMOUS_WATCHDOG_TICK_MS = 30 * 1000L
+
         /**
          * Ronda 12 (B2, veto V2): rango relativo minimo para considerar que un feed tiene
          * volatilidad medible. Congelado en `workflows/PREREGISTRO_R12.md` ANTES de medir su
          * efecto. Referencias medidas: ETHUSD-OTC 4,164e-02 (3 ordenes por encima), Z-CRY/IDX
          * 2,547e-09 (4 ordenes por debajo). El umbral separa ambos casos con holgura amplia.
+         *
+         * R23A Iter 1: SIGUE VALIENDO PARA TODO ACTIVO QUE NO SEA `IDX`. No se ha relajado. La
+         * clasificacion por familia vive en [rangoRelativoMinimoParaActivo], que devuelve este
+         * mismo valor para cualquier activo no sintetico.
          */
         const val RANGO_RELATIVO_MINIMO = 1e-5
+
+        /**
+         * R23A Iter 1: umbral de volatilidad minima para activos sinteticos (`IDX`).
+         *
+         * POR QUE EXISTE. RANGO_RELATIVO_MINIMO=1e-5 se congelo en PREREGISTRO_R12 para separar
+         * ETHUSD-OTC (4,164e-02) de Z-CRY/IDX (2,547e-09). Ese umbral NO es un error para los
+         * activos para los que se calibro, pero aplicado al indice sintetico deja el veto V2
+         * matematicamente imposible de superar: en las 4 iteraciones de R23 se midieron 468 muestras
+         * de rango relativo con mediana ~2,9e-10 y maximo 6,8e-10, o sea 4 ordenes por debajo de
+         * 1e-5. El resultado observado es 244/244 decisiones vetadas por V2_RANGE y cero decisiones
+         * operables.
+         *
+         * POR QUE 1e-11 Y NO UN VALOR INVENTADO. `BinomoWebSocketClient.isPriceFrozen` ya usa
+         * exactamente este umbral para la misma familia de activos (misma clase de problema: paso de
+         * tick sub-micro), asi que el valor NO es nuevo: se reutiliza un umbral ya medido y en
+         * produccion para el mismo activo, en vez de calibrar uno a ojo.
+         *
+         * MARGEN. Con los ticks reales de `loops/r23/iter_4/live_ticks.csv` (2000 ticks,
+         * Z-CRY/IDX): rango relativo global 1,885e-09, y el rango de una ventana de 16 ticks ronda
+         * 2,9e-10 (mediana en vivo). Ambos quedan ~1,5-2 ordenes POR ENCIMA de 1e-11, asi que el
+         * activo pasa el veto con holgura y sin rozar el ruido de redondeo (0,0 exacto o el caso
+         * degenerado ~5e-12 siguen vetados).
+         *
+         * ADVERTENCIA DE PREREGISTRO (ver §3 del reporte de la iteracion). PREREGISTRO_R12 §2 dice
+         * literalmente que V2 "no se aplica a un activo concreto: es un veto por condicion de feed,
+         * no por nombre", y que "cualquier cambio posterior exige un preregistro nuevo". Este cambio
+         * SI introduce un umbral por familia de activo. La clasificacion esta tecnicamente fundada
+         * (el precio del indice no es comparable en escala con el de un par OTC) y reutiliza un
+         * umbral ya existente, pero MIENTRAS NO EXISTA UN PREREGISTRO_R23A FIRMADO, las muestras
+         * recogidas con este umbral NO son comparables con las de R12 ni validas para confirmar edge.
+         */
+        const val RANGO_RELATIVO_MINIMO_IDX = 1e-11
+
+        /**
+         * Umbral de volatilidad aplicable a [asset]: 1e-11 para sinteticos (`IDX`), 1e-5 para el
+         * resto. La discriminacion es por subcadena `IDX` (misma convencion que
+         * `BinomoWebSocketClient.isPriceFrozen` y `AssetRicMapper`), asi que sirve tanto con el
+         * nombre visible ("Crypto IDX") como con el RIC ("Z-CRY/IDX").
+         */
+        fun rangoRelativoMinimoParaActivo(asset: String): Double =
+            if (asset.contains("IDX", ignoreCase = true)) RANGO_RELATIVO_MINIMO_IDX
+            else RANGO_RELATIVO_MINIMO
+
+        /**
+         * R23A Iter 1: autorizacion de operacion autonoma. Funcion pura para poder fijarla por test.
+         *
+         * Fail-closed: solo el valor EXPLICITAMENTE demo autoriza. Se aisla en su propia funcion (en
+         * vez de un `if` suelto) para que la regla quede congelada por test y no se diluya en futuras
+         * ediciones del guard.
+         */
+        fun puedeOperarAutonomoEnDemo(esDemo: Boolean): Boolean = esDemo
+
+        /**
+         * R23 Iter 4: capacidad del buffer circular de ticks expuesto por `GET /ticks`.
+         *
+         * 2000 entradas cubren ~20-30 min al ritmo medido del feed (1-2 tick/s), que es exactamente
+         * la ventana de validacion live de R23. Es un tope FIJO a proposito: el buffer vive en un
+         * servicio permanente, y sin tope seria una fuga de memoria en vez de una mejora.
+         */
+        const val TICK_BUFFER_CAPACITY = 2000
+
+        /**
+         * R23 Iter 3: `decision_id` determinista para poder emparejar Live <-> Replay.
+         *
+         * Antes el id vivo era `UUID.randomUUID()`: la paridad resultaba "NO EVALUABLE" (0 pares)
+         * porque no habia forma de reconocer la misma decision en los dos lados.
+         *
+         * DOS DEFECTOS DE LA CLAVE INGENUA `asset-epochSec-action`, medidos sobre las 17 filas de
+         * `loops/r23/iter_2/decisions.csv` (agrupacion por (asset, epochSec, action)): solo 9
+         * llaves unicas, 8 filas colisionadas. Es decir, colapsar la clave a ese triple fusionaria
+         * decisiones distintas. Dos causas:
+         *
+         *  1. **Varios vetos comparten (activo, segundo, accion) en la misma vela.** El motor
+         *     evalua la misma vela en ticks sucesivos, asi que el trio se repite y el id repetido
+         *     haria que el comparador empareje una decision con la de otro tick.
+         *  2. **El activo se nombra distinto en cada lado.** En vivo llega el nombre VISIBLE de
+         *     pantalla (`"Crypto IDX"`, via `latestObservedAsset`); en replay, el RIC del feed
+         *     (`"Z-CRY/IDX"`). Hashear los dos tal cual da ids distintos para la MISMA decision.
+         *
+         * Correcciones aplicadas aqui:
+         *  - El activo se normaliza a RIC con [AssetRicMapper.ricParaActivoVisible], que es
+         *    idempotente sobre sus propias salidas: `"Crypto IDX"` y `"Z-CRY/IDX"` colapsan al
+         *    mismo RIC, y pasar un RIC ya canonico lo deja igual.
+         *  - La clave lleva el timestamp en MILISEGUNDOS ([signalTimestampMs]), no en segundos:
+         *    los distintos ticks de una misma vela colisionaban al agrupar por segundo (los 8
+         *    solapes medidos arriba). Aceptar ms no rompe al llamador: si recibe un valor menor a
+         *    1e11 se asume que viene en segundos y se escala, de modo que la firma de la spec
+         *    (`... , epochSecond, ...`) sigue funcionando.
+         *
+         * LIMITE CONOCIDO Y ACEPTADO: dos decisiones del mismo activo en el mismo MILISEGUNDO y
+         * con la misma accion comparten id. A 1-2 ticks/s el caso es practicamente imposible, y el
+         * comparador agrupa por id en vez de por posicion, asi que una colision solo pierde una
+         * fila, no corrompe el emparejamiento. Se documenta en vez de inventar un contador de
+         * secuencia, que no seria reproducible entre los dos motores.
+         */
+        fun generateDeterministicDecisionId(asset: String, signalTimestampMs: Long, action: String): String =
+            DecisionIds.generateDeterministicDecisionId(asset, signalTimestampMs, action)
 
         internal fun tieJournalResult(isTie: Boolean, saldoFresco: Boolean): String? =
             if (!isTie) null else if (saldoFresco) "TIE" else "TIE_INCIERTO"
@@ -759,580 +1016,28 @@ class TradingEngine(
             analysis: VisionAnalysisResult,
             syntheticEngine: SyntheticCandleEngine? = null,
             subMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE,
-            latestTick: MarketTick? = null
-        ): TradeAction? {
-            val (action, _) = evaluateStrategySignalWithReason(strategy, analysis, syntheticEngine, subMode, latestTick)
-            return action
-        }
+            latestTick: MarketTick? = null,
+    brokerState: com.example.tradedraw.core.BrokerStateView = com.example.tradedraw.core.BrokerStateView(observedAsset = "", isDemoAccount = false)
+        ): TradeAction?=
+            FrozenStrategySignals.evaluateStrategySignalWithReason(strategy, analysis, syntheticEngine, subMode, latestTick, brokerState).first
 
         fun evaluateSniperConfluences(
             analysis: VisionAnalysisResult,
             syntheticEngine: SyntheticCandleEngine?,
-            latestTick: MarketTick?
-        ): Pair<TradeAction?, String> {
-            // Confluencia 1: Activo Forex Real válido (Veto estricto a Sintéticos y OTC)
-            val currentAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
-            val isSynthetic = AutoTradeAccessibilityService.isSyntheticOrOTC ||
-                currentAsset.contains("IDX", ignoreCase = true) ||
-                currentAsset.contains("OTC", ignoreCase = true)
-            if (isSynthetic) {
-                return Pair(null, "⚠️ Veto Francotirador: Activo sintético/OTC ($currentAsset) prohibido para dinero real. Selecciona un par Forex real en Binomo")
-            }
-            val classification = AutoTradeAccessibilityService.classifyAsset(currentAsset)
-            if (classification != AssetClassification.FOREX_REAL) {
-                return Pair(null, "⚠️ Francotirador: Activo ($currentAsset) no es un par Forex real válido. Selecciona EUR/USD, GBP/USD, etc.")
-            }
-
-            // Confluencia 4 (Timing): Entrada estricta en el segundo :58s-:59s (o fin de ciclo de vela según timeframe)
-            val tf = syntheticEngine?.timeframe ?: CandleTimeframe.M1
-            val ts = latestTick?.timestampMs ?: System.currentTimeMillis()
-            val inTimingWindow = if (analysis.candleSecond > 0 && tf == CandleTimeframe.M1) {
-                MarketTickFilters.isInEntryWindow(analysis.candleSecond)
-            } else {
-                tf.isSniperTimingWindow(ts)
-            }
-            if (!inTimingWindow) {
-                val cycleSec = tf.getCycleSecond(ts)
-                val cycleRem = tf.seconds - cycleSec
-                val remMin = cycleRem / 60
-                val remSec = cycleRem % 60
-                val remStr = if (tf == CandleTimeframe.M5) "%d:%02d".format(Locale.US, remMin, remSec) else ":%02ds".format(Locale.US, remSec)
-                return Pair(null, "⏳ Francotirador en espera: timing estricto :01s-:05s [${tf.label}] (restante: $remStr)")
-            }
-
-            val candleList = analysis.candleList
-            val c0 = candleList.firstOrNull()
-            val c1 = if (candleList.size >= 2) candleList[1] else null
-
-            val synCurrent = syntheticEngine?.currentCandle
-            val synPrev = syntheticEngine?.closedCandles?.lastOrNull()
-
-            // Confluencia 3: Vela previa o actual con mecha de rechazo >= 40% del rango total en dirección contraria al nivel
-            val hasBottomRejection40 = (c0 != null && c0.bottomWickRatio >= 0.40f) ||
-                (c1 != null && c1.bottomWickRatio >= 0.40f) ||
-                (synCurrent != null && synCurrent.lowerWickRatio >= 0.40f) ||
-                (synPrev != null && synPrev.lowerWickRatio >= 0.40f) ||
-                analysis.hasBottomRejectionWick
-            val hasTopRejection40 = (c0 != null && c0.topWickRatio >= 0.40f) ||
-                (c1 != null && c1.topWickRatio >= 0.40f) ||
-                (synCurrent != null && synCurrent.upperWickRatio >= 0.40f) ||
-                (synPrev != null && synPrev.upperWickRatio >= 0.40f) ||
-                analysis.hasTopRejectionWick
-
-            // Confluencia 2: Rebote claro en nivel de Soporte (para CALL) o Resistencia (para PUT) validado
-            val touchesSupport = analysis.touchesSupport || analysis.isNearSupportZone ||
-                (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.15f)
-            val touchesResistance = analysis.touchesResistance || analysis.isNearResistanceZone ||
-                (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.15f)
-
-            // Confluencia 4 (Micro-velocidad a favor y sin vela sobreextendida):
-            val velNorm = analysis.tickVelocityNormalized
-            val tickVel = latestTick?.velocity ?: 0f
-            // Ronda 7-fix: umbral relativo a la escala del precio (IDX ~641, ETH ~1049).
-            val tickPriceRef = latestTick?.price ?: 0.0
-            val vThresh = if (tickPriceRef > 0.0) (tickPriceRef * 0.00004).toFloat() else 0.0001f
-            val velCallFavor = (velNorm > vThresh || tickVel > vThresh || analysis.isBullishImpulse) &&
-                !analysis.isBearishImpulse && velNorm >= -vThresh && tickVel >= -vThresh
-            val velPutFavor = (velNorm < -vThresh || tickVel < -vThresh || analysis.isBearishImpulse) &&
-                !analysis.isBullishImpulse && velNorm <= vThresh && tickVel <= vThresh
-
-            val isOverextendedCall = (syntheticEngine?.isBullishOverextended == true) ||
-                (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.GREEN)
-            val isOverextendedPut = (syntheticEngine?.isBearishOverextended == true) ||
-                (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.RED)
-
-            // CALL: Soporte validado + Mecha inferior >= 40% + Micro-velocidad alcista + No sobreextendido
-            if (touchesSupport && hasBottomRejection40 && velCallFavor && !isOverextendedCall) {
-                return Pair(TradeAction.BUY, "🎯 FRANCOTIRADOR [CALL ${tf.label}]: Soporte validado + Mecha rechazo ≥40% + Micro-velocidad alcista")
-            }
-
-            // PUT: Resistencia validada + Mecha superior >= 40% + Micro-velocidad bajista + No sobreextendido
-            if (touchesResistance && hasTopRejection40 && velPutFavor && !isOverextendedPut) {
-                return Pair(TradeAction.SELL, "🎯 FRANCOTIRADOR [PUT ${tf.label}]: Resistencia validada + Mecha rechazo ≥40% + Micro-velocidad bajista")
-            }
-
-            return Pair(null, "🎯 Francotirador: Confluencias incompletas (S/R, Mecha ≥40%, Vel, :58-:59s)")
-        }
+            latestTick: MarketTick?,
+    brokerState: com.example.tradedraw.core.BrokerStateView = com.example.tradedraw.core.BrokerStateView(observedAsset = "", isDemoAccount = false)
+        ): Pair<TradeAction?, String> =
+            FrozenStrategySignals.evaluateSniperConfluences(analysis, syntheticEngine, latestTick, brokerState)
 
         fun evaluateStrategySignalWithReason(
             strategy: AutoTradeStrategy,
             analysis: VisionAnalysisResult,
             syntheticEngine: SyntheticCandleEngine? = null,
             subMode: AutonomousSubMode = AutonomousSubMode.CONSERVATIVE,
-            latestTick: MarketTick? = null
-        ): Pair<TradeAction?, String> {
-            // MODO FRANCOTIRADOR: Gatillo de 4 Confluencias Simultáneas
-            if (subMode == AutonomousSubMode.SNIPER) {
-                return evaluateSniperConfluences(analysis, syntheticEngine, latestTick)
-            }
-            // Filtro Anti-Choppy / Micro-Rango Cuantitativo (<0.05% con alternancia de ticks sin dirección clara)
-            val isChoppy = analysis.isMicroRangeChoppy || (syntheticEngine != null && syntheticEngine.isChoppinessDetected())
-            if (isChoppy) {
-                return Pair(null, "⚠️ Veto Anti-Choppy: Micro-rango (<0.05%) con alternancia de ticks sin dirección clara")
-            }
-
-            // Filtro anti-mercado lateral / Dojis / Consolidación estrecha
-            if (analysis.isMarketSideways) {
-                return Pair(null, "⚠️ Mercado Lateral / Dojis detectados: Esperando volatilidad")
-            }
-            if (analysis.isConsolidationTight) {
-                return Pair(null, "⏳ Rango estrecho / Sin volatilidad: Esperando expansión")
-            }
-
-            val sec = analysis.candleSecond
-            val isStrictTimingWindow = MarketTickFilters.isStrictTimingWindow(sec) // :58 a :03
-            val isTimingVetoed = MarketTickFilters.isTimingVetoed(sec) // :06 a :57
-            val isInstitutionalTrap = analysis.isFalseBreakoutCall || analysis.isFalseBreakoutPut
-            val isSniperPullbackTrigger = (MarketTickFilters.isInEntryWindow(sec) || analysis.isSniperPullbackWindow) &&
-                (analysis.isPullbackAgainstSignalCall || analysis.isPullbackAgainstSignalPut || analysis.isPullbackSniperCall || analysis.isPullbackSniperPut)
-
-            // Veto universal de entrada tardía (:06 a :57)
-            if (isTimingVetoed && !isInstitutionalTrap) {
-                return Pair(null, "⏳ Entrada tardía - Veto Timing Estricto: Fuera de ventana sniper :01-:05 (⏱ ${sec}s)")
-            }
-
-            // Veto de entrada si está fuera de la ventana estricta :01-:05 (salvo trampas institucionales)
-            if (!isStrictTimingWindow && !isInstitutionalTrap && !isSniperPullbackTrigger) {
-                return Pair(null, "⏳ Entrada tardía (${sec}s): Fuera de ventana sniper :01-:05")
-            }
-
-            val isSniperPullbackCallTrigger = (MarketTickFilters.isInEntryWindow(sec) || analysis.isSniperPullbackWindow) &&
-                (analysis.isPullbackAgainstSignalCall || (analysis.candleList.size >= 2 && analysis.candleList[1].type == CandleType.GREEN && analysis.candleList[1].bodyHeight >= 15f && analysis.currentPriceY >= analysis.candleList[1].bodyTopY - 3f && analysis.currentPriceY <= analysis.candleList[1].bodyTopY + analysis.candleList[1].bodyHeight * 0.55f)) &&
-                !analysis.isDojiOrLowVolume
-
-            val isSniperPullbackPutTrigger = (MarketTickFilters.isInEntryWindow(sec) || analysis.isSniperPullbackWindow) &&
-                (analysis.isPullbackAgainstSignalPut || (analysis.candleList.size >= 2 && analysis.candleList[1].type == CandleType.RED && analysis.candleList[1].bodyHeight >= 15f && analysis.currentPriceY <= analysis.candleList[1].bodyBottomY + 3f && analysis.currentPriceY >= analysis.candleList[1].bodyBottomY - analysis.candleList[1].bodyHeight * 0.55f)) &&
-                !analysis.isDojiOrLowVolume
-
-            val rawResult = when (strategy) {
-                AutoTradeStrategy.AUTO_ADAPTIVE -> {
-                    // Modo Automático por Detección de Régimen de Mercado (Regime Engine en 2 Etapas)
-                    val regimeResult = MarketRegimeClassifier.classify(analysis, syntheticEngine)
-                    val inDowntrend = analysis.trend == TrendDirection.DOWNTREND
-                    val inUptrend = analysis.trend == TrendDirection.UPTREND
-
-                    when (regimeResult.regime) {
-                        MarketRegime.CHOPPY_NOISE -> {
-                            Pair(null, "⏸ Auto Standby [${regimeResult.reason}] -> Sin trade")
-                        }
-
-                        MarketRegime.RANGING_CHANNEL -> {
-                            // En Rango S/R: Solo se operan Reversiones en extremos (Trampas, Sobreextensión RSI, Mechas de Rechazo, Envolventes en S/R y Agotamiento)
-                            when {
-                                // 1. Trampa Institucional / Falso Rompimiento en S/R (95% confluencia)
-                                !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isFalseBreakoutCall ->
-                                    Pair(TradeAction.BUY, "🎯 Auto [Trampa en Soporte | Rango S/R | ⏱ ${sec}s] -> CALL")
-                                !inUptrend && !analysis.hasStrongMomentumUp && analysis.isFalseBreakoutPut ->
-                                    Pair(TradeAction.SELL, "🎯 Auto [Trampa en Resistencia | Rango S/R | ⏱ ${sec}s] -> PUT")
-
-                                // 2. Reversión Cuantitativa por Sobreextensión en Extremos S/R
-                                !inUptrend && (analysis.isNearResistanceZone || analysis.touchesResistance || analysis.distanceToResistanceRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.20f)) &&
-                                (syntheticEngine?.isBullishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi >= 78.0 && syntheticEngine.distanceToResistanceRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.GREEN) || analysis.isPriceNearTop) &&
-                                (!analysis.hasStrongMomentumUp && !analysis.isValidBreakoutCall && (analysis.tickVelocityNormalized <= 0.05f || analysis.isBearishImpulse || analysis.hasTopRejectionWick || analysis.isRejectionPut || (syntheticEngine != null && syntheticEngine.consecutiveDownTicks >= 2))) -> {
-                                    val rsiStr = if (syntheticEngine != null) " | RSI: ${syntheticEngine.syntheticTickRsi.toInt()}" else ""
-                                    Pair(TradeAction.SELL, "🎯 Auto [Reversión por Sobreextensión en Resistencia$rsiStr | Rango S/R | ⏱ ${sec}s] -> PUT")
-                                }
-
-                                !inDowntrend && (analysis.isNearSupportZone || analysis.touchesSupport || analysis.distanceToSupportRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.20f)) &&
-                                (syntheticEngine?.isBearishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi <= 22.0 && syntheticEngine.distanceToSupportRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.RED) || analysis.isPriceNearBottom) &&
-                                (!analysis.hasStrongMomentumDown && !analysis.isValidBreakoutPut && (analysis.tickVelocityNormalized >= -0.05f || analysis.isBullishImpulse || analysis.hasBottomRejectionWick || analysis.isRejectionCall || (syntheticEngine != null && syntheticEngine.consecutiveUpTicks >= 2))) -> {
-                                    val rsiStr = if (syntheticEngine != null) " | RSI: ${syntheticEngine.syntheticTickRsi.toInt()}" else ""
-                                    Pair(TradeAction.BUY, "🎯 Auto [Reversión por Sobreextensión en Soporte$rsiStr | Rango S/R | ⏱ ${sec}s] -> CALL")
-                                }
-
-                                // 3. Mechas de Rechazo y Absorción en S/R (MT_REJECTION)
-                                !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.isRejectionCall || (analysis.touchesSupport && analysis.hasBottomRejectionWick)) &&
-                                    (analysis.isPullbackSniperCall || analysis.isSniperTimingWindow) ->
-                                    Pair(TradeAction.BUY, "🎯 Auto [Mecha Rechazo Soporte | Rango S/R | ⏱ ${sec}s] -> CALL")
-                                !inUptrend && !analysis.hasStrongMomentumUp && (analysis.isRejectionPut || (analysis.touchesResistance && analysis.hasTopRejectionWick)) &&
-                                    (analysis.isPullbackSniperPut || analysis.isSniperTimingWindow) ->
-                                    Pair(TradeAction.SELL, "🎯 Auto [Mecha Rechazo Resistencia | Rango S/R | ⏱ ${sec}s] -> PUT")
-
-                                // 4. Vela Envolvente en Zona S/R (85% confluencia)
-                                !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isEngulfingCall &&
-                                    (analysis.isPullbackSniperCall || analysis.isSniperTimingWindow) ->
-                                    Pair(TradeAction.BUY, "🎯 Auto [Vela Envolvente Soporte | Rango S/R | ⏱ ${sec}s] -> CALL")
-                                !inUptrend && !analysis.hasStrongMomentumUp && analysis.isEngulfingPut &&
-                                    (analysis.isPullbackSniperPut || analysis.isSniperTimingWindow) ->
-                                    Pair(TradeAction.SELL, "🎯 Auto [Vela Envolvente Resistencia | Rango S/R | ⏱ ${sec}s] -> PUT")
-
-                                // 5. Agotamiento de 3 Velas Consecutivas (MT_3_VELAS)
-                                !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall) ->
-                                    Pair(TradeAction.BUY, "🎯 Auto [Agotamiento 3 Rojas Alcista | Rango S/R | ⏱ ${sec}s] -> CALL")
-                                !inUptrend && !analysis.hasStrongMomentumUp && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut) ->
-                                    Pair(TradeAction.SELL, "🎯 Auto [Agotamiento 3 Verdes Bajista | Rango S/R | ⏱ ${sec}s] -> PUT")
-
-                                // 6. Rebote Clásico con confirmación de timing
-                                !inDowntrend && !analysis.hasStrongMomentumDown && analysis.touchesSupport && analysis.isPullbackSniperCall ->
-                                    Pair(TradeAction.BUY, "🎯 Auto [Rebote en Soporte | Rango S/R | ⏱ ${sec}s] -> CALL")
-                                !inUptrend && !analysis.hasStrongMomentumUp && analysis.touchesResistance && analysis.isPullbackSniperPut ->
-                                    Pair(TradeAction.SELL, "🎯 Auto [Rebote en Resistencia | Rango S/R | ⏱ ${sec}s] -> PUT")
-
-                                else -> Pair(null, "⏳ Auto [Rango S/R]: Esperando aproximación a extremo con rechazo")
-                            }
-                        }
-
-                        MarketRegime.STRONG_TREND_UP -> {
-                            // En Tendencia Alcista: Únicamente entradas a favor de tendencia (Pullback Sniper o Vela Envolvente)
-                            when {
-                                !analysis.hasStrongMomentumDown && isSniperPullbackCallTrigger ->
-                                    Pair(TradeAction.BUY, "🎯 Auto [Sniper Pullback :0${sec}s | Tendencia Alcista] -> CALL")
-                                !analysis.hasStrongMomentumDown && analysis.isEngulfingCall && (analysis.isPullbackSniperCall || analysis.isSniperTimingWindow) ->
-                                    Pair(TradeAction.BUY, "🎯 Auto [Vela Envolvente Soporte | Tendencia Alcista | ⏱ ${sec}s] -> CALL")
-                                !analysis.hasStrongMomentumDown && (analysis.confluenceScoreCall >= 85 || analysis.signalPowerCall >= 85) -> {
-                                    if (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop) {
-                                        Pair(null, "⚠️ Veto: Tendencia alcista en techo de canal sin retroceso")
-                                    } else {
-                                        val score = Math.max(analysis.confluenceScoreCall, analysis.signalPowerCall)
-                                        Pair(TradeAction.BUY, "🎯 Auto [Confluencia Fuerte Alcista ($score%) | ⏱ ${sec}s] -> CALL")
-                                    }
-                                }
-                                else -> Pair(null, "⏳ Auto [Tendencia Alcista]: Esperando retroceso pullback o envolvente a favor")
-                            }
-                        }
-
-                        MarketRegime.STRONG_TREND_DOWN -> {
-                            // En Tendencia Bajista: Únicamente entradas a favor de tendencia (Pullback Sniper o Vela Envolvente)
-                            when {
-                                !analysis.hasStrongMomentumUp && isSniperPullbackPutTrigger ->
-                                    Pair(TradeAction.SELL, "🎯 Auto [Sniper Pullback :0${sec}s | Tendencia Bajista] -> PUT")
-                                !analysis.hasStrongMomentumUp && analysis.isEngulfingPut && (analysis.isPullbackSniperPut || analysis.isSniperTimingWindow) ->
-                                    Pair(TradeAction.SELL, "🎯 Auto [Vela Envolvente Resistencia | Tendencia Bajista | ⏱ ${sec}s] -> PUT")
-                                !analysis.hasStrongMomentumUp && (analysis.confluenceScorePut >= 85 || analysis.signalPowerPut >= 85) -> {
-                                    if (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom) {
-                                        Pair(null, "⚠️ Veto: Tendencia bajista en piso de canal sin retroceso")
-                                    } else {
-                                        val score = Math.max(analysis.confluenceScorePut, analysis.signalPowerPut)
-                                        Pair(TradeAction.SELL, "🎯 Auto [Confluencia Fuerte Bajista ($score%) | ⏱ ${sec}s] -> PUT")
-                                    }
-                                }
-                                else -> Pair(null, "⏳ Auto [Tendencia Bajista]: Esperando retroceso pullback o envolvente a favor")
-                            }
-                        }
-
-                        MarketRegime.BREAKOUT_RETEST -> {
-                            // En Rompimiento y Retest: Choque con nivel roto o Rompimiento Validado
-                            when {
-                                !inDowntrend && !analysis.hasStrongMomentumDown && (analysis.isChoqueCall || analysis.isChoquePullbackCall) ->
-                                    Pair(TradeAction.BUY, "🎯 Auto [Choque / Pullback Alcista | Rompimiento/Retest | ⏱ ${sec}s] -> CALL")
-                                !inUptrend && !analysis.hasStrongMomentumUp && (analysis.isChoquePut || analysis.isChoquePullbackPut) ->
-                                    Pair(TradeAction.SELL, "🎯 Auto [Choque / Pullback Bajista | Rompimiento/Retest | ⏱ ${sec}s] -> PUT")
-                                !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isValidBreakoutCall && !analysis.isDojiOrLowVolume ->
-                                    Pair(TradeAction.BUY, "🎯 Auto [Rompimiento Válido Resistencia | ⏱ ${sec}s] -> CALL")
-                                !inUptrend && !analysis.hasStrongMomentumUp && analysis.isValidBreakoutPut && !analysis.isDojiOrLowVolume ->
-                                    Pair(TradeAction.SELL, "🎯 Auto [Rompimiento Válido Soporte | ⏱ ${sec}s] -> PUT")
-                                else -> Pair(null, "⏳ Auto [Rompimiento/Retest]: Esperando confirmación de choque o ruptura limpia")
-                            }
-                        }
-                    }
-                }
-                AutoTradeStrategy.MT_MASTER_COMBO -> {
-                    // Jerarquía Master Traders con filtro macro de confluencia
-                    val inDowntrend = analysis.trend == TrendDirection.DOWNTREND
-                    val inUptrend = analysis.trend == TrendDirection.UPTREND
-
-                    when {
-                        // 1. Falso Rompimiento / Trampa en S/R
-                        !inDowntrend && analysis.isFalseBreakoutCall -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Trampa / Falso Rompimiento de Soporte -> CALL")
-                        }
-                        !inUptrend && analysis.isFalseBreakoutPut -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Trampa / Falso Rompimiento de Resistencia -> PUT")
-                        }
-                        // 1b. Reversión Contra-Tendencia Cuantitativa por Sobreextensión en Zonas Clave
-                        !inUptrend && (analysis.isNearResistanceZone || analysis.touchesResistance || analysis.distanceToResistanceRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToResistanceRatio <= 0.20f)) &&
-                        (syntheticEngine?.isBullishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi >= 78.0 && syntheticEngine.distanceToResistanceRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.GREEN) || analysis.isPriceNearTop) &&
-                        (!analysis.hasStrongMomentumUp && !analysis.isValidBreakoutCall && (analysis.tickVelocityNormalized <= 0.05f || analysis.isBearishImpulse || analysis.hasTopRejectionWick || analysis.isRejectionPut || (syntheticEngine != null && syntheticEngine.consecutiveDownTicks >= 2))) -> {
-                            val rsiStr = if (syntheticEngine != null) " (RSI ${syntheticEngine.syntheticTickRsi.toInt()})" else ""
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Reversión por Sobreextensión en Resistencia$rsiStr -> PUT")
-                        }
-                        !inDowntrend && (analysis.isNearSupportZone || analysis.touchesSupport || analysis.distanceToSupportRatio <= 0.20f || (syntheticEngine != null && syntheticEngine.distanceToSupportRatio <= 0.20f)) &&
-                        (syntheticEngine?.isBearishOverextended == true || (syntheticEngine != null && syntheticEngine.syntheticTickRsi <= 22.0 && syntheticEngine.distanceToSupportRatio <= 0.25f) || (analysis.consecutiveCount >= 4 && analysis.lastCandles.firstOrNull() == CandleType.RED) || analysis.isPriceNearBottom) &&
-                        (!analysis.hasStrongMomentumDown && !analysis.isValidBreakoutPut && (analysis.tickVelocityNormalized >= -0.05f || analysis.isBullishImpulse || analysis.hasBottomRejectionWick || analysis.isRejectionCall || (syntheticEngine != null && syntheticEngine.consecutiveUpTicks >= 2))) -> {
-                            val rsiStr = if (syntheticEngine != null) " (RSI ${syntheticEngine.syntheticTickRsi.toInt()})" else ""
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Reversión por Sobreextensión en Soporte$rsiStr -> CALL")
-                        }
-                        // 2. Mechas de Rechazo en S/R (Filtradas por tendencia)
-                        !inDowntrend && (analysis.isRejectionCall || (analysis.touchesSupport && analysis.hasBottomRejectionWick)) -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Mecha de Rechazo en Soporte -> CALL")
-                        }
-                        !inUptrend && (analysis.isRejectionPut || (analysis.touchesResistance && analysis.hasTopRejectionWick)) -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Mecha de Rechazo en Resistencia -> PUT")
-                        }
-                        // 3. Patrón Envolvente en S/R
-                        !inDowntrend && analysis.isEngulfingCall -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Vela Envolvente en Soporte -> CALL")
-                        }
-                        !inUptrend && analysis.isEngulfingPut -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Vela Envolvente en Resistencia -> PUT")
-                        }
-                        // 4. Choque / Retest (Breakout + Retest)
-                        !inDowntrend && (analysis.isChoqueCall || analysis.isChoquePullbackCall) -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Choque / Pullback tras Rompimiento -> CALL")
-                        }
-                        !inUptrend && (analysis.isChoquePut || analysis.isChoquePullbackPut) -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Choque / Pullback tras Rompimiento -> PUT")
-                        }
-                        // 5. Agotamiento de 3 Velas
-                        !inDowntrend && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall) -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Agotamiento 3 Velas Rojas -> CALL")
-                        }
-                        !inUptrend && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut) -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Agotamiento 3 Velas Verdes -> PUT")
-                        }
-                        // Sniper Pullback Entry (:01s-:05s) tras vela de señal fuerte
-                        !inDowntrend && !analysis.hasStrongMomentumDown && isSniperPullbackCallTrigger -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Sniper Pullback (:0${sec}s) tras vela fuerte -> CALL")
-                        }
-                        !inUptrend && !analysis.hasStrongMomentumUp && isSniperPullbackPutTrigger -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Sniper Pullback (:0${sec}s) tras vela fuerte -> PUT")
-                        }
-                        // Rompimiento Válido S/R (>50% cuerpo fuera, mecha opuesta <20%)
-                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isValidBreakoutCall && !analysis.isDojiOrLowVolume -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Rompimiento Válido de Resistencia -> CALL")
-                        }
-                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.isValidBreakoutPut && !analysis.isDojiOrLowVolume -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Rompimiento Válido de Soporte -> PUT")
-                        }
-                        // Soporte / Resistencia Clásico
-                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.touchesSupport && (analysis.lastCandles.firstOrNull() == CandleType.GREEN || analysis.isPullbackSniperCall) -> {
-                            Pair(TradeAction.BUY, "🎯 MT Combo: Rebote Confirmado en Soporte -> CALL")
-                        }
-                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.touchesResistance && (analysis.lastCandles.firstOrNull() == CandleType.RED || analysis.isPullbackSniperPut) -> {
-                            Pair(TradeAction.SELL, "🎯 MT Combo: Rebote Confirmado en Resistencia -> PUT")
-                        }
-                        // 6. Termómetro de Señal / Tendencia Alta Probabilidad >= 80%
-                        !inDowntrend && !analysis.hasStrongMomentumDown && analysis.isSniperTimingWindow && (analysis.signalPowerCall >= 80 || (analysis.isCallSignal && analysis.signalScore >= 80)) -> {
-                            if (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop) {
-                                Pair(null, "⚠️ Veto: Continuación alcista sin retroceso (Vela en extremo opuesto del rango)")
-                            } else {
-                                val score = if (analysis.signalPowerCall >= 80) analysis.signalPowerCall else analysis.signalScore
-                                Pair(TradeAction.BUY, "🎯 MT Combo: Tendencia Alta ($score%) -> CALL")
-                            }
-                        }
-                        !inUptrend && !analysis.hasStrongMomentumUp && analysis.isSniperTimingWindow && (analysis.signalPowerPut >= 80 || (analysis.isPutSignal && analysis.signalScore >= 80)) -> {
-                            if (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom) {
-                                Pair(null, "⚠️ Veto: Continuación bajista sin retroceso (Vela en extremo opuesto del rango)")
-                            } else {
-                                val score = if (analysis.signalPowerPut >= 80) analysis.signalPowerPut else analysis.signalScore
-                                Pair(TradeAction.SELL, "🎯 MT Combo: Tendencia Baja ($score%) -> PUT")
-                            }
-                        }
-                        else -> Pair(null, "")
-                    }
-                }
-                AutoTradeStrategy.MT_FALSE_BREAKOUT -> {
-                    when {
-                        analysis.isFalseBreakoutCall -> Pair(TradeAction.BUY, "🎯 MT Falso Rompimiento: Trampa en Soporte -> CALL")
-                        analysis.isFalseBreakoutPut -> Pair(TradeAction.SELL, "🎯 MT Falso Rompimiento: Trampa en Resistencia -> PUT")
-                        else -> Pair(null, "")
-                    }
-                }
-                AutoTradeStrategy.MT_ENGULFING_SR -> {
-                    when {
-                        analysis.isEngulfingCall -> Pair(TradeAction.BUY, "🎯 MT Envolvente: Vela Verde en Soporte -> CALL")
-                        analysis.isEngulfingPut -> Pair(TradeAction.SELL, "🎯 MT Envolvente: Vela Roja en Resistencia -> PUT")
-                        else -> Pair(null, "")
-                    }
-                }
-                AutoTradeStrategy.MT_REJECTION -> {
-                    when {
-                        analysis.isRejectionCall || (analysis.touchesSupport && analysis.hasBottomRejectionWick) ->
-                            Pair(TradeAction.BUY, "🎯 MT Mecha Rechazo: Absorción en Soporte -> CALL")
-                        analysis.isRejectionPut || (analysis.touchesResistance && analysis.hasTopRejectionWick) ->
-                            Pair(TradeAction.SELL, "🎯 MT Mecha Rechazo: Absorción en Resistencia -> PUT")
-                        else -> Pair(null, "")
-                    }
-                }
-                AutoTradeStrategy.MT_CHOQUE_PULLBACK -> {
-                    when {
-                        isSniperPullbackCallTrigger ->
-                            Pair(TradeAction.BUY, "🎯 MT Choque Pullback: Sniper Pullback (:0${sec}s) -> CALL")
-                        isSniperPullbackPutTrigger ->
-                            Pair(TradeAction.SELL, "🎯 MT Choque Pullback: Sniper Pullback (:0${sec}s) -> PUT")
-                        analysis.isChoqueCall || analysis.isChoquePullbackCall ->
-                            Pair(TradeAction.BUY, "🎯 MT Choque Pullback: Retest en Soporte -> CALL")
-                        analysis.isChoquePut || analysis.isChoquePullbackPut ->
-                            Pair(TradeAction.SELL, "🎯 MT Choque Pullback: Retest en Resistencia -> PUT")
-                        else -> Pair(null, "")
-                    }
-                }
-                AutoTradeStrategy.MT_3_VELAS_AGOTAMIENTO -> {
-                    when {
-                        analysis.is3VelasCall || analysis.isExhaustion3CandlesCall ->
-                            Pair(TradeAction.BUY, "🎯 MT 3 Velas Agotamiento: Reversión Alcista -> CALL")
-                        analysis.is3VelasPut || analysis.isExhaustion3CandlesPut ->
-                            Pair(TradeAction.SELL, "🎯 MT 3 Velas Agotamiento: Reversión Bajista -> PUT")
-                        else -> Pair(null, "")
-                    }
-                }
-                AutoTradeStrategy.COLOR_TREND -> {
-                    when {
-                        analysis.isDojiOrLowVolume ->
-                            Pair(null, "⚠️ Veto: Continuación descalificada por Doji / Micro-rango (Cuerpo < 15px)")
-                        analysis.trend == TrendDirection.UPTREND && (analysis.lastCandles.firstOrNull() == CandleType.GREEN || isSniperPullbackCallTrigger) -> {
-                            if (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop) {
-                                Pair(null, "⚠️ Veto: Continuación alcista sin retroceso (Vela en extremo opuesto del rango)")
-                            } else {
-                                Pair(TradeAction.BUY, "🎯 Color Trend: Continuación Alcista -> CALL")
-                            }
-                        }
-                        analysis.trend == TrendDirection.DOWNTREND && (analysis.lastCandles.firstOrNull() == CandleType.RED || isSniperPullbackPutTrigger) -> {
-                            if (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom) {
-                                Pair(null, "⚠️ Veto: Continuación bajista sin retroceso (Vela en extremo opuesto del rango)")
-                            } else {
-                                Pair(TradeAction.SELL, "🎯 Color Trend: Continuación Bajista -> PUT")
-                            }
-                        }
-                        else -> Pair(null, "")
-                    }
-                }
-                AutoTradeStrategy.STRIKE_BREAKOUT -> {
-                    when {
-                        analysis.isValidBreakoutCall ->
-                            Pair(TradeAction.BUY, "🎯 Strike Breakout: Rompimiento Válido de Resistencia (>50% cuerpo, mecha <20%) -> CALL")
-                        analysis.isValidBreakoutPut ->
-                            Pair(TradeAction.SELL, "🎯 Strike Breakout: Rompimiento Válido de Soporte (>50% cuerpo, mecha <20%) -> PUT")
-                        analysis.isFakeoutRiskCall || analysis.isFakeoutRiskPut || analysis.isFakeoutRisk ->
-                            Pair(null, "⚠️ Veto: Riesgo de Falso Rompimiento / Fakeout (Cuerpo <=50% fuera de S/R o mecha opuesta >=20%)")
-                        analysis.touchesSupport || analysis.isChoqueCall || analysis.isChoquePullbackCall ->
-                            Pair(TradeAction.BUY, "🎯 Strike Breakout: Rebote/Ruptura de Soporte -> CALL")
-                        analysis.touchesResistance || analysis.isChoquePut || analysis.isChoquePullbackPut ->
-                            Pair(TradeAction.SELL, "🎯 Strike Breakout: Rebote/Ruptura de Resistencia -> PUT")
-                        else -> Pair(null, "")
-                    }
-                }
-                AutoTradeStrategy.AI_REMOTE -> {
-                    Pair(null, "🧠 IA Remota: Esperando análisis multimodal...")
-                }
-                AutoTradeStrategy.SUPPORT_RESISTANCE -> {
-                    when {
-                        analysis.touchesSupport -> Pair(TradeAction.BUY, "🎯 S/R: Toque en Soporte -> CALL")
-                        analysis.touchesResistance -> Pair(TradeAction.SELL, "🎯 S/R: Toque en Resistencia -> PUT")
-                        else -> Pair(null, "")
-                    }
-                }
-                AutoTradeStrategy.CANDLE_PATTERNS -> {
-                    when {
-                        analysis.consecutiveCount >= 3 && analysis.lastCandles.firstOrNull() == CandleType.RED ->
-                            Pair(TradeAction.BUY, "🎯 Patrón Velas: Reversión 3 Rojas -> CALL")
-                        analysis.consecutiveCount >= 3 && analysis.lastCandles.firstOrNull() == CandleType.GREEN ->
-                            Pair(TradeAction.SELL, "🎯 Patrón Velas: Reversión 3 Verdes -> PUT")
-                        analysis.isHammer ->
-                            Pair(TradeAction.BUY, "🎯 Patrón Velas: Martillo Detectado -> CALL")
-                        else -> Pair(null, "")
-                    }
-                }
-                AutoTradeStrategy.TREND_FOLLOWING -> {
-                    when {
-                        analysis.isDojiOrLowVolume ->
-                            Pair(null, "⚠️ Veto: Continuación descalificada por Doji / Micro-rango (Cuerpo < 15px)")
-                        analysis.trend == TrendDirection.UPTREND && (analysis.lastCandles.firstOrNull() == CandleType.GREEN || isSniperPullbackCallTrigger) -> {
-                            if (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.isPriceNearTop) {
-                                Pair(null, "⚠️ Veto: Continuación alcista sin retroceso (Vela en extremo opuesto del rango)")
-                            } else {
-                                Pair(TradeAction.BUY, "🎯 Tendencia: Continuación Alcista -> CALL")
-                            }
-                        }
-                        analysis.trend == TrendDirection.DOWNTREND && (analysis.lastCandles.firstOrNull() == CandleType.RED || isSniperPullbackPutTrigger) -> {
-                            if (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.isPriceNearBottom) {
-                                Pair(null, "⚠️ Veto: Continuación bajista sin retroceso (Vela en extremo opuesto del rango)")
-                            } else {
-                                Pair(TradeAction.SELL, "🎯 Tendencia: Continuación Bajista -> PUT")
-                            }
-                        }
-                        else -> Pair(null, "")
-                    }
-                }
-                AutoTradeStrategy.COMBINED -> {
-                    when {
-                        analysis.touchesSupport && analysis.lastCandles.firstOrNull() != CandleType.RED ->
-                            Pair(TradeAction.BUY, "🎯 Combinada: Confirmación en Soporte -> CALL")
-                        analysis.touchesResistance && analysis.lastCandles.firstOrNull() != CandleType.GREEN ->
-                            Pair(TradeAction.SELL, "🎯 Combinada: Confirmación en Resistencia -> PUT")
-                        else -> Pair(null, "")
-                    }
-                }
-            }
-
-            val (action, reason) = rawResult
-            if (action == null) return rawResult
-
-            // 1. Filtro de Proximidad S/R Anti-Suicidio Universal:
-            // Prohibido vender sobre Soporte (salvo rompimiento válido bajista o rechazo en resistencia)
-            if (action == TradeAction.SELL && !analysis.isValidBreakoutPut &&
-                !analysis.isRejectionPut && !(analysis.touchesResistance && analysis.hasTopRejectionWick) &&
-                (analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.15f || analysis.touchesSupport)) {
-                return Pair(null, "⚠️ Veto: Prohibido vender sobre Soporte (Riesgo de Rebote)")
-            }
-            // Prohibido comprar sobre Resistencia (salvo rompimiento válido alcista o rechazo en soporte)
-            if (action == TradeAction.BUY && !analysis.isValidBreakoutCall &&
-                !analysis.isRejectionCall && !(analysis.touchesSupport && analysis.hasBottomRejectionWick) &&
-                (analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.15f || analysis.touchesResistance)) {
-                return Pair(null, "⚠️ Veto: Prohibido comprar sobre Resistencia (Riesgo de Rechazo)")
-            }
-
-            // 2. Exigir Retroceso (Pullback) en Continuación y Bloquear Sobreextensión / Trampas en S/R para estrategias de tendencia
-            val isTrendContinuation = strategy == AutoTradeStrategy.TREND_FOLLOWING ||
-                strategy == AutoTradeStrategy.COLOR_TREND ||
-                reason.contains("Continuación") ||
-                reason.contains("Tendencia") ||
-                reason.contains("Impulso") ||
-                reason.contains("Confluencia Fuerte")
-
-            if (isTrendContinuation) {
-
-                // Filtro Anti-Continuación por Agotamiento de 3 Velas (c3 < c2 < c1 en S/R):
-                if (action == TradeAction.SELL && (analysis.is3VelasCall || analysis.isExhaustion3CandlesCall)) {
-                    return Pair(null, "⛔ Veto: Agotamiento 3 Velas Rojas en Soporte detectado. Prohibido vender en suelo")
-                }
-                if (action == TradeAction.BUY && (analysis.is3VelasPut || analysis.isExhaustion3CandlesPut)) {
-                    return Pair(null, "⛔ Veto: Agotamiento 3 Velas Verdes en Resistencia detectado. Prohibido comprar en techo")
-                }
-
-                // Filtro Anti-Continuación por Mecha de Rechazo (>=45% en S/R):
-                if (action == TradeAction.SELL && (analysis.isRejectionCall || analysis.hasBottomRejectionWick)) {
-                    return Pair(null, "⛔ Veto: Mecha de Rechazo Inferior (≥45%) en Soporte. Prohibido vender en suelo")
-                }
-                if (action == TradeAction.BUY && (analysis.isRejectionPut || analysis.hasTopRejectionWick)) {
-                    return Pair(null, "⛔ Veto: Mecha de Rechazo Superior (≥45%) en Resistencia. Prohibido comprar en techo")
-                }
-
-                if (analysis.isDojiOrLowVolume) {
-                    return Pair(null, "⚠️ Veto: Continuación descalificada por Doji / Micro-rango (Cuerpo < 15px)")
-                }
-            }
-
-            // 2. Filtro Anti-Sobreextensión de Racha y Ticks:
-            val isGreenStreak = analysis.consecutiveCount >= 4 &&
-                (analysis.lastCandles.firstOrNull() == CandleType.GREEN || analysis.streakBadge.contains("V"))
-            val isRedStreak = analysis.consecutiveCount >= 4 &&
-                (analysis.lastCandles.firstOrNull() == CandleType.RED || analysis.streakBadge.contains("R"))
-
-            val isWsOverbought = syntheticEngine?.isBullishOverextended == true ||
-                (syntheticEngine != null && syntheticEngine.syntheticTickRsi >= 78.0 && syntheticEngine.distanceToResistanceRatio <= 0.20f)
-            val isWsOversold = syntheticEngine?.isBearishOverextended == true ||
-                (syntheticEngine != null && syntheticEngine.syntheticTickRsi <= 22.0 && syntheticEngine.distanceToSupportRatio <= 0.20f)
-
-            if (isTrendContinuation) {
-                if (action == TradeAction.BUY && isGreenStreak) {
-                    return Pair(null, "⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso")
-                }
-                if (action == TradeAction.SELL && isRedStreak) {
-                    return Pair(null, "⚠️ Veto: Racha sobreextendida (>=4 velas). Esperando retroceso")
-                }
-                if (action == TradeAction.BUY && (isWsOverbought || analysis.isNearResistanceZone || analysis.distanceToResistanceRatio < 0.12f || analysis.isPriceNearTop)) {
-                    val detail = if (syntheticEngine != null && isWsOverbought) " [RSI Ticks: ${syntheticEngine.syntheticTickRsi.toInt()}, Ticks Up: ${syntheticEngine.consecutiveUpTicks}]" else ""
-                    return Pair(null, "⚠️ Veto: Continuación alcista sin retroceso$detail (Vela en extremo opuesto del rango)")
-                }
-                if (action == TradeAction.SELL && (isWsOversold || analysis.isNearSupportZone || analysis.distanceToSupportRatio < 0.12f || analysis.isPriceNearBottom)) {
-                    val detail = if (syntheticEngine != null && isWsOversold) " [RSI Ticks: ${syntheticEngine.syntheticTickRsi.toInt()}, Ticks Down: ${syntheticEngine.consecutiveDownTicks}]" else ""
-                    return Pair(null, "⚠️ Veto: Continuación bajista sin retroceso$detail (Vela en extremo opuesto del rango)")
-                }
-            }
-
-            return rawResult
-        }
+            latestTick: MarketTick? = null,
+    brokerState: com.example.tradedraw.core.BrokerStateView = com.example.tradedraw.core.BrokerStateView(observedAsset = "", isDemoAccount = false)
+        ): Pair<TradeAction?, String> =
+            FrozenStrategySignals.evaluateStrategySignalWithReason(strategy, analysis, syntheticEngine, subMode, latestTick, brokerState)
     }
 
     /**
@@ -1515,7 +1220,7 @@ class TradingEngine(
     }
 
     fun getStrategyStatusHint(): String {
-        val isAccessOk = AutoTradeAccessibilityService.instance != null || AutoTradeAccessibilityService.isAccessibilityPermissionGranted(context)
+        val isAccessOk = brokerRuntime.read().isAvailable || brokerRuntime.isAccessibilityPermissionGranted()
         if (!isAccessOk && mode == AutoTradeMode.AUTONOMOUS) {
             return "⚠️ Accesibilidad DESACTIVADA (Clics bloqueados en Android)"
         }
@@ -1647,6 +1352,23 @@ class TradingEngine(
             return
         }
 
+        // R23H Fase 1: VETO_BUY_EXHAUSTION_CLIMAX en la ruta de vision.
+        // `executeHeadlessTrade` ya lo aplica, pero esta es la OTRA puerta que acaba en un tap
+        // real (via `executeAutonomousTrade`). Sin cubrir ambas, el veto seria un bypase parcial:
+        // una señal nacida del analisis de imagen en AUTONOMOUS seguiria comprando en el techo.
+        // Se usa `analysis.signalPowerCall`, que es el mismo campo que esta ruta propaga al HUD.
+        // Sin `decisionId`: esta ruta (vision) no tiene uno asignado todavia; el evento se emite
+        // sin el para no inventar un id que luego no case con el trade.
+        motivoVetoPorAgotamientoDeCompra(
+            action = action,
+            trend = analysis.trend,
+            callPower = analysis.signalPowerCall
+        )?.let { motivoVeto ->
+            android.util.Log.w("TradingEngine", "⛔ Señal $action VETADA por agotamiento de compra: $motivoVeto")
+            eventSink.add(TradeEventLog.Kind.VETO, motivoVeto)
+            return
+        }
+
         // Evaluación por el Motor de Autoaprendizaje Adaptativo de Errores
         val adaptiveDecision = adaptiveLearningEngine.evaluateSignalSuitability(
             candidateAction = action,
@@ -1711,7 +1433,9 @@ class TradingEngine(
                     finalAction,
                     latestMarketTick?.price ?: 0.0,
                     context.resources.displayMetrics.widthPixels.toFloat(),
-                    riskManager.getCurrentInvestmentAmount(autonomousSubMode).toDouble(),
+                    // R23A Iter 2: la etiqueta de stake sobre el grafico tambien debe decir lo que el
+                    // broker debita, no el calculo interno. Mismo desacoplamiento que el journal.
+                    riskManager.getEffectiveStake(autonomousSubMode),
                     riskManager.sorosPayoutRate.toDouble()
                 )
                 Toast.makeText(context, "🔔 SEÑAL: $actionText\n$finalReason", Toast.LENGTH_SHORT).show()
@@ -1726,7 +1450,7 @@ class TradingEngine(
                     sniperShutdownReason = reason
                     handler.post {
                         Toast.makeText(context, "🛑 $reason", Toast.LENGTH_LONG).show()
-                        OverlayService.instance?.updateHUDView()
+                        hudPort?.updateHUDView()
                     }
                 }
                 return
@@ -1778,30 +1502,8 @@ class TradingEngine(
 
         android.util.Log.d("TradingEngine", "executeAutonomousTrade: $action hacia ($x, $y) [Vision:${visionCoords != null}] Motivo: $reasonDescription")
 
-        val accessibility = AutoTradeAccessibilityService.instance
-        val observed = accessibility?.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
-        val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
-        isTradeResolving.set(false)
-        // Ronda 11 (T3): el strike se registra en dominio de PRECIO. `analysis.currentPriceY` era
-        // una Y de visión (0 en headless): guardarla como entryPrice dejaba la liquidación sin
-        // referencia real.
-        riskManager.recordTradeSent(action, latestMarketTick?.price ?: 0.0, 0f, baseBal, confidence, analysis.candleSecond, reasonDescription)
-        // Despacho táctil único con verificación y fallback ROOT transparente
-        AutoTradeAccessibilityService.performClick(x, y) { success, error ->
-            if (!success) {
-                triggerManualFallback(action, error ?: "Auto-clic falló en 300ms")
-            } else {
-                // R14/A2: el tap ya termino: se completa la instrumentacion de latencia con sus
-                // instantes REALES. Se hace en el callback (no antes) porque `executeRootTap`
-                // corre en su propio hilo y hasta que no vuelve no se sabe cuando acabo.
-                riskManager.captureTapLatency(
-                    tapStartTs = AutoTradeAccessibilityService.lastTapStartTs,
-                    tapEndTs = AutoTradeAccessibilityService.lastTapEndTs,
-                    candleSecondAtTapEnd = AutoTradeAccessibilityService.lastTapCandleSecond,
-                    priceAtTapEnd = latestMarketTick?.price ?: 0.0
-                )
-            }
-        }
+        dispatchBrokerOrder(action, x, y, confidence = confidence, reason = reasonDescription) { receipt ->
+            if (receipt !is OrderReceipt.Success) return@dispatchBrokerOrder
 
         handler.post {
             drawingView.triggerClickAnimation(x, y)
@@ -1812,19 +1514,80 @@ class TradingEngine(
                 action = action,
                 entryPrice = latestMarketTick?.price ?: 0.0,
                 screenWidth = screenW,
-                stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode).toDouble(),
+                stake = riskManager.getEffectiveStake(autonomousSubMode),
                 payoutRate = riskManager.sorosPayoutRate.toDouble()
             )
             saveAuditScreenshot(bitmap, action)
-            val stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode)
+            val stake = riskManager.getEffectiveStake(autonomousSubMode)
             Toast.makeText(context, "🤖 BOT OPERÓ: $action ($$$stake)\n$reasonDescription", Toast.LENGTH_LONG).show()
+        }
+        }
+    }
+
+    /** Shared entry for engine, bridge and manual CALL/PUT. Gesture completion is not broker confirmation. */
+    fun dispatchBrokerOrder(
+        action: TradeAction,
+        x: Float,
+        y: Float,
+        decisionId: String = java.util.UUID.randomUUID().toString(),
+        tradeId: String = java.util.UUID.randomUUID().toString(),
+        confidence: Float = 0.85f,
+        reason: String = "MANUAL_ORDER",
+        onResult: (OrderReceipt) -> Unit = {}
+    ) {
+        handler.post {
+            val balance = brokerRuntime.refreshBalance(useLastObservation = false)
+            val coordinator = orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
+            coordinator?.cachedReceipt(tradeId)?.let { onResult(it); return@post }
+            if (riskManager.hasPendingTrade || coordinator?.pendingRequestId() != null || coordinator?.wasDispatched(tradeId) == true) {
+                onResult(OrderReceipt.Vetoed("ORDER_PENDING_RECONCILIATION"))
+                return@post
+            }
+            // Reserve risk only for an allowed account/mode; the gateway rechecks at dispatch.
+            if (mode == AutoTradeMode.DISABLED || mode == AutoTradeMode.SHADOW ||
+                !brokerRuntime.demoAccountGuard.isDispatchAllowed()) {
+                orderGateway.dispatch(OrderRequest(action, x, y, decisionId, tradeId, mode = mode), onResult)
+                return@post
+            }
+            isTradeResolving.set(false)
+            riskManager.recordTradeSent(action, latestMarketTick?.price ?: 0.0, 0f, balance,
+                confidence, ((System.currentTimeMillis() / 1000L) % 60).toInt(), reason, decisionId, tradeId)
+            val terminal = java.util.concurrent.atomic.AtomicBoolean(false)
+            val recovery = com.example.tradedraw.core.BrokerRecoveryContext(System.currentTimeMillis(), balance,
+                latestMarketTick?.price ?: 0.0, confidence, reason)
+            orderGateway.dispatch(OrderRequest(action, x, y, decisionId, tradeId, mode = mode, recoveryContext = recovery)) { receipt ->
+                if (receipt is OrderReceipt.Success) {
+                    VetoProfiler.INSTANCE.recordTapDispatched()
+                }
+                if (terminal.compareAndSet(false, true)) {
+                    handler.post {
+                        when (receipt) {
+                            is OrderReceipt.Vetoed -> riskManager.clearPendingTrade()
+                            is OrderReceipt.Failure -> {
+                                if (!receipt.requiresReconciliation) riskManager.markOrderUnprocessed(tapDespachado = false)
+                                else (orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway)?.reservation()?.let {
+                                    riskManager.holdForBrokerReconciliation(it)
+                                    eventSink.add("DISPATCH_RECOVERY", "UNCERTAIN requires=broker_history_review", it.decisionId, it.requestId)
+                                }
+                                // Uncertain delivery remains pending; never ask for a second manual tap.
+                            }
+                            is OrderReceipt.Success -> {
+                                val endTs = System.currentTimeMillis()
+                                riskManager.captureTapLatency(endTs - receipt.latencyMs, endTs,
+                                    receipt.candleSecond, latestMarketTick?.price ?: 0.0)
+                            }
+                        }
+                        onResult(receipt)
+                    }
+                }
+            }
         }
     }
 
     fun triggerManualFallback(action: TradeAction, reason: String) {
         Log.w("TradingEngine", "🚨 Activando MODO HÍBRIDO Fallback: $reason. Alerta manual para $action")
         emitHapticWarning()
-        OverlayService.instance?.showManualFallbackAlert(action, 2500L)
+        hudPort?.showManualFallbackAlert(action, 2500L)
         handler.post {
             val dir = if (action == TradeAction.BUY) "CALL ▲ (SUBE)" else "PUT ▼ (BAJA)"
             Toast.makeText(context, "🚨 ¡PULSA MANUAL: $dir!\n$reason", Toast.LENGTH_SHORT).show()
@@ -1857,8 +1620,8 @@ class TradingEngine(
      * Prueba los clics de SUBE y BAJA para verificar la conexión de Accesibilidad.
      */
     fun testAccessibilityClicks() {
-        val accessibility = AutoTradeAccessibilityService.instance
-        if (accessibility == null) {
+        val accessibilityActive = brokerRuntime.read().isAvailable
+        if (!accessibilityActive) {
             Toast.makeText(context, "❌ Accesibilidad NO conectada.\nAbriendo Ajustes de Accesibilidad...", Toast.LENGTH_LONG).show()
             try {
                 val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
@@ -1876,11 +1639,11 @@ class TradingEngine(
         val (sellX, sellY) = calibration?.getSellCoordinates() ?: Pair(600f, 600f)
 
         Toast.makeText(context, "👉 Probando clic en SUBE...", Toast.LENGTH_SHORT).show()
-        accessibility.performClickAt(buyX, buyY)
+        dispatchBrokerOrder(TradeAction.BUY, buyX, buyY)
 
         handler.postDelayed({
             Toast.makeText(context, "👉 Probando clic en BAJA...", Toast.LENGTH_SHORT).show()
-            accessibility.performClickAt(sellX, sellY)
+            dispatchBrokerOrder(TradeAction.SELL, sellX, sellY)
         }, 1200)
     }
 
@@ -1932,286 +1695,247 @@ class TradingEngine(
      * Ejecuta una orden en modo 100% Headless (sin frames ni capturas de pantalla).
      * Utiliza las cotizaciones puras del WebSocket y pulsa las coordenadas calibradas con Accesibilidad.
      */
-    fun executeHeadlessTrade(action: TradeAction, reasonDescription: String) {
-        Log.d("TradingEngine", "➡️ executeHeadlessTrade INICIO: $action | $reasonDescription")
-        // GUARD DE FRESCURA DEL FEED (fail-closed, fuente única = WebSocket).
-        // Sin tick reciente (<5000 ms) o sin conexión, se veta la operación: no se degrada
-        // a ninguna otra fuente (la captura de pantalla fue retirada por consumo de batería).
-        val tickAgeMs = latestMarketTick?.let { System.currentTimeMillis() - it.timestampMs }
-        if (tickAgeMs == null || tickAgeMs >= FEED_MAX_AGE_MS || !isFeedFresh()) {
-            Log.w(
-                "TradingEngine",
-                "⛔ Headless Trade $action VETADO por feed rancio: " +
-                    "ageMs=${tickAgeMs ?: -1} (umbral=${FEED_MAX_AGE_MS}ms) " +
-                    "fresh=${isFeedFresh()} → no se degrada a otra fuente"
-            )
-            // R13/A2d + A5: el caso "activo activo sin feed" (Aave(OTC): socket vivo, 0 ticks)
-            // YA queda cubierto por este guard, porque sin tick su edad es null o >= umbral.
-            // Se registra para que sea observable por `/events` en vez de solo por logcat, que
-            // en este dispositivo no funciona. No se anade un veto nuevo: seria duplicar este.
-            TradeEventLog.add(
-                TradeEventLog.Kind.VETO,
-                "FEED_RANCIO ageMs=${tickAgeMs ?: -1} activo=" +
-                    AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "?" }
-            )
-            if (tickAgeMs == null) {
-                TradeEventLog.add(
-                    TradeEventLog.Kind.FEED_MUDO,
-                    "activo=${AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "?" }} sin_ningun_tick"
+    fun executeHeadlessTrade(
+        action: TradeAction,
+        reasonDescription: String,
+        decisionId: String = java.util.UUID.randomUUID().toString()
+    ) {
+        val currentDecisionId = decisionId
+        Log.d("TradingEngine", "➡️ executeHeadlessTrade INICIO: $action | $reasonDescription | decisionId=$currentDecisionId")
+
+        // R23A Iter 1: GUARD DE SEGURIDAD FAIL-CLOSED (cuenta DEMO exclusiva).
+        //
+        // El modo AUTONOMOUS es el unico que despacha ordenes sin confirmacion humana, asi que es el
+        // unico que exige esta puerta. Cualquier otro modo (SHADOW, SEMIAUTOMATIC) sigue con su
+        // comportamiento actual: SHADOW no despacha taps por diseño y no debe verse afectado.
+        //
+        // SOBRE EL BALANCE. La spec proponia exigir ademas `latestObservedBalance >= 500_000.0`. NO
+        // se implementa como condicion de bloqueo, por dos razones concretas:
+        //  1. Duplicaria la logica de `RiskManager.canExecuteTrade`, que YA resuelve exactamente esa
+        //     pregunta (`currentBal >= 1e6 || (isDemoAccount && currentBal > 5e5)`) y es quien tiene
+        //     el suelo de equity y el resto de la politica de riesgo. Dos fuentes de verdad para el
+        //     mismo criterio divergen con el tiempo.
+        //  2. El balance es un DATO DEL DISPOSITIVO que puede llegar a 0.0 transitoriamente (lectura
+        //     aun no realizada, servicio de accesibilidad recien arrancado). Meterlo en un guard de
+        //     seguridad que apaga el motor a DISABLED convertiria un fallo de LECTURA en un apagon.
+        // La seguridad de "no operar en real" la da `isDemoAccount`, que es el dato del que depende
+        // toda la distincion demo/real y que ya no puede mentir por diseño fail-closed.
+        if (mode == AutoTradeMode.AUTONOMOUS) {
+            brokerRuntime.refreshBalance()
+            val accountType = brokerRuntime.demoAccountGuard.getAccountType()
+            val isDemo = brokerRuntime.getBrokerState().isDemoAccount
+            if (accountType == com.example.tradedraw.core.AccountType.REAL) {
+                Log.e("TradingEngine", "⛔ BLOQUEO CRÍTICO DE SEGURIDAD: Cuenta REAL explícitamente confirmada. Abortando trade autónomo.")
+                eventSink.add(
+                    TradeEventLog.Kind.VETO,
+                    "SEGURIDAD_NO_DEMO cuenta_real_bloqueada REAL_CONFIRMED",
+                    decisionId = currentDecisionId
                 )
-            }
-            return
-        }
-
-        // GUARD DE PRECIO CONGELADO / FEED SIN VOLATILIDAD MEDIBLE (veto V2 de B2).
-        // El feed puede estar fresco (l llegan ticks) y aun asi no aportar nada operable: el
-        // emisor entrega marcas de precio que caben en el error de redondeo. En ese estado
-        // cualquier decision CALL/PUT es equivalente a lanzar una moneda.
-        //
-        // Ronda 12: antes habia una EXCEPCION explicita para los activos "IDX", que anulaba
-        // justo este veto en el unico activo que lo necesitaba. Medido en `data/ticks`:
-        // Z-CRY/IDX tiene rango relativo 2,547e-09 frente a 4,164e-02 de ETHUSD-OTC (8 ordenes
-        // de magnitud). El veto pasa a ser POR CONDICION DE FEED, no por nombre de activo:
-        // se aplica a cualquiera que no se mueva, con el umbral congelado en PREREGISTRO_R12.
-        val rangoRelativo = recentPriceRangeRatio()
-        val currentObservedAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
-        if (rangoRelativo >= 0.0 && rangoRelativo < RANGO_RELATIVO_MINIMO) {
-            Log.w(
-                "TradingEngine",
-                "⛔ Headless Trade $action VETADO (V2) por feed sin volatilidad medible: " +
-                    "rangoRelativo=$rangoRelativo < $RANGO_RELATIVO_MINIMO (activo=$currentObservedAsset)"
-            )
-            // R13/A5: sin logd no hay observabilidad por logcat, asi que el veto se registra
-            // ademas en el buffer consultable por `/events`.
-            TradeEventLog.add(
-                TradeEventLog.Kind.VETO,
-                "V2 rango=%.3e umbral=%.0e activo=%s".format(
-                    java.util.Locale.US, rangoRelativo, RANGO_RELATIVO_MINIMO, currentObservedAsset
+                VetoProfiler.INSTANCE.recordEvaluation(
+                    asset = brokerRuntime.getBrokerState().rawObservedAsset.ifBlank { "Crypto IDX" },
+                    strategy = strategy.name, submode = autonomousSubMode.name,
+                    action = action.name, confidence = 0.0f, candleSecond = latestMarketTick?.candleSecond ?: 0,
+                    marketRegime = latestAnalysisResult?.trend?.name ?: "SIDEWAYS", signalScore = 0,
+                    vetoIndex = 0, vetoReason = "SEGURIDAD_NO_DEMO REAL_CONFIRMED", allowed = false,
+                    category = VetoCategory.NO_DEMO
                 )
-            )
-            return
-        }
-
-        // Veto complementario: el feed declara congelacion (metodo del cliente WebSocket).
-        // Se mantiene ademas del anterior porque cubre el caso de precio identico tick a tick,
-        // donde el rango relativo es exactamente 0 y ya lo captura V2.
-        if (isPriceFrozen()) {
-            Log.w(
-                "TradingEngine",
-                "⛔ Headless Trade $action VETADO por precio congelado (activo=$currentObservedAsset)"
-            )
-            TradeEventLog.add(
-                TradeEventLog.Kind.VETO,
-                "CONGELADO activo=$currentObservedAsset"
-            )
-            return
-        }
-
-        // GUARD DE COINCIDENCIA PANTALLA <-> FEED (Ronda 20, fail-closed).
-        //
-        // Por que existe. La recuperacion de activo sin feed (PREREGISTRO_R20 §4.1) puede dejar el
-        // feed apuntando a un RIC DISTINTO del grafico que el usuario tiene abierto en el broker.
-        // Medido: con el grafico en `Aave (OTC)`, el feed sano disponible es `ETHUSD-OTC`.
-        //
-        // Sin este guard, el bot decidiria CALL/PUT con el precio de un subyacente y pulsaria los
-        // botones del grafico de OTRO. En opciones binarias eso no es un fallo de calidad: es una
-        // orden a ciegas sobre un activo distinto.
-        //
-        // Antes de esta ronda NO existia ninguna comprobacion de este tipo (verificado leyendo
-        // `executeHeadlessTrade`: los guards eran feed rancio, V2, congelado, una-por-vela, veto
-        // francotirador, ventana sniper, anti-chop, cooldown y decision adaptativa; ninguno
-        // comparaba activos). Este guard solo ANADE una restriccion: no relaja ninguna.
-        //
-        // FAIL-CLOSED: sin confirmacion de pantalla no se autoriza (criterio B.4 del PREREGISTRO_
-        // R20). La logica vive en una funcion pura para poder fijarla por test.
-        val motivoDesajuste = motivoVetoPorDesajusteDeActivo(
-            activoPantallaVisible = AutoTradeAccessibilityService.latestObservedAsset,
-            activoFeed = feedAsset()
-        )
-        if (motivoDesajuste != null) {
-            vetoActivoDesajustado++
-            Log.w("TradingEngine", "⛔ Headless Trade $action VETADO por $motivoDesajuste")
-            TradeEventLog.add(TradeEventLog.Kind.VETO, motivoDesajuste)
-            return
-        }
-
-        val currentCandleEpochMinute = (latestMarketTick?.timestampMs ?: System.currentTimeMillis()) / 60000L
-        synchronized(this) {
-            if (lastExecutedCandleEpochMinute == currentCandleEpochMinute) {
-                Log.d("TradingEngine", "⛔ Headless Trade $action bloqueado: Vela de minuto $currentCandleEpochMinute ya fue operada (1 orden por vela máx).")
+                setTradingMode(AutoTradeMode.DISABLED, "seguridad:no-demo")
                 return
-            }
-        }
-
-        val sec = latestMarketTick?.candleSecond ?: (((System.currentTimeMillis() / 1000L) % 60L).toInt())
-        val isYolo = (autonomousSubMode == AutonomousSubMode.YOLO)
-        val isSniper = (autonomousSubMode == AutonomousSubMode.SNIPER)
-
-        if (isSniper) {
-            val currentAsset = AutoTradeAccessibilityService.latestObservedAsset.ifBlank { "Crypto IDX" }
-            val isSynthetic = AutoTradeAccessibilityService.isSyntheticOrOTC ||
-                currentAsset.contains("IDX", ignoreCase = true) ||
-                currentAsset.contains("OTC", ignoreCase = true)
-            if (isSynthetic && strategy != AutoTradeStrategy.MT_MASTER_COMBO && strategy != AutoTradeStrategy.AUTO_ADAPTIVE && strategy != AutoTradeStrategy.SUPPORT_RESISTANCE && strategy != AutoTradeStrategy.MT_REJECTION) {
-                Log.d("TradingEngine", "Headless bloqueado por Veto Francotirador: Activo sintético/OTC ($currentAsset)")
-                return
-            }
-        }
-
-        // Ventana Sniper Quirúrgica conforme a master_traders_skill (inicio por A3, default :01)
-        val inWindow = MarketTickFilters.isInEntryWindow(sec)
-        if (!inWindow) {
-            Log.d("TradingEngine", "Headless bloqueado fuera de ventana timing sniper (⏱ ${sec}s | SNIPER=$isSniper | YOLO=$isYolo)")
-            return
-        }
-        val isRejectionOrBounce = reasonDescription.contains("MT_REJECTION") ||
-                reasonDescription.contains("MT_RANGE") ||
-                reasonDescription.contains("MT_3_VELAS") ||
-                reasonDescription.contains("MT_REVERSAL") ||
-                reasonDescription.contains("MT_CONFIRM") ||
-                reasonDescription.contains("MT_ENGULFING") ||
-                reasonDescription.contains("QUANT_CRYPTO")
-        if (syntheticCandleEngine.isChoppinessDetected() && !isRejectionOrBounce) {
-            Log.d("TradingEngine", "Headless bloqueado por Filtro Anti-Choppy (<0.05% y ticks alternantes)")
-            return
-        }
-
-        // 1. Espaciado y Cooldown post-resolución
-        val timeSinceLastResolution = System.currentTimeMillis() - lastTradeResolutionTime
-        val minSpacingMs = when {
-            isYolo -> 8000L // 8 segundos en YOLO para no trabar la siguiente vela
-            riskManager.currentLossStreak > 0 -> 35000L
-            else -> 12000L
-        }
-        if (lastTradeResolutionTime > 0L && timeSinceLastResolution < minSpacingMs) {
-            Log.d("TradingEngine", "Headless bloqueado por Cooldown post-resolución (${timeSinceLastResolution / 1000}s < ${minSpacingMs / 1000}s)")
-            return
-        }
-
-        // 2. Evaluación por Motor de Autoaprendizaje Adaptativo
-        // El análisis se construye SIEMPRE desde el motor sintético de ticks WebSocket.
-        // Ya no se reutiliza latestAnalysisResult (visión): sus mechas/S-R/choppiness son
-        // ceros en modo WebSocket puro y vetaban señales sobre datos nulos.
-        val effectiveAnalysis = buildAnalysisFromSyntheticEngine(latestMarketTick ?: return)
-
-        val adaptiveDecision = adaptiveLearningEngine.evaluateSignalSuitability(
-            candidateAction = action,
-            analysis = effectiveAnalysis,
-            tick = latestMarketTick,
-            strategyName = strategy.name
-        )
-        val finalAction: TradeAction
-        val finalReason: String
-        val adaptiveModifier: Float
-
-        when (adaptiveDecision) {
-            is AdaptiveDecision.Block -> {
-                Log.w("TradingEngine", "⛔ Headless Trade $action VETADO por Autoaprendizaje: ${adaptiveDecision.reason}")
-                handler.post {
-                    Toast.makeText(context, "⛔ [Autoaprendizaje] Entrada bloqueada: ${adaptiveDecision.reason}", Toast.LENGTH_SHORT).show()
+            } else if (accountType == com.example.tradedraw.core.AccountType.UNKNOWN || !isDemo) {
+                // R31 FASE 8: tri-estado DEMO_CONFIRMED / DEMO_UNKNOWN / REAL_CONFIRMED
+                // Evita que un único frame corrupto de accesibilidad desarme el motor permanentemente.
+                var recoveredDemo = false
+                for (retry in 1..3) {
+                    brokerRuntime.refreshBalance()
+                    if (brokerRuntime.demoAccountGuard.getAccountType() == com.example.tradedraw.core.AccountType.DEMO &&
+                        brokerRuntime.getBrokerState().isDemoAccount) {
+                        recoveredDemo = true
+                        break
+                    }
+                    if (brokerRuntime.demoAccountGuard.getAccountType() == com.example.tradedraw.core.AccountType.REAL) {
+                        Log.e("TradingEngine", "⛔ BLOQUEO CRÍTICO DE SEGURIDAD: Cuenta REAL detectada en reintento $retry. Abortando.")
+                        setTradingMode(AutoTradeMode.DISABLED, "seguridad:no-demo")
+                        return
+                    }
                 }
-                return
-            }
-            is AdaptiveDecision.Invert -> {
-                finalAction = adaptiveDecision.invertedAction
-                finalReason = "$reasonDescription [🔄 Invertida por Autoaprendizaje]"
-                adaptiveModifier = 1.15f
-            }
-            is AdaptiveDecision.Allow -> {
-                finalAction = adaptiveDecision.action
-                finalReason = reasonDescription
-                adaptiveModifier = adaptiveDecision.confidenceModifier
+                if (!recoveredDemo) {
+                    // DEMO_UNKNOWN: bloquear orden de manera fail-closed SIN desarmar permanentemente el motor
+                    Log.w("TradingEngine", "⚠️ Lectura de cuenta DEMO no concluyente (DEMO_UNKNOWN). Bloqueando orden temporalmente de forma preventiva.")
+                    eventSink.add(
+                        TradeEventLog.Kind.VETO,
+                        "SEGURIDAD_NO_DEMO DEMO_UNKNOWN_transitorio",
+                        decisionId = currentDecisionId
+                    )
+                    VetoProfiler.INSTANCE.recordEvaluation(
+                        asset = brokerRuntime.getBrokerState().rawObservedAsset.ifBlank { "Crypto IDX" },
+                        strategy = strategy.name, submode = autonomousSubMode.name,
+                        action = action.name, confidence = 0.0f, candleSecond = latestMarketTick?.candleSecond ?: 0,
+                        marketRegime = latestAnalysisResult?.trend?.name ?: "SIDEWAYS", signalScore = 0,
+                        vetoIndex = 0, vetoReason = "SEGURIDAD_NO_DEMO DEMO_UNKNOWN_transitorio", allowed = false,
+                        category = VetoCategory.NO_DEMO
+                    )
+                    return
+                }
             }
         }
 
-        val headlessConfidence = (0.85f * adaptiveModifier).coerceIn(0.1f, 1.0f)
-        val (canTrade, riskReason) = riskManager.canExecuteTrade(autonomousSubMode, headlessConfidence)
-        if (!canTrade) {
-            Log.d("TradingEngine", "Headless bloqueado por riesgo: $riskReason")
-            if (isSniper && (riskReason.contains("alcanzado", ignoreCase = true) || riskReason.contains("finalizada", ignoreCase = true) || riskReason.contains("Límite", ignoreCase = true))) {
-                setTradingMode(AutoTradeMode.DISABLED, "engine:sniper-limite(headless)")
-                sniperShutdownReason = riskReason
+        // R31 FASE 6: Gobernanza estricta FAST_DEMO — imposible en cuenta REAL o no confirmada
+        if (validationMode == com.example.tradedraw.core.ValidationMode.FAST_DEMO) {
+            val accType = brokerRuntime.demoAccountGuard.getAccountType()
+            val isDemo = brokerRuntime.getBrokerState().isDemoAccount
+            if (accType != com.example.tradedraw.core.AccountType.DEMO || !isDemo) {
+                Log.e("TradingEngine", "⛔ VIOLACIÓN CRÍTICA: FAST_DEMO prohibido en cuenta no-DEMO ($accType). Abortando.")
+                setTradingMode(AutoTradeMode.DISABLED, "seguridad:fast-demo-no-demo")
+                return
+            }
+        }
+
+        val now = System.currentTimeMillis()
+        val currentCandleEpochMinute = (latestMarketTick?.timestampMs ?: now) / 60000L
+        val sec = latestMarketTick?.candleSecond ?: ((now / 1000L) % 60L).toInt()
+        // Preserve legacy short-circuiting: no analysis/adaptive/capital work before its veto stage.
+        val effectiveAnalysis by lazy { buildAnalysisFromSyntheticEngine(requireNotNull(latestMarketTick)) }
+        val policyResult = executionPolicy.evaluate(
+            ExecutionContext(
+                action = action, mode = mode, autonomousSubMode = autonomousSubMode,
+                strategy = strategy, currentDecisionId = currentDecisionId,
+                tickAgeMs = latestMarketTick?.let { now - it.timestampMs },
+                isFeedFresh = isFeedFresh(), feedMaxAgeMs = FEED_MAX_AGE_MS,
+                observedAsset = brokerRuntime.getBrokerState().rawObservedAsset,
+                feedAsset = feedAsset(), rangoRelativo = recentPriceRangeRatio(),
+                isPriceFrozen = isPriceFrozen(), isSyntheticOrOtc = brokerRuntime.getBrokerState().isSyntheticOrOTC,
+                sec = sec, isChoppinessDetected = syntheticCandleEngine.isChoppinessDetected(),
+                reasonDescription = reasonDescription, lastTradeResolutionTime = lastTradeResolutionTime,
+                currentLossStreak = riskManager.currentLossStreak, currentTimeMs = now,
+                currentCandleEpochMinute = currentCandleEpochMinute,
+                isCandleAlreadyExecuted = synchronized(this) {
+                    candleRateLimiter.isCandleAlreadyExecuted(currentCandleEpochMinute, mode)
+                }
+            ),
+            adaptiveDecisionSupplier = {
+                adaptiveLearningEngine.evaluateSignalSuitability(action, effectiveAnalysis, latestMarketTick, strategy.name)
+            },
+            capitalDecisionSupplier = { confidence -> capitalPolicy.canExecuteTrade(autonomousSubMode, confidence) },
+            srPlanSupplier = {
+                val reasoning = getEngineReasoning()
+                reasoning.srFilterStatus to reasoning.actionPlan
+            },
+            buyExhaustionSupplier = {
+                motivoVetoPorAgotamientoDeCompra(action, effectiveAnalysis.trend, effectiveAnalysis.signalPowerCall)
+            }
+        )
+        val evaluatedAsset = brokerRuntime.getBrokerState().rawObservedAsset.ifBlank { "Crypto IDX" }
+        val evalRegime = effectiveAnalysis.trend.name
+        val evalScore = effectiveAnalysis.confluenceScoreCall.coerceAtLeast(effectiveAnalysis.confluenceScorePut)
+        if (policyResult is ExecutionPolicyResult.Vetoed) {
+            VetoProfiler.INSTANCE.recordEvaluation(
+                asset = evaluatedAsset,
+                strategy = strategy.name,
+                submode = autonomousSubMode.name,
+                action = action.name,
+                confidence = 0.0f,
+                candleSecond = sec,
+                marketRegime = evalRegime,
+                signalScore = evalScore,
+                vetoIndex = policyResult.vetoIndex,
+                vetoReason = policyResult.message,
+                allowed = false
+            )
+            if (policyResult.incrementVetoActivoDesajustado) vetoActivoDesajustado++
+            eventSink.add(TradeEventLog.Kind.VETO, policyResult.message, decisionId = currentDecisionId)
+            policyResult.secondaryEventKind?.let {
+                eventSink.add(it, policyResult.secondaryEventMessage.orEmpty(), decisionId = currentDecisionId)
+            }
+            policyResult.disableModeReason?.let {
+                setTradingMode(AutoTradeMode.DISABLED, it)
+                sniperShutdownReason = policyResult.message.removePrefix("RISK_LIMIT ")
+            }
+            policyResult.toastMessage?.let { message ->
                 handler.post {
-                    Toast.makeText(context, "🛑 $riskReason", Toast.LENGTH_LONG).show()
-                    OverlayService.instance?.updateHUDView()
+                    Toast.makeText(context, message, if (policyResult.isLongToast) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
+                    if (policyResult.disableModeReason != null) hudPort?.updateHUDView()
                 }
             }
             return
         }
-
-        // VETO V1 (B2): exclusividad mutua S/R <-> anti-chop.
-        // El filtro S/R y el plan de accion pueden pedir direcciones OPUESTAS; es una
-        // contradiccion interna del analisis, no una senal debil. Caso real capturado en R11
-        // (`clock_03.png`): "Toque Directo en Resistencia [PUT Optimo]" frente a
-        // "Cerca de Soporte (15%) ... CALL". Hasta ahora solo se ETIQUETABA en el HUD
-        // (`HudCoherence.actionConflict` se usaba unicamente para pintar el aviso) y la orden
-        // se disparaba igual. Ahora veta, con el umbral congelado en PRAGEREGISTRO_R12.
-        val reasoning = getEngineReasoning()
-        if (HudCoherence.actionConflict(reasoning.srFilterStatus, reasoning.actionPlan)) {
-            Log.w(
-                "TradingEngine",
-                "⛔ Headless Trade $action VETADO (V1) por conflicto S/R<->Plan: " +
-                    "SR=\"${reasoning.srFilterStatus}\" PLAN=\"${reasoning.actionPlan}\""
-            )
-            // R13/A5: el veto queda observable desde `/events` sin depender de logcat.
-            TradeEventLog.add(
-                TradeEventLog.Kind.VETO,
-                "V1 SR=\"${reasoning.srFilterStatus}\" PLAN=\"${reasoning.actionPlan}\""
-            )
-            return
-        }
+        val allowed = policyResult as ExecutionPolicyResult.Allowed
+        VetoProfiler.INSTANCE.recordEvaluation(
+            asset = evaluatedAsset,
+            strategy = strategy.name,
+            submode = autonomousSubMode.name,
+            action = allowed.finalAction.name,
+            confidence = allowed.headlessConfidence,
+            candleSecond = sec,
+            marketRegime = evalRegime,
+            signalScore = evalScore,
+            vetoIndex = 0,
+            vetoReason = allowed.finalReason,
+            allowed = true
+        )
+        val finalAction = allowed.finalAction
+        val finalReason = allowed.finalReason
+        val headlessConfidence = allowed.headlessConfidence
 
         val (screenW, screenH) = CalibrationManager.getRealScreenDimensions(context)
         val isLand = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || screenW > screenH
+        val (x, y) = tapCoordinateResolver.resolve(finalAction, isLand, screenW, screenH)
 
-        val calibCoords = if (calibrationManager != null && calibrationManager!!.isCalibrated()) {
-            if (finalAction == TradeAction.BUY) calibrationManager!!.getBuyCoordinates()
-            else calibrationManager!!.getSellCoordinates()
-        } else null
-
-        val (rawX, rawY) = if (calibCoords != null) {
-            calibCoords
-        } else {
-            if (isLand) {
-                if (finalAction == TradeAction.BUY) Pair(screenW * 0.881f, screenH * 0.735f)
-                else Pair(screenW * 0.881f, screenH * 0.844f)
-            } else {
-                if (finalAction == TradeAction.BUY) Pair(screenW * 0.25f, screenH * 0.903f)
-                else Pair(screenW * 0.75f, screenH * 0.903f)
+        // Ronda 21 (Frente E): SHADOW MODE FORMAL
+        // Si el motor está en SHADOW, todas las defensas y cálculos corren exactamente igual,
+        // pero NUNCA se despacha un tap al broker ni se altera el saldo ni el W/L real.
+        if (mode == AutoTradeMode.SHADOW) {
+            val currentPrice = latestMarketTick?.price ?: 0.0
+            if (shadowSimulationEnabled) {
+                val tick = latestMarketTick ?: return
+                shadowSimulation.open(OrderRequest(finalAction, x, y, currentDecisionId, "sim-$currentDecisionId", mode = mode),
+                    tick, com.example.tradedraw.simulation.SimMetadata(strategy.name, autonomousSubMode.name,
+                        headlessConfidence, syntheticCandleEngine.detectedTrend.name, finalReason)) { receipt ->
+                    if (receipt is OrderReceipt.Success) {
+                        shadowOrdersGenerated++
+                        synchronized(this) { candleRateLimiter.recordExecution(currentCandleEpochMinute, mode) }
+                    } else eventSink.add("SIMULATION_ERROR", receipt.toString(), decisionId = currentDecisionId)
+                }
+                return
             }
+            shadowOrdersGenerated++
+            Log.i("TradingEngine", "👻 [SHADOW MODE] Orden simulada autorizada: $finalAction @ $currentPrice (segundo=$sec, decisionId=$currentDecisionId) - Cero taps, saldo intacto")
+            eventSink.add(
+                TradeEventLog.Kind.SHADOW_DECISION,
+                "SHADOW $finalAction @ $currentPrice conf=$headlessConfidence strat=${strategy.name} sub=${autonomousSubMode.name}",
+                decisionId = currentDecisionId,
+                tradeId = null
+            )
+            TradeJournalLogger.logShadowTrade(
+                context = context,
+                strategy = strategy.name,
+                submode = autonomousSubMode.name,
+                action = finalAction.name,
+                confidence = headlessConfidence,
+                priceY = currentPrice.toFloat(),
+                trend = syntheticCandleEngine.detectedTrend.name,
+                candleSecond = sec,
+                decisionId = currentDecisionId,
+                reason = "SHADOW_AUTORIZADA: pasó todos los vetos"
+            )
+            synchronized(this) {
+                candleRateLimiter.recordExecution(currentCandleEpochMinute, mode)
+            }
+            return
         }
 
-        // Sanitización estricta: en modo vertical, nunca permitir clics por encima del 80.0% (fila de gráfico/indicadores)
-        val (x, y) = if (!isLand && rawY < screenH * 0.80f) {
-            Log.w("TradingEngine", "⚠️ Coordenada Y corregida de $rawY a ${screenH * 0.838f} para tocar botones de orden")
-            Pair(rawX, screenH * 0.838f)
-        } else {
-            Pair(rawX, rawY)
-        }
-
-        val accessibility = AutoTradeAccessibilityService.instance
-        val observed = accessibility?.readCurrentBalance() ?: AutoTradeAccessibilityService.latestObservedBalance
-        val baseBal = if (observed > 0.0) observed else AutoTradeAccessibilityService.latestObservedBalance
+        val currentTradeId = java.util.UUID.randomUUID().toString()
         // H9: telemetría del segundo REAL de entrada (no el de liquidación del journal). Permite
         // correlacionar el segundo de disparo con el resultado, la métrica que el journal no captura.
-        Log.i("TradingEngine", "🎯 ENTRADA despachada | ${finalAction} | segundo=$sec | estrategia=${strategy.name} | $finalReason")
-        isTradeResolving.set(false)
-        riskManager.recordTradeSent(finalAction, latestMarketTick?.price ?: 0.0, 0f, baseBal, headlessConfidence, sec, finalReason)
-        synchronized(this) {
-            lastExecutedCandleEpochMinute = currentCandleEpochMinute
-        }
-        adaptiveLearningEngine.recordTradeOpened(
-            action = finalAction,
-            analysis = effectiveAnalysis,
-            tick = latestMarketTick,
-            strategyName = strategy.name
-        )
-        // Despacho táctil único con verificación y fallback ROOT transparente
-        AutoTradeAccessibilityService.performClick(x, y) { success, error ->
-            if (!success) {
-                triggerManualFallback(finalAction, error ?: "Auto-clic headless falló en 300ms")
+        Log.i("TradingEngine", "🎯 ENTRADA despachada | ${finalAction} | segundo=$sec | estrategia=${strategy.name} | decisionId=$currentDecisionId | tradeId=$currentTradeId | $finalReason")
+        dispatchBrokerOrder(finalAction, x, y, currentDecisionId, currentTradeId,
+            headlessConfidence, finalReason) { receipt ->
+            if (receipt !is OrderReceipt.Success) return@dispatchBrokerOrder
+            synchronized(this) {
+                candleRateLimiter.recordExecution(currentCandleEpochMinute, mode)
             }
-        }
+            adaptiveLearningEngine.recordTradeOpened(
+                action = finalAction, analysis = effectiveAnalysis,
+                tick = latestMarketTick, strategyName = strategy.name)
 
         handler.post {
             drawingView.triggerClickAnimation(x, y)
@@ -2220,13 +1944,14 @@ class TradingEngine(
                 action = finalAction,
                 entryPrice = latestMarketTick?.price ?: 0.0,
                 screenWidth = screenW,
-                stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode).toDouble(),
+                stake = riskManager.getEffectiveStake(autonomousSubMode),
                 payoutRate = riskManager.sorosPayoutRate.toDouble()
             )
             emitHapticAndAudioFeedback()
-            val stake = riskManager.getCurrentInvestmentAmount(autonomousSubMode)
+            val stake = riskManager.getEffectiveStake(autonomousSubMode)
             Toast.makeText(context, "⚡ [${strategy.name}] BOT OPERÓ: $finalAction ($$$stake)\n$finalReason", Toast.LENGTH_LONG).show()
             onTradeExecutedListener?.invoke(finalAction, true)
+        }
         }
     }
 
@@ -2238,8 +1963,10 @@ class TradingEngine(
      * de apertura, la orden NO se registro: es una operacion fantasma, no un empate.
      */
     private fun checkOrderConfirmation() {
+        val coordinator = orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
+        if (coordinator?.isRecovered() == true || riskManager.requiresBrokerReconciliation) return
         val snapshot = synchronized(riskManager) {
-            if (!riskManager.hasPendingTrade || riskManager.orderState != RiskManager.OrderState.ENVIADA) null
+            if (!riskManager.hasPendingTrade || riskManager.orderState != OrderState.ENVIADA) null
             else Triple(riskManager.pendingTradeStartTime, riskManager.pendingTradeBaseBalance, riskManager.pendingTradeAction)
         } ?: return
 
@@ -2247,43 +1974,30 @@ class TradingEngine(
         if (startMs <= 0L) return
         val elapsedSec = (System.currentTimeMillis() - startMs) / 1000
 
-        val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance()
-            ?: AutoTradeAccessibilityService.latestObservedBalance
+        val currentBal = brokerRuntime.refreshBalance()
 
+        if (!brokerRuntime.demoAccountGuard.isDemoConfirmedFresh(10_000L)) return
         if (riskManager.isOrderConfirmed(baseBalance, currentBal, elapsedSec)) {
             riskManager.markOrderConfirmed()
             Log.i(
                 "TradingEngine",
                 "✅ ORDEN CONFIRMADA por movimiento de saldo | $action | base=$baseBalance ahora=$currentBal (${elapsedSec}s)"
             )
-            handler.post { OverlayService.instance?.updateHUDView() }
+            handler.post { hudPort?.updateHUDView() }
             return
         }
 
         if (riskManager.isOrderUnprocessed(baseBalance, currentBal, elapsedSec)) {
-            // La orden nunca llego al broker. Se cierra el estado pendiente para que el HUD deje
-            // de mostrar "Trade Activo" y el motor pueda volver a operar; se registra el fallo
-            // en el journal como fallo de ENVIO, no como empate de precio.
-            riskManager.markOrderUnprocessed()
-            Log.w(
-                "TradingEngine",
-                "⛔ ORDEN NO PROCESADA: el saldo no se movio en ${elapsedSec}s " +
-                    "(base=$baseBalance ahora=$currentBal) | $action | el tap no creo operacion"
-            )
-            handler.post {
-                Toast.makeText(
-                    context,
-                    "⛔ Orden NO procesada: el tap no llego al broker (saldo sin cambios)",
-                    Toast.LENGTH_LONG
-                ).show()
-                OverlayService.instance?.updateHUDView()
-            }
-            return
+            coordinator?.markUncertain("BROKER_CONFIRMATION_TIMEOUT")
+            coordinator?.reservation()?.let { riskManager.holdForBrokerReconciliation(it) }
+            eventSink.add("DISPATCH_RECOVERY", "BROKER_CONFIRMATION_TIMEOUT requires=broker_history_review",
+                riskManager.pendingTradeDecisionId, riskManager.pendingTradeTradeId)
         }
     }
 
     private fun checkHeadlessTradeResolution() {
         checkOrderConfirmation()
+        if (riskManager.requiresBrokerReconciliation) return
         val snapshot = synchronized(riskManager) {
             if (!riskManager.hasPendingTrade) null
             else {
@@ -2297,7 +2011,9 @@ class TradingEngine(
                         startTime = startMs,
                         entryPrice = riskManager.pendingTradeEntryPrice,
                         baseBalance = riskManager.pendingTradeBaseBalance,
-                        confidence = riskManager.pendingTradeConfidence
+                        confidence = riskManager.pendingTradeConfidence,
+                        decisionId = riskManager.pendingTradeDecisionId,
+                        tradeId = riskManager.pendingTradeTradeId
                     )
                 }
             }
@@ -2310,12 +2026,11 @@ class TradingEngine(
 
         val baseBalance = snapshot.baseBalance
         val saldoFresco = isBalanceFresh(
-            AutoTradeAccessibilityService.instance != null,
-            AutoTradeAccessibilityService.lastBalanceReadMs,
+            brokerRuntime.read().isAvailable,
+            brokerRuntime.read().lastReadMs,
             System.currentTimeMillis()
         )
-        val currentBal = AutoTradeAccessibilityService.instance?.readCurrentBalance()
-            ?: AutoTradeAccessibilityService.latestObservedBalance
+        val currentBal = brokerRuntime.refreshBalance()
 
         var isWin: Boolean? = null
         var isTie = false
@@ -2362,12 +2077,13 @@ class TradingEngine(
 
         if (isWin != null || isTie) {
             if (!isTradeResolving.compareAndSet(false, true)) return
+            VetoProfiler.INSTANCE.recordTradeSettled()
 
             val finalWin = isWin ?: false
             val pendingAction = snapshot.action
             val pendingEntry = snapshot.entryPrice
             val pendingConfidence = snapshot.confidence
-            val pendingStake = riskManager.getCurrentInvestmentAmount()
+            val pendingStake = riskManager.getEffectiveStake()
             val pendingTradeStartMs = snapshot.startTime
             val sec = latestMarketTick?.candleSecond ?: (((System.currentTimeMillis() / 1000L) % 60L).toInt())
             val wsAnalysis = VisionAnalysisResult(
@@ -2377,44 +2093,18 @@ class TradingEngine(
                 candleSecond = sec
             )
             val journalResult = tieJournalResult(isTie, saldoFresco) ?: if (finalWin) "WIN" else "LOSS"
+            // R24/B1.a: clave capturada ANTES del `post`, igual que en la ruta de vision. El
+            // pendiente puede limpiarse dentro del hilo principal y perder el tradeId.
+            val settleTradeId = snapshot.tradeId
+            val settleStartMs = snapshot.startTime
+            // R24/B1.b: LOSS resuelto sin saldo legible = sin evidencia de saldo.
+            val lossSinEvidencia = !finalWin && !isTie && !(baseBalance > 0.0 && currentBal > 0.0)
 
             handler.post {
                 autoDrawEngine.clearTradeEntry()
 
-                TradeJournalLogger.logTrade(
-                    context = context,
-                    strategy = strategy.name,
-                    submode = autonomousSubMode.name,
-                    action = pendingAction.name,
-                    confidence = pendingConfidence,
-                    priceY = pendingEntry.toFloat(),
-                    stake = pendingStake,
-                    baseBalance = baseBalance,
-                    result = journalResult,
-                    settledBalance = currentBal,
-                    durationSec = elapsedSec,
-                    reason = method,
-                    trend = wsAnalysis.trend.name,
-                    distSupportRatio = wsAnalysis.distanceToSupportRatio,
-                    distResistanceRatio = wsAnalysis.distanceToResistanceRatio,
-                    tickVelocity = latestMarketTick?.velocity ?: 0f,
-                    impulse = when {
-                        latestMarketTick?.isBullishImpulse == true -> "BULLISH"
-                        latestMarketTick?.isBearishImpulse == true -> "BEARISH"
-                        else -> "NEUTRAL"
-                    },
-                    marketRegime = if (syntheticCandleEngine.isChoppinessDetected()) "CHOP" else "TRENDING",
-                    // H10: se persiste el segundo REAL de ENTRADA (capturado al enviar la orden),
-                    // no el de liquidación. Si por alguna ruta no se capturó (-1), se usa el actual.
-                    candleSecond = if (riskManager.pendingTradeEntryCandleSecond >= 0)
-                        riskManager.pendingTradeEntryCandleSecond else sec,
-                    adaptiveStatus = journalResult,
-                    tradeStartMs = pendingTradeStartMs,
-                    // Ronda 14 (A2): instrumentacion de latencia. Se persiste lo que realmente
-                    // midio la ruta de tap, no una reconstruccion: el journal guardaba solo el
-                    // segundo de la DECISION, que con 255-1205 ms de latencia puede no ser el
-                    // segundo en que el broker ve el toque.
-                    latency = TradeJournalLogger.LatencyRecord(
+                val tradeLoggerAction = {
+                    val lat = TradeJournalLogger.LatencyRecord(
                         signalTs = riskManager.pendingTradeSignalTs,
                         tapStartTs = riskManager.pendingTradeTapStartTs,
                         tapEndTs = riskManager.pendingTradeTapEndTs,
@@ -2422,13 +2112,46 @@ class TradingEngine(
                         priceAtSignal = riskManager.pendingTradePriceAtSignal,
                         priceAtTapEnd = riskManager.pendingTradePriceAtTapEnd
                     )
-                )
+                    val candleSec = if (riskManager.pendingTradeEntryCandleSecond >= 0)
+                        riskManager.pendingTradeEntryCandleSecond else sec
+                    val regime = if (syntheticCandleEngine.isChoppinessDetected()) "CHOP" else "TRENDING"
+                    val impulse = when {
+                        latestMarketTick?.isBullishImpulse == true -> "BULLISH"
+                        latestMarketTick?.isBearishImpulse == true -> "BEARISH"
+                        else -> "NEUTRAL"
+                    }
+
+                    if (validationMode == com.example.tradedraw.core.ValidationMode.FAST_DEMO) {
+                        TradeJournalLogger.logFastDemoTrade(
+                            context = context, strategy = strategy.name, submode = autonomousSubMode.name,
+                            action = pendingAction.name, confidence = pendingConfidence, priceY = pendingEntry.toFloat(),
+                            stake = pendingStake, baseBalance = baseBalance, result = journalResult, settledBalance = currentBal,
+                            durationSec = elapsedSec, reason = method, trend = wsAnalysis.trend.name,
+                            distSupportRatio = wsAnalysis.distanceToSupportRatio, distResistanceRatio = wsAnalysis.distanceToResistanceRatio,
+                            tickVelocity = latestMarketTick?.velocity ?: 0f, impulse = impulse, marketRegime = regime,
+                            candleSecond = candleSec, adaptiveStatus = journalResult, tradeStartMs = pendingTradeStartMs,
+                            latency = lat, decisionId = snapshot.decisionId, tradeId = snapshot.tradeId
+                        )
+                    } else {
+                        TradeJournalLogger.logValidationRealTrade(
+                            context = context, strategy = strategy.name, submode = autonomousSubMode.name,
+                            action = pendingAction.name, confidence = pendingConfidence, priceY = pendingEntry.toFloat(),
+                            stake = pendingStake, baseBalance = baseBalance, result = journalResult, settledBalance = currentBal,
+                            durationSec = elapsedSec, reason = method, trend = wsAnalysis.trend.name,
+                            distSupportRatio = wsAnalysis.distanceToSupportRatio, distResistanceRatio = wsAnalysis.distanceToResistanceRatio,
+                            tickVelocity = latestMarketTick?.velocity ?: 0f, impulse = impulse, marketRegime = regime,
+                            candleSecond = candleSec, adaptiveStatus = journalResult, tradeStartMs = pendingTradeStartMs,
+                            latency = lat, decisionId = snapshot.decisionId, tradeId = snapshot.tradeId
+                        )
+                    }
+                }
+                tradeLoggerAction()
 
                 if (isTie) {
                     recordTieVoidIfFresh(riskManager, saldoFresco)
                     val mensaje = if (saldoFresco) "[HEADLESS] ⚪ Empate / Orden cancelada" else "[HEADLESS] ⚪ Empate incierto / saldo no fresco"
                     Toast.makeText(context, mensaje, Toast.LENGTH_SHORT).show()
-                    OverlayService.instance?.updateHUDView()
+                    hudPort?.updateHUDView()
                 } else if (finalWin) {
                     if (riskManager.resolvePendingTradeWin()) {
                         adaptiveLearningEngine.recordTradeOutcome(true, context)
@@ -2436,7 +2159,7 @@ class TradingEngine(
                         Toast.makeText(context, "[HEADLESS] 🎉 GANADA (+1 W) [$method]", Toast.LENGTH_SHORT).show()
                         onTradeExecutedListener?.invoke(pendingAction, true)
                     } else {
-                        riskManager.recordTradeWin(force = true)
+                        riskManager.settleTradeOnce(settleTradeId, settleStartMs, win = true)
                         adaptiveLearningEngine.recordTradeOutcome(true, context)
                         emitHapticAndAudioFeedback()
                         Toast.makeText(context, "[HEADLESS] 🎉 GANADA (+1 W) [$method]", Toast.LENGTH_SHORT).show()
@@ -2444,12 +2167,14 @@ class TradingEngine(
                     }
                 } else {
                     if (riskManager.resolvePendingTradeLoss()) {
+                        if (lossSinEvidencia) riskManager.recordLossSinEvidencia()
                         adaptiveLearningEngine.recordTradeOutcome(false, context)
                         emitHapticAndAudioFeedback()
                         Toast.makeText(context, "[HEADLESS] ⚠️ PERDIDA (+1 L) [$method]", Toast.LENGTH_SHORT).show()
                         onTradeExecutedListener?.invoke(pendingAction, false)
                     } else {
-                        riskManager.recordTradeLoss(force = true)
+                        val counted = riskManager.settleTradeOnce(settleTradeId, settleStartMs, win = false)
+                        if (counted && lossSinEvidencia) riskManager.recordLossSinEvidencia()
                         adaptiveLearningEngine.recordTradeOutcome(false, context)
                         emitHapticAndAudioFeedback()
                         Toast.makeText(context, "[HEADLESS] ⚠️ PERDIDA (+1 L) [$method]", Toast.LENGTH_SHORT).show()
@@ -2470,3 +2195,88 @@ class TradingEngine(
         autoDrawEngine.clearAutoDrawings()
     }
 }
+
+/**
+ * R23E (REQ 1): extrae la similitud porcentual del `reason` de un `AdaptiveDecision.Block`.
+ *
+ * POR QUE EXISTE. El veto `ADAPTIVE_BLOCK` es el guard que concentra el 96.8% de los vetos de la
+ * campana R23D, y hasta R23D su `detail` solo llevaba el texto libre de la razon. El pipeline
+ * contrafactual (Fase 3) necesita `similarity` como NUMERO para poder segmentar por buckets
+ * preregistrados (90-93%, 93-96%, 96-98%, 98-100%), asi que la similitud tiene que viajar de
+ * forma parseable y no embebida en prosa.
+ *
+ * Acepta las dos formas que emite `AdaptiveLearningEngine`: la del anti-patron por similitud
+ * (`... (98% similitud en contexto S/R=41%)`) y la de las ramas de continuacion/reversion, que no
+ * miden similitud. Devuelve `None` en ese segundo caso: un `0` seria indistinguible de "similitud
+ * medida y nula", que es justo el dato que no existe.
+ */
+internal fun extractAdaptiveSimPct(reason: String): Int? {
+    if (reason.isBlank()) return null
+    val m = Regex("""(\d{1,3})\s*%\s*similitud""").find(reason)
+    return m?.groupValues?.get(1)?.toIntOrNull()
+}
+
+/**
+ * R23E (REQ 1): compone el `detail` del evento de veto `ADAPTIVE_BLOCK`.
+ *
+ * Formato: `ADAPTIVE_BLOCK [sim:98%] [Confluencia: 85pts] <razon>`
+ *
+ * `sim` y `[Confluencia: Npts]` son OPCIONALES y solo aparecen cuando el dato existe de verdad:
+ * - La confluencia llega en la `reason` de la senal, que `SyntheticCandleEngine.dispatchSniperSignal`
+ *   enriquece al final del pipeline con `[Confluencia: Npts]`. Se propaga aqui para que el score
+ *   REAL llegue al log de eventos (en R23D el monitor no tenia de donde sacarlo: ver el hallazgo
+ *   de la Fase 1 de R23D, donde las 529 decisiones salian sin score).
+ * - Cuando no hay marcador, el prefijo se omite en vez de escribir un valor por defecto. Un
+ *   `[Confluencia: 0pts]` inventado envenenaria la segmentacion por score del preregistro.
+ */
+internal fun buildAdaptiveBlockDetail(reason: String, signalReason: String): String {
+    val sb = StringBuilder("ADAPTIVE_BLOCK")
+    val sim = extractAdaptiveSimPct(reason)
+    if (sim != null) sb.append(" [sim:").append(sim).append("%]")
+    val m = Regex("""\[Confluencia:\s*(\d+(?:\.\d+)?)pts\]""").find(signalReason)
+    if (m != null) sb.append(" [Confluencia: ").append(m.groupValues[1]).append("pts]")
+    sb.append(" ").append(reason)
+    return sb.toString()
+}
+
+/**
+ * R23H Fase 2: calcula el par (callPower, putPower) del termometro de mercado.
+ *
+ * Extraido de `buildAnalysisFromSyntheticEngine` SIN cambiar una sola constante: mismos valores
+ * base, mismos incrementos, mismos umbrales, mismo `coerceIn` y misma normalizacion a 100. La
+ * formula es la MISMA que decide en vivo; sacarla a funcion pura solo permite que el arnes de
+ * replay (`ReplayBacktestTest`) la invoque para reproducir el veto por agotamiento con identico
+ * `callPower`. Duplicar el calculo en el test habria garantizado divergencia silenciosa al primer
+ * ajuste de estrategia.
+ *
+ * CONGELADO: esta funcion NO es un punto de calibracion. Cualquier cambio de valores aqui altera la
+ * estrategia y queda fuera del alcance de una correccion de infraestructura.
+ */
+internal fun calcularPoderesDeMercado(
+    trend: TrendDirection, distSupportRatio: Float, distResistanceRatio: Float,
+    rsi: Double, isBullishImpulse: Boolean, isBearishImpulse: Boolean
+): Pair<Int, Int> = StrategyReplayPort.calcularPoderesDeMercado(trend, distSupportRatio, distResistanceRatio, rsi, isBullishImpulse, isBearishImpulse)
+
+/**
+ * R23H Fase 1: decide si una compra debe vetarse por AGOTAMIENTO DE CLIMAX en techo.
+ *
+ * HIPOTESIS QUE IMPLEMENTA (no optimizacion validada). `workflows/R23H_BUY_FEATURE_ANALYSIS.md`
+ * §5 aisla `BUY + UPTREND + callPower >= 70` como el unico bucket de compra con poder
+ * discriminante en la muestra R23G reconciliada: 6 perdidas evitadas por 1 victoria cedida. El
+ * fundamento microestructural es que un `callPower` extremo en pleno UPTREND mide liquidez
+ * compradora agotandose en resistencia, no fuerza para continuar. Es la unica hipotesis de la fase
+ * y se mide en vivo; el umbral queda congelado en [TradingEngine.VETO_BUY_UPTREND_MAX_CALL_POWER].
+ *
+ * POR QUE ES UNA FUNCION PURA Y NO UN `if` INLINE. El veto tiene que poder auditarse sin levantar
+ * el motor entero (que exige `Context`, `Handler`, `RiskManager` y el servicio de accesibilidad).
+ * Aislado aqui, el contrato completo — dispara en UPTREND+>=70, NO dispara por debajo, NO dispara
+ * en DOWNTREND/SIDEWAYS, NO toca SELL — se verifica en tests JVM puros.
+ *
+ * ALCANCE DELIBERADAMENTE MINIMO. Solo mira `BUY`. SELL, `ADAPTIVE_BLOCK` (0.99f), stake y payout
+ * quedan fuera: no se leen ni se escriben. Este veto se evalua ANTES del motor adaptativo para que
+ * un bloqueo por agotamiento no consuma ni contamine la firma de aprendizaje.
+ *
+ * @return el `detail` del evento de veto si procede vetar, o `null` si la orden sigue adelante.
+ */
+internal fun motivoVetoPorAgotamientoDeCompra(action: TradeAction, trend: TrendDirection, callPower: Int): String? =
+    StrategyReplayPort.motivoVetoPorAgotamientoDeCompra(action, trend, callPower)

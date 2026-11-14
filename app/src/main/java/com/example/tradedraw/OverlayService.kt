@@ -28,7 +28,7 @@ import java.util.Locale
  * Servicio maestro con submenús inteligentes que detectan los límites de la pantalla.
  * Implementa el borrado prioritario de elementos seleccionados.
  */
-class OverlayService : Service() {
+class OverlayService : Service(), com.example.tradedraw.core.HudPort {
 
     companion object {
         private const val ACTION_STOP = "com.example.tradedraw.STOP"
@@ -98,6 +98,8 @@ class OverlayService : Service() {
         private set
     lateinit var tradingEngine: TradingEngine
         private set
+    val brokerRuntime by lazy { AndroidBrokerRuntime(this) }
+
     var binomoWebSocketClient: BinomoWebSocketClient? = null
         private set
 
@@ -107,6 +109,42 @@ class OverlayService : Service() {
      */
     var modeJournal: ModeEventJournal? = null
         private set
+
+    var eventSink: com.example.tradedraw.core.EventSink = RingBufferEventSink()
+
+    /**
+     * Ronda 21 (Frente D): Health Supervisor Unificado que agrega estado READY, DEGRADED o BLOCKED.
+     */
+    val healthSupervisor: com.example.tradedraw.health.HealthSupervisor = com.example.tradedraw.health.HealthSupervisor()
+
+    /**
+     * R27-H / Loop 2 — fuente de datos real del servicio, en un solo sitio autoritativo.
+     *
+     * Antes el diagnóstico tenía que *adivinar* la fuente: `HealthSupervisor.evaluate()` usa
+     * `WEBSOCKET_PURO` por defecto y el bridge lo invocaba sin pasar nada. Hoy la captura de
+     * pantalla está desactivada por producto (`OverlayService.kt:238` fuerza
+     * `hasMediaProjection = false`) y `ScreenCaptureManager` no se instancia en ningún punto, así
+     * que el valor por defecto *casualmente* acierta. Pero si mañana se reactivara la captura, el
+     * diagnóstico seguiría diciendo "WebSocket puro" sin que nadie lo note.
+     *
+     * Regla: **la fuente se declara donde se decide, y se consume explícitamente.** Este campo es
+     * el único lugar del sistema que responde "¿estamos capturando pantalla?".
+     */
+    @Volatile
+    var dataSource: com.example.tradedraw.health.HealthSupervisor.DataSource =
+        com.example.tradedraw.health.HealthSupervisor.DataSource.WEBSOCKET_PURO
+        private set
+
+    /**
+     * Declara la fuente de datos activa.
+     *
+     * No infiere captura de pantalla: solo acepta `WEBSOCKET_CON_PANTALLA` cuando el llamador
+     * afirma explícitamente que hay un `MediaProjection` vivo. Evitar adivinar es deliberado —
+     * declarar una pantalla inexistente produciría `SCREEN_FEED_MISMATCH` espurio.
+     */
+    internal fun setDataSource(source: com.example.tradedraw.health.HealthSupervisor.DataSource) {
+        dataSource = source
+    }
 
     private var hudView: View? = null
     private var hudParams: WindowManager.LayoutParams? = null
@@ -172,12 +210,12 @@ class OverlayService : Service() {
                     // Sin visión: solo coordenadas calibradas para el clic de prueba.
                     val (bx, by) = calibrationManager.getBuyCoordinates()
                     Log.d("TradeDraw", "TEST SUBE hacia ($bx, $by)")
-                    AutoTradeAccessibilityService.instance?.performClickAt(bx, by)
+                    tradingEngine.dispatchBrokerOrder(TradeAction.BUY, bx, by)
                 }
                 "TEST_SELL" -> {
                     val (sx, sy) = calibrationManager.getSellCoordinates()
                     Log.d("TradeDraw", "TEST BAJA hacia ($sx, $sy)")
-                    AutoTradeAccessibilityService.instance?.performClickAt(sx, sy)
+                    tradingEngine.dispatchBrokerOrder(TradeAction.SELL, sx, sy)
                 }
                 "CLEAR_BOT" -> drawingView.clearBotShapes()
                 "RESET_STATS" -> {
@@ -231,6 +269,10 @@ class OverlayService : Service() {
         // de producto (consume batería del teléfono muy rápido y lo ralentiza). Aunque llegue un
         // dataIntent de MediaProjection, se ignora y nunca se arranca ScreenCaptureManager.
         startTradeDrawForeground(hasMediaProjection = false)
+        // R27-H / Loop 2: el servicio declara la fuente real. Como no hay MediaProjection, la
+        // verdad es WebSocket puro; se fija aquí para que no dependa del valor por defecto de
+        // HealthSupervisor.
+        setDataSource(com.example.tradedraw.health.HealthSupervisor.DataSource.WEBSOCKET_PURO)
         if (dataIntent != null) {
             Log.w("TradeDraw", "DataIntent de MediaProjection recibido pero IGNORADO (captura deshabilitada por batería)")
         }
@@ -250,9 +292,9 @@ class OverlayService : Service() {
         startTradeDrawForeground()
         setupCanvasWindow()
 
-        riskManager = RiskManager(this)
+        riskManager = RiskManager(this, balanceSource = brokerRuntime, hudPort = this, brokerSensor = brokerRuntime)
         calibrationManager = CalibrationManager(this)
-        tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager)
+        tradingEngine = TradingEngine(this, drawingView, riskManager, calibrationManager, hudPort = this, brokerRuntime = brokerRuntime)
         tradingEngine.adaptiveLearningEngine.loadState(this)
 
         // R15-A: el modo arranca en DISABLED sin pasar por el setter (es el inicializador de la
@@ -266,7 +308,7 @@ class OverlayService : Service() {
 
         tradingEngine.marcarModoInicial("onCreate(servicio recreado)")
 
-        TradeEventLog.add(
+        eventSink.add(
             TradeEventLog.Kind.MODE_CHANGE,
             "de=NINGUNO a=${tradingEngine.mode} source=onCreate(servicio recreado) origen=onCreate(servicio recreado)"
         )
@@ -297,8 +339,10 @@ class OverlayService : Service() {
         httpBridge = TradeDrawHttpBridge(this, 8080).apply { start() }
 
         // Iniciar Cliente WebSocket nativo para recepción de micro-ticks
-        val wsClient = BinomoWebSocketClient(this)
+        val wsClient = BinomoWebSocketClient(this, eventSink = RingBufferEventSink())
         binomoWebSocketClient = wsClient
+        bindBrokerUi(this) { ric -> wsClient.updateActiveAsset(ric) }
+        wsClient.onAssetChangedListener = { tradingEngine.onAssetChanged() }
         wsClient.onTickListener = { tick ->
             tradingEngine.onMarketTick(tick)
             // HUD se actualiza via onFrameProcessedListener del tradingEngine — no duplicar aquí
@@ -612,6 +656,7 @@ class OverlayService : Service() {
             }
             AutoTradeMode.SEMIAUTOMATIC -> Triple(R.drawable.ic_ai_chip, "SEMIAUTO", Color.YELLOW)
             AutoTradeMode.DISABLED -> Triple(R.drawable.ic_ai_chip, "MODO: OFF", Color.WHITE)
+            AutoTradeMode.SHADOW -> Triple(R.drawable.ic_ai_chip, "MODO: SHADOW 👻", Color.parseColor("#9333ea"))
         }
 
         addItemToSubmenu(modeIcon, modeText, modeColor) {
@@ -913,7 +958,7 @@ class OverlayService : Service() {
         hudView?.findViewById<View>(R.id.hud_manual_fallback_alert)?.visibility = View.GONE
     }
 
-    fun showManualFallbackAlert(action: TradeAction, durationMs: Long = 2500L) {
+    override fun showManualFallbackAlert(action: TradeAction, durationMs: Long) {
         mainHandler.post {
             val alert = hudView?.findViewById<View>(R.id.hud_manual_fallback_alert)
             val actionTxt = hudView?.findViewById<TextView>(R.id.hud_manual_fallback_action)
@@ -1262,11 +1307,15 @@ class OverlayService : Service() {
         }
 
         hudView?.findViewById<Button>(R.id.hud_btn_win)?.setOnClickListener {
-            riskManager.recordTradeWin(force = true)
+            // R24/B1.c: se etiqueta el ORIGEN antes de incrementar. V1 resta del lado `/status`
+            // todo incremento manual; sin etiqueta, el incremento seria NO EVALUABLE.
+            // R24/B1.a (fix): `settleManual` marca la MISMA clave de liquidacion que el motor, asi
+            // que si el `handler.post` del motor llega despues no vuelve a contar el trade.
+            riskManager.settleManual("MANUAL_HUD", win = true)
             updateHUDView()
         }
         hudView?.findViewById<Button>(R.id.hud_btn_loss)?.setOnClickListener {
-            riskManager.recordTradeLoss(force = true)
+            riskManager.settleManual("MANUAL_HUD", win = false)
             updateHUDView()
         }
         hudView?.findViewById<Button>(R.id.hud_btn_recalc_ai)?.setOnClickListener {
@@ -1390,7 +1439,7 @@ class OverlayService : Service() {
         }
     }
 
-    fun isPointInsideHUD(x: Float, y: Float): Boolean {
+    override fun isPointInsideHUD(x: Float, y: Float): Boolean {
         if (!isHudVisible) return false
         val p = hudParams ?: return false
         val v = hudView ?: return false
@@ -1416,7 +1465,7 @@ class OverlayService : Service() {
      * de esos 17 fallos sigue sin determinar; el evento TAP de `TradeEventLog` registra ahora
      * `bypassHud=` junto a coordenadas y duracion para poder distinguirlo sin suposiciones.
      */
-    fun temporarilyBypassHUD(durationMs: Long = 1500L, onBypassed: (() -> Unit)? = null) {
+    override fun temporarilyBypassHUD(durationMs: Long, onBypassed: (() -> Unit)?) {
         val v = hudView ?: run {
             onBypassed?.invoke()
             return
@@ -1447,7 +1496,7 @@ class OverlayService : Service() {
      * Restaura la interactividad del HUD y cancela el failsafe. Debe llamarse cuando el tap
      * ha terminado (R13/A4); es idempotente y seguro si el HUD no existe.
      */
-    fun restoreHudTouchable() {
+    override fun restoreHudTouchable() {
         mainHandler.post {
             hudBypassFailsafe?.let { mainHandler.removeCallbacks(it) }
             hudBypassFailsafe = null
@@ -1564,7 +1613,7 @@ class OverlayService : Service() {
     }
 
 
-    fun updateHUDView(force: Boolean = false) {
+    override fun updateHUDView(force: Boolean) {
         // Si no es forzado (timer), respetar throttle de 400ms
         val now = System.currentTimeMillis()
         if (!force && now - lastHudUpdateMs < 400L) return
@@ -1670,6 +1719,10 @@ class OverlayService : Service() {
                         txtMode.text = "[OFF]"
                         txtMode.setTextColor(Color.GRAY)
                     }
+                }
+                AutoTradeMode.SHADOW -> {
+                    txtMode.text = "[SHADOW 👻]"
+                    txtMode.setTextColor(Color.parseColor("#9333ea"))
                 }
             }
 
@@ -2030,7 +2083,7 @@ class OverlayService : Service() {
             // Medido en el journal del dispositivo: 17 TIE (8,0%) con el saldo intacto, incluida
             // una racha de 5 seguidos, mientras LOSS/WIN mueven +-100.000. Eso no son empates de
             // precio: son taps que no crearon operacion. Antes el HUD los anunciaba como activos.
-            val mustConfirm = hud.orderState == RiskManager.OrderState.ENVIADA
+            val mustConfirm = hud.orderState == OrderState.ENVIADA
             if (hud.hasPendingTrade && mustConfirm) {
                 // Enviada pero SIN confirmar: se dice explicitamente, no se presenta como activa.
                 val act = if (hud.pendingAction == TradeAction.BUY) "CALL ▲" else "PUT ▼"
@@ -2127,6 +2180,12 @@ class OverlayService : Service() {
                 title?.setTextColor(Color.parseColor("#facc15"))
                 desc?.text = "El bot te indicará cuándo y hacia dónde operar."
                 desc?.setTextColor(Color.parseColor("#94a3b8"))
+            }
+            AutoTradeMode.SHADOW -> {
+                title?.text = "👻 MODO SHADOW: Simulación en Vivo"
+                title?.setTextColor(Color.parseColor("#c084fc"))
+                desc?.text = "Evaluando ticks y vetos reales con decision_id. Cero taps ni riesgo de saldo."
+                desc?.setTextColor(Color.parseColor("#e9d5ff"))
             }
             AutoTradeMode.DISABLED -> {
                 title?.text = "⚪ MODO OFF: En Espera"
@@ -2383,6 +2442,7 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        unbindBrokerUi(this)
         if (instance == this) instance = null
         httpBridge?.stop()
         httpBridge = null
@@ -2409,5 +2469,10 @@ class OverlayService : Service() {
             if (::submenuWindowView.isInitialized) windowManager.removeView(submenuWindowView)
             hudView?.let { windowManager.removeView(it) }
         } catch (e: Exception) {}
+    }
+    override fun triggerClickAnimation(x: Float, y: Float) {
+        if (::drawingView.isInitialized) {
+            drawingView.triggerClickAnimation(x, y)
+        }
     }
 }

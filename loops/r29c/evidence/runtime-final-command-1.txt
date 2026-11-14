@@ -1,0 +1,2 @@
+adb -s emulator-5554 shell run-as com.example.tradedraw am start-foreground-service -n com.example.tradedraw/.OverlayService
+Error: Can't start from invalid source: 10650

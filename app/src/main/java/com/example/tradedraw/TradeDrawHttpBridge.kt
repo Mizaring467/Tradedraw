@@ -24,7 +24,8 @@ import java.util.concurrent.Executors
  */
 class TradeDrawHttpBridge(
     private val overlayService: OverlayService,
-    private val port: Int = 8080
+    private val port: Int = 8080,
+    val eventSink: com.example.tradedraw.core.EventSink = RingBufferEventSink()
 ) {
     private var serverSocket: ServerSocket? = null
     private val threadPool = Executors.newCachedThreadPool()
@@ -81,6 +82,10 @@ class TradeDrawHttpBridge(
                 val path = fullPath.substringBefore("?")
                 val queryString = fullPath.substringAfter("?", "")
 
+                // R26: cualquier peticion es senal de vida del host. Alimenta la caducidad de
+                // `AUTONOMOUS`: si el host deja de sondear, el motor se desarma solo.
+                overlayService.tradingEngine.noteBridgeHeartbeat()
+
                 // Parse query parameters
                 val params = mutableMapOf<String, String>()
                 if (queryString.isNotEmpty()) {
@@ -113,13 +118,11 @@ class TradeDrawHttpBridge(
                         readTotal += r
                     }
                     val bodyStr = String(bodyChars, 0, readTotal)
-                    for (pair in bodyStr.split("&")) {
-                        val kv = pair.split("=", limit = 2)
-                        if (kv.isNotEmpty()) {
-                            val key = URLDecoder.decode(kv[0], "UTF-8")
-                            val value = if (kv.size > 1) URLDecoder.decode(kv[1], "UTF-8") else ""
-                            params[key] = value
-                        }
+                    try {
+                        params.putAll(parseBridgeBody(bodyStr))
+                    } catch (_: Exception) {
+                        sendJsonResponse(output, 400, """{"success":false,"error":"INVALID_BODY"}""")
+                        return@handleClient
                     }
                 }
 
@@ -136,19 +139,56 @@ class TradeDrawHttpBridge(
                     }
                     "/trade" -> {
                         val actionStr = params["action"]?.uppercase() ?: "BUY"
+                        if (actionStr !in setOf("BUY", "CALL", "SELL", "PUT") ||
+                            params["requestId"]?.let { it.isBlank() || it.length > 128 } == true) {
+                            sendJsonResponse(output, 400, """{"success":false,"error":"INVALID_ORDER_REQUEST"}""")
+                            return@handleClient
+                        }
                         val action = if (actionStr == "SELL" || actionStr == "PUT") TradeAction.SELL else TradeAction.BUY
-                        val access = AutoTradeAccessibilityService.instance
-                        if (access != null) {
-                            val cal = overlayService.tradingEngine.calibrationManager
-                            val (x, y) = if (action == TradeAction.BUY) {
-                                cal?.getBuyCoordinates() ?: Pair(200f, 600f)
-                            } else {
-                                cal?.getSellCoordinates() ?: Pair(600f, 600f)
-                            }
-                            access.performClickAt(x, y)
-                            sendJsonResponse(output, 200, """{"success":true,"action":"$action","targetX":$x,"targetY":$y}""")
+                        val currentMode = overlayService.tradingEngine.mode
+
+                        // Decisión P-3 (D-7): DISABLED y SHADOW rechazan explícitamente el despacho y emiten evidencia
+                        val guardDecision = evaluateTradeEndpointModeGuard(currentMode, action)
+                        if (!guardDecision.allowed) {
+                            eventSink.add(
+                                TradeEventLog.Kind.VETO,
+                                guardDecision.eventMessage ?: "TRADE_ENDPOINT_MODE_REJECTED mode=$currentMode action=$action"
+                            )
+                            sendJsonResponse(
+                                output,
+                                guardDecision.statusCode,
+                                """{"success":false,"error":"${guardDecision.errorMessage}","mode":"$currentMode"}"""
+                            )
+                            return@handleClient
+                        }
+
+                        val engine = overlayService.tradingEngine
+                        val cal = engine.calibrationManager
+                        if (cal == null || !cal.isCalibrated()) {
+                            sendJsonResponse(output, 409, """{"success":false,"error":"CALIBRATION_REQUIRED"}""")
                         } else {
-                            sendJsonResponse(output, 503, """{"success":false,"error":"Servicio de Accesibilidad inactivo"}""")
+                            val (x, y) = if (action == TradeAction.BUY) cal.getBuyCoordinates() else cal.getSellCoordinates()
+                            val done = java.util.concurrent.CountDownLatch(1)
+                            val result = java.util.concurrent.atomic.AtomicReference<com.example.tradedraw.core.OrderReceipt>()
+                            val requestId = params["requestId"]?.takeIf { it.isNotBlank() && it.length <= 128 }
+                                ?: java.util.UUID.randomUUID().toString()
+                            engine.dispatchBrokerOrder(action, x, y, tradeId = requestId, reason = "BRIDGE_TRADE") {
+                                result.set(it)
+                                done.countDown()
+                            }
+                            if (!done.await(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                                sendJsonResponse(output, 202, org.json.JSONObject().put("success", false).put("pending", true)
+                                    .put("requestId", requestId).put("error", "DISPATCH_PENDING_RECONCILIATION").toString())
+                            } else {
+                                val receipt = result.get()
+                                val ok = receipt is com.example.tradedraw.core.OrderReceipt.Success
+                                val status = if (ok) 200 else if (receipt is com.example.tradedraw.core.OrderReceipt.Vetoed) 403 else 503
+                                sendJsonResponse(output, status, org.json.JSONObject().put("success", ok)
+                                    .put("action", action.name).put("mode", currentMode.name)
+                                    .put("requestId", requestId).put("brokerConfirmed", overlayService.riskManager.orderState == OrderState.CONFIRMADA)
+                                    .put("brokerReconciliationPending", (engine.orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway)?.pendingRequestId() != null)
+                                    .put("receipt", receipt.toString()).toString())
+                            }
                         }
                     }
                     "/strategy" -> {
@@ -203,6 +243,130 @@ class TradeDrawHttpBridge(
                             output, 200,
                             """{"success":true,"total":${lineas.size},"events":[$cuerpo]}"""
                         )
+                    }
+                    "/dispatch_recovery" -> {
+                        val engine = overlayService.tradingEngine
+                        val flight = engine.orderGateway as? com.example.tradedraw.core.SingleFlightOrderGateway
+                        if (method == "POST") {
+                            if (params["confirmation"] != "BROKER_HISTORY_REVIEWED") {
+                                sendJsonResponse(output, 409, """{"success":false,"error":"BROKER_HISTORY_EVIDENCE_REQUIRED"}"""); return@handleClient
+                            }
+                            val outcome = runCatching { com.example.tradedraw.core.BrokerRecoveredOutcome.valueOf(params["outcome"].orEmpty()) }.getOrNull()
+                            val observedAt = params["observedAtMs"]?.toLongOrNull()
+                            val reference = params["brokerReference"].orEmpty()
+                            val id = params["requestId"].orEmpty()
+                            if (outcome == null || observedAt == null || observedAt > System.currentTimeMillis() || reference.isBlank() || reference.length > 256 || id.isBlank()) {
+                                sendJsonResponse(output, 400, """{"success":false,"error":"INVALID_BROKER_EVIDENCE"}"""); return@handleClient
+                            }
+                            val done = java.util.concurrent.CountDownLatch(1)
+                            var accepted = false
+                            engine.reconcileBrokerDispatch(com.example.tradedraw.core.BrokerDispatchEvidence(id, reference, outcome, observedAt)) { accepted = it; done.countDown() }
+                            val completed = done.await(2, java.util.concurrent.TimeUnit.SECONDS)
+                            sendJsonResponse(output, if (!completed) 202 else if (accepted) 200 else 409,
+                                org.json.JSONObject().put("success", completed && accepted).put("pending", !completed)
+                                    .put("source", "MANUAL_BROKER_HISTORY").put("error", if (accepted) "" else "EVIDENCE_INSUFFICIENT_OR_ACCOUNT_NOT_CONFIRMED_DEMO").toString())
+                            return@handleClient
+                        }
+                        val pending = flight?.reservation()
+                        val last = flight?.lastEvidence()
+                        sendJsonResponse(output, 200, org.json.JSONObject().put("success", true)
+                            .put("pendingRequestId", pending?.requestId ?: "").put("decisionId", pending?.decisionId ?: "")
+                            .put("createdAtMs", pending?.context?.createdAtMs ?: 0L).put("baseBalance", pending?.context?.baseBalance)
+                            .put("recovered", flight?.isRecovered() == true).put("requiresReview", flight?.requiresReview() == true)
+                            .put("riskHold", overlayService.riskManager.requiresBrokerReconciliation)
+                            .put("state", if (pending == null) "CLEAR" else if (flight?.requiresReview() == true) "UNCERTAIN" else if (overlayService.riskManager.orderState == OrderState.CONFIRMADA) "CONFIRMED_AWAITING_SETTLEMENT" else "AWAITING_BROKER_CONFIRMATION")
+                            .put("lastOutcome", last?.outcome?.name ?: "").put("lastBrokerReference", last?.brokerReference ?: "")
+                            .put("requiredAction", if (pending == null) "NONE" else "Inspect broker history; POST exact requestId, brokerReference, observedAtMs, closed outcome and confirmation=BROKER_HISTORY_REVIEWED; fresh DEMO required. No automatic resend.").toString())
+                    }
+                    "/simulation" -> {
+                        val engine = overlayService.tradingEngine
+                        val runtime = engine.shadowSimulation
+                        val sim = runtime.simulation
+                        if (method == "POST") {
+                            val enabled = params["enabled"]
+                            if (enabled != null) {
+                                if (enabled !in setOf("true", "false") || enabled == "true" && engine.mode != AutoTradeMode.SHADOW) {
+                                    sendJsonResponse(output, 409, """{"success":false,"error":"SHADOW_MODE_REQUIRED"}""")
+                                    return@handleClient
+                                }
+                                engine.shadowSimulationEnabled = enabled == "true"
+                                eventSink.add("SIMULATION_CONTROL", "enabled=$enabled source=bridge:/simulation")
+                            }
+                            if (params["operation"] == "retry") sim?.flushResults()
+                            if (params["operation"] in setOf("probe_open", "probe_tick")) {
+                                val id = params["id"].orEmpty()
+                                val price = params["price"]?.toDoubleOrNull()
+                                if (!BuildConfig.DEBUG || !id.matches(Regex("[A-Za-z0-9_-]{1,64}")) || price == null || !price.isFinite() || price <= 0) {
+                                    sendJsonResponse(output, 400, """{"success":false,"error":"INVALID_SIMULATION_PROBE"}"""); return@handleClient
+                                }
+                                val tick = com.example.tradedraw.core.MarketTick("TEST/$id", price, System.currentTimeMillis())
+                                if (params["operation"] == "probe_open") {
+                                    if (engine.mode != AutoTradeMode.SHADOW || !runtime.enabled) {
+                                        sendJsonResponse(output, 409, """{"success":false,"error":"SHADOW_SIMULATION_DISABLED"}"""); return@handleClient
+                                    }
+                                    val action = params["action"] ?: "BUY"
+                                    if (action !in setOf("BUY", "SELL")) {
+                                        sendJsonResponse(output, 400, """{"success":false,"error":"INVALID_ACTION"}"""); return@handleClient
+                                    }
+                                    var receipt: com.example.tradedraw.core.OrderReceipt? = null
+                                    runtime.open(com.example.tradedraw.core.OrderRequest(TradeAction.valueOf(action), 0f, 0f,
+                                        "probe-$id", "sim-probe-$id", mode = engine.mode), tick,
+                                        com.example.tradedraw.simulation.SimMetadata(strategy = "CONTROLLED_PROBE", reason = "SYNTHETIC_TEST_QUOTE")) { receipt = it }
+                                    if (receipt !is com.example.tradedraw.core.OrderReceipt.Success) {
+                                        sendJsonResponse(output, 409, org.json.JSONObject().put("success", false).put("receipt", receipt.toString()).toString()); return@handleClient
+                                    }
+                                } else runtime.onTick(tick)
+                            }
+                        }
+                        val ledger = sim?.gateway?.simLedger
+                        sendJsonResponse(output, 200, org.json.JSONObject().put("success", sim != null)
+                            .put("enabled", runtime.enabled).put("balance", ledger?.currentBalance)
+                            .put("openOrders", ledger?.getOpenTrades()?.size).put("settlements", ledger?.totalTrades)
+                            .put("pendingDecisions", org.json.JSONArray(ledger?.getOpenTrades()?.map {
+                                ProspectivePredictionExport.json(it, BuildConfig.GIT_SHA)
+                            } ?: emptyList<org.json.JSONObject>()))
+                            .put("pendingResults", ledger?.pendingJournal()?.size).put("error", runtime.errorMessage ?: "")
+                            .put("expiryRule", "FIRST_ACCEPTED_SAME_ASSET_TICK_AT_OR_AFTER_ENTRY_PLUS_60000_MS")
+                            .put("retryAction", "POST /simulation?operation=retry").toString())
+                    }
+                    "/shadow_journal" -> {
+                        // R23 Iter 2: decisiones persistidas en disco por SHADOW MODE. Antes solo
+                        // eran legibles via `adb pull`; el validador necesita leerlas por HTTP sin
+                        // tocar ADB. Solo LECTURA: no escribe, no altera el journal ni el estado.
+                        val max = params["max"]?.toIntOrNull() ?: 50
+                        val (lineas, totalEnArchivo) = readShadowJournalTail(max)
+                        sendJsonResponse(output, 200, buildShadowJournalJson(lineas, totalEnArchivo))
+                    }
+                    "/adaptive_state" -> {
+                        // R24/B3: volcado de la memoria adaptativa para V3. SOLO LECTURA: se abre
+                        // el archivo y se devuelve su contenido. NO se llama a `saveState` (eso
+                        // reescribiria el archivo vivo y reiniciaria su TTL), NO se modifica el
+                        // archivo y NO se toca el motor. Si el archivo no existe se responde 200
+                        // con `exists:false`: "no hay memoria guardada" es un dato, no un error.
+                        val archivo = java.io.File(overlayService.filesDir, "adaptive_learning_state.json")
+                        val crudo = try {
+                            if (archivo.isFile) archivo.readText(Charsets.UTF_8) else null
+                        } catch (e: Exception) {
+                            Log.e("TradeDrawHttp", "Error leyendo adaptive_learning_state.json", e)
+                            null
+                        }
+                        sendJsonResponse(output, 200, buildAdaptiveStateJson(crudo, archivo.absolutePath))
+                    }
+                    "/ticks" -> {
+                        // R23 Iter 4: los ticks EXACTOS que entraron al motor durante la ventana viva.
+                        // Cierra el hallazgo de la Iter 3 (paridad Live<->Replay "NO EVALUABLE" por
+                        // falta de la fuente de ticks). Solo LECTURA: no altera estado ni guards.
+                        val max = params["max"]?.toIntOrNull() ?: 500
+                        val formato = params["format"]?.lowercase() ?: "json"
+                        val buffer = overlayService.tradingEngine.tickBuffer
+                        val ticks = buffer.tail(max)
+                        if (formato == "csv") {
+                            // `text/plain` y no `text/csv` a proposito: el consumidor lo baja con
+                            // curl y lo vuelca a un archivo que alimenta `loadTicks` del replay.
+                            sendCsvResponse(output, 200, buildTicksCsv(ticks))
+                        } else {
+                            sendJsonResponse(output, 200, buildTicksJson(ticks, buffer.size))
+                        }
                     }
                     "/diag_multiric" -> {
                         // Ronda 15 / Frente C: experimento B0 (suscripcion multi-RIC) medido en el
@@ -296,7 +460,7 @@ class TradeDrawHttpBridge(
                                         activado = true
                                     }
                                 }
-                                TradeEventLog.add(
+                                eventSink.add(
                                     TradeEventLog.Kind.INOPERABLE,
                                     "INOPERABLE activo=INYECTADO(prueba B2) segundos=${det.holdSeconds} " +
                                         "ratio=%.3e".format(java.util.Locale.US, det.lastRatio)
@@ -347,14 +511,18 @@ class TradeDrawHttpBridge(
                         }
                     }
                     "/win" -> {
-                        overlayService.riskManager.recordTradeWin(force = true)
+                        // R24/B1.c: origen MANUAL_BRIDGE. V1 resta estos incrementos del lado
+                        // `/status`; sin etiqueta el incremento seria NO EVALUABLE.
+                        // R24/B1.a (fix): `settleManual` marca la clave de liquidacion del motor,
+                        // asi que un WIN manual seguido del fallback del motor cuenta UNA vez.
+                        overlayService.riskManager.settleManual("MANUAL_BRIDGE", win = true)
                         val wins = overlayService.riskManager.totalWins
                         val losses = overlayService.riskManager.totalLosses
                         val wr = overlayService.riskManager.getWinRate()
                         sendJsonResponse(output, 200, """{"success":true,"action":"win","wins":$wins,"losses":$losses,"winRate":$wr}""")
                     }
                     "/loss" -> {
-                        overlayService.riskManager.recordTradeLoss(force = true)
+                        overlayService.riskManager.settleManual("MANUAL_BRIDGE", win = false)
                         val wins = overlayService.riskManager.totalWins
                         val losses = overlayService.riskManager.totalLosses
                         val wr = overlayService.riskManager.getWinRate()
@@ -366,10 +534,16 @@ class TradeDrawHttpBridge(
                         if (x == null || y == null) {
                             sendJsonResponse(output, 400, """{"success":false,"error":"Parámetros 'x' e 'y' requeridos"}""")
                         } else {
-                            AutoTradeAccessibilityService.performClick(x, y) { success, err ->
-                                Log.d("TradeDrawHttp", "Click en ($x, $y): success=$success err=$err")
+                            val done = java.util.concurrent.CountDownLatch(1)
+                            var success = false
+                            var error: String? = null
+                            AutoTradeAccessibilityService.performClick(x, y) { ok, err ->
+                                success = ok; error = err; done.countDown()
                             }
-                            sendJsonResponse(output, 200, """{"success":true,"x":$x,"y":$y}""")
+                            val completed = done.await(2, java.util.concurrent.TimeUnit.SECONDS)
+                            sendJsonResponse(output, if (!completed) 202 else if (success) 200 else 403,
+                                org.json.JSONObject().put("success", completed && success)
+                                    .put("pending", !completed).put("error", error ?: "").toString())
                         }
                     }
                     "/swipe" -> {
@@ -395,6 +569,10 @@ class TradeDrawHttpBridge(
                         try {
                             val sm = AutonomousSubMode.valueOf(subStr)
                             overlayService.tradingEngine.autonomousSubMode = sm
+                            // R23D Fase 1 (REQ 3): el setter del motor ya espeja el submodo al
+                            // RiskManager, pero se reafirma aqui de forma explicita para que la ruta
+                            // HTTP no dependa de que ese efecto se mantenga en el futuro.
+                            overlayService.riskManager.currentSubMode = sm
                             overlayService.updateHUDView()
                             sendJsonResponse(output, 200, """{"success":true,"submode":"${sm.name}"}""")
                         } catch (e: Exception) {
@@ -480,6 +658,54 @@ class TradeDrawHttpBridge(
                             sendJsonResponse(output, 503, """{"success":false,"error":"Servicio de Accesibilidad inactivo"}""")
                         }
                     }
+                    "/diagnostics/veto_stats" -> {
+                        val json = VetoProfiler.INSTANCE.buildVetoStatsJson()
+                        try {
+                            val loopDir = java.io.File("/data/data/com.termux/files/home/Tradedraw/loops/r31_throughput")
+                            if (!loopDir.exists()) loopDir.mkdirs()
+                            VetoProfiler.INSTANCE.persistToFile(java.io.File(loopDir, "veto_stats.json"))
+                        } catch (_: Exception) {}
+                        sendJsonResponse(output, 200, json)
+                    }
+                    "/diagnostics/no_trade" -> {
+                        val engine = overlayService.tradingEngine
+                        val remCooldown = engine.riskManager.getRemainingCooldown(engine.autonomousSubMode)
+                        val hasPending = engine.riskManager.hasPendingTrade
+                        val wsHealthy = engine.isFeedFresh()
+                        val brokerState = engine.brokerRuntime.getBrokerState()
+                        val guard = engine.brokerRuntime.demoAccountGuard
+                        val demoStatus = when (guard.getAccountType()) {
+                            com.example.tradedraw.core.AccountType.DEMO -> "confirmed"
+                            com.example.tradedraw.core.AccountType.REAL -> "REAL_CONFIRMED"
+                            else -> if (brokerState.isDemoAccount) "confirmed" else "unknown"
+                        }
+                        val json = VetoProfiler.INSTANCE.buildNoTradeDiagnosticJson(
+                            remainingCooldownSeconds = remCooldown,
+                            entryWindow = ":01-:05",
+                            hasPendingTrade = hasPending,
+                            isWsHealthy = wsHealthy,
+                            demoAccountStatus = demoStatus
+                        )
+                        sendJsonResponse(output, 200, json)
+                    }
+                    "/config/validation_mode" -> {
+                        val requestedMode = params["mode"]?.uppercase()
+                        if (requestedMode == "FAST_DEMO") {
+                            val accType = overlayService.tradingEngine.brokerRuntime.demoAccountGuard.getAccountType()
+                            val isDemo = overlayService.tradingEngine.brokerRuntime.getBrokerState().isDemoAccount
+                            if (accType != com.example.tradedraw.core.AccountType.DEMO || !isDemo) {
+                                sendJsonResponse(output, 403, """{"success":false,"error":"FAST_DEMO prohibido en cuenta REAL o no confirmada"}""")
+                            } else {
+                                overlayService.tradingEngine.validationMode = com.example.tradedraw.core.ValidationMode.FAST_DEMO
+                                sendJsonResponse(output, 200, """{"success":true,"validationMode":"FAST_DEMO"}""")
+                            }
+                        } else if (requestedMode == "VALIDATION_REAL") {
+                            overlayService.tradingEngine.validationMode = com.example.tradedraw.core.ValidationMode.VALIDATION_REAL
+                            sendJsonResponse(output, 200, """{"success":true,"validationMode":"VALIDATION_REAL"}""")
+                        } else {
+                            sendJsonResponse(output, 200, """{"validationMode":"${overlayService.tradingEngine.validationMode.name}"}""")
+                        }
+                    }
                     else -> {
                         sendJsonResponse(output, 404, """{"error":"Ruta no encontrada: $path"}""")
                     }
@@ -490,6 +716,17 @@ class TradeDrawHttpBridge(
         }
     }
 
+    /**
+     * R23A Iter 3: este string NO admite comentarios `//` dentro del literal multilínea. Los `//` se
+     * emiten literalmente sobre el HTTP y rompen el JSON (RFC 8259 prohibe comentarios), lo que hacía
+     * fallar a `json.loads`/`jq`/`ConvertFrom-Json`. La explicación va aquí, fuera del literal.
+     *
+     * `observedStake` es lo que dice la pantalla de Binomo; `effectiveStake` es lo que el broker
+     * realmente debita y con lo que se registra el journal. Con stake 1.0 y pantalla 100.000 COP,
+     * `investmentAmount` coincidia con `effectiveStake` y ambos mentían: por eso se exponen los dos
+     * por separado. Deliberadamente NO se añade campo de comentario en el JSON: un campo `_comment`
+     * sería válido pero ensuciaría el contrato que consumen los validadores.
+     */
     private fun buildStatusJson(): String {
         val te = overlayService.tradingEngine
         val rm = overlayService.riskManager
@@ -513,6 +750,22 @@ class TradeDrawHttpBridge(
         val putPct = analysis?.signalPowerPut ?: 50
         val isSideways = synthetic.isChoppinessDetected()
         val candleCount = synthetic.closedCandles.size
+        // R24/B2: ratios S/R REALES del instante. Son los mismos que `AdaptiveLearningEngine` usa
+        // como `distSup`/`distRes` al construir la firma de contexto, asi que el monitor los
+        // escribe en `decisions.csv` sin recalcular: la columna refleja lo que el motor vio.
+        //
+        // Sin velas cerradas el motor deja el campo en su valor por defecto (0.5), que NO es una
+        // medicion. Se emite -1 como centinela de "no medido" y el monitor lo escribe como celda
+        // vacia: inventar 0.5 seria indistinguible de un soporte realmente equidistante.
+        val distSupRatio = synthetic.distanceToSupportRatio
+        val distResRatio = synthetic.distanceToResistanceRatio
+        val hayVelasParaRatios = candleCount > 0
+        // Finitud obligatoria: `Float.NaN.toString()` emite `NaN`, que NO es JSON valido (RFC 8259)
+        // y dejaria el /status entero sin parsear. Mismo centinela -1 que "no medido".
+        val distSupRatioJson =
+            if (hayVelasParaRatios && distSupRatio.isFinite()) distSupRatio.toString() else "-1"
+        val distResRatioJson =
+            if (hayVelasParaRatios && distResRatio.isFinite()) distResRatio.toString() else "-1"
         val streak = analysis?.streakBadge ?: ""
         val trend = synthetic.detectedTrend.name
         val strat = te.strategy.name
@@ -538,9 +791,29 @@ class TradeDrawHttpBridge(
         // Antigüedad infinita no es serializable en JSON: se emite como -1 (sin tick recibido nunca).
         val wsAgeJson = if (wsAge == Long.MAX_VALUE) -1L else wsAge
 
+        val healthReport = overlayService.healthSupervisor.evaluate(
+            tradingEngine = te,
+            riskManager = rm,
+            wsClient = ws,
+            accessibilityService = AutoTradeAccessibilityService.instance,
+            // R27-H / Loop 2: la fuente se pasa EXPLÍCITAMENTE desde quien la conoce. Antes se
+            // omitía y el diagnóstico dependía del valor por defecto de HealthSupervisor.
+            dataSource = overlayService.dataSource
+        )
+
         return """{
             "app": "TradeDraw",
+            "versionCode": ${BuildConfig.VERSION_CODE},
+            "versionName": "${BuildConfig.VERSION_NAME}",
+            "gitSha": "${BuildConfig.GIT_SHA}",
+            "buildId": "${BuildConfig.BUILD_ID}",
+            "buildTimestamp": ${BuildConfig.BUILD_TIMESTAMP},
+            "isDemoAccount": ${AutoTradeAccessibilityService.isDemoAccount},
+            "accountType": "${AutoTradeAccessibilityService.demoAccountGuard.getAccountType().name}",
+            "health": ${healthReport.toJson()},
             "mode": "$mode",
+            "submode": "${te.autonomousSubMode.name}",
+            "validationMode": "${te.validationMode.name}",
             "lastModeChangeSource": "${escapeJson(te.lastModeChange)}",
             "lastModeChangeTs": ${te.lastModeChangeTs},
             "strategy": "$strat",
@@ -557,6 +830,8 @@ class TradeDrawHttpBridge(
                 "isMarketSideways": $isSideways,
                 "trend": "$trend",
                 "candleCount": $candleCount,
+                "distanceToSupportRatio": $distSupRatioJson,
+                "distanceToResistanceRatio": $distResRatioJson,
                 "streak": "${escapeJson(streak)}"
             },
             "risk": {
@@ -566,10 +841,12 @@ class TradeDrawHttpBridge(
                 "currentLossStreak": ${rm.currentLossStreak},
                 "martingaleStatus": "${escapeJson(rm.getMartingaleStatusBadge())}",
                 "investmentAmount": ${rm.getCurrentInvestmentAmount()},
+                "observedStake": ${AutoTradeAccessibilityService.observedOrderAmount},
+                "effectiveStake": ${rm.getEffectiveStake()},
                 "hasPendingTrade": ${rm.hasPendingTrade},
                 "orderState": "${rm.orderState.name}",
                 "hasConfirmedTrade": ${rm.hasConfirmedTrade},
-                "remainingCooldown": ${rm.getRemainingCooldown()},
+                "remainingCooldown": ${rm.getRemainingCooldown(te.autonomousSubMode)},
                 "vetoV1": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO, "V1")},
                 "vetoV2": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO, "V2")},
                 "vetoTotal": ${TradeEventLog.countOf(TradeEventLog.Kind.VETO)},
@@ -581,10 +858,18 @@ class TradeDrawHttpBridge(
                 "inoperableRatio": ${te.inoperabilityDetector.lastRatio},
                 "inoperableReference": ${te.inoperabilityDetector.lastReference},
                 "ultimoInoperable": "${escapeJson(TradeEventLog.lastOf(TradeEventLog.Kind.INOPERABLE)?.detail ?: "")}",
-                // Ronda 20: contadores del guard de desajuste y de la recuperacion por falta de
-                // ticks. Viven en `TradingEngine`, por eso se anaden en el mismo commit que el.
                 "vetoActivoDesajustado": ${te.vetoActivoDesajustado},
-                "recuperacionesPorSinTicks": ${te.recuperacionesPorSinTicks()}
+                "recuperacionesPorSinTicks": ${te.recuperacionesPorSinTicks()},
+                "shadowOrders": ${te.shadowOrdersGenerated},
+                "tradesLossSinEvidencia": ${rm.tradesLossSinEvidencia},
+                "manualWins": ${rm.manualWins},
+                "manualLosses": ${rm.manualLosses},
+                "manualIncrements": ${TradeEventLog.countOf(TradeEventLog.Kind.MANUAL_INCREMENT)},
+                "manualIncrementsDetalle": "${escapeJson(TradeEventLog.lastOf(TradeEventLog.Kind.MANUAL_INCREMENT)?.detail ?: "")}",
+                "noProcesadaDuracionMaxMs": ${rm.noProcesadaDuracionMaxMs},
+                "noProcesadaCausa": "${escapeJson(rm.noProcesadaCausa)}",
+                "noProcesadaOcurrencias": ${rm.noProcesadaOcurrencias},
+                "noProcesadaDuracionActualMs": ${rm.noProcesadaDuracionActualMs}
             },
             "activeSignal": $signalJson,
             "feed": {
@@ -604,6 +889,9 @@ class TradeDrawHttpBridge(
                 "journalRotations": ${TradeJournalLogger.rotationCount},
                 "priceFrozen": ${ws?.isPriceFrozen() ?: false},
                 "recentPriceRangeRatio": ${ws?.recentPriceRangeRatio() ?: -1.0},
+                "rangoRelativoMinimo": ${TradingEngine.rangoRelativoMinimoParaActivo(ws?.activeAsset ?: "")},
+                "rangoRelativoActual": ${ws?.recentPriceRangeRatio() ?: -1.0},
+                "volatilidadSuficiente": ${if (ws != null) ws.recentPriceRangeRatio() >= TradingEngine.rangoRelativoMinimoParaActivo(ws.activeAsset) else false},
                 "payoutFromPercentLabel": ${AutoTradeAccessibilityService.observedPayout.fromPercentLabel ?: "null"},
                 "payoutFromButtonRatio": ${AutoTradeAccessibilityService.observedPayout.fromButtonRatio ?: "null"},
                 "payoutResolved": ${AutoTradeAccessibilityService.observedPayout.resolved ?: "null"},
@@ -674,6 +962,19 @@ class TradeDrawHttpBridge(
         output.flush()
     }
 
+    /** R23 Iter 4: respuesta `text/plain` para `/ticks?format=csv`. Mismo contrato que sendJsonResponse. */
+    private fun sendCsvResponse(output: OutputStream, statusCode: Int, csv: String) {
+        val bytes = csv.toByteArray(Charsets.UTF_8)
+        val headers = "HTTP/1.1 $statusCode OK\r\n" +
+                "Content-Type: text/plain; charset=UTF-8\r\n" +
+                "Content-Length: ${bytes.size}\r\n" +
+                "Connection: close\r\n" +
+                "Access-Control-Allow-Origin: *\r\n\r\n"
+        output.write(headers.toByteArray(Charsets.UTF_8))
+        output.write(bytes)
+        output.flush()
+    }
+
     // DIAGNÓSTICO TEMPORAL: últimas tramas crudas del WebSocket, para identificar
     // qué campo del frame cambia entre ticks (precio vivo vs apertura de vela).
     private fun rawFramesJson(ws: com.example.tradedraw.BinomoWebSocketClient?): String {
@@ -688,5 +989,209 @@ class TradeDrawHttpBridge(
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("\t", "\\t")
+    }
+
+    /**
+     * R23 Iter 2: lee las ultimas [max] lineas de `shadow_journal.csv` tal como estan en disco.
+     *
+     * Solo LECTURA. Replica el orden de resolucion de directorios de [TradeJournalLogger]
+     * (externo `TradeDraw_Audits` si es escribible, interno `filesDir/TradeDraw_Audits` como
+     * respaldo) porque el logger lo mantiene privado. Se revisan AMBAS rutas y se prefiere la que
+     * realmente contenga el archivo, para no devolver `total:0` cuando el journal vive en un
+     * directorio distinto del que el logger consideraria escribible ahora mismo.
+     *
+     * Se devuelven las lineas crudas (cabecera incluida) para que la auditoria vea exactamente
+     * lo persistido. [max] se acota a [1, 2000] para no materializar respuestas sin limite.
+     *
+     * Devuelve `(tail, totalEnArchivo)`. Ver [buildShadowJournalJson] para el porque del segundo.
+     */
+    private fun readShadowJournalTail(max: Int): Pair<List<String>, Int> {
+        val limite = max.coerceIn(1, 2000)
+        return try {
+            val interno = java.io.File(overlayService.filesDir, "TradeDraw_Audits")
+            val externo = overlayService.getExternalFilesDir(null)?.let { java.io.File(it, "TradeDraw_Audits") }
+            com.example.tradedraw.persistence.ShadowJournalFilesReader(listOfNotNull(externo, interno)).readTail(limite)
+        } catch (e: Exception) {
+            Log.e("TradeDrawHttp", "Error leyendo shadow_journal.csv", e)
+            emptyList<String>() to 0
+        }
+    }
+}
+
+/**
+ * R24/B3: serializa el volcado de la memoria adaptativa para `GET /adaptive_state`.
+ *
+ * SOLO LECTURA. Recibe el contenido CRUDO del archivo tal como esta en disco y no lo toca: no
+ * reescribe, no normaliza, no dispara `saveState` (que reiniciaria el TTL del archivo vivo).
+ *
+ * `state` se incrusta como objeto JSON cuando el contenido parsea, para que el validador lo lea
+ * directamente. Si el archivo esta corrupto se devuelve `parseable:false` y el texto escapado en
+ * `stateRaw`: una respuesta HTTP nunca debe dejar de ser JSON valido por culpa del dato que
+ * transporta. `firmas` es el conteo de `lossSignatures`, que es lo que V3 contrasta.
+ *
+ * @param crudo contenido del archivo, o `null` si no existe / no se pudo leer.
+ */
+internal fun buildAdaptiveStateJson(crudo: String?, ruta: String = ""): String {
+    if (crudo == null) {
+        return """{"success":true,"exists":false,"parseable":false,"firmas":0,"path":"${escapeJsonForJournal(ruta)}","state":null}"""
+    }
+    val objeto = try {
+        org.json.JSONObject(crudo)
+    } catch (e: Exception) {
+        null
+    }
+    if (objeto == null) {
+        return """{"success":true,"exists":true,"parseable":false,"firmas":0,"path":"${escapeJsonForJournal(ruta)}","state":null,"stateRaw":"${escapeJsonForJournal(crudo)}"}"""
+    }
+    val firmas = objeto.optJSONArray("lossSignatures")?.length() ?: 0
+    return """{"success":true,"exists":true,"parseable":true,"firmas":$firmas,"path":"${escapeJsonForJournal(ruta)}","state":$crudo}"""
+}
+
+/**
+ * R23 Iter 2: serializa el tail del journal SHADOW a JSON valido.
+ *
+ * `total` = numero de lineas devueltas (0 cuando no hay archivo). `totalEnArchivo` se anade para
+ * que el validador distinga "no hay decisiones" de "hay mas de `max`": `total` solo no lo dice.
+ * Se conserva `total` con el sentido del caso vacio documentado en la spec.
+ */
+internal fun buildShadowJournalJson(lines: List<String>, totalEnArchivo: Int = lines.size): String {
+    val cuerpo = lines.joinToString(",") { "\"${escapeJsonForJournal(it)}\"" }
+    return """{"success":true,"total":${lines.size},"totalEnArchivo":$totalEnArchivo,"lines":[$cuerpo]}"""
+}
+
+/** Escapado de comillas/controles para incrustar cada linea cruda del CSV en el JSON de respuesta. */
+internal fun escapeJsonForJournal(str: String): String {
+    return str.replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+}
+
+/**
+ * R23 Iter 4: buffer circular, thread-safe y de capacidad FIJA de los ticks ya validados.
+ *
+ * Existe para cerrar el hallazgo de la Iter 3: la paridad Live <-> Replay seguia en "NO EVALUABLE"
+ * (0 pares) porque no habia forma de extraer del dispositivo los ticks EXACTOS que entraron durante
+ * la ventana viva, y por tanto el motor offline no podia reproducir las mismas decisiones. Con esta
+ * fuente, el pipeline de validacion se baja los ticks por HTTP y reejecuta el replay determinista
+ * sobre los mismos datos.
+ *
+ * Capacidad FIJA de [capacity] entradas: al llenarse se descarta la mas antigua. Es un buffer de
+ * observabilidad, no un historico: 2000 ticks cubren ~20-30 min al ritmo real del feed (1-2 tick/s),
+ * que es la ventana de validacion de R23. Un buffer sin tope en un servicio permanente es una fuga
+ * de memoria, no una mejora.
+ *
+ * Se guardan los valores TAL CUAL los recibio el motor. NO se redondean: el activo del ring
+ * (`Z-CRY/IDX`) tiene un paso por tick de ~1,6e-06 sobre ~641,87, o sea que su rango relativo entero
+ * (2,5e-09) vive en los ultimos decimales del sexto digito. Cualquier redondeo a 6 decimales lo
+ * borraria y el replay dejaria de reproducir la anomalia que R23 esta investigando.
+ */
+internal class TickRingBuffer(val capacity: Int = 2000) {
+
+    data class Entry(val ts: Long, val ric: String, val price: Double)
+
+    private val buffer = ArrayDeque<Entry>(minOf(capacity, 64))
+
+    /** Numero de entradas retenidas ahora mismo (<= [capacity]). */
+    val size: Int get() = synchronized(buffer) { buffer.size }
+
+    /** Total de ticks aceptados desde el arranque, incluidos los ya descartados por el borde. */
+    @Volatile
+    var totalRecibidos: Long = 0L
+        private set
+
+    /**
+     * Registra un tick validado. Ignora precios no finitos: un NaN o Infinity incrustado en el JSON
+     * lo invalidaria, y el feed ya filtra estos casos antes de llegar aqui.
+     */
+    fun record(ts: Long, ric: String, price: Double) {
+        if (!price.isFinite()) return
+        synchronized(buffer) {
+            if (buffer.size >= capacity) buffer.removeFirst()
+            buffer.addLast(Entry(ts, ric, price))
+        }
+        totalRecibidos++
+    }
+
+    /**
+     * Ultimas [max] entradas, en orden cronologico ASCENDENTE (la ultima es la mas reciente), que es
+     * el orden que espera `loadTicks` del replay. [max] se acota a `[1, capacity]`.
+     */
+    fun tail(max: Int): List<Entry> {
+        val limite = max.coerceIn(1, capacity)
+        return synchronized(buffer) { buffer.toList().takeLast(limite) }
+    }
+
+    fun clear() {
+        synchronized(buffer) { buffer.clear() }
+    }
+}
+
+/**
+ * R23 Iter 4: serializa el tail de ticks a JSON.
+ *
+ * `total` = ticks devueltos. `totalEnBuffer` se anade por la misma razon que en `/shadow_journal`
+ * (precedente aceptado en la Iter 2): con `?max=500` sobre 2000 en buffer, `total` solo no distingue
+ * "no hay ticks" de "hay mas de los que pediste".
+ */
+internal fun buildTicksJson(ticks: List<TickRingBuffer.Entry>, totalEnBuffer: Int = ticks.size): String {
+    val cuerpo = ticks.joinToString(",") { t ->
+        """{"ts":${t.ts},"ric":"${escapeJsonForJournal(t.ric)}","price":${t.price}}"""
+    }
+    return """{"success":true,"total":${ticks.size},"totalEnBuffer":$totalEnBuffer,"ticks":[$cuerpo]}"""
+}
+
+/**
+ * P-3 / D-7: Decisión de guardia para el endpoint `/trade`.
+ * En modos DISABLED y SHADOW, rechaza el despacho al broker y provee el evento VETO a registrar.
+ */
+data class TradeEndpointDecision(
+    val allowed: Boolean,
+    val statusCode: Int,
+    val errorMessage: String? = null,
+    val eventMessage: String? = null
+)
+
+fun evaluateTradeEndpointModeGuard(mode: AutoTradeMode, action: TradeAction): TradeEndpointDecision {
+    return if (mode == AutoTradeMode.DISABLED || mode == AutoTradeMode.SHADOW) {
+        TradeEndpointDecision(
+            allowed = false,
+            statusCode = 403,
+            errorMessage = "Despacho rechazado: modo $mode no autoriza ordenes al broker",
+            eventMessage = "TRADE_ENDPOINT_MODE_REJECTED mode=$mode action=$action"
+        )
+    } else {
+        TradeEndpointDecision(
+            allowed = true,
+            statusCode = 200
+        )
+    }
+}
+
+
+/**
+ * R23 Iter 4: serializa el tail de ticks a CSV con cabecera `ts,ric,price`.
+ *
+ * El formato de precio es el round-trip EXACTO de Kotlin (`Double.toString`), no `%.6f`: ver la nota
+ * de precision en [TickRingBuffer]. Ademas coincide con lo que `loadTicks` del replay espera leer
+ * (`toDoubleOrNull`), asi que el archivo se puede volcar a disco y alimentar el replay sin tocar el
+ * parser existente.
+ */
+internal fun buildTicksCsv(ticks: List<TickRingBuffer.Entry>): String {
+    val sb = StringBuilder("ts,ric,price\n")
+    for (t in ticks) sb.append(t.ts).append(',').append(t.ric).append(',').append(t.price).append('\n')
+    return sb.toString()
+}
+
+/** The bridge accepts JSON and historical form bodies; neither may silently change SELL to BUY. */
+internal fun parseBridgeBody(body: String): Map<String, String> {
+    if (body.trimStart().startsWith("{")) {
+        val json = org.json.JSONObject(body)
+        return json.keys().asSequence().associateWith { json.get(it).toString() }
+    }
+    return body.split("&").filter { it.isNotEmpty() }.associate { pair ->
+        val parts = pair.split("=", limit = 2)
+        URLDecoder.decode(parts[0], "UTF-8") to URLDecoder.decode(parts.getOrElse(1) { "" }, "UTF-8")
     }
 }

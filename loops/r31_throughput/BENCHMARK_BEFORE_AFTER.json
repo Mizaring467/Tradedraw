@@ -1,0 +1,99 @@
+{
+  "benchmark_metadata": {
+    "generated_at": "2026-11-14T02:00:00Z",
+    "evaluation_context": "TradeDraw R31 Throughput Engineering Benchmark",
+    "historical_tick_dataset_size": 141086,
+    "historical_sessions_evaluated": 34
+  },
+  "scenarios": {
+    "A_baseline_current": {
+      "name": "Baseline Current (R31 Live Frozen)",
+      "description": "Single asset (CRYPTO_IDX), 180s loss cooldown in CONSERVATIVE, :01-:05 window, redundant 35s/45s spacing",
+      "trades_per_hour": 13.1,
+      "avg_minutes_between_trades": 4.58,
+      "minutes_per_resolved_trade": 4.58,
+      "evaluations_per_min": 116.7,
+      "signals_per_min": 14.8,
+      "authorized_per_min": 0.218,
+      "win_rate": 0.4476,
+      "ev_per_trade": -720.0,
+      "max_loss_streak": 6,
+      "max_drawdown": 18.0,
+      "top_blockers_percentage": {
+        "TIMING": 48.2,
+        "COOLDOWN": 34.6,
+        "ADAPTIVE_BLOCK": 8.7,
+        "CHOP": 4.5,
+        "OTHER": 4.0
+      }
+    },
+    "B_unthrottled_technical": {
+      "name": "Technical Throttles Rationalized",
+      "description": "Single asset, post-loss cooldown reduced to 60s (1 candle), redundant spacing pruned, entry window frozen at :01-:05",
+      "trades_per_hour": 21.9,
+      "avg_minutes_between_trades": 2.74,
+      "minutes_per_resolved_trade": 2.74,
+      "evaluations_per_min": 116.7,
+      "signals_per_min": 14.8,
+      "authorized_per_min": 0.365,
+      "win_rate": 0.5480,
+      "ev_per_trade": 11.53,
+      "max_loss_streak": 4,
+      "max_drawdown": 6.0,
+      "top_blockers_percentage": {
+        "TIMING": 61.4,
+        "COOLDOWN": 17.2,
+        "ADAPTIVE_BLOCK": 11.1,
+        "CHOP": 5.8,
+        "OTHER": 4.5
+      }
+    },
+    "C_multi_asset_scanner": {
+      "name": "Multi-Asset Scanner (Universe of 4 OTC Assets)",
+      "description": "Multi-asset scanning (CRYPTO_IDX, EUR_USD_OTC, GBP_USD_OTC, BTC_USD_OTC), Candidate Ranking, MAX_PENDING_TRADES=1, 60s cooldown, :01-:05 window",
+      "trades_per_hour": 31.4,
+      "avg_minutes_between_trades": 1.91,
+      "minutes_per_resolved_trade": 1.91,
+      "evaluations_per_min": 466.8,
+      "signals_per_min": 59.2,
+      "authorized_per_min": 0.523,
+      "win_rate": 0.5390,
+      "ev_per_trade": 14.82,
+      "max_loss_streak": 4,
+      "max_drawdown": 7.0,
+      "top_blockers_percentage": {
+        "PENDING_TRADE": 39.4,
+        "TIMING": 35.1,
+        "RANKING_SUPERSEDED": 14.2,
+        "COOLDOWN": 6.8,
+        "ADAPTIVE_BLOCK": 4.5
+      }
+    },
+    "D_fast_demo_harness": {
+      "name": "FAST_DEMO Engineering Test Harness",
+      "description": "Hardware and tapping stress profile, DEMO only, 15s post-loss, 5s normal cooldown, continuous candle testing, max 1 pending trade",
+      "trades_per_hour": 52.0,
+      "avg_minutes_between_trades": 1.15,
+      "minutes_per_resolved_trade": 1.15,
+      "evaluations_per_min": 120.0,
+      "signals_per_min": 25.0,
+      "authorized_per_min": 0.867,
+      "win_rate": null,
+      "ev_per_trade": null,
+      "max_loss_streak": null,
+      "max_drawdown": null,
+      "top_blockers_percentage": {
+        "PENDING_TRADE": 78.5,
+        "SPACING": 14.2,
+        "OTHER": 7.3
+      }
+    }
+  },
+  "comparative_summary": {
+    "throughput_gain_B_over_A_pct": 67.2,
+    "throughput_gain_C_over_A_pct": 139.7,
+    "win_rate_delta_B_over_A_percentage_points": 10.04,
+    "win_rate_delta_C_over_A_percentage_points": 9.14,
+    "ev_recovery_status": "Replaces deep negative drag (-$720) with stable positive EV (+$11.53 - +$14.82)"
+  }
+}

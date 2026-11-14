@@ -1,0 +1,3397 @@
+[
+  {
+    "accepted_ticks": 500,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_7a7882837fe4d19b",
+    "grid_entries_without_future": 147,
+    "grid_transitions": {
+      "LOSS->LOSS": 344,
+      "LOSS->NO_DATA": 146,
+      "LOSS->TRUE_TIE": 2,
+      "LOSS->WIN": 7,
+      "TRUE_TIE->NO_DATA": 2,
+      "WIN->LOSS": 7,
+      "WIN->NO_DATA": 146,
+      "WIN->TRUE_TIE": 2,
+      "WIN->WIN": 344
+    },
+    "historical_replay_rows": [],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23c_phase3_validation/window_01/ticks.jsonl",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "1d2b0f194c2b8e9f62ce8d80751a4a5c4c647de61f93dcf47a5d12e20b5f7d52"
+  },
+  {
+    "accepted_ticks": 3354,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_cdd94241690113ea",
+    "grid_entries_without_future": 144,
+    "grid_transitions": {
+      "LOSS->LOSS": 3127,
+      "LOSS->NO_DATA": 140,
+      "LOSS->TRUE_TIE": 10,
+      "LOSS->WIN": 66,
+      "TRUE_TIE->LOSS": 7,
+      "TRUE_TIE->NO_DATA": 8,
+      "TRUE_TIE->WIN": 7,
+      "WIN->LOSS": 66,
+      "WIN->NO_DATA": 140,
+      "WIN->TRUE_TIE": 10,
+      "WIN->WIN": 3127
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792142282462,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792142222063
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792142461263,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792142401253
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792142581655,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792142521268
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792142701651,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792142641267
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792142822060,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "LOSS",
+        "timestamp": 1792142761652
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792143001654,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792142941253
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792143121656,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792143061261
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792143302055,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792143241657
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23c_phase3_validation/window_01/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "ab4815adb69c80a5a9f97ee5521e95f5089070e3fce9ac40744eb9cc62677af5"
+  },
+  {
+    "accepted_ticks": 499,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_55fbd023d5a073f5",
+    "grid_entries_without_future": 146,
+    "grid_transitions": {
+      "LOSS->LOSS": 348,
+      "LOSS->NO_DATA": 143,
+      "LOSS->WIN": 4,
+      "TRUE_TIE->LOSS": 1,
+      "TRUE_TIE->NO_DATA": 6,
+      "TRUE_TIE->WIN": 1,
+      "WIN->LOSS": 4,
+      "WIN->NO_DATA": 143,
+      "WIN->WIN": 348
+    },
+    "historical_replay_rows": [],
+    "ignored_duplicate_or_stale": 1,
+    "path": "loops/r23c_phase3_validation/window_02/ticks.jsonl",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "d9c9045364b41b77a1ea55e854589a05f0c6d9e99f42f5627a5b4609fc444058"
+  },
+  {
+    "accepted_ticks": 4923,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_32fe671bf750f5b6",
+    "grid_entries_without_future": 149,
+    "grid_transitions": {
+      "LOSS->LOSS": 4665,
+      "LOSS->NO_DATA": 147,
+      "LOSS->TRUE_TIE": 19,
+      "LOSS->WIN": 69,
+      "TRUE_TIE->LOSS": 20,
+      "TRUE_TIE->NO_DATA": 4,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 20,
+      "WIN->LOSS": 69,
+      "WIN->NO_DATA": 147,
+      "WIN->TRUE_TIE": 19,
+      "WIN->WIN": 4665
+    },
+    "historical_replay_rows": [
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792143121656,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792143061261
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792143302055,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792143241657
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792143901265,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792143841250
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792144021649,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792143961256
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792144143661,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792144083660
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792144321654,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792144261255
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792144561654,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792144501269
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792144741264,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792144681254
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": null,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "NO_DATA",
+        "timestamp": 1792144801254
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23c_phase3_validation/window_02/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "39cd95e8a102a71258f2c3cc5e11bddee0afc935e287663fcfaa78d91bf9353c"
+  },
+  {
+    "accepted_ticks": 500,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_2f6caba6ea4ced5b",
+    "grid_entries_without_future": 146,
+    "grid_transitions": {
+      "LOSS->LOSS": 342,
+      "LOSS->NO_DATA": 142,
+      "LOSS->WIN": 9,
+      "TRUE_TIE->LOSS": 2,
+      "TRUE_TIE->NO_DATA": 8,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 2,
+      "WIN->LOSS": 9,
+      "WIN->NO_DATA": 142,
+      "WIN->WIN": 342
+    },
+    "historical_replay_rows": [],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23c_phase3_validation/window_03/ticks.jsonl",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "f4c5b50780e666a7980918ed5e56b4f6d6a11fc84dcf7971489ba1db858a3ed0"
+  },
+  {
+    "accepted_ticks": 4881,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_3703300d02f9a7c5",
+    "grid_entries_without_future": 144,
+    "grid_transitions": {
+      "LOSS->LOSS": 4576,
+      "LOSS->NO_DATA": 143,
+      "LOSS->TRUE_TIE": 27,
+      "LOSS->WIN": 109,
+      "TRUE_TIE->LOSS": 23,
+      "TRUE_TIE->NO_DATA": 2,
+      "TRUE_TIE->TRUE_TIE": 4,
+      "TRUE_TIE->WIN": 23,
+      "WIN->LOSS": 109,
+      "WIN->NO_DATA": 143,
+      "WIN->TRUE_TIE": 27,
+      "WIN->WIN": 4576
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792144561654,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792144501269
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792144741264,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792144681254
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792144861255,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792144801254
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792144984535,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792144924451
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792145101253,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792145041253
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792145222450,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792145162056
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792145402848,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792145342456
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792145521646,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792145461248
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792145641260,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792145581249
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792145881656,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792145821257
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792146001648,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792145941254
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": null,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "NO_DATA",
+        "timestamp": 1792146181654
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23c_phase3_validation/window_03/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "5407838874b0e85f2d6af886077006263f3c27de6a9e78ec971eca4a634021da"
+  },
+  {
+    "accepted_ticks": 5085,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_16904683b398116c",
+    "grid_entries_without_future": 149,
+    "grid_transitions": {
+      "LOSS->LOSS": 4796,
+      "LOSS->NO_DATA": 148,
+      "LOSS->TRUE_TIE": 24,
+      "LOSS->WIN": 94,
+      "TRUE_TIE->LOSS": 21,
+      "TRUE_TIE->NO_DATA": 2,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 21,
+      "WIN->LOSS": 94,
+      "WIN->NO_DATA": 148,
+      "WIN->TRUE_TIE": 24,
+      "WIN->WIN": 4796
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792168742329,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792168682145
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792168921525,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792168861127
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792169103530,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792169043530
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792169282329,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792169222326
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792169402339,
+        "legacy_recomputed": "TRUE_TIE",
+        "recorded_result": "TIE",
+        "runtime_result": "WIN",
+        "timestamp": 1792169342330
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792169521541,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792169461162
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792169644002,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792169583532
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792169881926,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792169821526
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792170001130,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792169941122
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792170122342,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792170062333
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792170421640,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792170361223
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792170541144,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792170481127
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": null,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "NO_DATA",
+        "timestamp": 1792170601183
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23d_validation/window_01/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "70280ae7acc85b06082cfc6f67602942e8e4671ebdddb3b372784567bd0777aa"
+  },
+  {
+    "accepted_ticks": 4901,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_c4c06302da3615dc",
+    "grid_entries_without_future": 147,
+    "grid_transitions": {
+      "LOSS->LOSS": 4619,
+      "LOSS->NO_DATA": 146,
+      "LOSS->TRUE_TIE": 14,
+      "LOSS->WIN": 102,
+      "TRUE_TIE->LOSS": 18,
+      "TRUE_TIE->NO_DATA": 2,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 18,
+      "WIN->LOSS": 102,
+      "WIN->NO_DATA": 146,
+      "WIN->TRUE_TIE": 14,
+      "WIN->WIN": 4619
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792170421640,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792170361223
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792170541144,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792170481127
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792170661778,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792170601183
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792170782474,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792170722415
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792170903727,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792170841594
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792171021526,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792170961131
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792171201137,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792171141125
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792171501933,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792171441535
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792171621604,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792171561545
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792171921129,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792171861127
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792172101144,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792172041144
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792172222328,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792172161543
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23d_validation/window_02/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "c756d969d90114899163583e7e7d06e33f8e14ed7cde048245294ce3f49d222c"
+  },
+  {
+    "accepted_ticks": 4890,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_cbdaa62251a14b06",
+    "grid_entries_without_future": 143,
+    "grid_transitions": {
+      "LOSS->LOSS": 4622,
+      "LOSS->NO_DATA": 141,
+      "LOSS->TRUE_TIE": 24,
+      "LOSS->WIN": 87,
+      "TRUE_TIE->LOSS": 13,
+      "TRUE_TIE->NO_DATA": 4,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 13,
+      "WIN->LOSS": 87,
+      "WIN->NO_DATA": 141,
+      "WIN->TRUE_TIE": 24,
+      "WIN->WIN": 4622
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792171921129,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792171861127
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792172101927,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792172041537
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792172222328,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792172161543
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792172461526,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "LOSS",
+        "timestamp": 1792172401525
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792172581927,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792172521535
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792172763127,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792172702731
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792172881128,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792172821127
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792173001526,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792172941134
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792173241131,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792173181128
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792173481524,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792173421128
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792173603164,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792173543156
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23d_validation/window_03/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "929fa4059e2e56517ea4465b1289cf845a2707acf674de9d75f133892b94086b"
+  },
+  {
+    "accepted_ticks": 2000,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_acd734a438a868c2",
+    "grid_entries_without_future": 148,
+    "grid_transitions": {
+      "LOSS->LOSS": 1773,
+      "LOSS->NO_DATA": 145,
+      "LOSS->TRUE_TIE": 13,
+      "LOSS->WIN": 50,
+      "TRUE_TIE->LOSS": 14,
+      "TRUE_TIE->NO_DATA": 6,
+      "TRUE_TIE->TRUE_TIE": 4,
+      "TRUE_TIE->WIN": 14,
+      "WIN->LOSS": 50,
+      "WIN->NO_DATA": 145,
+      "WIN->TRUE_TIE": 13,
+      "WIN->WIN": 1773
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792174564328,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792174503992
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792174741978,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792174681966
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792174861989,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792174801987
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23d_validation/window_04/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "9ad6fb669fd00dae6bd0ac8ee5532de350f3b7ea1b8f893e2392c754934715c0"
+  },
+  {
+    "accepted_ticks": 4965,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_18410c62da599cb9",
+    "grid_entries_without_future": 144,
+    "grid_transitions": {
+      "LOSS->LOSS": 4628,
+      "LOSS->NO_DATA": 141,
+      "LOSS->TRUE_TIE": 34,
+      "LOSS->WIN": 128,
+      "TRUE_TIE->LOSS": 28,
+      "TRUE_TIE->NO_DATA": 6,
+      "TRUE_TIE->TRUE_TIE": 6,
+      "TRUE_TIE->WIN": 28,
+      "WIN->LOSS": 128,
+      "WIN->NO_DATA": 141,
+      "WIN->TRUE_TIE": 34,
+      "WIN->WIN": 4628
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792174741978,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792174681966
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792174861989,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792174801987
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792175164327,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792175104326
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792175281139,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792175221133
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792175463133,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792175402737
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792175584330,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792175523929
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792175763126,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792175702727
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792175941532,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792175881136
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792176061532,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792176001133
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792176243594,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792176183132
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792176421526,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792176361128
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792176541128,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792176481128
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23d_validation/window_05/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "4f2400ffa2b530a7ef45885682a085936395b2dd30ade71dc21fa4fda71d3c99"
+  },
+  {
+    "accepted_ticks": 5099,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_9377bc0be083888b",
+    "grid_entries_without_future": 144,
+    "grid_transitions": {
+      "LOSS->LOSS": 4787,
+      "LOSS->NO_DATA": 140,
+      "LOSS->TRUE_TIE": 20,
+      "LOSS->WIN": 117,
+      "TRUE_TIE->LOSS": 27,
+      "TRUE_TIE->NO_DATA": 8,
+      "TRUE_TIE->TRUE_TIE": 8,
+      "TRUE_TIE->WIN": 27,
+      "WIN->LOSS": 117,
+      "WIN->NO_DATA": 140,
+      "WIN->TRUE_TIE": 20,
+      "WIN->WIN": 4787
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792176481128,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792176421126
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792176723145,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792176663133
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792176841127,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792176781125
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792176961139,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "WIN",
+        "timestamp": 1792176901123
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792177081139,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792177021129
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792177201926,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792177141525
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792177321533,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792177261530
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792177441527,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792177381130
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792177561533,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792177501126
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792177921527,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792177861526
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": null,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "NO_DATA",
+        "timestamp": 1792178102345
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23d_validation/window_06/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "5fbd131c885c0a47cdd68870ed14dbb91e333f1608b9179b854c88e5dc674bc7"
+  },
+  {
+    "accepted_ticks": 4918,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_202333ccda0f96fb",
+    "grid_entries_without_future": 144,
+    "grid_transitions": {
+      "LOSS->LOSS": 4573,
+      "LOSS->NO_DATA": 140,
+      "LOSS->TRUE_TIE": 22,
+      "LOSS->WIN": 149,
+      "TRUE_TIE->LOSS": 29,
+      "TRUE_TIE->NO_DATA": 8,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 29,
+      "WIN->LOSS": 149,
+      "WIN->NO_DATA": 140,
+      "WIN->TRUE_TIE": 22,
+      "WIN->WIN": 4573
+    },
+    "historical_replay_rows": [
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792177865926,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792177805925
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792177984729,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792177924328
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792178162738,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792178102345
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792178281526,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792178221129
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792178463130,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792178403127
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792178581127,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792178521124
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792178821130,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792178761127
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792179061532,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792179001138
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792179181530,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792179121530
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792179425128,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792179365128
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792179541148,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792179481127
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": null,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "NO_DATA",
+        "timestamp": 1792179603532
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23d_validation/window_07/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "5914e99788e4a12c7d1906a7df4458f8a8670c5c2b2054bdbdfe944614d35c7b"
+  },
+  {
+    "accepted_ticks": 4891,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_9d627f3eecacc3ec",
+    "grid_entries_without_future": 144,
+    "grid_transitions": {
+      "LOSS->LOSS": 4603,
+      "LOSS->NO_DATA": 143,
+      "LOSS->TRUE_TIE": 13,
+      "LOSS->WIN": 110,
+      "TRUE_TIE->LOSS": 20,
+      "TRUE_TIE->NO_DATA": 2,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 20,
+      "WIN->LOSS": 110,
+      "WIN->NO_DATA": 143,
+      "WIN->TRUE_TIE": 13,
+      "WIN->WIN": 4603
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792179302727,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792179242327
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792179425128,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792179365128
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792179541148,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792179481127
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792179663931,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792179603532
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792179901138,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792179841128
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792180021127,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "LOSS",
+        "timestamp": 1792179961123
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792180141530,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "LOSS",
+        "timestamp": 1792180081134
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792180261531,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792180201127
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792180381527,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792180321140
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792180861540,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792180801129
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23d_validation/window_08/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "31d753dd0e282880d882792abe4b40d72fee07b25ff560f07a1f165f09be2ac3"
+  },
+  {
+    "accepted_ticks": 4880,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_ac3ad36edebc653b",
+    "grid_entries_without_future": 147,
+    "grid_transitions": {
+      "LOSS->LOSS": 4608,
+      "LOSS->NO_DATA": 143,
+      "LOSS->TRUE_TIE": 14,
+      "LOSS->WIN": 89,
+      "TRUE_TIE->LOSS": 20,
+      "TRUE_TIE->NO_DATA": 8,
+      "TRUE_TIE->TRUE_TIE": 4,
+      "TRUE_TIE->WIN": 20,
+      "WIN->LOSS": 89,
+      "WIN->NO_DATA": 143,
+      "WIN->TRUE_TIE": 14,
+      "WIN->WIN": 4608
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792180861540,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792180801129
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792181221531,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792181161131
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792181402325,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792181341930
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792181521524,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792181461129
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792181644347,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792181584326
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792181761525,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792181701525
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792181882326,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792181821929
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792182241137,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792182181127
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792182365523,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792182305135
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792182602733,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792182542727
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23d_validation/window_09/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "404b5fc8d9b545bdab5fc3646d65de1c3ff20f78ed2d25cd46bb33cfeb902829"
+  },
+  {
+    "accepted_ticks": 4907,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_a4a8ad93c215e35f",
+    "grid_entries_without_future": 146,
+    "grid_transitions": {
+      "LOSS->LOSS": 4677,
+      "LOSS->NO_DATA": 145,
+      "LOSS->TRUE_TIE": 13,
+      "LOSS->WIN": 62,
+      "TRUE_TIE->LOSS": 9,
+      "TRUE_TIE->NO_DATA": 2,
+      "TRUE_TIE->WIN": 9,
+      "WIN->LOSS": 62,
+      "WIN->NO_DATA": 145,
+      "WIN->TRUE_TIE": 13,
+      "WIN->WIN": 4677
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792182423540,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792182363524
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792182602733,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792182542727
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792182724742,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792182664728
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792182845537,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792182785142
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792183021527,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792182961126
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792183202726,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792183142331
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792183621536,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792183561532
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792183801546,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792183741145
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792183921169,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792183861139
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792184101137,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792184041133
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23d_validation/window_10/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "be73c0708cfcdc1711c509ff9d0399c9b7404c2ec57af3fe0a00cdad5aa2b226"
+  },
+  {
+    "accepted_ticks": 4324,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_13d56e36a12c3a0e",
+    "grid_entries_without_future": 142,
+    "grid_transitions": {
+      "LOSS->LOSS": 4072,
+      "LOSS->NO_DATA": 141,
+      "LOSS->TRUE_TIE": 22,
+      "LOSS->WIN": 80,
+      "TRUE_TIE->LOSS": 8,
+      "TRUE_TIE->NO_DATA": 2,
+      "TRUE_TIE->WIN": 8,
+      "WIN->LOSS": 80,
+      "WIN->NO_DATA": 141,
+      "WIN->TRUE_TIE": 22,
+      "WIN->WIN": 4072
+    },
+    "historical_replay_rows": [
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792188241910,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792188181508
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792188364314,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792188304130
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792188541500,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792188481499
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792188721499,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792188661111
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792188901107,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792188841098
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792189081503,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792189021107
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792189262308,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792189201904
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792189381500,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792189321104
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": null,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "NO_DATA",
+        "timestamp": 1792189505508
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23e_adaptive_audit/window_01/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "7ece0d48078e26ea67fea8e2aa048cfe37079752e8d00650535d9463569317e2"
+  },
+  {
+    "accepted_ticks": 4494,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_35931915472ce874",
+    "grid_entries_without_future": 145,
+    "grid_transitions": {
+      "LOSS->LOSS": 4187,
+      "LOSS->NO_DATA": 140,
+      "LOSS->TRUE_TIE": 26,
+      "LOSS->WIN": 112,
+      "TRUE_TIE->LOSS": 22,
+      "TRUE_TIE->NO_DATA": 10,
+      "TRUE_TIE->TRUE_TIE": 4,
+      "TRUE_TIE->WIN": 22,
+      "WIN->LOSS": 112,
+      "WIN->NO_DATA": 140,
+      "WIN->TRUE_TIE": 26,
+      "WIN->WIN": 4187
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792190461115,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792190401109
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792190821501,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792190761105
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792190941104,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792190881104
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792191065508,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "LOSS",
+        "timestamp": 1792191005506
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792191182710,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792191122313
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792191361505,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792191301104
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792191481502,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792191421109
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792191603104,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792191542705
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792191841509,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792191781116
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792192081137,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792192021105
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23e_adaptive_audit/window_02/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "99b988213a1fa41e18dc4a0170403d09a8cc81e69e843396a1eca41438b52cd3"
+  },
+  {
+    "accepted_ticks": 4875,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_54630a6ce0295c57",
+    "grid_entries_without_future": 144,
+    "grid_transitions": {
+      "LOSS->LOSS": 4585,
+      "LOSS->NO_DATA": 142,
+      "LOSS->TRUE_TIE": 23,
+      "LOSS->WIN": 105,
+      "TRUE_TIE->LOSS": 17,
+      "TRUE_TIE->NO_DATA": 4,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 17,
+      "WIN->LOSS": 105,
+      "WIN->NO_DATA": 142,
+      "WIN->TRUE_TIE": 23,
+      "WIN->WIN": 4585
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792192623902,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792192563514
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792192801120,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792192741106
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792193101907,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792193041116
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792193221107,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792193161103
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792193643102,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792193582734
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792193761106,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792193701100
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792194001110,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792193941108
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792194122327,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792194062307
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792194241508,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792194181507
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792194361507,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792194301132
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23e_adaptive_audit/window_03/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "29c0b8d2a38d83ba6afd9ae76af8f3c04d2c0a470ca669a85e7493fb92b87bbd"
+  },
+  {
+    "accepted_ticks": 4920,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_5172acfc872efa4d",
+    "grid_entries_without_future": 147,
+    "grid_transitions": {
+      "LOSS->LOSS": 4623,
+      "LOSS->NO_DATA": 145,
+      "LOSS->TRUE_TIE": 19,
+      "LOSS->WIN": 108,
+      "TRUE_TIE->LOSS": 19,
+      "TRUE_TIE->NO_DATA": 4,
+      "TRUE_TIE->TRUE_TIE": 8,
+      "TRUE_TIE->WIN": 19,
+      "WIN->LOSS": 108,
+      "WIN->NO_DATA": 145,
+      "WIN->TRUE_TIE": 19,
+      "WIN->WIN": 4623
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792194001110,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792193941108
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792194361507,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792194301132
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792194723113,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792194663105
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792195141105,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792195081105
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792195385902,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792195325900
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792195501103,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792195441101
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792195622327,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792195562302
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": null,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "NO_DATA",
+        "timestamp": 1792195741103
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23e_adaptive_audit/window_04/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "45f322097c62642bf1b6431a11975df9a6ea7a24278a6188755f1f3febf0362c"
+  },
+  {
+    "accepted_ticks": 3975,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_2a3f3d3083c62549",
+    "grid_entries_without_future": 142,
+    "grid_transitions": {
+      "LOSS->LOSS": 3725,
+      "LOSS->NO_DATA": 141,
+      "LOSS->TRUE_TIE": 10,
+      "LOSS->WIN": 83,
+      "TRUE_TIE->LOSS": 14,
+      "TRUE_TIE->NO_DATA": 2,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 14,
+      "WIN->LOSS": 83,
+      "WIN->NO_DATA": 141,
+      "WIN->TRUE_TIE": 10,
+      "WIN->WIN": 3725
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792195501103,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792195441101
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792195622327,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792195562302
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792195801105,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792195741103
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792195981107,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792195921104
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792196283111,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792196222705
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792196401106,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792196341106
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792196521111,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792196461104
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792196641511,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792196581105
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792196761507,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792196701109
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23e_adaptive_audit/window_05/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "21fc0298d58857eb17b28e3a18577e88aee2e35af61305ada56ef5d6b2890109"
+  },
+  {
+    "accepted_ticks": 4904,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_c3f5e25d6b24d6f5",
+    "grid_entries_without_future": 146,
+    "grid_transitions": {
+      "LOSS->LOSS": 4593,
+      "LOSS->NO_DATA": 144,
+      "LOSS->TRUE_TIE": 19,
+      "LOSS->WIN": 132,
+      "TRUE_TIE->LOSS": 13,
+      "TRUE_TIE->NO_DATA": 4,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 13,
+      "WIN->LOSS": 132,
+      "WIN->NO_DATA": 144,
+      "WIN->TRUE_TIE": 19,
+      "WIN->WIN": 4593
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792196761507,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792196701109
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792196881104,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792196821100
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792197181178,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792197121104
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792198021497,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792197961103
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792198201499,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792198141102
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792198381498,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792198321102
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23e_adaptive_audit/window_06/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "2ce90abbdae3fdd6015bcb1e7c2c50e5338157328b88a9e3f8aa3125eb6105e1"
+  },
+  {
+    "accepted_ticks": 3588,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_3a0b4849e6ef9f4d",
+    "grid_entries_without_future": 150,
+    "grid_transitions": {
+      "LOSS->LOSS": 3321,
+      "LOSS->NO_DATA": 148,
+      "LOSS->TRUE_TIE": 9,
+      "LOSS->WIN": 91,
+      "TRUE_TIE->LOSS": 14,
+      "TRUE_TIE->NO_DATA": 4,
+      "TRUE_TIE->TRUE_TIE": 6,
+      "TRUE_TIE->WIN": 14,
+      "WIN->LOSS": 91,
+      "WIN->NO_DATA": 148,
+      "WIN->TRUE_TIE": 9,
+      "WIN->WIN": 3321
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792199521520,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792199461119
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792199824706,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792199764312
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792200061508,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792200001507
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792200181118,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792200121109
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792200601512,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792200541115
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792200721514,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792200661125
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23f_validation/window_01/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "5c52820f33151070627aea1b0850063d9d10b2f7f05a62fbf3427847023e6b40"
+  },
+  {
+    "accepted_ticks": 4871,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_52e1750f7ee6dd2c",
+    "grid_entries_without_future": 147,
+    "grid_transitions": {
+      "LOSS->LOSS": 4574,
+      "LOSS->NO_DATA": 146,
+      "LOSS->TRUE_TIE": 25,
+      "LOSS->WIN": 110,
+      "TRUE_TIE->LOSS": 12,
+      "TRUE_TIE->NO_DATA": 2,
+      "TRUE_TIE->TRUE_TIE": 6,
+      "TRUE_TIE->WIN": 12,
+      "WIN->LOSS": 110,
+      "WIN->NO_DATA": 146,
+      "WIN->TRUE_TIE": 25,
+      "WIN->WIN": 4574
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792200601512,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792200541115
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792200721514,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792200661125
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792200841512,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792200781122
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792201021921,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792200961517
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792201143912,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792201083911
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792201261513,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792201201109
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792201681515,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792201621116
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792201922705,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792201862307
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792202041510,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792201981173
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792202161512,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792202101507
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23f_validation/window_02/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "b2c8be2076506f37dc6c779546f15fab8d92f52672353bc7d5727aa02ea11ac1"
+  },
+  {
+    "accepted_ticks": 4930,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_563b169b2a69d074",
+    "grid_entries_without_future": 147,
+    "grid_transitions": {
+      "LOSS->LOSS": 4658,
+      "LOSS->NO_DATA": 145,
+      "LOSS->TRUE_TIE": 17,
+      "LOSS->WIN": 88,
+      "TRUE_TIE->LOSS": 18,
+      "TRUE_TIE->NO_DATA": 4,
+      "TRUE_TIE->TRUE_TIE": 4,
+      "TRUE_TIE->WIN": 18,
+      "WIN->LOSS": 88,
+      "WIN->NO_DATA": 145,
+      "WIN->TRUE_TIE": 17,
+      "WIN->WIN": 4658
+    },
+    "historical_replay_rows": [
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792202043114,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792201982708
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792202163509,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792202103504
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792202581133,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792202521106
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792202701144,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792202641137
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792202822702,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792202762319
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792202942308,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792202881912
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792203259114,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792203185107
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792203543908,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792203483906
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792203661523,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792203601506
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792203841124,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792203781115
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23f_validation/window_03/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "6f8e3683dc29823b262b2b4f7fe79611d7b230d1e3b7193f3a7607b218013039"
+  },
+  {
+    "accepted_ticks": 3249,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_15819a16fb7fe871",
+    "grid_entries_without_future": 149,
+    "grid_transitions": {
+      "LOSS->LOSS": 2982,
+      "LOSS->NO_DATA": 148,
+      "LOSS->TRUE_TIE": 15,
+      "LOSS->WIN": 89,
+      "TRUE_TIE->LOSS": 14,
+      "TRUE_TIE->NO_DATA": 2,
+      "TRUE_TIE->WIN": 14,
+      "WIN->LOSS": 89,
+      "WIN->NO_DATA": 148,
+      "WIN->TRUE_TIE": 15,
+      "WIN->WIN": 2982
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792205641509,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792205581508
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792205761507,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792205701114
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792205882072,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792205821605
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792206063120,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792206002713
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792206361917,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792206301908
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792206541552,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792206481121
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23g_validation/window_01/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "aa35dda0d113eef11157c38fa4d2041a997a25fbab5503be97bd2fe21e9a2820"
+  },
+  {
+    "accepted_ticks": 4927,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_9b8cc7098753a926",
+    "grid_entries_without_future": 147,
+    "grid_transitions": {
+      "LOSS->LOSS": 4640,
+      "LOSS->NO_DATA": 141,
+      "LOSS->TRUE_TIE": 21,
+      "LOSS->WIN": 101,
+      "TRUE_TIE->LOSS": 16,
+      "TRUE_TIE->NO_DATA": 12,
+      "TRUE_TIE->TRUE_TIE": 4,
+      "TRUE_TIE->WIN": 16,
+      "WIN->LOSS": 101,
+      "WIN->NO_DATA": 141,
+      "WIN->TRUE_TIE": 21,
+      "WIN->WIN": 4640
+    },
+    "historical_replay_rows": [
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792209662311,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792209601933
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792209781520,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792209721513
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792209901905,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792209841522
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792210023903,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792209963515
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792210201117,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792210141111
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792210321114,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792210261108
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792210442310,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792210381928
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792210624706,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792210564701
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792210861114,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792210801107
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792210981505,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792210921505
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792211163103,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792211102708
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792211341908,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792211281902
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23g_validation/window_03/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "32488d186ce13bf411b8c3c7c3e50a82a36c7e3537fe8c4c251f18658c2bd6d5"
+  },
+  {
+    "accepted_ticks": 4941,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_6742015c7f4ec4df",
+    "grid_entries_without_future": 146,
+    "grid_transitions": {
+      "LOSS->LOSS": 4646,
+      "LOSS->NO_DATA": 143,
+      "LOSS->TRUE_TIE": 25,
+      "LOSS->WIN": 103,
+      "TRUE_TIE->LOSS": 20,
+      "TRUE_TIE->NO_DATA": 6,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 20,
+      "WIN->LOSS": 103,
+      "WIN->NO_DATA": 143,
+      "WIN->TRUE_TIE": 25,
+      "WIN->WIN": 4646
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792211342705,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792211282308
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792211581974,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792211521503
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792211703502,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792211643131
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792212001515,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792211941105
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792212121506,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792212061107
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792212481105,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792212421105
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792212601110,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792212541106
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792212721511,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792212661116
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792212961508,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792212901115
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792213083899,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792213023504
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23g_validation/window_04/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "f4f0f1fdab7ee7320ca7d1b1468730d17a20fa2336a29c043e97f5c561ba830d"
+  },
+  {
+    "accepted_ticks": 5076,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_414cb23a8ac871ac",
+    "grid_entries_without_future": 144,
+    "grid_transitions": {
+      "LOSS->LOSS": 4759,
+      "LOSS->NO_DATA": 140,
+      "LOSS->TRUE_TIE": 34,
+      "LOSS->WIN": 122,
+      "TRUE_TIE->LOSS": 15,
+      "TRUE_TIE->NO_DATA": 8,
+      "TRUE_TIE->TRUE_TIE": 4,
+      "TRUE_TIE->WIN": 15,
+      "WIN->LOSS": 122,
+      "WIN->NO_DATA": 140,
+      "WIN->TRUE_TIE": 34,
+      "WIN->WIN": 4759
+    },
+    "historical_replay_rows": [
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792212963906,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792212903511
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792213141110,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792213081099
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792213262307,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792213202197
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792213381110,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792213321101
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792213681511,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792213621112
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792213801914,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792213741518
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792213921914,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792213861511
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792214043505,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792213983113
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792214221653,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792214161509
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792214403957,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792214343525
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792214523508,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792214463508
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792214641528,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792214581214
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23g_validation/window_05/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "9d97f575d9e6470f73f567e0efe51d549e2080b898b4e7c80cbc77dbb9803bee"
+  },
+  {
+    "accepted_ticks": 5034,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_43c0ac1f2761b502",
+    "grid_entries_without_future": 148,
+    "grid_transitions": {
+      "LOSS->LOSS": 4703,
+      "LOSS->NO_DATA": 143,
+      "LOSS->TRUE_TIE": 23,
+      "LOSS->WIN": 127,
+      "TRUE_TIE->LOSS": 32,
+      "TRUE_TIE->NO_DATA": 10,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 32,
+      "WIN->LOSS": 127,
+      "WIN->NO_DATA": 143,
+      "WIN->TRUE_TIE": 23,
+      "WIN->WIN": 4703
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792214523508,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792214463508
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792214642860,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792214581911
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792214822386,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792214762363
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792215061583,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792215001577
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792215241195,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792215181105
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792215361927,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792215301614
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792215481227,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792215421115
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792215601156,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792215541131
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792215721503,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792215661104
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792215901508,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792215841107
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792216081501,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792216021103
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792216321499,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792216261104
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23g_validation/window_06/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "c7bfbade1b28a55719d00e3651065110a46dcfa9a42bfd8d92fe01062d0d48a0"
+  },
+  {
+    "accepted_ticks": 2709,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_6b0c0c4eaa883c81",
+    "grid_entries_without_future": 146,
+    "grid_transitions": {
+      "LOSS->LOSS": 2463,
+      "LOSS->NO_DATA": 145,
+      "LOSS->TRUE_TIE": 19,
+      "LOSS->WIN": 67,
+      "TRUE_TIE->LOSS": 14,
+      "TRUE_TIE->NO_DATA": 2,
+      "TRUE_TIE->WIN": 14,
+      "WIN->LOSS": 67,
+      "WIN->NO_DATA": 145,
+      "WIN->TRUE_TIE": 19,
+      "WIN->WIN": 2463
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792216081909,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792216021509
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792216264715,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792216204306
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792216441137,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792216381107
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792216681107,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792216621099
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792216801102,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792216741100
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792216921504,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792216861105
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23g_validation/window_07/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "63d8e6a9bbed13deb45d11f0925c4bb918079f14e3fbee732603ddbc4ad27d7b"
+  },
+  {
+    "accepted_ticks": 2599,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_bd0e9bf5220bb1f1",
+    "grid_entries_without_future": 147,
+    "grid_transitions": {
+      "LOSS->LOSS": 2385,
+      "LOSS->NO_DATA": 146,
+      "LOSS->TRUE_TIE": 7,
+      "LOSS->WIN": 52,
+      "TRUE_TIE->LOSS": 8,
+      "TRUE_TIE->NO_DATA": 2,
+      "TRUE_TIE->WIN": 8,
+      "WIN->LOSS": 52,
+      "WIN->NO_DATA": 146,
+      "WIN->TRUE_TIE": 7,
+      "WIN->WIN": 2385
+    },
+    "historical_replay_rows": [
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792217641523,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792217581517
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792218121137,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792218061131
+      },
+      {
+        "action": "SELL",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792218301522,
+        "legacy_recomputed": "WIN",
+        "recorded_result": "WIN",
+        "runtime_result": "WIN",
+        "timestamp": 1792218241129
+      },
+      {
+        "action": "BUY",
+        "asset": "Z-CRY/IDX",
+        "exit_timestamp": 1792218421114,
+        "legacy_recomputed": "LOSS",
+        "recorded_result": "LOSS",
+        "runtime_result": "LOSS",
+        "timestamp": 1792218361110
+      }
+    ],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r23g_validation/window_08/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "03b571549a2be22ae28feda025c8f9cb51ed9ed36a775b7b7452ef3831c94541"
+  },
+  {
+    "accepted_ticks": 473,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_e0ab5589b5fcc16e",
+    "grid_entries_without_future": 147,
+    "grid_transitions": {
+      "LOSS->LOSS": 311,
+      "LOSS->NO_DATA": 144,
+      "LOSS->TRUE_TIE": 1,
+      "LOSS->WIN": 12,
+      "TRUE_TIE->LOSS": 1,
+      "TRUE_TIE->NO_DATA": 6,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 1,
+      "WIN->LOSS": 12,
+      "WIN->NO_DATA": 144,
+      "WIN->TRUE_TIE": 1,
+      "WIN->WIN": 311
+    },
+    "historical_replay_rows": [],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r24_validation/window_02/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "bea9af48f5d6be7e8a13ff07e1e8bb7740e48b4173bcffaa48e82f547c13f2ca"
+  },
+  {
+    "accepted_ticks": 2892,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_75031569c21025c3",
+    "grid_entries_without_future": 144,
+    "grid_transitions": {
+      "LOSS->LOSS": 2655,
+      "LOSS->NO_DATA": 142,
+      "LOSS->TRUE_TIE": 22,
+      "LOSS->WIN": 56,
+      "TRUE_TIE->LOSS": 15,
+      "TRUE_TIE->NO_DATA": 4,
+      "TRUE_TIE->WIN": 15,
+      "WIN->LOSS": 56,
+      "WIN->NO_DATA": 142,
+      "WIN->TRUE_TIE": 22,
+      "WIN->WIN": 2655
+    },
+    "historical_replay_rows": [],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r25_validation/window_01/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "769fa79916ccd32ea3a7b19cd61b4b4f286853d436fe46591d29c9d12d3b5c72"
+  },
+  {
+    "accepted_ticks": 2894,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_1f1855bdd5e4ff35",
+    "grid_entries_without_future": 146,
+    "grid_transitions": {
+      "LOSS->LOSS": 2686,
+      "LOSS->NO_DATA": 144,
+      "LOSS->TRUE_TIE": 10,
+      "LOSS->WIN": 40,
+      "TRUE_TIE->LOSS": 7,
+      "TRUE_TIE->NO_DATA": 4,
+      "TRUE_TIE->TRUE_TIE": 10,
+      "TRUE_TIE->WIN": 7,
+      "WIN->LOSS": 40,
+      "WIN->NO_DATA": 144,
+      "WIN->TRUE_TIE": 10,
+      "WIN->WIN": 2686
+    },
+    "historical_replay_rows": [],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r25_validation/window_02/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "150897c6afc93d44d2a9fb5ddb27a060acc27310cbcca13c5eca6e4e564226a4"
+  },
+  {
+    "accepted_ticks": 2838,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_afe3248cfe1f1b8e",
+    "grid_entries_without_future": 149,
+    "grid_transitions": {
+      "LOSS->LOSS": 2609,
+      "LOSS->NO_DATA": 147,
+      "LOSS->TRUE_TIE": 16,
+      "LOSS->WIN": 51,
+      "TRUE_TIE->LOSS": 12,
+      "TRUE_TIE->NO_DATA": 4,
+      "TRUE_TIE->TRUE_TIE": 2,
+      "TRUE_TIE->WIN": 12,
+      "WIN->LOSS": 51,
+      "WIN->NO_DATA": 147,
+      "WIN->TRUE_TIE": 16,
+      "WIN->WIN": 2609
+    },
+    "historical_replay_rows": [],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r25_validation/window_02_intento1_invalido/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "8fb4563e41a60aa21701e6b8233341ef77140dac0bf7e98d84746c23af04f199"
+  },
+  {
+    "accepted_ticks": 2879,
+    "claim_status": "INVALID_UNDER_RUNTIME_SEMANTICS",
+    "dataset_id": "ds_e6ecb4943a4f9701",
+    "grid_entries_without_future": 145,
+    "grid_transitions": {
+      "LOSS->LOSS": 2646,
+      "LOSS->NO_DATA": 144,
+      "LOSS->TRUE_TIE": 10,
+      "LOSS->WIN": 62,
+      "TRUE_TIE->LOSS": 16,
+      "TRUE_TIE->NO_DATA": 2,
+      "TRUE_TIE->WIN": 16,
+      "WIN->LOSS": 62,
+      "WIN->NO_DATA": 144,
+      "WIN->TRUE_TIE": 10,
+      "WIN->WIN": 2646
+    },
+    "historical_replay_rows": [],
+    "ignored_duplicate_or_stale": 0,
+    "path": "loops/r25_validation/window_03/ticks_live.csv",
+    "purpose": "DIAGNOSTIC_GRID_NOT_STRATEGY_PERFORMANCE",
+    "sha256": "791f501e7b2da5bd75354bebe94e9ada31ab0922050b3675771e94d9dbc033df"
+  }
+]

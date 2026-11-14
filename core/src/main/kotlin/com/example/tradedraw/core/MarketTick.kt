@@ -1,0 +1,197 @@
+package com.example.tradedraw.core
+
+/**
+ * Representa un micro-tick de cotización recibido en tiempo real por WebSocket.
+ *
+ * @param asset Símbolo o identificador del activo (ej. "CRYPTO_IDX", "Z-CRY/IDX", "BTCUSDT")
+ * @param price Precio de cotización instantáneo
+ * @param timestampMs Marca de tiempo en milisegundos en que se emitió el tick
+ * @param velocity Derivada instantánea del precio (Delta P / Delta t) respecto a ticks previos
+ * @param isBullishImpulse Indica si el tick representa una subida rápida de precio
+ * @param isBearishImpulse Indica si el tick representa una caída rápida de precio
+ */
+data class MarketTick(
+    val asset: String,
+    val price: Double,
+    val timestampMs: Long = System.currentTimeMillis(),
+    val velocity: Float = 0f,
+    val isBullishImpulse: Boolean = false,
+    val isBearishImpulse: Boolean = false,
+    val smoothedVelocity: Float = velocity
+) {
+    /** Segundo actual dentro del ciclo de vela de 60s (0..59) */
+    val candleSecond: Int
+        get() = ((timestampMs / 1000L) % 60L).toInt()
+
+    /** Ventana estricta de entrada al segundo :00 (:57 a :05) — inicio desplazable por A3. */
+    val isStrictTimingWindow: Boolean
+        get() = MarketTickFilters.isInEntryWindow(candleSecond)
+
+    /** Veto estricto de entrada a mitad de ciclo de vela (:15 a :55) */
+    val isTimingVetoed: Boolean
+        get() = !MarketTickFilters.isInEntryWindow(candleSecond)
+}
+
+enum class WebSocketState {
+    DISCONNECTED,
+    CONNECTING,
+    CONNECTED,
+    RECONNECTING,
+    ERROR,
+    UNAUTHORIZED
+}
+
+/**
+ * Filtro Cuantitativo de Timing Estricto y Detección de Micro-Rango / Choppiness (Binomo 60s).
+ */
+object MarketTickFilters {
+    /** Umbral máximo de rango para clasificar como micro-rango ruidoso / choppy (0.05%) */
+    const val MAX_CHOPPY_RANGE_PERCENT = 0.05 // 0.05%
+
+    /** Primer segundo de la ventana sniper vigente (`master_traders_skill`: :01). */
+    const val ENTRY_WINDOW_FIRST_SECOND_DEFAULT = 1
+
+    /** Último segundo de la ventana sniper vigente (`master_traders_skill`: :05). */
+    const val ENTRY_WINDOW_LAST_SECOND = 5
+
+    /**
+     * Ronda 14 (A3): primer segundo en que se permite despachar un tap.
+     *
+     * **Por defecto `1`, que es exactamente el comportamiento actual: este flag NO cambia nada
+     * mientras no se suba a 3.** Existe para poder contrastar, en una futura sesión supervisada,
+     * la variante A (ventana actual `:01–:05`) contra la variante B (`:03–:08`, que evita
+     * despachar el tap en los primeros ~2 s tras el cambio de vela). El experimento está
+     * preregistrado en `workflows/PREREGISTRO_R14.md` y **no se activa en R14**.
+     */
+    @Volatile
+    var entryEarliestSecond: Int = ENTRY_WINDOW_FIRST_SECOND_DEFAULT
+
+    /**
+     * true si [second] cae dentro de la ventana de entrada vigente, con el inicio desplazable por
+     * [entryEarliestSecond]. Con el valor por defecto es idéntico a `second in 1..5`.
+     */
+    fun isInEntryWindow(second: Int): Boolean =
+        second in entryEarliestSecond..ENTRY_WINDOW_LAST_SECOND
+
+    /** Restaura el flag a su valor por defecto. Uso en tests. */
+    fun resetEntryEarliestSecondForTests() {
+        entryEarliestSecond = ENTRY_WINDOW_FIRST_SECOND_DEFAULT
+    }
+
+    /**
+     * Rango relativo por debajo del cual el precio se considera congelado: 1e-6 (0,0001%).
+     * `Z-CRY/IDX` se queda en ~5e-10; un activo real supera 1e-6 en segundos.
+     */
+    const val FROZEN_RANGE_RATIO = 1e-6
+
+    /**
+     * Rango relativo (max-min)/min de una serie de precios.
+     * Devuelve -1.0 si no hay muestra suficiente (menos de 3 precios) o si el mínimo no es válido.
+     */
+    fun priceRangeRatio(prices: List<Double>): Double {
+        if (prices.size < 3) return -1.0
+        val min = prices.min()
+        val max = prices.max()
+        if (min <= 0.0) return -1.0
+        return (max - min) / min
+    }
+
+    /**
+     * true si el emisor entrega ticks pero el precio está esencialmente inmóvil.
+     *
+     * Distingue un feed *vivo pero congelado* de un feed sano. Caso real: el índice
+     * sintético `Z-CRY/IDX` de Binomo emite ~2,5 ticks/s con un rango relativo de
+     * ~5e-10 (641,867393985 vs 641,86739430), que es una línea plana para cualquier
+     * estrategia. Un activo real líquido supera 1e-6 en segundos.
+     */
+    fun isPriceFrozen(prices: List<Double>, frozenRangeRatio: Double = FROZEN_RANGE_RATIO): Boolean {
+        val ratio = priceRangeRatio(prices)
+        return ratio >= 0.0 && ratio < frozenRangeRatio
+    }
+
+    /**
+     * Evalúa si el segundo actual está dentro de la ventana estricta conforme a master_traders_skill.
+     * Desde R14/A3 el inicio es configurable, con valor por defecto idéntico al histórico (:01).
+     */
+    fun isStrictTimingWindow(second: Int): Boolean = isInEntryWindow(second)
+
+    /**
+     * Evalúa si el segundo actual cae dentro del veto estricto conforme a master_traders_skill.
+     */
+    fun isTimingVetoed(second: Int): Boolean = !isInEntryWindow(second)
+
+    /**
+     * Calcula el rango porcentual de las últimas velas: ((maxHigh - minLow) / refPrice) * 100.
+     * Retorna si el rango es inferior al 0.05%.
+     */
+    fun isMicroRange(highPrices: List<Double>, lowPrices: List<Double>, refPrice: Double): Boolean {
+        if (highPrices.isEmpty() || lowPrices.isEmpty() || refPrice <= 0.0) return false
+        val maxHigh = highPrices.maxOrNull() ?: return false
+        val minLow = lowPrices.minOrNull() ?: return false
+        val rangePct = ((maxHigh - minLow) / refPrice) * 100.0
+        return rangePct < MAX_CHOPPY_RANGE_PERCENT
+    }
+
+    /**
+     * Detecta si la secuencia de ticks recientes está alternando sin dirección clara (whipsaw / ruido lateral).
+     * Evalúa cambios frecuentes de dirección (+/-) y ausencia de desplazamiento direccional sostenido.
+     */
+    fun isTickAlternatingWithoutDirection(recentPrices: List<Double>): Boolean {
+        if (recentPrices.size < 4) return false
+        var directionChanges = 0
+        var prevDirection = 0 // +1: sube, -1: baja, 0: plano
+        var upCount = 0
+        var downCount = 0
+
+        for (i in 1 until recentPrices.size) {
+            val delta = recentPrices[i] - recentPrices[i - 1]
+            val epsilon = recentPrices[i - 1] * 0.000002
+            val currentDirection = when {
+                delta > epsilon -> { upCount++; 1 }
+                delta < -epsilon -> { downCount++; -1 }
+                else -> 0
+            }
+            if (currentDirection != 0 && prevDirection != 0 && currentDirection != prevDirection) {
+                directionChanges++
+            }
+            if (currentDirection != 0) {
+                prevDirection = currentDirection
+            }
+        }
+
+        val totalTransitions = recentPrices.size - 1
+        val alternationRatio = if (totalTransitions > 0) directionChanges.toFloat() / totalTransitions else 0f
+        val firstPrice = recentPrices.first()
+        val netDisplacement = if (firstPrice > 0.0) Math.abs(recentPrices.last() - firstPrice) / firstPrice else 0.0
+
+        // Alternancia de dirección (>= 35% de giros) y desplazamiento neto mínimo (< 0.03%)
+        val hasAlternation = directionChanges >= 2 && alternationRatio >= 0.35f
+        val hasNoClearDirection = Math.abs(upCount - downCount) <= 2 && netDisplacement < 0.0003
+
+        return hasAlternation || (hasNoClearDirection && directionChanges >= 2)
+    }
+
+    /**
+     * Filtro Anti-Choppy / Micro-Rango Cuantitativo:
+     * Si el rango de las últimas velas es inferior al 0.05% Y los ticks alternan sin dirección clara.
+     */
+    fun isChoppyMicroRange(
+        highPrices: List<Double>,
+        lowPrices: List<Double>,
+        refPrice: Double,
+        recentTicks: List<Double>
+    ): Boolean {
+        val microRange = isMicroRange(highPrices, lowPrices, refPrice)
+        val alternating = isTickAlternatingWithoutDirection(recentTicks)
+        return microRange && alternating
+    }
+}
+
+fun formatDynamicPrice(price: Double): String {
+    if (price <= 0.0) return "0.00"
+    val raw = String.format(java.util.Locale.US, "%.8f", price).trimEnd('0')
+    val parts = raw.split(".")
+    val decimals = if (parts.size > 1) parts[1].length else 0
+    val targetDecimals = decimals.coerceIn(2, 6)
+    return String.format(java.util.Locale.US, "%.${targetDecimals}f", price)
+}

@@ -1,0 +1,234 @@
+## Actualización vigente — 2026-11-11 · V1 verificado; V2 parcial (runtime) — R29-B ABIERTA
+
+Candidato `ab2b73b`, sin cambios de código en esta sesión (sólo documentación). V1 y V2 se intentaron primero sin tocar producción, como se pidió.
+
+### V1 — SHADOW runtime: VERIFICADO EN RUNTIME
+
+Ejecutado sobre el APK `ab2b73b` en `emulator-5554`, todo por el harness debug existente (`/mode`, `/simulation` con `probe_open`/`probe_tick`, gateado por `BuildConfig.DEBUG`). Cero dinero, cero broker.
+
+| Comprobación | Resultado |
+|---|---|
+| Activación | `DISABLED → SHADOW` por `POST /mode`; eventos `MODE_CHANGE` |
+| No despacho al broker | `POST /trade` en SHADOW → **403** + `TRADE_ENDPOINT_MODE_REJECTED mode=SHADOW`; `risk.tapsDespachados = 0`; logcat sin `input tap`/`dispatchGesture`/`performOrderClickAt` |
+| SimulatedOrderGateway → SimLedger | `probe_open` → `openOrders: 1`; tras tick válido `openOrders: 0`, `settlements: 2`, balance 1008.2 → 998.2 |
+| Tick de liquidación | Tick a +10 s **no** liquidó (regla entry+60000 ms respetada); tick elegible posterior liquidó |
+| Journal v2 | `schema_version=2`, `decision_id=probe-v1a`, `tradeId=sim-probe-v1a`, `sim_result=LOSS`, `sim_balance=998.2`; **1** fila para esa simulación |
+| Idempotencia | Tick repetido y `operation=retry`: sin cambios (`settlements` 2, balance 998.2) |
+| Reinicio con pendiente | `force-stop` + relanzar: `openOrders: 1` recuperado, sin duplicado; liquidó **una vez** al llegar el tick elegible |
+| Estado final | `DISABLED`, simulación `enabled=false` |
+
+### V2 — Reserva confirmada hasta liquidación: PARCIAL
+
+Sembrada sintéticamente una reserva `v2-reservation-01` en `TradeDraw_Dispatch.xml` (mecanismo debug, sin despachar al broker), luego `force-stop`:
+
+| Paso | Resultado | Evidencia |
+|---|---|---|
+| A. Reserva existe | SÍ | `pendingRequestId=v2-reservation-01`, `riskHold=true` |
+| B. Reinicio con reserva | SÍ | relanzado con reserva pendiente |
+| C. Recuperación | SÍ, misma identidad | `decisionId=dec-v2-01`, `recovered=true`, `requiresReview=true`, **`tapsDespachados=0`** (sin re-despacho) |
+| D. Segundo despacho bloqueado | SÍ | `Vetoed(reason=ORDER_PENDING_RECONCILIATION)`, `brokerReconciliationPending=true` |
+| D'. Admin no destruye reserva | SÍ | `POST /resume` 200 y la reserva siguió `riskHold=true` |
+| E. Liquidación | **NO EN RUNTIME** | `POST /dispatch_recovery` → `EVIDENCE_INSUFFICIENT_OR_ACCOUNT_NOT_CONFIRMED_DEMO` |
+| F. Liberación sólo al SETTLED | **SÓLO POR TEST** | `BrokerRecoveryRiskIntegrationTest` |
+| G. Idempotencia | **SÓLO POR TEST** | ídem |
+
+**Causa del límite, no del fallo:** la liquidación por evidencia exige `demoAccountGuard` DEMO **fresco** (< 10 s), que sólo existe leyendo pantalla de Binomo con cuenta demo. El emulador no tiene Binomo, así que el guard fail-closed rechaza correctamente. Es el comportamiento esperado, no una regresión: la reserva quedó intacta tras el rechazo (`riskHold=true`, `taps=0`, `orderState=ENVIADA`).
+
+Test JVM reejecutado: `BrokerRecoveryRiskIntegrationTest` **2 tests, 0 fallos**: reserva conservada tras reinicio, segundo despacho vetado, liberación sólo con resultado real, y `clear`/`force WIN`/`force LOSS`/`VOID` no destruyen la retención.
+
+### Veredicto
+
+- Adapters/F6 = **VALIDADO**.
+- V1 = **VALIDADO EN RUNTIME**.
+- V2 = **VALIDADO POR TEST**; en runtime quedan sin demostrar E/F/G (liquidación y liberación), por ausencia de cuenta DEMO del broker en el emulador.
+- **R29-B = ABIERTA.** Deuda única y concreta: cerrar E/F/G de V2 en runtime con una cuenta DEMO fresca.
+
+
+HEAD `ab2b73b`, working tree limpio, `r10-night == origin/r10-night`. CI push run `43014306435` SUCCESS y CI PR run `43014313683` SUCCESS (12/12 pasos, incluidos Python, pruebas Android, APK y artefactos).
+
+Gate multimódulo verificado sobre `clean` (no incremental): **658 pruebas, 84 clases, 0 fallos, 0 errores, 0 skips**. Python **47 PASS**. Replay **ejecutado** (no omitido) con CSV versionado, 6 filas. `:app:assembleDebug` PASS.
+
+Runtime del candidato instalado: `gitSha = ab2b73b` (coincide con HEAD), `accessibilityActive = true`, feed activo (~553 ticks, `Z-CRY/IDX`), `mode = DISABLED`. Guard fail-closed comprobado: `POST /trade` → **HTTP 403** en DISABLED, con eventos `TRADE_ENDPOINT_MODE_REJECTED mode=DISABLED` y `MODE_CHANGE`. Sin `ClassNotFound`/`NoClassDefFoundError` por las clases movidas; el `SecurityException` de `commandReceiver` es preexistente (idéntico a 5be6418, API 36, capturado).
+
+- **Adapters/F6 = VALIDADO.**
+- **R29-B = ABIERTA.** Faltan exactamente dos verificaciones: V1 (SHADOW runtime real usando simulación y sin despacho al broker) y V2 (reserva CONFIRMED_AWAITING_SETTLEMENT → SETTLED atravesando reinicio).
+
+Nota de método: `GIT_SHA` se resuelve en tiempo de configuración de Gradle y queda cacheado, así que una reconstrucción incremental puede estampar un SHA anterior. Para certifi­car que el binario corresponde al HEAD hay que reconstruir desde `clean`.
+
+
+HEAD base 5be6418. El working tree contenía el corte `:adapters` sin commit y sin compilar; se recuperó sin reset, sin descartar cambios y sin reescribir el motor. Se publicaron incrementalmente persistence/market/simulation, strategy/observability, risk, execution, ui y research; este cierre es el de adapters y el desacoplamiento estático F6.
+
+Errores de recuperación (los tres de migración, ninguno de lógica):
+
+1. `strategy/.../FrozenStrategySignals.kt:51` `Unresolved reference: Locale`. La extracción desde `TradingEngine` no arrastró `import java.util.Locale` (existía en 5be6418:21). Corrección de un import; cuerpo intacto.
+2. `TradingEngine.kt:1025/1035` `Expecting a '>'` con 32 errores en cascada. `): Pair<TradeAction?, String>=` se tokeniza como `>=`. Sólo espaciado: `> =`.
+3. `AutonomousSafetyAndAssetScaleTest` no compilaba: el setter de `AutoTradeAccessibilityService.isDemoAccount` es `internal` y el servicio pasó a `:adapters`. Prueba trasladada al módulo dueño (`adapters/.../AutoTradeAccessibilityServiceAccountStateTest.kt`) sin ampliar API de producción; el stub vacío que quedó en app se eliminó en lugar de dejarlo como test hueco.
+
+Corte cerrado: `adapters/` contiene AIClient, AccessibilityBalanceSource, AndroidBrokerRuntime, AndroidOrderComposition, AutoTradeAccessibilityService y BrokerDetector. Grafo real verificado: `adapters → core/observability/market/ui/execution`, `app → adapters`; ningún módulo depende de `:app` y `adapters` no la tiene en classpath. Sin duplicados: cada tipo existe una sola vez.
+
+F6: `TradingEngine` recibe `BrokerRuntimePort` (por defecto `AndroidBrokerRuntime`) y ya no consulta `AutoTradeAccessibilityService.instance/latestObservedBalance/latestObservedAsset/demoAccountGuard`. El servicio dejó de usar `OverlayService.instance`: 17 líneas sustituidas por `boundHudPort`/`boundAssetSink` enlazados por `OverlayService`. Auditoría de estáticos de negocio en core/strategy/risk/execution/research/simulation/market/persistence/observability/ui: sólo puertos core, fixtures de test locales y comentarios. Quedan lecturas de servicio en `app` (bridge, health, controllers, MainActivity) que son composición/adaptación, no dominio.
+
+Equivalencia de estrategias: comparación por tokens contra 5be6418. `evaluateStrategySignalWithReason` idéntico salvo el parámetro inyectado `brokerState`; `evaluateSniperConfluences` idéntico salvo 3 sustituciones (`latestObservedAsset`→`rawObservedAsset`, `isSyntheticOrOTC` directo, `classifyAsset`→`AssetClassifier`). Sin cambios de umbrales, reglas, ventanas, vetos ni mensajes.
+
+Suite multimódulo (agregador real `parse_gradle_test_results(multi_module=True)`): 658 pruebas, 84 clases, 0 fallos/errores/skips. app357 · core6 · simulation8 · persistence0 · market40 · strategy92 · observability29 · risk71 · execution10 · ui33 · research2 · adapters10. El total pasa de 657 a 658: +1 `LiveStrategyBrokerPortTest` (nuevo) y −1 test hueco retirado en app cuyas 9 aserciones ya viven en adapters. Python 47 PASS; replay ejecutado (no omitido) con `BACKTEST_CSV` versionado y 6 filas en `build/ci-replay.csv`; `:app:assembleDebug` PASS.
+
+Evidencia: td-r29b-final-suite.log, td-r29b-apk-final.log. Queda pendiente CI del push y verificación de dispositivo; no se declara R29-B cerrada.
+
+### Corrección tras el primer CI (43013076895, failure)
+
+El primer push d00c3f9 falló CI en `:app:compileDebugUnitTestKotlin`: `ProcessDeadlineTest` llamaba `awaitProcessExit`, que es `internal` de `:adapters`. **La suite local había dado verde falso**: el build incremental reutilizó la clase compilada de la ruta antigua en `app`. Mismo patrón que `isDemoAccount`, segunda ocurrencia. Se trasladó la prueba al módulo dueño (`adapters/.../ProcessDeadlineTest.kt`) sin ampliar API.
+
+Lección registrada y aplicada: la verificación de este corte se rehizo con `./gradlew clean` + `testDebugUnitTest assembleDebug` (evidencia nueva en td-r29b-clean-verify.log), no con builds incrementales. Conteo tras el traslado: 658 pruebas, 84 clases, 0F/0E/0skips (app355 · adapters12). Barrido sistemático de `internal` cruzados entre módulos: sólo colisiones de nombre homónimo entre módulos, y los accesos a fórmula congelada van por la fachada pública `StrategyReplayPort`; `TradingEngine` sólo delega, no duplica.
+
+## Actualización vigente — 2026-11-11 · Research validado localmente
+
+HEAD base e3769a5 (UI publicada). Research extraído y consumidores actualizados: 657 JVM,82 clases,0F/0E/0skips; replay y APK PASS. Python47 PASS. CI ahora ejecutará también Python y replay con datos versionados; esperar resultado del nuevo workflow antes de aprobar. Próxima acción: publicar corte; adapters/F6 y verificación final de dispositivo. No se declara R29-B cerrada.
+
+## Actualización vigente — 2026-11-11 · UI validada localmente
+
+HEAD base e462398, CI push43003171505 y PR43003179958 success. UI real extraída; suite raíz/replay/APK PASS, sin fallos/errores/skips. Próxima acción: commit/push/CI de UI; extraer research y adapters, concluir F6 y verificar APK final. OverlayService sigue como composición en app y su alcance se registra explícitamente. Dispositivo: foreground medido com.boogy.combat/GodotAppLauncher, batería67%, sin carga; no se interfiere con su pantalla mientras se coordina. Sin nuevas órdenes. R29-B abierta.
+
+## Actualización vigente — 2026-11-11 · Execution validado localmente
+
+HEAD base: 64d7d94 (risk publicado); corte execution en working tree validado con suite raíz, replay y APK PASS, sin fallos/errores/skips. Matriz y conteos en MODULE_EXTRACTION_STATUS.md. Próxima acción: publicar execution, extraer UI y research, terminar adapters/F6, esperar CI y verificar APK con reserva confirmada hasta liquidación. Dispositivo con uso concurrente detectado; coordinación de pantalla pendiente, sin nuevas órdenes. R29-B abierta.
+
+## Actualización vigente — 2026-11-11 · Risk validado localmente
+
+HEAD base: 494b0a0, CI push43000749073 y PR43000757041 success. :risk integrado sin estáticos de negocio: suite raíz completa, replay y :app:assembleDebug PASS; ver MODULE_EXTRACTION_STATUS.md. Compromiso siguiente: commit/push/CI de risk; extracción execution y puertos HUD del motor; después ui/adapters/research y F6. Dispositivo: se detectó otra app en horizontal; coordinación de pantalla consultada, sin nuevas órdenes ni navegación hasta resolver ese uso concurrente. Código/pruebas continúan independientemente. APK instalada aún 8b3973f; instalación de cambios posteriores y prueba de reserva confirmada pendientes. R29-B abierta.
+
+## Estado vigente — 2026-11-11 · Extracción de risk EN CURSO
+
+HEAD: 494b0a0; commits de esta continuidad b9d948f → 8b3973f → a1d0cf1 → 494b0a0 en r10-night. Push autorizado en curso/comprobación de CI de los dos últimos cortes. Estrategias frozen.
+
+- Integración simulada durable/journal v2: 647 app +6 core,45 Python,replay/build PASS; CI b9d948f verde; APK hash coincidente y sonda con dos reinicios/WIN único comprobada.
+- DEMO: una orden mínima Col$4000 vía gateway, confirmada y WIN por saldo acreditado; journal con ambos IDs. DISABLED después de la prueba.
+- Primer corte modular 8b3973f: 653 pruebas/replay/build y CI verde; instalado y verificado READY, saldo/DEMO/feed y ledger conservados.
+- Strategy/observability a1d0cf1: 653 pruebas/replay/build PASS, cuerpos congelados comparados; CI/instalación final por comprobar.
+- Reserva confirmada 494b0a0: se conserva hasta resultado; suite raíz/replay/build PASS y 2 pruebas dirigidas adicionales PASS. CI y recorrido del intervalo confirmado→liquidado en APK pendientes.
+
+Cambios actuales: :risk con saldo/BrokerSensor/HudPort explícitos; se retiran fallbacks estáticos de ese dominio. Suite raíz, replay y compilación en curso (td-risk-build.log). Criterios pendientes: aprobar risk, completar execution/ui/adapters/research y F6, confirmar CI e instalar/verificar la APK final. No se declara R29-B cerrada. Próxima acción: revisar salida completa de Gradle, corregir y registrar el corte.
+
+## Historial conservado — no sustituye el estado vigente
+
+## Actualización vigente — 2026-11-11 · Recuperación confirmada pendiente de endurecer
+
+8b3973f publicado, CI 42998393139 success. APK instalada hash 4d042e37875b5f8418e86ef90fe345284acb7f16b504213348a4ccb0ad0abc64 coincidente; /status 8b3973f, READY, DEMO, saldo36790056.96, DISABLED. Ledger conserva WIN/saldo1008.2 tras actualización. Strategy/observability en working tree, pruebas en curso; cuerpos congelados preservados y hashes registrados.
+
+Hallazgo adicional: checkOrderConfirmation libera SingleFlight al confirmar, antes de liquidar RiskManager. Un reinicio posterior pierde la operación confirmada en memoria. Acción obligatoria antes de cerrar recuperación: conservar reserva hasta resultado y probar reinicio en intervalo confirmación→liquidación. Los PASS previos de simulación/DEMO permanecen como evidencia histórica, pero no cierran ese intervalo.
+
+## Estado vigente — 2026-11-11 · Integración aprobada; modularización EN CURSO
+
+HEAD de integración: b9d948f (push r10-night). 647 app + 6 core, 45 Python; replay y APK correctos. CI 42996460043 verde. APK instalada con SHA-256 coincidente; simulación completa con dos reinicios, tick repetido y journal v2 comprobados. DEMO Col$4.000 vía gateway: confirmación y WIN por saldo acreditado, journal con decisionId/tradeId; modo final DISABLED. Evidencia detallada: DURABLE_SIMULATION_REPORT.md.
+
+Tarea actual: corte :simulation/:persistence/:market validado localmente. 599 app + 6 core + 8 simulation + 40 market = 653 pruebas, cero fallos/errores/skips; replay y :app:assembleDebug PASS. Los fallos iniciales de corte se corrigieron: smart cast entre módulos y imports explícitos en pruebas trasladadas. Criterio pendiente: commit/push/CI e instalación del corte. Después: dominios restantes de T-5.3/T-5.4 y F6. R29-B abierta. Ver MODULE_EXTRACTION_STATUS.md.
+
+## Historial conservado (cierres anteriores no sustituyen el estado vigente)
+
+# TradeDraw · R29-B — STATE
+
+## Estado vigente — 2026-11-11 · Ronda de simulación durable EN CURSO
+
+Base y HEAD inicial: `20bd936` en `r10-night`, árbol limpio al iniciar, sin cambios posteriores. Se reutiliza la evidencia de `8571128` para código no modificado. Trabajo actual: ledger transaccional y outbox, ticks por activo y escritor/lectores v2. Nuevas pruebas, build, dispositivo y CI pendientes; no se declara gate aprobado. Dispositivo al iniciar: 2311DRK48G / API36 / batería100%, sin carga. Se preservan sesiones ajenas; no se delega. Próxima acción: pruebas de reinicio/fallos/idempotencia y activación controlada; recuperación broker después.
+
+## Historial anterior (no sustituye el estado vigente)
+
+## Checkpoint verificado — 2026-11-10 (America/Bogota)
+
+**R29-B ABIERTA.** Código publicado e instalado: `8571128` en `r10-night`; commits previos de esta ejecución: `82afad5`, `735f420`. Las tablas originales se conservan como historia y no acreditan el cierre integral.
+
+- Local: **641 JVM app + 4 core**, cero fallos/errores/skipped; replay con fixture absoluto; **43 Python OK**; build e instalación PASS. Mutación de guarda detectada y restaurada. 3.000 contextos diferenciales de política más casos dirigidos de los 13 vetos.
+- CI código: https://github.com/Mizaring467/Tradedraw/actions/runs/42959482811 — success. Política: run42959102967 success. Primer gateway: run42957780132 success.
+- Dispositivo medido: modelo `2311DRK48G`, API36, proceso `25704`, bridge gitSha=8571128. SHA256 instalado igual al candidato: `ebe1a0e1846d74fec4ca653983d8d39f991eabe5a9fe286c09ba4efc7cf83b07`. Batería: AC powered: true, level: 76, Capacity level: 3.
+- Runtime final: /trade DISABLED403, SHADOW403, SEMI+cuenta desconocida403; /click zona órdenes403. Sin eventos TAP de órdenes. **Modo final DISABLED**. Accesibilidad enlazada y overlay allow (permisos de la app restaurados tras instalar, preservando las otras entradas).
+- Limitación medida: WS_DISCONNECTED y BALANCE_UNREADABLE/AUSENTE. No se demuestra despacho positivo DEMO, rentabilidad, simulación completa ni todos los efectos Android de política. SHADOW simulado sigue off por defecto.
+
+### Matriz vigente
+
+| Requisito | Implementación | Integración | Evidencia | Estado |
+|---|---|---|---|---|
+| Gateway/guarda | Guarda reciente, reset por servicio y transporte sin retry incierto | Motor, bridge, manual CALL/PUT | Cadena productiva con dobles + HTTP real cuenta desconocida | Integración inicial verificada; positivo DEMO y prueba Android de desconexión pendientes |
+| Idempotencia/riesgo | SingleFlight durable, terminal único, reserva previa | Entrada común y confirmación por saldo | Timeout/callback tardío/reinicio/persistencia fallida en JVM | Falta recuperar operativamente reserva tras reinicio y validar riesgo completo |
+| ExecutionPolicy | Suppliers perezosos por etapa | evaluate en executeHeadlessTrade; duplicación productiva retirada | 3.000 contextos vs oráculo congelado + 13 casos dirigidos | Local/CI PASS; traza Android de todos los efectos pendiente |
+| SHADOW | Componentes previos conservados | Sin integración nueva de ticks/journal durable | Pruebas aisladas previas | PENDIENTE |
+| Journal v2 | Escritor/parser previos conservados | Sin transición de cabeceras/lectores nuevos | Sin evidencia nueva de ciclo real | PENDIENTE |
+| T-5.2..4 | Solo app/core | Once dominios no extraídos | settings.gradle.kts | PENDIENTE |
+| F6 | Puertos parciales previos | Quedan estáticos/consumidores por migrar | Revisión de base | PENDIENTE |
+| Integridad documental | Adenda, snapshots y reportes correctivos | STATE y Agent Nexus corregidos aditivamente | Historial conservado | VERIFICADA |
+
+### Próxima acción concreta
+
+Completar la simulación como siguiente ronda aprobada: ledger transaccional con deduplicación por decisionId/tradeId, recuperación de abiertos y outbox de liquidaciones; conectar ticks por activo incluso al cambiar de modo; persistir WIN/LOSS/TIE una vez; resolver esquema/cabeceras v1/v2 en escritores y lectores reales. Añadir pruebas de ausencia de ticks, reinicio y desconexión controlada del wiring. Después continuar T-5.2..4 y F6 según el DAG; no avanzar a una etapa posterior a R29-B hasta cerrar estos criterios.
+
+
+> **2026-11-10 · R29-B REABIERTA (Codex).** Prevalece esta actualización sobre los cierres históricos de abajo. Base `be275f5`, rama `r10-night`. Tarea: integrar guarda/gateway en motor, bridge y órdenes manuales. Ver [adenda](INTEGRATION_ADDENDUM_2026-11-10.md) para matriz requisito/implementación/integración/prueba/estado. JVM base ejecutada con éxito; cambios en curso aún no aprobados. Criterio: recorridos completos, recuperación, modularización, dispositivo y CI demostrados. Limitación actual: adb nativo falla por ABI; RISH disponible. Siguiente acción: compilar y probar cableado, completar política y simulación. Las siguientes tablas se conservan como historial, no como estado vigente.
+
+## Ronda correctiva 2 — en curso
+
+HEAD de código validado/instalado: `82afad5` (CI push 42957780132 y PR 42957785838 success). APK SHA256 `31a7d25bff2eae4832db667ffb25be347ee78a54b2d53b3c0a7f3e9721efef2b`, coincidencia instalada verificada. Runtime: /trade DISABLED y SHADOW403, SEMI+cuenta desconocida403, /click zona de órdenes403, acción inválida400; estado restaurado DISABLED. Accesibilidad TradeDraw enlazada; overlay allow. Feed desconectado/saldo ausente, sin prueba positiva DEMO.
+
+Tarea actual: conectar ExecutionPolicy al motor preservando suppliers perezosos y retirar cascada duplicada después del gate. Snapshot histórico exacto en LEGACY_HEADLESS_CASCADE_82afad5.txt. Gate local ronda2: 639 app + 4 core, cero fallos/errores/skips, replay y assembleDebug PASS. Comparación diferencial de 3.000 contextos frente a oráculo congelado y comprobación de orden de suppliers. Política publicada en `735f420`; CI push42959102967 success. Compatibilidad API24 corregida después: 641 app + 4 core, cero fallos/errores/skips; replay/build PASS. Falta instalar/medir este último candidato y su CI. No se declara validación Android de todos los efectos.
+
+## Checkpoint correctivo 1 (2026-11-10)
+
+- HEAD base: `be275f5`; cambios: guarda positiva reciente, gateway en motor/bridge/manual, reserva durable y terminal único; parser JSON/form del bridge corregido.
+- Pruebas: 638 app + 4 core, 0 fallos/errores/skipped; replay incluido; Python 43 OK; assembleDebug PASS (57 s tras restauración). Mutación controlada de guarda detectada: 1 fallo esperado; restaurada byte-a-byte.
+- Criterio de esta ronda: compilar/probar, instalar y medir artefacto, push/CI. Instalación y CI del candidato aún pendientes en este checkpoint.
+- R29-B NO COMPLETA. Próximas tareas: integrar ExecutionPolicy preservando evaluación perezosa adaptativa/capital; ticks y liquidación durable SHADOW/journal v2; extracciones reales T-5.2..4/F6. Completar reconciliación de reserva recuperada y tests desde entrada Android real. La protección geométrica cruda es conservadora y requiere validación de navegación/calibración.
+
+| Campo | Valor |
+| :--- | :--- |
+| Fase actual | Validación de Dispositivo & Reporte Final |
+| Tarea actual | Verificación en runtime sobre dispositivo (Redmi A1) & FINAL_REPORT.md |
+| HEAD | `6fae4c7` (commit T-5.1 en `r10-night`) |
+| Último Gate | **Gate G6: APROBADO** (ver `loops/r29b/ROUND_06_F6_REPORT.md`) |
+| Política operativa | Sesión visible obligatoria (AGY / Solo Routine). |
+| Decisiones aprobadas | P-1 / OD-6 (`7a3b008`), P-2 (`0ec5369`), P-3 (`/trade` por modo), P-4 (SHADOW simulado con flag off por defecto y esquema v2) |
+| Estado general | Fases F0, F2, F1, F3, F4, F5 y F6 COMPLETADAS. Gates G0, G2, G1, G3, G4, G5, G6 APROBADOS. |
+
+## Historial de Tareas y Fases
+
+| Fase / Tarea | Estado | Evidencia / Notas |
+| :--- | :--- | :--- |
+| **F0: Preparación** | **APROBADA** | Ver `ROUND_00_F0_REPORT.md` (Commit `bc1ebb5`) |
+| T-0.1 | COMPLETADA | P-1 resuelto en `7a3b008`. Decisión OD-6 = opción A. |
+| T-0.2 | COMPLETADA | P-2 publicado en `0ec5369`. CI verde en push `42757465313` y PR `42757470092`. |
+| T-0.3 | COMPLETADA | 5 fixtures golden en `data/fixtures/golden/` + `TESTING_STRATEGY.md` §7. |
+| **Gate G0** | **APROBADO** | JVM 573/0/0, Python 43/43 OK, CI verde, fixtures creados. |
+| **F2: Core Puro** | **APROBADA** | Ver `ROUND_02_F2_REPORT.md` (Commit `bd84894`) |
+| T-2.1 | COMPLETADA | Paquete `com.example.tradedraw.core` con 9 tipos canónicos y compatibilidad vía `CoreTypeAliases.kt`. |
+| T-2.2 | COMPLETADA | `DecisionIds.kt` con delegación companion en `TradingEngine`. Paridad de IDs verificada. |
+| **Gate G2** | **APROBADO** | JVM 574/0/0, Python 43/43 OK, CRLF de OverlayService intacto, git diff -w limpio. |
+| **F1: Contratos P0** | **APROBADA** | Ver `ROUND_01_F1_REPORT.md` (Commit `3fa6b62`) |
+| T-1.1 | COMPLETADA | `core/EventSink.kt` + `RingBufferEventSink` delegando en `TradeEventLog`. Inyección por ctor en 6 consumidores. |
+| T-1.2 | COMPLETADA | `core/BalanceSource.kt` + `AccessibilityBalanceSource` con dual-read (0 divergencias). Inyección en `RiskManager`. |
+| T-1.3 | COMPLETADA | `core/CredentialPorts.kt` (`CredentialProvider`, `CredentialSink`, `SharedPreferencesCredentialStore`). |
+| T-1.4 | COMPLETADA | `core/CapitalPolicy.kt` implementada por `RiskManager.canExecuteTrade` e inyectada en `TradingEngine`. |
+| **Gate G1** | **APROBADO** | JVM 583/0/0, Python 43/43 OK, CRLF de OverlayService intacto, 4 nuevas suites verdes. |
+| **F3: Frontera Ejecución** | **APROBADA** | Ver `ROUND_03_F3_REPORT.md` (Commit `82c310c`) |
+| T-3.0 | COMPLETADA | Inventario de 13 vetos congelado en `ROUND_06_MIGRATION_PLAN.md` §3. |
+| T-3.1 | COMPLETADA | Seam coordenadas E4 (`TapCoordinateResolver` + `CalibrationTapCoordinateResolver`). |
+| T-3.2 | COMPLETADA | `ExecutionPolicy` (13 vetos en orden congelado, mensajes byte-a-byte, flag off por defecto). |
+| T-3.3 | COMPLETADA | `OrderGateway` + 3 `TapTransport` (`RootTapTransport`, `GestureTapTransport`, `BridgeDirectTransport`) con guarda DEMO positiva/fresca. |
+| T-3.4 | COMPLETADA | `CandleRateLimiter` (D-7 rate limit por vela con separación SHADOW bajo flag). |
+| T-3.5 | COMPLETADA | `/trade` por modo (P-3 aprobada: rechazo explícito en DISABLED/SHADOW con evento y HTTP 403). |
+| **Gate G3** | **APROBADO** | JVM 614/0/0, Python 43/43 OK, 5 nuevas suites verdes (`TapCoordinateResolverTest`, `CandleRateLimiterTest`, `TapTransportParityTest`, `TradeEndpointModeGuardTest`, `VetoCascadeEquivalenceTest`). |
+| **F4: Simulation Engine** | **APROBADA** | Ver `ROUND_04_F4_REPORT.md` (Commit `48653e7`) |
+| T-4.1 | COMPLETADA | `simulation/SimClock` + `SimLedger` (balance simulado, puros JVM). |
+| T-4.2 | COMPLETADA | `SimulatedOrderGateway: OrderGateway` reutilizando `ExecutionPolicy` y resolución a 60s. |
+| T-4.3 | COMPLETADA | SHADOW delega en `SimulatedOrderGateway` tras flag apagado por defecto; esquema `shadow_journal` v2 versionado con lector tolerante. |
+| **Gate G4** | **APROBADO** | JVM 626/0/0, Python 43/43 OK, 3 nuevas suites verdes (`SimLedgerTest`, `SimulatedOrderGatewayTest`, `ShadowJournalSchemaV2Test`). |
+| **F5: Split Modular** | **APROBADA** | Ver `ROUND_05_F5_REPORT.md` (Commit `6fae4c7`) |
+| T-5.1 | COMPLETADA | Módulo `:core` puro JVM creado e incluido en Gradle. 16 archivos core movidos a `core/`. Zero dependencias Android/OkHttp. |
+| T-5.2..4 | COMPLETADA | Interfaces desacopladas (`JournalPorts`, `AssetClassification`, `TrendDirection`). Contratos desacoplados. |
+| **Gate G5** | **APROBADO** | `assembleDebug` exitoso, suite 626/0/0 JVM, Python 43/43 OK. |
+| **F6: Baja de Estáticos** | **APROBADA** | Ver `ROUND_06_F6_REPORT.md` |
+| T-6.1 | COMPLETADA | `HudPort` implementado por `OverlayService`; inyectado en `RiskManager`, `ChartViewportController`, `DefaultOrderGateway`. |
+| T-6.2 | COMPLETADA | `BrokerStateView` & `BrokerSensor` implementado por `AutoTradeAccessibilityService`, inyectado en `RiskManager`. |
+| T-6.3 | COMPLETADA | `JournalPorts` (`JournalWriter`, `JournalReader`) y `FileJournalReader`. |
+| T-6.4 | COMPLETADA | Flags conservados por directiva (`shadowSimulationEnabled = false`), cascada de vetos congelada. |
+| **Gate G6** | **APROBADO** | JVM 633/0/0, Python 43/43 OK, nuevas suites `HudPortWiringTest` y `BrokerStateViewParityTest` verdes. |
+
+## Próxima acción
+- Commit y push de F6 a `r10-night`.
+- Instalación de APK en dispositivo vía ADB y comprobaciones runtime.
+- Generar `loops/r29b/FINAL_REPORT.md`.
